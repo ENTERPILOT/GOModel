@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy
+.PHONY: build run clean tidy test
 
 # Build the application
 build:
@@ -15,4 +15,8 @@ clean:
 # Tidy dependencies
 tidy:
 	go mod tidy
+
+# Run tests
+test:
+	go test ./... -v
 
