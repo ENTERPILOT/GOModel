@@ -15,4 +15,7 @@ type Provider interface {
 
 	// StreamChatCompletion returns a raw SSE stream (caller must close)
 	StreamChatCompletion(ctx context.Context, req *ChatRequest) (io.ReadCloser, error)
+
+	// ListModels returns the list of available models
+	ListModels(ctx context.Context) (*ModelsResponse, error)
 }

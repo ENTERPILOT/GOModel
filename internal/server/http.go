@@ -26,6 +26,7 @@ func New(provider core.Provider) *Server {
 
 	// Routes
 	e.GET("/health", handler.Health)
+	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 
 	return &Server{

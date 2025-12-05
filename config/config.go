@@ -8,8 +8,8 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	OpenAI   OpenAIConfig   `mapstructure:"openai"`
+	Server ServerConfig `mapstructure:"server"`
+	OpenAI OpenAIConfig `mapstructure:"openai"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -30,7 +30,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 
 	// Set defaults
-	viper.SetDefault("server.port", "8080")
+	viper.SetDefault("server.port", "8088")
 
 	// Read config file (optional, won't fail if not found)
 	_ = viper.ReadInConfig()
@@ -50,4 +50,3 @@ func Load() (*Config, error) {
 
 	return &cfg, nil
 }
-

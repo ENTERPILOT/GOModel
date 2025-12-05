@@ -66,3 +66,13 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 func (h *Handler) Health(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
+
+// ListModels handles GET /v1/models
+func (h *Handler) ListModels(c echo.Context) error {
+	resp, err := h.provider.ListModels(c.Request().Context())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}

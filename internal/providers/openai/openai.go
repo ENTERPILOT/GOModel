@@ -110,3 +110,35 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 
 	return resp.Body, nil
 }
+
+// ListModels retrieves the list of available models from OpenAI
+func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+"/models", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var modelsResp core.ModelsResponse
+	if err := json.Unmarshal(respBody, &modelsResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	return &modelsResp, nil
+}

@@ -17,6 +17,7 @@ import (
 type mockProvider struct {
 	supportedModels []string
 	response        *core.ChatResponse
+	modelsResponse  *core.ModelsResponse
 	streamData      string
 	err             error
 }
@@ -42,6 +43,13 @@ func (m *mockProvider) StreamChatCompletion(ctx context.Context, req *core.ChatR
 		return nil, m.err
 	}
 	return io.NopCloser(strings.NewReader(m.streamData)), nil
+}
+
+func (m *mockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.modelsResponse, nil
 }
 
 func TestChatCompletion(t *testing.T) {
@@ -182,5 +190,81 @@ func TestHealth(t *testing.T) {
 
 	if !strings.Contains(rec.Body.String(), "ok") {
 		t.Errorf("expected ok status in body")
+	}
+}
+
+func TestListModels(t *testing.T) {
+	mock := &mockProvider{
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID:      "gpt-4o-mini",
+					Object:  "model",
+					Created: 1721172741,
+					OwnedBy: "system",
+				},
+				{
+					ID:      "gpt-4-turbo",
+					Object:  "model",
+					Created: 1712361441,
+					OwnedBy: "system",
+				},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ListModels(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"object":"list"`) {
+		t.Errorf("response missing object field, got: %s", body)
+	}
+	if !strings.Contains(body, "gpt-4o-mini") {
+		t.Errorf("response missing gpt-4o-mini model, got: %s", body)
+	}
+	if !strings.Contains(body, "gpt-4-turbo") {
+		t.Errorf("response missing gpt-4-turbo model, got: %s", body)
+	}
+}
+
+func TestListModelsError(t *testing.T) {
+	mock := &mockProvider{
+		err: io.EOF, // Simulate an error
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ListModels(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected status 500, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "error") {
+		t.Errorf("response should contain error message, got: %s", body)
 	}
 }
