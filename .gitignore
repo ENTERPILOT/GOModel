@@ -1,0 +1,6 @@
+# Compiled binary
+/gomodel
+/bin
+
+# Environment variables
+/.env
