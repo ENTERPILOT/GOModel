@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
@@ -29,19 +30,33 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 		})
 	}
 
-	// Check if provider supports the model
 	if !h.provider.Supports(req.Model) {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "unsupported model: " + req.Model,
 		})
 	}
 
-	// Execute the chat completion
+	// Handle streaming: proxy the raw SSE stream
+	if req.Stream {
+		stream, err := h.provider.StreamChatCompletion(c.Request().Context(), &req)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		}
+		defer stream.Close()
+
+		c.Response().Header().Set("Content-Type", "text/event-stream")
+		c.Response().Header().Set("Cache-Control", "no-cache")
+		c.Response().Header().Set("Connection", "keep-alive")
+		c.Response().WriteHeader(http.StatusOK)
+
+		io.Copy(c.Response().Writer, stream)
+		return nil
+	}
+
+	// Non-streaming
 	resp, err := h.provider.ChatCompletion(c.Request().Context(), &req)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": err.Error(),
-		})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	return c.JSON(http.StatusOK, resp)
@@ -49,8 +64,5 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 
 // Health handles GET /health
 func (h *Handler) Health(c echo.Context) error {
-	return c.JSON(http.StatusOK, map[string]string{
-		"status": "ok",
-	})
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
-

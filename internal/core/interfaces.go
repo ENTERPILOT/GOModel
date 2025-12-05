@@ -1,6 +1,9 @@
 package core
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // Provider defines the interface for LLM providers
 type Provider interface {
@@ -10,6 +13,6 @@ type Provider interface {
 	// ChatCompletion executes a chat completion request
 	ChatCompletion(ctx context.Context, req *ChatRequest) (*ChatResponse, error)
 
-	// StreamChatCompletion executes a streaming chat completion request
-	StreamChatCompletion(ctx context.Context, req *ChatRequest) (<-chan StreamChunk, error)
+	// StreamChatCompletion returns a raw SSE stream (caller must close)
+	StreamChatCompletion(ctx context.Context, req *ChatRequest) (io.ReadCloser, error)
 }

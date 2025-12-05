@@ -80,9 +80,33 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	return &chatResp, nil
 }
 
-// StreamChatCompletion sends a streaming chat completion request to OpenAI
-func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (<-chan core.StreamChunk, error) {
-	// For simplicity, streaming is not implemented in this basic version
-	return nil, fmt.Errorf("streaming not implemented yet")
-}
+// StreamChatCompletion returns a raw response body for streaming (caller must close)
+func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	req.Stream = true
 
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	return resp.Body, nil
+}

@@ -38,25 +38,3 @@ type Usage struct {
 	CompletionTokens int `json:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"`
 }
-
-// StreamChunk represents a single chunk in a streaming response
-type StreamChunk struct {
-	ID      string        `json:"id"`
-	Object  string        `json:"object"`
-	Created int64         `json:"created"`
-	Model   string        `json:"model"`
-	Choices []StreamDelta `json:"choices"`
-}
-
-// StreamDelta represents the delta in a streaming chunk
-type StreamDelta struct {
-	Index        int    `json:"index"`
-	Delta        Delta  `json:"delta"`
-	FinishReason string `json:"finish_reason,omitempty"`
-}
-
-// Delta represents the content delta in streaming
-type Delta struct {
-	Role    string `json:"role,omitempty"`
-	Content string `json:"content,omitempty"`
-}
