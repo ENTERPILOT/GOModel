@@ -39,4 +39,3 @@ func New(provider core.Provider) *Server {
 func (s *Server) Start(addr string) error {
 	return s.echo.Start(addr)
 }
-

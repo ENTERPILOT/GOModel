@@ -2,10 +2,10 @@ package core
 
 // ChatRequest represents the incoming chat completion request
 type ChatRequest struct {
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
 	Temperature *float64  `json:"temperature,omitempty"`
 	MaxTokens   *int      `json:"max_tokens,omitempty"`
+	Model       string    `json:"model"`
+	Messages    []Message `json:"messages"`
 	Stream      bool      `json:"stream,omitempty"`
 }
 
@@ -19,17 +19,17 @@ type Message struct {
 type ChatResponse struct {
 	ID      string   `json:"id"`
 	Object  string   `json:"object"`
-	Created int64    `json:"created"`
 	Model   string   `json:"model"`
 	Choices []Choice `json:"choices"`
 	Usage   Usage    `json:"usage"`
+	Created int64    `json:"created"`
 }
 
 // Choice represents a single completion choice
 type Choice struct {
-	Index        int     `json:"index"`
 	Message      Message `json:"message"`
 	FinishReason string  `json:"finish_reason"`
+	Index        int     `json:"index"`
 }
 
 // Usage represents token usage information
@@ -43,8 +43,8 @@ type Usage struct {
 type Model struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
-	Created int64  `json:"created"`
 	OwnedBy string `json:"owned_by"`
+	Created int64  `json:"created"`
 }
 
 // ModelsResponse represents the response from the /v1/models endpoint

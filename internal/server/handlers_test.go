@@ -15,11 +15,11 @@ import (
 
 // mockProvider implements core.Provider for testing
 type mockProvider struct {
-	supportedModels []string
+	err             error
 	response        *core.ChatResponse
 	modelsResponse  *core.ModelsResponse
 	streamData      string
-	err             error
+	supportedModels []string
 }
 
 func (m *mockProvider) Supports(model string) bool {

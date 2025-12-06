@@ -1,3 +1,4 @@
+// Package openai provides OpenAI API integration for the LLM gateway.
 package openai
 
 import (
@@ -18,9 +19,9 @@ const (
 
 // Provider implements the core.Provider interface for OpenAI
 type Provider struct {
+	httpClient *http.Client
 	apiKey     string
 	baseURL    string
-	httpClient *http.Client
 }
 
 // New creates a new OpenAI provider
@@ -61,7 +62,9 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -103,8 +106,11 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			respBody = []byte("failed to read error response")
+		}
+		_ = resp.Body.Close() //nolint:errcheck
 		return nil, fmt.Errorf("OpenAI API error (status %d): %s", resp.StatusCode, string(respBody))
 	}
 
@@ -124,7 +130,9 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
