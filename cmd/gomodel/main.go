@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"os"
 
-	"heavymodel/config"
-	"heavymodel/internal/providers/openai"
-	"heavymodel/internal/server"
+	"gomodel/config"
+	"gomodel/internal/providers/openai"
+	"gomodel/internal/server"
 )
 
 func main() {
@@ -41,4 +41,3 @@ func main() {
 		os.Exit(1)
 	}
 }
-

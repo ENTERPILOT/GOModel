@@ -6,7 +6,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"heavymodel/internal/core"
+	"gomodel/internal/core"
 )
 
 // Handler holds the HTTP handlers

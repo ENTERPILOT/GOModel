@@ -10,7 +10,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
-	"heavymodel/internal/core"
+	"gomodel/internal/core"
 )
 
 // mockProvider implements core.Provider for testing

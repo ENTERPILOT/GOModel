@@ -1,4 +1,4 @@
-module heavymodel
+module gomodel
 
 go 1.21
 

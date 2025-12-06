@@ -1,4 +1,4 @@
-# Architecture Draft: HeavyModel (v1)
+# Architecture Draft: GOModel (v1)
 
 **Goal:** A high-performance, drop-in replacement for LiteLLM with superior concurrency and strict type safety.  
 **Philosophy:** Pragmatic Modularity. Avoid "Java-style" over-abstraction (no deep infrastructure/persistence/impl trees). Focus on flat, composable packages.
@@ -7,7 +7,7 @@
 
 ## 1. High-Level Design
 
-HeavyModel functions as a pipeline processor. Every request travels through a configurable chain of middleware before reaching the Provider adapter.
+GOModel functions as a pipeline processor. Every request travels through a configurable chain of middleware before reaching the Provider adapter.
 
 **Flow:**
 `Client -> HTTP Handler -> Middleware Chain (Auth, RateLimit) -> Router (Load Balancing) -> Provider Adapter (OpenAI/Anthropic) -> Upstream`
@@ -20,9 +20,9 @@ We use a standard Go layout but flattened for developer velocity.
 
 ```
 
-heavymodel/
+gomodel/
 ├── cmd/
-│   └── heavymodel/
+│   └── gomodel/
 │       └── main.go           # Entrypoint: Loads config, wires dependencies, starts server.
 │
 ├── config/                   # YAML/Env configuration structs (Viper).
@@ -145,7 +145,7 @@ models:
 
 ---
 
-## 5. Easy migration from LiteLLM to HeavyModel.
+## 5. Easy migration from LiteLLM to GOModel.
 
 The config.yml config file should be LiteLLM config compatible.
 
@@ -155,7 +155,7 @@ The config.yml config file should be LiteLLM config compatible.
 Go compiles to a static binary. No Python environment, pip install, or dependency hell.
 
 **Concurrency:**
-LiteLLM (Python) uses asyncio. HeavyModel uses Goroutines — enabling 10k+ concurrent connections with far lower RAM.
+LiteLLM (Python) uses asyncio. GOModel uses Goroutines — enabling 10k+ concurrent connections with far lower RAM.
 
 **Strict Typing:**
 Request/Response payloads are strictly validated structs, reducing runtime errors significantly.
