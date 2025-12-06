@@ -2,11 +2,11 @@
 
 # Build the application
 build:
-	go build -o bin/heavymodel ./cmd/heavymodel
+	go build -o bin/gomodel ./cmd/gomodel
 
 # Run the application
 run:
-	go run ./cmd/heavymodel
+	go run ./cmd/gomodel
 
 # Clean build artifacts
 clean:

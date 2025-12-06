@@ -1,4 +1,4 @@
-# HeavyModel
+# GOModel
 
 A high-performance LLM gateway written in Go.
 
@@ -34,7 +34,7 @@ docker run --rm -it \
   -p 8088:8088 \
   -e OPENAI_API_KEY="your-api-key" \
   golang:1.21-alpine \
-  go run ./cmd/heavymodel
+  go run ./cmd/gomodel
 ```
 
 ## Endpoints

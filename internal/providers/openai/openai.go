@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"heavymodel/internal/core"
+	"gomodel/internal/core"
 )
 
 const (
