@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"gomodel/internal/core"
+	"gomodel/internal/pkg/httpclient"
 )
 
 const (
@@ -31,15 +32,20 @@ type Provider struct {
 // New creates a new Gemini provider
 func New(apiKey string) *Provider {
 	return &Provider{
-		apiKey:    apiKey,
-		baseURL:   defaultOpenAICompatibleBaseURL,
-		modelsURL: defaultModelsBaseURL,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
-			},
-		},
+		apiKey:     apiKey,
+		baseURL:    defaultOpenAICompatibleBaseURL,
+		modelsURL:  defaultModelsBaseURL,
+		httpClient: httpclient.NewDefaultHTTPClient(),
+	}
+}
+
+// NewWithHTTPClient creates a new Gemini provider with a custom HTTP client
+func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
+	return &Provider{
+		apiKey:     apiKey,
+		baseURL:    defaultOpenAICompatibleBaseURL,
+		modelsURL:  defaultModelsBaseURL,
+		httpClient: client,
 	}
 }
 

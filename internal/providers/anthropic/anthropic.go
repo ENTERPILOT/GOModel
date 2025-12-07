@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gomodel/internal/core"
+	"gomodel/internal/pkg/httpclient"
 )
 
 const (
@@ -30,14 +31,18 @@ type Provider struct {
 // New creates a new Anthropic provider
 func New(apiKey string) *Provider {
 	return &Provider{
-		apiKey:  apiKey,
-		baseURL: defaultBaseURL,
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 100,
-			},
-		},
+		apiKey:     apiKey,
+		baseURL:    defaultBaseURL,
+		httpClient: httpclient.NewDefaultHTTPClient(),
+	}
+}
+
+// NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client
+func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
+	return &Provider{
+		apiKey:     apiKey,
+		baseURL:    defaultBaseURL,
+		httpClient: client,
 	}
 }
 
