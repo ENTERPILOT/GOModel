@@ -1,12 +1,22 @@
 # GOModel
 
-A high-performance LLM gateway written in Go.
+Go! Get and use this AI Model with GOModel!
+
+GoModel is a high-performance LLM gateway written in Go.
 
 ## Quick Start
 
-1. Set your OpenAI API key:
+1. Set environment variables (either via `.env` file or export):
 
+   **Option A: Create a `.env` file:**
    ```bash
+   PORT=8080
+   OPENAI_API_KEY=your-api-key
+   ```
+
+   **Option B: Export environment variables:**
+   ```bash
+   export PORT=8080
    export OPENAI_API_KEY="your-api-key"
    ```
 
@@ -18,12 +28,39 @@ A high-performance LLM gateway written in Go.
 
 3. Test it:
    ```bash
-   curl http://localhost:8088/v1/chat/completions \
+   curl http://localhost:8080/v1/chat/completions \
      -H "Content-Type: application/json" \
      -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello!"}]}'
    ```
 
+## Configuration
+
+GOModel uses environment variables for configuration. You can set them either:
+- In a `.env` file in the project root
+- As system environment variables (takes precedence over `.env` file)
+
+### Available Configuration Options
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | `8080` |
+| `OPENAI_API_KEY` | OpenAI API key | (required) |
+
 ## Development
+
+### Testing
+
+Run all tests:
+
+```bash
+make test
+```
+
+Run tests for a specific package:
+
+```bash
+go test ./config/... -v
+```
 
 ### Linting
 
@@ -75,7 +112,7 @@ You can use the official `golang:1.21-alpine` image to run the project in a cont
 docker run --rm -it \
   -v $(pwd):/app \
   -w /app \
-  -p 8088:8088 \
+  -p 8080:8080 \
   -e OPENAI_API_KEY="your-api-key" \
   golang:1.21-alpine \
   go run ./cmd/gomodel
