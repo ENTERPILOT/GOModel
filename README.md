@@ -9,12 +9,14 @@ GoModel is a high-performance LLM gateway written in Go.
 1. Set environment variables (either via `.env` file or export):
 
    **Option A: Create a `.env` file:**
+
    ```bash
    PORT=8080
    OPENAI_API_KEY=your-api-key
    ```
 
    **Option B: Export environment variables:**
+
    ```bash
    export PORT=8080
    export OPENAI_API_KEY="your-api-key"
@@ -36,14 +38,15 @@ GoModel is a high-performance LLM gateway written in Go.
 ## Configuration
 
 GOModel uses environment variables for configuration. You can set them either:
+
 - In a `.env` file in the project root
 - As system environment variables (takes precedence over `.env` file)
 
 ### Available Configuration Options
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server port | `8080` |
+| Variable         | Description    | Default    |
+| ---------------- | -------------- | ---------- |
+| `PORT`           | Server port    | `8080`     |
 | `OPENAI_API_KEY` | OpenAI API key | (required) |
 
 ## Development
