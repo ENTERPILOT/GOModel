@@ -161,8 +161,10 @@ func ParseProviderError(provider string, statusCode int, body []byte, originalEr
 		err.Provider = provider
 		return err
 	case statusCode >= 500:
-		return NewProviderError(provider, http.StatusBadGateway, message, originalErr)
+		// Server errors from provider - preserve the original status code (500, 503, 504, etc.)
+		return NewProviderError(provider, statusCode, message, originalErr)
 	default:
+		// For any other status codes (2xx, 3xx, etc.), treat as provider error with Bad Gateway
 		return NewProviderError(provider, http.StatusBadGateway, message, originalErr)
 	}
 }
