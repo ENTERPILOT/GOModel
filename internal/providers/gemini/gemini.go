@@ -150,7 +150,10 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Add API key as query parameter
+	// Add API key as query parameter.
+	// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
+	// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
+	// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
 	q := httpReq.URL.Query()
 	q.Add("key", p.apiKey)
 	httpReq.URL.RawQuery = q.Encode()
