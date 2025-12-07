@@ -27,7 +27,7 @@ type ClientConfig struct {
 	// KeepAlive specifies the interval between keep-alive probes for an active network connection
 	KeepAlive time.Duration
 	
-	// TLSHandshakeTimeout specifies the maximum amount of time waiting to wait for a TLS handshake
+	// TLSHandshakeTimeout specifies the maximum amount of time to wait for a TLS handshake
 	TLSHandshakeTimeout time.Duration
 	
 	// ResponseHeaderTimeout specifies the amount of time to wait for a server's response headers
