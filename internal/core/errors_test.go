@@ -367,3 +367,160 @@ func TestGatewayError_IsError(t *testing.T) {
 	}
 }
 
+func TestParseProviderError_Preserves4xxStatusCodes(t *testing.T) {
+	// Test that ParseProviderError preserves the original 4xx status codes
+	// for errors that are not specifically handled (401, 403, 429)
+	tests := []struct {
+		name             string
+		provider         string
+		statusCode       int
+		body             []byte
+		expectedType     ErrorType
+		expectedStatus   int
+		expectedProvider string
+	}{
+		{
+			name:             "404 not found",
+			provider:         "openai",
+			statusCode:       http.StatusNotFound,
+			body:             []byte(`{"error": {"message": "Model not found"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusNotFound, // Should preserve 404
+			expectedProvider: "openai",
+		},
+		{
+			name:             "405 method not allowed",
+			provider:         "anthropic",
+			statusCode:       http.StatusMethodNotAllowed,
+			body:             []byte(`{"error": {"message": "Method not allowed"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusMethodNotAllowed, // Should preserve 405
+			expectedProvider: "anthropic",
+		},
+		{
+			name:             "409 conflict",
+			provider:         "gemini",
+			statusCode:       http.StatusConflict,
+			body:             []byte(`{"error": {"message": "Resource conflict"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusConflict, // Should preserve 409
+			expectedProvider: "gemini",
+		},
+		{
+			name:             "410 gone",
+			provider:         "openai",
+			statusCode:       http.StatusGone,
+			body:             []byte(`{"error": {"message": "Resource is gone"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusGone, // Should preserve 410
+			expectedProvider: "openai",
+		},
+		{
+			name:             "413 payload too large",
+			provider:         "anthropic",
+			statusCode:       http.StatusRequestEntityTooLarge,
+			body:             []byte(`{"error": {"message": "Request too large"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusRequestEntityTooLarge, // Should preserve 413
+			expectedProvider: "anthropic",
+		},
+		{
+			name:             "422 unprocessable entity",
+			provider:         "openai",
+			statusCode:       http.StatusUnprocessableEntity,
+			body:             []byte(`{"error": {"message": "Invalid content"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusUnprocessableEntity, // Should preserve 422
+			expectedProvider: "openai",
+		},
+		{
+			name:             "400 bad request still works",
+			provider:         "gemini",
+			statusCode:       http.StatusBadRequest,
+			body:             []byte(`{"error": {"message": "Bad request"}}`),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusBadRequest, // Should preserve 400
+			expectedProvider: "gemini",
+		},
+		{
+			name:             "plain text 404 error",
+			provider:         "openai",
+			statusCode:       http.StatusNotFound,
+			body:             []byte("Not Found"),
+			expectedType:     ErrorTypeInvalidRequest,
+			expectedStatus:   http.StatusNotFound, // Should preserve 404 even for plain text
+			expectedProvider: "openai",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalErr := errors.New("original http error")
+			err := ParseProviderError(tt.provider, tt.statusCode, tt.body, originalErr)
+
+			if err.Type != tt.expectedType {
+				t.Errorf("Type = %v, want %v", err.Type, tt.expectedType)
+			}
+
+			if err.StatusCode != tt.expectedStatus {
+				t.Errorf("StatusCode = %v, want %v", err.StatusCode, tt.expectedStatus)
+			}
+
+			if err.HTTPStatusCode() != tt.expectedStatus {
+				t.Errorf("HTTPStatusCode() = %v, want %v", err.HTTPStatusCode(), tt.expectedStatus)
+			}
+
+			if err.Provider != tt.expectedProvider {
+				t.Errorf("Provider = %v, want %v", err.Provider, tt.expectedProvider)
+			}
+
+			if err.Message == "" {
+				t.Error("Message should not be empty")
+			}
+		})
+	}
+}
+
+func TestParseProviderError_SpecialStatusCodesOverride(t *testing.T) {
+	// Verify that special status codes (401, 403, 429) still have their special handling
+	tests := []struct {
+		name           string
+		statusCode     int
+		expectedType   ErrorType
+		expectedStatus int
+	}{
+		{
+			name:           "401 uses authentication error",
+			statusCode:     http.StatusUnauthorized,
+			expectedType:   ErrorTypeAuthentication,
+			expectedStatus: http.StatusUnauthorized,
+		},
+		{
+			name:           "403 uses authentication error",
+			statusCode:     http.StatusForbidden,
+			expectedType:   ErrorTypeAuthentication,
+			expectedStatus: http.StatusUnauthorized, // Note: 403 is converted to 401
+		},
+		{
+			name:           "429 uses rate limit error",
+			statusCode:     http.StatusTooManyRequests,
+			expectedType:   ErrorTypeRateLimit,
+			expectedStatus: http.StatusTooManyRequests,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ParseProviderError("test-provider", tt.statusCode, []byte(`{"error": {"message": "test"}}`), nil)
+
+			if err.Type != tt.expectedType {
+				t.Errorf("Type = %v, want %v", err.Type, tt.expectedType)
+			}
+
+			if err.HTTPStatusCode() != tt.expectedStatus {
+				t.Errorf("HTTPStatusCode() = %v, want %v", err.HTTPStatusCode(), tt.expectedStatus)
+			}
+		})
+	}
+}
+
