@@ -1,1 +1,33 @@
+server:
+  port: "8080"
 
+providers:
+  openai-primary:
+    type: "openai"
+    api_key: "${OPENAI_API_KEY}"
+  
+  anthropic-primary:
+    type: "anthropic"
+    api_key: "${ANTHROPIC_API_KEY}"
+  
+  gemini-primary:
+    type: "gemini"
+    api_key: "${GEMINI_API_KEY}"
+  
+  # Example: Groq (OpenAI-compatible)
+  # groq:
+  #   type: "openai"
+  #   base_url: "https://api.groq.com/openai/v1"
+  #   api_key: "${GROQ_API_KEY}"
+  
+  # Example: Azure OpenAI
+  # azure-openai:
+  #   type: "openai"
+  #   base_url: "https://your-resource.openai.azure.com/openai/deployments/your-deployment"
+  #   api_key: "${AZURE_OPENAI_API_KEY}"
+  
+  # Example: DeepSeek (OpenAI-compatible)
+  # deepseek:
+  #   type: "openai"
+  #   base_url: "https://api.deepseek.com/v1"
+  #   api_key: "${DEEPSEEK_API_KEY}"

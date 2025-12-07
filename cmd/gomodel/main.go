@@ -8,9 +8,10 @@ import (
 	"gomodel/config"
 	"gomodel/internal/core"
 	"gomodel/internal/providers"
-	"gomodel/internal/providers/anthropic"
-	"gomodel/internal/providers/gemini"
-	"gomodel/internal/providers/openai"
+	// Import provider packages to trigger their init() registration
+	_ "gomodel/internal/providers/anthropic"
+	_ "gomodel/internal/providers/gemini"
+	_ "gomodel/internal/providers/openai"
 	"gomodel/internal/server"
 )
 
@@ -26,35 +27,33 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Validate that at least one API key is provided
-	if cfg.OpenAI.APIKey == "" && cfg.Anthropic.APIKey == "" && cfg.Gemini.APIKey == "" {
-		slog.Error("at least one API key is required (OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY)")
+	// Validate that at least one provider is configured
+	if len(cfg.Providers) == 0 {
+		slog.Error("at least one provider must be configured")
 		os.Exit(1)
 	}
 
-	// Create providers
-	providerList := make([]core.Provider, 0, 3)
+	// Create providers dynamically using the factory
+	activeProviders := make([]core.Provider, 0, len(cfg.Providers))
 
-	if cfg.OpenAI.APIKey != "" {
-		openaiProvider := openai.New(cfg.OpenAI.APIKey)
-		providerList = append(providerList, openaiProvider)
-		slog.Info("OpenAI provider initialized")
+	for name, pCfg := range cfg.Providers {
+		p, err := providers.Create(pCfg)
+		if err != nil {
+			slog.Error("failed to initialize provider", "name", name, "type", pCfg.Type, "error", err)
+			continue
+		}
+		activeProviders = append(activeProviders, p)
+		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
 	}
 
-	if cfg.Anthropic.APIKey != "" {
-		anthropicProvider := anthropic.New(cfg.Anthropic.APIKey)
-		providerList = append(providerList, anthropicProvider)
-		slog.Info("Anthropic provider initialized")
-	}
-
-	if cfg.Gemini.APIKey != "" {
-		geminiProvider := gemini.New(cfg.Gemini.APIKey)
-		providerList = append(providerList, geminiProvider)
-		slog.Info("Gemini provider initialized")
+	// Validate that at least one provider was successfully initialized
+	if len(activeProviders) == 0 {
+		slog.Error("no providers were successfully initialized")
+		os.Exit(1)
 	}
 
 	// Create provider router
-	provider := providers.NewRouter(providerList...)
+	provider := providers.NewRouter(activeProviders...)
 
 	// Create and start server
 	srv := server.New(provider)

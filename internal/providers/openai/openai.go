@@ -9,13 +9,27 @@ import (
 	"net/http"
 	"strings"
 
+	"gomodel/config"
 	"gomodel/internal/core"
 	"gomodel/internal/pkg/httpclient"
+	"gomodel/internal/providers"
 )
 
 const (
 	defaultBaseURL = "https://api.openai.com/v1"
 )
+
+func init() {
+	// Self-register with the factory
+	providers.Register("openai", func(cfg config.ProviderConfig) (core.Provider, error) {
+		p := New(cfg.APIKey)
+		// Override base URL if provided in config
+		if cfg.BaseURL != "" {
+			p.baseURL = cfg.BaseURL
+		}
+		return p, nil
+	})
+}
 
 // Provider implements the core.Provider interface for OpenAI
 type Provider struct {
