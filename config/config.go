@@ -10,8 +10,8 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server    ServerConfig                `mapstructure:"server"`
-	Providers map[string]ProviderConfig   `mapstructure:"providers"`
+	Server    ServerConfig              `mapstructure:"server"`
+	Providers map[string]ProviderConfig `mapstructure:"providers"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -48,7 +48,7 @@ func Load() (*Config, error) {
 	viper.AddConfigPath(".")
 
 	var cfg Config
-	
+
 	// Read config file (optional, won't fail if not found)
 	if err := viper.ReadInConfig(); err == nil {
 		// Config file found, unmarshal it

@@ -12,8 +12,8 @@ func TestLoad_DefaultPort(t *testing.T) {
 	viper.Reset()
 
 	// Clear any existing environment variables
-	os.Unsetenv("PORT")
-	os.Unsetenv("OPENAI_API_KEY")
+	_ = os.Unsetenv("PORT")
+	_ = os.Unsetenv("OPENAI_API_KEY")
 
 	cfg, err := Load()
 	if err != nil {
@@ -30,15 +30,15 @@ func TestLoad_PortFromEnv(t *testing.T) {
 	viper.Reset()
 
 	// Set environment variable
-	os.Setenv("PORT", "9090")
-	defer os.Unsetenv("PORT")
+	_ = os.Setenv("PORT", "9090")
+	defer func() { _ = os.Unsetenv("PORT") }()
 
 	// Note: If config.yaml exists and has a hardcoded port,
 	// it will take precedence over PORT env var.
 	// This test might fail if config.yaml exists in the config/ directory.
 	// In production, use config.yaml with ${PORT} placeholder or
 	// rely on viper.AutomaticEnv() for dynamic overrides.
-	
+
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
@@ -58,8 +58,8 @@ func TestLoad_OpenAIAPIKeyFromEnv(t *testing.T) {
 
 	// Set environment variable
 	testAPIKey := "sk-test-key-12345"
-	os.Setenv("OPENAI_API_KEY", testAPIKey)
-	defer os.Unsetenv("OPENAI_API_KEY")
+	_ = os.Setenv("OPENAI_API_KEY", testAPIKey)
+	defer func() { _ = os.Unsetenv("OPENAI_API_KEY") }()
 
 	cfg, err := Load()
 	if err != nil {
@@ -86,9 +86,9 @@ func TestLoad_EmptyAPIKey(t *testing.T) {
 	viper.Reset()
 
 	// Clear all API key environment variables
-	os.Unsetenv("OPENAI_API_KEY")
-	os.Unsetenv("ANTHROPIC_API_KEY")
-	os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Unsetenv("OPENAI_API_KEY")
+	_ = os.Unsetenv("ANTHROPIC_API_KEY")
+	_ = os.Unsetenv("GEMINI_API_KEY")
 
 	cfg, err := Load()
 	if err != nil {
@@ -110,13 +110,13 @@ func TestLoad_MultipleEnvVars(t *testing.T) {
 	testAPIKey := "sk-test-multiple"
 	testAnthropicKey := "sk-ant-test"
 
-	os.Setenv("PORT", testPort)
-	os.Setenv("OPENAI_API_KEY", testAPIKey)
-	os.Setenv("ANTHROPIC_API_KEY", testAnthropicKey)
+	_ = os.Setenv("PORT", testPort)
+	_ = os.Setenv("OPENAI_API_KEY", testAPIKey)
+	_ = os.Setenv("ANTHROPIC_API_KEY", testAnthropicKey)
 	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("ANTHROPIC_API_KEY")
+		_ = os.Unsetenv("PORT")
+		_ = os.Unsetenv("OPENAI_API_KEY")
+		_ = os.Unsetenv("ANTHROPIC_API_KEY")
 	}()
 
 	cfg, err := Load()
@@ -152,8 +152,8 @@ func TestLoad_DotEnvFile(t *testing.T) {
 	viper.Reset()
 
 	// Clear environment variables to test .env file reading
-	os.Unsetenv("PORT")
-	os.Unsetenv("OPENAI_API_KEY")
+	_ = os.Unsetenv("PORT")
+	_ = os.Unsetenv("OPENAI_API_KEY")
 
 	// Create a temporary .env file
 	envContent := `PORT=7070
@@ -163,7 +163,7 @@ OPENAI_API_KEY=sk-from-dotenv-file
 	if err != nil {
 		t.Fatalf("Failed to create test .env file: %v", err)
 	}
-	defer os.Remove(".env.test")
+	defer func() { _ = os.Remove(".env.test") }()
 
 	// Configure viper to read from test file
 	viper.SetConfigName(".env.test")
@@ -217,14 +217,14 @@ OPENAI_API_KEY=sk-from-dotenv-file
 	if err != nil {
 		t.Fatalf("Failed to create test .env file: %v", err)
 	}
-	defer os.Remove(".env.test2")
+	defer func() { _ = os.Remove(".env.test2") }()
 
 	// Set environment variables (should override .env file)
-	os.Setenv("PORT", "9999")
-	os.Setenv("OPENAI_API_KEY", "sk-from-real-env")
+	_ = os.Setenv("PORT", "9999")
+	_ = os.Setenv("OPENAI_API_KEY", "sk-from-real-env")
 	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("OPENAI_API_KEY")
+		_ = os.Unsetenv("PORT")
+		_ = os.Unsetenv("OPENAI_API_KEY")
 	}()
 
 	// Configure viper to read from test file

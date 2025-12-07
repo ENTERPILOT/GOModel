@@ -205,10 +205,7 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	
 	for _, gm := range geminiResp.Models {
 		// Extract model ID from name (format: "models/gemini-...")
-		modelID := gm.Name
-		if strings.HasPrefix(modelID, "models/") {
-			modelID = strings.TrimPrefix(modelID, "models/")
-		}
+		modelID := strings.TrimPrefix(gm.Name, "models/")
 		
 		// Only include models that support generateContent (chat/completion)
 		supportsGenerate := false
