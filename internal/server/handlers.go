@@ -2,6 +2,7 @@
 package server
 
 import (
+	"errors"
 	"io"
 	"net/http"
 
@@ -26,14 +27,20 @@ func NewHandler(provider core.Provider) *Handler {
 func (h *Handler) ChatCompletion(c echo.Context) error {
 	var req core.ChatRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "invalid request body: " + err.Error(),
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"error": map[string]interface{}{
+				"type":    "invalid_request_error",
+				"message": "invalid request body: " + err.Error(),
+			},
 		})
 	}
 
 	if !h.provider.Supports(req.Model) {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "unsupported model: " + req.Model,
+		return c.JSON(http.StatusBadRequest, map[string]interface{}{
+			"error": map[string]interface{}{
+				"type":    "invalid_request_error",
+				"message": "unsupported model: " + req.Model,
+			},
 		})
 	}
 
@@ -41,7 +48,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	if req.Stream {
 		stream, err := h.provider.StreamChatCompletion(c.Request().Context(), &req)
 		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return handleError(c, err)
 		}
 		defer func() {
 			_ = stream.Close() //nolint:errcheck
@@ -62,7 +69,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	// Non-streaming
 	resp, err := h.provider.ChatCompletion(c.Request().Context(), &req)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return handleError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, resp)
@@ -77,8 +84,24 @@ func (h *Handler) Health(c echo.Context) error {
 func (h *Handler) ListModels(c echo.Context) error {
 	resp, err := h.provider.ListModels(c.Request().Context())
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return handleError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+// handleError converts gateway errors to appropriate HTTP responses
+func handleError(c echo.Context, err error) error {
+	var gatewayErr *core.GatewayError
+	if errors.As(err, &gatewayErr) {
+		return c.JSON(gatewayErr.HTTPStatusCode(), gatewayErr.ToJSON())
+	}
+
+	// Fallback for unexpected errors
+	return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    "internal_error",
+			"message": "an unexpected error occurred",
+		},
+	})
 }
