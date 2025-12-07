@@ -7,13 +7,13 @@ import (
 
 func TestLoad_FromEnvironment(t *testing.T) {
 	// Set up environment variables
-	os.Setenv("PORT", "9090")
-	os.Setenv("OPENAI_API_KEY", "test-openai-key")
-	os.Setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
+	_ = os.Setenv("PORT", "9090")
+	_ = os.Setenv("OPENAI_API_KEY", "test-openai-key")
+	_ = os.Setenv("ANTHROPIC_API_KEY", "test-anthropic-key")
 	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("OPENAI_API_KEY")
-		os.Unsetenv("ANTHROPIC_API_KEY")
+		_ = os.Unsetenv("PORT")
+		_ = os.Unsetenv("OPENAI_API_KEY")
+		_ = os.Unsetenv("ANTHROPIC_API_KEY")
 	}()
 
 	// Note: This test assumes config.yaml exists and uses ${VAR} placeholders
@@ -123,4 +123,3 @@ func TestConfig_ProvidersMap(t *testing.T) {
 		t.Errorf("expected openai-2 to have custom base_url, got '%s'", openai2.BaseURL)
 	}
 }
-

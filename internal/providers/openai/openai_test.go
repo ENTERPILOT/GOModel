@@ -155,7 +155,7 @@ func TestChatCompletion(t *testing.T) {
 				}
 
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -239,7 +239,7 @@ data: [DONE]
 				}
 
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -266,7 +266,7 @@ data: [DONE]
 				if body == nil {
 					t.Fatal("body should not be nil")
 				}
-				defer body.Close()
+				defer func() { _ = body.Close() }()
 
 				// Read and verify the streaming response
 				respBody, err := io.ReadAll(body)
@@ -351,7 +351,7 @@ func TestListModels(t *testing.T) {
 				}
 
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 

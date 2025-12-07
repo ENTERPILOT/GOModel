@@ -161,7 +161,7 @@ func TestChatCompletion(t *testing.T) {
 				}
 
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
@@ -230,7 +230,7 @@ data: {"type":"message_stop"}
 				if body == nil {
 					t.Fatal("body should not be nil")
 				}
-				defer body.Close()
+				defer func() { _ = body.Close() }()
 
 				// Read and verify the streaming response
 				respBody, err := io.ReadAll(body)
@@ -288,7 +288,7 @@ data: {"type":"message_stop"}
 				}
 
 				w.WriteHeader(tt.statusCode)
-				w.Write([]byte(tt.responseBody))
+				_, _ = w.Write([]byte(tt.responseBody))
 			}))
 			defer server.Close()
 
