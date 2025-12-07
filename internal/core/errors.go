@@ -101,10 +101,15 @@ func NewRateLimitError(provider string, message string) *GatewayError {
 
 // NewInvalidRequestError creates a new invalid request error (400)
 func NewInvalidRequestError(message string, err error) *GatewayError {
+	return NewInvalidRequestErrorWithStatus(http.StatusBadRequest, message, err)
+}
+
+// NewInvalidRequestErrorWithStatus creates a new invalid request error with a specific status code
+func NewInvalidRequestErrorWithStatus(statusCode int, message string, err error) *GatewayError {
 	return &GatewayError{
 		Type:       ErrorTypeInvalidRequest,
 		Message:    message,
-		StatusCode: http.StatusBadRequest,
+		StatusCode: statusCode,
 		Err:        err,
 	}
 }
@@ -151,8 +156,8 @@ func ParseProviderError(provider string, statusCode int, body []byte, originalEr
 	case statusCode == http.StatusTooManyRequests:
 		return NewRateLimitError(provider, message)
 	case statusCode >= 400 && statusCode < 500:
-		// Client errors from provider - still mark as invalid request but preserve provider info
-		err := NewInvalidRequestError(message, originalErr)
+		// Client errors from provider - mark as invalid request and preserve both provider info and original status code
+		err := NewInvalidRequestErrorWithStatus(statusCode, message, originalErr)
 		err.Provider = provider
 		return err
 	case statusCode >= 500:
