@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -29,8 +30,13 @@ type ProviderConfig struct {
 
 // Load reads configuration from file and environment
 func Load() (*Config, error) {
+	// Load .env file directly into environment variables
+	// This ensures os.Getenv works for variables defined in .env
+	_ = godotenv.Load() // Ignore error (e.g., file not found)
+
 	// Load .env file using Viper (optional, won't fail if not found)
 	viper.SetConfigName(".env")
+
 	viper.SetConfigType("env")
 	viper.AddConfigPath(".")
 	_ = viper.ReadInConfig() // Ignore error if .env file doesn't exist
@@ -107,16 +113,28 @@ func expandEnvVars(cfg Config) Config {
 	return cfg
 }
 
-// expandString expands environment variable references like ${VAR_NAME} in a string
+// expandString expands environment variable references like ${VAR_NAME} or ${VAR_NAME:-default} in a string
 func expandString(s string) string {
 	if s == "" {
 		return s
 	}
 	return os.Expand(s, func(key string) string {
+		// Check for default value syntax ${VAR:-default}
+		varname := key
+		defaultValue := ""
+		if strings.Contains(key, ":-") {
+			parts := strings.SplitN(key, ":-", 2)
+			varname = parts[0]
+			defaultValue = parts[1]
+		}
+
 		// Try to get from environment
-		value := os.Getenv(key)
+		value := os.Getenv(varname)
 		if value == "" {
-			// If not in environment, return the original placeholder
+			if defaultValue != "" {
+				return defaultValue
+			}
+			// If not in environment and no default, return the original placeholder
 			// This allows config to work with or without env vars
 			return "${" + key + "}"
 		}
