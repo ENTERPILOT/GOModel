@@ -1,6 +1,1 @@
-server:
-  port: "8088"
-# OpenAI API key can be set here or via OPENAI_API_KEY environment variable
-# openai:
-#   api_key: "your-api-key-here"
 

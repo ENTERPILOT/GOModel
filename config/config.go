@@ -2,8 +2,6 @@
 package config
 
 import (
-	"os"
-
 	"github.com/spf13/viper"
 )
 
@@ -25,29 +23,41 @@ type OpenAIConfig struct {
 
 // Load reads configuration from file and environment
 func Load() (*Config, error) {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath("./config")
+	// Load .env file using Viper (optional, won't fail if not found)
+	viper.SetConfigName(".env")
+	viper.SetConfigType("env")
 	viper.AddConfigPath(".")
+	_ = viper.ReadInConfig() // Ignore error if .env file doesn't exist
 
 	// Set defaults
-	viper.SetDefault("server.port", "8088")
+	viper.SetDefault("PORT", "8080")
 
-	// Read config file (optional, won't fail if not found)
-	_ = viper.ReadInConfig() //nolint:errcheck
-
-	// Environment variables override config file
+	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
 
-	var cfg Config
-	if err := viper.Unmarshal(&cfg); err != nil {
-		return nil, err
+	// Commented out: config.yaml reading (not used anymore)
+	// viper.SetConfigName("config")
+	// viper.SetConfigType("yaml")
+	// viper.AddConfigPath("./config")
+	// viper.AddConfigPath(".")
+	// 
+	// // Read config file (optional, won't fail if not found)
+	// _ = viper.ReadInConfig() //nolint:errcheck
+	// 
+	// var cfg Config
+	// if err := viper.Unmarshal(&cfg); err != nil {
+	// 	return nil, err
+	// }
+
+	// Read configuration from environment variables using Viper
+	cfg := &Config{
+		Server: ServerConfig{
+			Port: viper.GetString("PORT"),
+		},
+		OpenAI: OpenAIConfig{
+			APIKey: viper.GetString("OPENAI_API_KEY"),
+		},
 	}
 
-	// Override with environment variable if set
-	if apiKey := os.Getenv("OPENAI_API_KEY"); apiKey != "" {
-		cfg.OpenAI.APIKey = apiKey
-	}
-
-	return &cfg, nil
+	return cfg, nil
 }
