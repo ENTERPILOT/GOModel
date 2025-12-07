@@ -25,7 +25,7 @@ func init() {
 		p := New(cfg.APIKey)
 		// Override base URL if provided in config
 		if cfg.BaseURL != "" {
-			p.baseURL = cfg.BaseURL
+			p.SetBaseURL(cfg.BaseURL)
 		}
 		return p, nil
 	})
@@ -54,6 +54,11 @@ func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
 		baseURL:    defaultBaseURL,
 		httpClient: client,
 	}
+}
+
+// SetBaseURL allows configuring a custom base URL for the provider
+func (p *Provider) SetBaseURL(url string) {
+	p.baseURL = url
 }
 
 // Supports returns true if this provider can handle the given model
