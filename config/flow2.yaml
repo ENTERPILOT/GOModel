@@ -1,0 +1,201 @@
+metaData:
+  id: xyz123
+  description: null
+
+steps:
+  - id: "Trim query"
+    type: transform
+    expression:
+      language: expr
+      expression: "format(input)"
+    disabled: false
+    additionalFields:
+      description: null
+      layoutData:
+        x: -162
+        y: -349
+
+  - id: "Guard rail #1"
+    type: plugin
+    path: "some/fancy/path/guardRailPlugin.so"
+    additionalFields:
+      description: null
+      layoutData:
+        x: -165
+        y: -232
+  - id: "Filter based on something"
+    type: filter
+    expression:
+      language: expr
+      expression: "len(input) <= 500"
+    disabled: false
+    additionalFields:
+      description: null
+      layoutData:
+        x: -170
+        y: -107
+    onFalse:
+      - id: "standard-whatever-flow"
+        type: flow
+        path: "some/fancy/path/template"
+        additionalFields:
+          description: null
+          layoutData:
+            x: 250
+            y: 36
+
+      - id: split
+        type: Split
+        additionalFields:
+          description: null
+          layoutData:
+            x: 250
+            y: 142
+        steps:
+          - - id: "guard rail #2"
+              type: plugin
+              path: "some/fancy/path/guardRail2Plugin.so"
+              additionalFields:
+                description: null
+                layoutData:
+                  x: 100
+                  y: 320
+            - id: "Gemini 3"
+              type: model
+              model: gemini-3.0
+              disabled: false
+              additionalFields:
+                description: null
+                layoutData:
+                  x: 100
+                  y: 320
+
+            - id: customers-data-query-enricher (copy 2)
+              type: BranchEndData
+              definition:
+                id: customers-data-query-enricher (copy 2)
+                joinId: union
+
+          - - id: "guard rail #2"
+              type: plugin
+              path: "some/fancy/path/guardRail2Plugin.so"
+              additionalFields:
+                description: null
+                layoutData:
+                  x: 456
+                  y: 325
+
+            - id: customers-data-query-enricher (copy 3)
+              type: BranchEndData
+              definition:
+                id: customers-data-query-enricher (copy 3)
+                joinId: union
+
+  - id: choice
+    type: Switch
+    defaultNext: [ ]
+    steps:
+      - expression:
+          language: expr
+          expression: "#input.byteValue == 1"
+        steps:
+          - id: choice
+            type: BranchEndData
+            definition:
+              id: choice
+              joinId: union
+
+      - expression:
+          language: expr
+          expression: "#input < 0"
+        steps:
+          - id: customers-data-query-enricher (copy 2) (copy 1) (copy 1)
+            type: Enricher
+            service:
+              id: customers-data-query-enricher
+              parameters:
+                - name: Result strategy
+                  expression:
+                    language: expr
+                    expression: "'Single result'"
+                - name: Query
+                  expression:
+                    language: exprTemplate
+                    expression: "SELECT 1 FROM user"
+                - name: Cache TTL
+                  expression:
+                    language: expr
+                    expression: ""
+            output: xyzasd
+            additionalFields:
+              description: null
+              layoutData:
+                x: -489
+                y: 216
+
+          - id: customers-data-query-enricher (copy 2) (copy 1) (copy 1)
+            type: BranchEndData
+            definition:
+              id: customers-data-query-enricher (copy 2) (copy 1) (copy 1)
+              joinId: union
+
+    expression: null
+    exprVal: null
+    additionalFields:
+      description: null
+      layoutData:
+        x: -357
+        y: 35
+additionalBranches:
+  - - id: union
+      type: Join
+      outputVar: outputVar
+      nodeType: union
+      parameters: [ ]
+      branchParameters:
+        - branchId: choice
+          parameters:
+            - name: Output expression
+              expression:
+                language: expr
+                expression: "#input"
+
+        - branchId: customers-data-query-enricher (copy 3)
+          parameters:
+            - name: Output expression
+              expression:
+                language: expr
+                expression: "3"
+
+        - branchId: customers-data-query-enricher (copy 2)
+          parameters:
+            - name: Output expression
+              expression:
+                language: expr
+                expression: "4"
+
+        - branchId: customers-data-query-enricher (copy 2) (copy 1) (copy 1)
+          parameters:
+            - name: Output expression
+              expression:
+                language: expr
+                expression: "5"
+
+      additionalFields:
+        description: null
+        layoutData:
+          x: -193
+          y: 512
+
+    - id: dead-end
+      type: Sink
+      ref:
+        typ: dead-end
+        parameters: [ ]
+      endResult: null
+      isDisabled: null
+      additionalFields:
+        description: null
+        layoutData:
+          x: -194
+          y: 706
