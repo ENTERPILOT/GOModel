@@ -7,8 +7,9 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Server ServerConfig `mapstructure:"server"`
-	OpenAI OpenAIConfig `mapstructure:"openai"`
+	Server    ServerConfig    `mapstructure:"server"`
+	OpenAI    OpenAIConfig    `mapstructure:"openai"`
+	Anthropic AnthropicConfig `mapstructure:"anthropic"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -18,6 +19,11 @@ type ServerConfig struct {
 
 // OpenAIConfig holds OpenAI-specific configuration
 type OpenAIConfig struct {
+	APIKey string `mapstructure:"api_key"`
+}
+
+// AnthropicConfig holds Anthropic-specific configuration
+type AnthropicConfig struct {
 	APIKey string `mapstructure:"api_key"`
 }
 
@@ -40,10 +46,10 @@ func Load() (*Config, error) {
 	// viper.SetConfigType("yaml")
 	// viper.AddConfigPath("./config")
 	// viper.AddConfigPath(".")
-	// 
+	//
 	// // Read config file (optional, won't fail if not found)
 	// _ = viper.ReadInConfig() //nolint:errcheck
-	// 
+	//
 	// var cfg Config
 	// if err := viper.Unmarshal(&cfg); err != nil {
 	// 	return nil, err
@@ -56,6 +62,9 @@ func Load() (*Config, error) {
 		},
 		OpenAI: OpenAIConfig{
 			APIKey: viper.GetString("OPENAI_API_KEY"),
+		},
+		Anthropic: AnthropicConfig{
+			APIKey: viper.GetString("ANTHROPIC_API_KEY"),
 		},
 	}
 

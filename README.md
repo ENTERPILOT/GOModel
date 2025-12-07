@@ -12,15 +12,19 @@ GoModel is a high-performance LLM gateway written in Go.
 
    ```bash
    PORT=8080
-   OPENAI_API_KEY=your-api-key
+   OPENAI_API_KEY=your-openai-key
+   ANTHROPIC_API_KEY=your-anthropic-key
    ```
 
    **Option B: Export environment variables:**
 
    ```bash
    export PORT=8080
-   export OPENAI_API_KEY="your-api-key"
+   export OPENAI_API_KEY="your-openai-key"
+   export ANTHROPIC_API_KEY="your-anthropic-key"
    ```
+
+   Note: At least one API key (OpenAI or Anthropic) is required.
 
 2. Run the server:
 
@@ -29,10 +33,29 @@ GoModel is a high-performance LLM gateway written in Go.
    ```
 
 3. Test it:
+
+   **OpenAI:**
+
    ```bash
    curl http://localhost:8080/v1/chat/completions \
      -H "Content-Type: application/json" \
      -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello!"}]}'
+   ```
+
+   **Anthropic:**
+
+   ```bash
+   curl http://localhost:8080/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model": "claude-3-5-sonnet-20241022", "messages": [{"role": "user", "content": "Hello!"}]}'
+   ```
+
+   **Streaming:**
+
+   ```bash
+   curl http://localhost:8080/v1/chat/completions \
+     -H "Content-Type: application/json" \
+     -d '{"model": "claude-3-5-sonnet-20241022", "messages": [{"role": "user", "content": "Hello!"}], "stream": true}'
    ```
 
 ## Configuration
@@ -44,10 +67,13 @@ GOModel uses environment variables for configuration. You can set them either:
 
 ### Available Configuration Options
 
-| Variable         | Description    | Default    |
-| ---------------- | -------------- | ---------- |
-| `PORT`           | Server port    | `8080`     |
-| `OPENAI_API_KEY` | OpenAI API key | (required) |
+| Variable            | Description       | Default                      |
+| ------------------- | ----------------- | ---------------------------- |
+| `PORT`              | Server port       | `8080`                       |
+| `OPENAI_API_KEY`    | OpenAI API key    | (optional, if Anthropic set) |
+| `ANTHROPIC_API_KEY` | Anthropic API key | (optional, if OpenAI set)    |
+
+Note: At least one API key must be provided.
 
 ## Development
 
@@ -116,13 +142,38 @@ docker run --rm -it \
   -v $(pwd):/app \
   -w /app \
   -p 8080:8080 \
-  -e OPENAI_API_KEY="your-api-key" \
+  -e OPENAI_API_KEY="your-openai-key" \
+  -e ANTHROPIC_API_KEY="your-anthropic-key" \
   golang:1.21-alpine \
   go run ./cmd/gomodel
 ```
 
+Note: You can omit either `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` if you only want to use one provider.
+
 ## Endpoints
 
-- `POST /v1/chat/completions` - OpenAI-compatible chat completions
-- `GET /v1/models` - List available models
+- `POST /v1/chat/completions` - OpenAI-compatible chat completions (supports both OpenAI and Anthropic models)
+- `GET /v1/models` - List available models from all configured providers
 - `GET /health` - Health check
+
+## Supported Providers
+
+### OpenAI
+
+Models starting with `gpt-` or `o1` are automatically routed to OpenAI.
+
+Examples: `gpt-4o`, `gpt-4o-mini`, `gpt-4-turbo`, `o1-preview`, `o1-mini`
+
+### Anthropic
+
+Models starting with `claude-` are automatically routed to Anthropic.
+
+Examples: `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-opus-20240229`
+
+## Features
+
+- **Multi-provider support**: Seamlessly use both OpenAI and Anthropic models through a single API
+- **Automatic routing**: Models are automatically routed to the correct provider based on their name
+- **Streaming support**: Both providers support streaming responses
+- **OpenAI-compatible API**: Works as a drop-in replacement for OpenAI's API
+- **Format conversion**: Automatically converts between provider-specific formats
