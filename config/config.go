@@ -10,6 +10,7 @@ type Config struct {
 	Server    ServerConfig    `mapstructure:"server"`
 	OpenAI    OpenAIConfig    `mapstructure:"openai"`
 	Anthropic AnthropicConfig `mapstructure:"anthropic"`
+	Gemini    GeminiConfig    `mapstructure:"gemini"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -24,6 +25,11 @@ type OpenAIConfig struct {
 
 // AnthropicConfig holds Anthropic-specific configuration
 type AnthropicConfig struct {
+	APIKey string `mapstructure:"api_key"`
+}
+
+// GeminiConfig holds Google Gemini-specific configuration
+type GeminiConfig struct {
 	APIKey string `mapstructure:"api_key"`
 }
 
@@ -65,6 +71,9 @@ func Load() (*Config, error) {
 		},
 		Anthropic: AnthropicConfig{
 			APIKey: viper.GetString("ANTHROPIC_API_KEY"),
+		},
+		Gemini: GeminiConfig{
+			APIKey: viper.GetString("GEMINI_API_KEY"),
 		},
 	}
 
