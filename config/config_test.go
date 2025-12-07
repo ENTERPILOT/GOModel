@@ -10,7 +10,7 @@ import (
 func TestLoad_DefaultPort(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
-	
+
 	// Clear any existing environment variables
 	os.Unsetenv("PORT")
 	os.Unsetenv("OPENAI_API_KEY")
@@ -28,7 +28,7 @@ func TestLoad_DefaultPort(t *testing.T) {
 func TestLoad_PortFromEnv(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
-	
+
 	// Set environment variable
 	os.Setenv("PORT", "9090")
 	defer os.Unsetenv("PORT")
@@ -46,7 +46,7 @@ func TestLoad_PortFromEnv(t *testing.T) {
 func TestLoad_OpenAIAPIKeyFromEnv(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
-	
+
 	// Set environment variable
 	testAPIKey := "sk-test-key-12345"
 	os.Setenv("OPENAI_API_KEY", testAPIKey)
@@ -65,7 +65,7 @@ func TestLoad_OpenAIAPIKeyFromEnv(t *testing.T) {
 func TestLoad_EmptyAPIKey(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
-	
+
 	// Clear environment variable
 	os.Unsetenv("OPENAI_API_KEY")
 
@@ -82,11 +82,11 @@ func TestLoad_EmptyAPIKey(t *testing.T) {
 func TestLoad_MultipleEnvVars(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
-	
+
 	// Set multiple environment variables
 	testPort := "3000"
 	testAPIKey := "sk-test-multiple"
-	
+
 	os.Setenv("PORT", testPort)
 	os.Setenv("OPENAI_API_KEY", testAPIKey)
 	defer func() {
@@ -111,7 +111,7 @@ func TestLoad_MultipleEnvVars(t *testing.T) {
 func TestLoad_DotEnvFile(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
-	
+
 	// Clear environment variables to test .env file reading
 	os.Unsetenv("PORT")
 	os.Unsetenv("OPENAI_API_KEY")
@@ -205,4 +205,3 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected API key from environment variable (not .env file), got %s", cfg.OpenAI.APIKey)
 	}
 }
-

@@ -35,10 +35,14 @@ gomodel/
 │   │   └── interfaces.go     # Core interfaces (Provider, Middleware, Logger).
 │   │
 │   ├── providers/            # LLM Logic (The Adapters).
-│   │   ├── openai/           # OpenAI specific implementation.
-│   │   ├── anthropic/        # Anthropic specific implementation.
-│   │   ├── factory.go        # Logic to instantiate providers by string name.
-│   │   └── base.go           # Shared logic (HTTP clients, retries).
+│   │   ├── openai/           # OpenAI specific implementation. ✅ IMPLEMENTED
+│   │   │   └── openai.go     # OpenAI provider with chat completion and streaming.
+│   │   ├── anthropic/        # Anthropic specific implementation. ✅ IMPLEMENTED
+│   │   │   └── anthropic.go  # Anthropic provider with format conversion.
+│   │   ├── factory.go        # Logic to instantiate providers by
+string name.
+│   │   ├── base.go           # Shared logic (HTTP clients,
+│   │   └── router.go         # Routes requests to appropriate provider.
 │   │
 │   ├── router/               # "Brain" logic.
 │   │   └── router.go         # Handles model aliasing, fallbacks, and load balancing.

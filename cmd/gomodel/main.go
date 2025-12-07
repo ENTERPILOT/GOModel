@@ -6,6 +6,9 @@ import (
 	"os"
 
 	"gomodel/config"
+	"gomodel/internal/core"
+	"gomodel/internal/providers"
+	"gomodel/internal/providers/anthropic"
 	"gomodel/internal/providers/openai"
 	"gomodel/internal/server"
 )
@@ -22,14 +25,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Validate API key
-	if cfg.OpenAI.APIKey == "" {
-		slog.Error("OPENAI_API_KEY environment variable is required")
+	// Validate that at least one API key is provided
+	if cfg.OpenAI.APIKey == "" && cfg.Anthropic.APIKey == "" {
+		slog.Error("at least one API key is required (OPENAI_API_KEY or ANTHROPIC_API_KEY)")
 		os.Exit(1)
 	}
 
-	// Create OpenAI provider
-	provider := openai.New(cfg.OpenAI.APIKey)
+	// Create providers
+	providerList := make([]core.Provider, 0, 2)
+
+	if cfg.OpenAI.APIKey != "" {
+		openaiProvider := openai.New(cfg.OpenAI.APIKey)
+		providerList = append(providerList, openaiProvider)
+		slog.Info("OpenAI provider initialized")
+	}
+
+	if cfg.Anthropic.APIKey != "" {
+		anthropicProvider := anthropic.New(cfg.Anthropic.APIKey)
+		providerList = append(providerList, anthropicProvider)
+		slog.Info("Anthropic provider initialized")
+	}
+
+	// Create provider router
+	provider := providers.NewRouter(providerList...)
 
 	// Create and start server
 	srv := server.New(provider)
