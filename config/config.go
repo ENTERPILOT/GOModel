@@ -129,7 +129,7 @@ func removeEmptyProviders(cfg Config) Config {
 	filteredProviders := make(map[string]ProviderConfig)
 	for name, pCfg := range cfg.Providers {
 		// Keep provider only if API key doesn't contain unexpanded placeholders
-		if pCfg.APIKey != "" && !strings.HasPrefix(pCfg.APIKey, "${") {
+		if pCfg.APIKey != "" && !strings.Contains(pCfg.APIKey, "${") {
 			filteredProviders[name] = pCfg
 		}
 	}
