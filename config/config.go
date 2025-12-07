@@ -1,3 +1,4 @@
+// Package config provides configuration management for the application.
 package config
 
 import (
@@ -33,7 +34,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("server.port", "8088")
 
 	// Read config file (optional, won't fail if not found)
-	_ = viper.ReadInConfig()
+	_ = viper.ReadInConfig() //nolint:errcheck
 
 	// Environment variables override config file
 	viper.AutomaticEnv()

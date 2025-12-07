@@ -23,6 +23,50 @@ A high-performance LLM gateway written in Go.
      -d '{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hello!"}]}'
    ```
 
+## Development
+
+### Linting
+
+This project uses [golangci-lint](https://golangci-lint.run/) for code quality checks.
+
+#### Installation
+
+**macOS:**
+
+```bash
+brew install golangci-lint
+```
+
+**Linux:**
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin
+```
+
+**Windows:**
+
+```bash
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+```
+
+For other installation methods, see the [official documentation](https://golangci-lint.run/welcome/install/).
+
+#### Usage
+
+Run the linter:
+
+```bash
+make lint
+```
+
+Run the linter with auto-fix:
+
+```bash
+make lint-fix
+```
+
+The linter configuration is defined in `.golangci.yml` and includes essential checks for code quality and correctness.
+
 ## Running with Docker
 
 You can use the official `golang:1.21-alpine` image to run the project in a container:

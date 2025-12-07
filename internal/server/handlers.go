@@ -1,3 +1,4 @@
+// Package server provides HTTP handlers and server setup for the LLM gateway.
 package server
 
 import (
@@ -42,14 +43,19 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		defer stream.Close()
+		defer func() {
+			_ = stream.Close() //nolint:errcheck
+		}()
 
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
 		c.Response().WriteHeader(http.StatusOK)
 
-		io.Copy(c.Response().Writer, stream)
+		if _, err := io.Copy(c.Response().Writer, stream); err != nil {
+			// Can't return error after headers are sent, log it
+			return nil
+		}
 		return nil
 	}
 

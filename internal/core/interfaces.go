@@ -1,3 +1,4 @@
+// Package core defines the core interfaces and types for the LLM gateway.
 package core
 
 import (
