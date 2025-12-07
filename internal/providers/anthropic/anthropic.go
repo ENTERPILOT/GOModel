@@ -172,12 +172,12 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 	body, err := json.Marshal(anthropicReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, core.NewInvalidRequestError("failed to marshal request", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, core.NewInvalidRequestError("failed to create request", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -186,7 +186,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
 	}
 	defer func() {
 		_ = resp.Body.Close() //nolint:errcheck
@@ -194,16 +194,16 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Anthropic API error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
 	}
 
 	var anthropicResp anthropicResponse
 	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
 	}
 
 	return convertFromAnthropicResponse(&anthropicResp), nil
@@ -216,12 +216,12 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 
 	body, err := json.Marshal(anthropicReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, core.NewInvalidRequestError("failed to marshal request", err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, core.NewInvalidRequestError("failed to create request", err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -230,7 +230,7 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -239,7 +239,7 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 			respBody = []byte("failed to read error response")
 		}
 		_ = resp.Body.Close() //nolint:errcheck
-		return nil, fmt.Errorf("Anthropic API error (status %d): %s", resp.StatusCode, string(respBody))
+		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
 	}
 
 	// Return a reader that converts Anthropic SSE format to OpenAI format

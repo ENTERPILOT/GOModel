@@ -268,3 +268,262 @@ func TestListModelsError(t *testing.T) {
 		t.Errorf("response should contain error message, got: %s", body)
 	}
 }
+
+// Tests for typed error handling
+
+func TestHandleError_ProviderError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             core.NewProviderError("openai", http.StatusBadGateway, "upstream error", nil),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("expected status 502, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "provider_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "upstream error") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+func TestHandleError_RateLimitError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             core.NewRateLimitError("openai", "rate limit exceeded"),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("expected status 429, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "rate_limit_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "rate limit exceeded") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+func TestHandleError_InvalidRequestError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             core.NewInvalidRequestError("invalid parameters", nil),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "invalid_request_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "invalid parameters") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+func TestHandleError_AuthenticationError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             core.NewAuthenticationError("openai", "invalid API key"),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected status 401, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "authentication_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "invalid API key") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+func TestHandleError_NotFoundError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             core.NewNotFoundError("model not found"),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected status 404, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "not_found_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "model not found") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+func TestHandleError_StreamingError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             core.NewRateLimitError("openai", "rate limit exceeded during streaming"),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{"model": "gpt-4o-mini", "stream": true, "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("expected status 429, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "rate_limit_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+}
+
+func TestChatCompletion_InvalidJSON(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	reqBody := `{invalid json}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "invalid_request_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "invalid request body") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+func TestListModels_TypedError(t *testing.T) {
+	mock := &mockProvider{
+		err: core.NewProviderError("openai", http.StatusBadGateway, "failed to list models", nil),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ListModels(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("expected status 502, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "provider_error") {
+		t.Errorf("response should contain error type, got: %s", body)
+	}
+	if !strings.Contains(body, "failed to list models") {
+		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
