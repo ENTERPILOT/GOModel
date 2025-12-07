@@ -4,6 +4,7 @@ package main
 import (
 	"log/slog"
 	"os"
+	"sort"
 
 	"gomodel/config"
 	"gomodel/internal/core"
@@ -36,7 +37,15 @@ func main() {
 	// Create providers dynamically using the factory
 	activeProviders := make([]core.Provider, 0, len(cfg.Providers))
 
-	for name, pCfg := range cfg.Providers {
+	// Sort provider names for deterministic initialization order
+	providerNames := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		providerNames = append(providerNames, name)
+	}
+	sort.Strings(providerNames)
+
+	for _, name := range providerNames {
+		pCfg := cfg.Providers[name]
 		p, err := providers.Create(pCfg)
 		if err != nil {
 			slog.Error("failed to initialize provider", "name", name, "type", pCfg.Type, "error", err)
