@@ -39,8 +39,7 @@ gomodel/
 │   │   │   └── openai.go     # OpenAI provider with chat completion and streaming.
 │   │   ├── anthropic/        # Anthropic specific implementation. ✅ IMPLEMENTED
 │   │   │   └── anthropic.go  # Anthropic provider with format conversion.
-│   │   ├── factory.go        # Logic to instantiate providers by
-string name.
+│   │   ├── factory.go        # Logic to instantiate providers by string name.
 │   │   ├── base.go           # Shared logic (HTTP clients,
 │   │   └── router.go         # Routes requests to appropriate provider.
 │   │
