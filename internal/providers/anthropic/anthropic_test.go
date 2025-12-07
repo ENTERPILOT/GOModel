@@ -322,21 +322,21 @@ data: {"type":"message_stop"}
 
 func TestListModels(t *testing.T) {
 	provider := New("test-api-key")
-	
+
 	resp, err := provider.ListModels(context.Background())
-	
+
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	
+
 	if resp.Object != "list" {
 		t.Errorf("Object = %q, want %q", resp.Object, "list")
 	}
-	
+
 	if len(resp.Data) == 0 {
 		t.Error("Data should not be empty")
 	}
-	
+
 	// Verify that all models have the correct fields
 	for _, model := range resp.Data {
 		if model.ID == "" {
@@ -355,20 +355,20 @@ func TestListModels(t *testing.T) {
 			t.Error("Model.Created should not be zero")
 		}
 	}
-	
+
 	// Verify some expected models are present
 	expectedModels := map[string]bool{
 		"claude-3-5-sonnet-20241022": false,
 		"claude-3-opus-20240229":     false,
 		"claude-3-haiku-20240307":    false,
 	}
-	
+
 	for _, model := range resp.Data {
 		if _, ok := expectedModels[model.ID]; ok {
 			expectedModels[model.ID] = true
 		}
 	}
-	
+
 	for model, found := range expectedModels {
 		if !found {
 			t.Errorf("Expected model %q not found in response", model)
@@ -408,9 +408,9 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 	maxTokens := 1024
 
 	tests := []struct {
-		name     string
-		input    *core.ChatRequest
-		checkFn  func(*testing.T, *anthropicRequest)
+		name    string
+		input   *core.ChatRequest
+		checkFn func(*testing.T, *anthropicRequest)
 	}{
 		{
 			name: "basic request",
@@ -531,4 +531,3 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
 	}
 }
-

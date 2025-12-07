@@ -46,7 +46,7 @@ func (m *mockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, er
 func TestRouterSupports(t *testing.T) {
 	openaiMock := &mockProvider{name: "openai", supportedModel: "gpt-4o"}
 	anthropicMock := &mockProvider{name: "anthropic", supportedModel: "claude-3-5-sonnet-20241022"}
-	
+
 	router := NewRouter(openaiMock, anthropicMock)
 
 	tests := []struct {
@@ -224,4 +224,3 @@ func TestRouterListModelsWithError(t *testing.T) {
 		t.Errorf("expected gpt-4o, got %s", resp.Data[0].ID)
 	}
 }
-
