@@ -40,7 +40,7 @@ gomodel/
 │   │   ├── anthropic/        # Anthropic specific implementation. ✅ IMPLEMENTED
 │   │   │   └── anthropic.go  # Anthropic provider with format conversion.
 │   │   ├── factory.go        # Logic to instantiate providers by string name.
-│   │   ├── base.go           # Shared logic (HTTP clients,
+│   │   ├── base.go           # Shared logic (HTTP clients, retries).
 │   │   └── router.go         # Routes requests to appropriate provider.
 │   │
 │   ├── router/               # "Brain" logic.
