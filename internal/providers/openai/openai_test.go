@@ -59,11 +59,11 @@ func TestSupports(t *testing.T) {
 
 func TestChatCompletion(t *testing.T) {
 	tests := []struct {
-		name           string
-		statusCode     int
-		responseBody   string
-		expectedError  bool
-		checkResponse  func(*testing.T, *core.ChatResponse)
+		name          string
+		statusCode    int
+		responseBody  string
+		expectedError bool
+		checkResponse func(*testing.T, *core.ChatResponse)
 	}{
 		{
 			name:       "successful request",
@@ -402,4 +402,3 @@ func TestChatCompletionWithContext(t *testing.T) {
 		t.Error("expected error when context is cancelled, got nil")
 	}
 }
-
