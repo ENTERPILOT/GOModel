@@ -27,21 +27,11 @@ func NewHandler(provider core.Provider) *Handler {
 func (h *Handler) ChatCompletion(c echo.Context) error {
 	var req core.ChatRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error": map[string]interface{}{
-				"type":    "invalid_request_error",
-				"message": "invalid request body: " + err.Error(),
-			},
-		})
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 
 	if !h.provider.Supports(req.Model) {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"error": map[string]interface{}{
-				"type":    "invalid_request_error",
-				"message": "unsupported model: " + req.Model,
-			},
-		})
+		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
 	}
 
 	// Handle streaming: proxy the raw SSE stream
