@@ -291,7 +291,7 @@ func TestParseProviderError(t *testing.T) {
 			statusCode:     http.StatusInternalServerError,
 			body:           []byte(`{"error": {"message": "Internal server error"}}`),
 			expectedType:   ErrorTypeProvider,
-			expectedStatus: http.StatusBadGateway,
+			expectedStatus: http.StatusInternalServerError, // Now preserves original 500
 		},
 		{
 			name:           "502 bad gateway",
@@ -307,7 +307,7 @@ func TestParseProviderError(t *testing.T) {
 			statusCode:     http.StatusInternalServerError,
 			body:           []byte("Internal Server Error"),
 			expectedType:   ErrorTypeProvider,
-			expectedStatus: http.StatusBadGateway,
+			expectedStatus: http.StatusInternalServerError, // Now preserves original 500
 		},
 		{
 			name:           "json parse with message",
@@ -519,6 +519,111 @@ func TestParseProviderError_SpecialStatusCodesOverride(t *testing.T) {
 
 			if err.HTTPStatusCode() != tt.expectedStatus {
 				t.Errorf("HTTPStatusCode() = %v, want %v", err.HTTPStatusCode(), tt.expectedStatus)
+			}
+		})
+	}
+}
+
+func TestParseProviderError_Preserves5xxStatusCodes(t *testing.T) {
+	// Test that ParseProviderError preserves the original 5xx status codes
+	// to maintain semantic meaning of different server errors
+	tests := []struct {
+		name             string
+		provider         string
+		statusCode       int
+		body             []byte
+		expectedType     ErrorType
+		expectedStatus   int
+		expectedProvider string
+	}{
+		{
+			name:             "500 internal server error",
+			provider:         "openai",
+			statusCode:       http.StatusInternalServerError,
+			body:             []byte(`{"error": {"message": "Internal server error"}}`),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusInternalServerError, // Should preserve 500
+			expectedProvider: "openai",
+		},
+		{
+			name:             "501 not implemented",
+			provider:         "anthropic",
+			statusCode:       http.StatusNotImplemented,
+			body:             []byte(`{"error": {"message": "Feature not implemented"}}`),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusNotImplemented, // Should preserve 501
+			expectedProvider: "anthropic",
+		},
+		{
+			name:             "502 bad gateway",
+			provider:         "gemini",
+			statusCode:       http.StatusBadGateway,
+			body:             []byte(`{"error": {"message": "Bad gateway"}}`),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusBadGateway, // Should preserve 502
+			expectedProvider: "gemini",
+		},
+		{
+			name:             "503 service unavailable",
+			provider:         "openai",
+			statusCode:       http.StatusServiceUnavailable,
+			body:             []byte(`{"error": {"message": "Service unavailable"}}`),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusServiceUnavailable, // Should preserve 503
+			expectedProvider: "openai",
+		},
+		{
+			name:             "504 gateway timeout",
+			provider:         "anthropic",
+			statusCode:       http.StatusGatewayTimeout,
+			body:             []byte(`{"error": {"message": "Gateway timeout"}}`),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusGatewayTimeout, // Should preserve 504
+			expectedProvider: "anthropic",
+		},
+		{
+			name:             "507 insufficient storage",
+			provider:         "gemini",
+			statusCode:       http.StatusInsufficientStorage,
+			body:             []byte(`{"error": {"message": "Insufficient storage"}}`),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusInsufficientStorage, // Should preserve 507
+			expectedProvider: "gemini",
+		},
+		{
+			name:             "plain text 503 error",
+			provider:         "openai",
+			statusCode:       http.StatusServiceUnavailable,
+			body:             []byte("Service Temporarily Unavailable"),
+			expectedType:     ErrorTypeProvider,
+			expectedStatus:   http.StatusServiceUnavailable, // Should preserve 503 even for plain text
+			expectedProvider: "openai",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			originalErr := errors.New("original http error")
+			err := ParseProviderError(tt.provider, tt.statusCode, tt.body, originalErr)
+
+			if err.Type != tt.expectedType {
+				t.Errorf("Type = %v, want %v", err.Type, tt.expectedType)
+			}
+
+			if err.StatusCode != tt.expectedStatus {
+				t.Errorf("StatusCode = %v, want %v", err.StatusCode, tt.expectedStatus)
+			}
+
+			if err.HTTPStatusCode() != tt.expectedStatus {
+				t.Errorf("HTTPStatusCode() = %v, want %v", err.HTTPStatusCode(), tt.expectedStatus)
+			}
+
+			if err.Provider != tt.expectedProvider {
+				t.Errorf("Provider = %v, want %v", err.Provider, tt.expectedProvider)
+			}
+
+			if err.Message == "" {
+				t.Error("Message should not be empty")
 			}
 		})
 	}
