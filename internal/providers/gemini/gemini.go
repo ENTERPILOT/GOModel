@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"gomodel/config"
 	"gomodel/internal/core"
 	"gomodel/internal/pkg/httpclient"
+	"gomodel/internal/providers"
 )
 
 const (
@@ -20,6 +22,18 @@ const (
 	// Native Gemini API endpoint for models listing
 	defaultModelsBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 )
+
+func init() {
+	// Self-register with the factory
+	providers.Register("gemini", func(cfg config.ProviderConfig) (core.Provider, error) {
+		p := New(cfg.APIKey)
+		// Override base URL if provided in config
+		if cfg.BaseURL != "" {
+			p.baseURL = cfg.BaseURL
+		}
+		return p, nil
+	})
+}
 
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
