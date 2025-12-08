@@ -125,7 +125,7 @@ steps:
       layoutData:
         x: -357
         y: 35
-    defaultOutput: [ "union" ]
+    defaultOutput: "union"
     output:
       - expression:
           language: expr
@@ -163,7 +163,7 @@ steps:
       layoutData:
         x: -193
         y: 512
-    inputs: [ "Gemini 3", "gpt-5.0", "gpt-4.5", "some external api" ]
+    inputs: [ "Gemini 3", "gpt-5.0", "gpt-4.5", "some external api", "choice" ]
     output: "end"
 
   - id: "end"
