@@ -19,41 +19,11 @@ func TestNew(t *testing.T) {
 	if provider.apiKey != apiKey {
 		t.Errorf("apiKey = %q, want %q", provider.apiKey, apiKey)
 	}
-	if provider.baseURL != defaultOpenAICompatibleBaseURL {
-		t.Errorf("baseURL = %q, want %q", provider.baseURL, defaultOpenAICompatibleBaseURL)
-	}
 	if provider.modelsURL != defaultModelsBaseURL {
 		t.Errorf("modelsURL = %q, want %q", provider.modelsURL, defaultModelsBaseURL)
 	}
-	if provider.httpClient == nil {
-		t.Error("httpClient should not be nil")
-	}
-}
-
-func TestSupports(t *testing.T) {
-	provider := New("test-api-key")
-
-	tests := []struct {
-		model    string
-		expected bool
-	}{
-		{"gemini-2.0-flash", true},
-		{"gemini-1.5-pro", true},
-		{"gemini-1.5-flash", true},
-		{"gemini-1.0-pro", true},
-		{"gpt-4", false},
-		{"claude-3-5-sonnet-20241022", false},
-		{"random-model", false},
-		{"mistral-large", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			result := provider.Supports(tt.model)
-			if result != tt.expected {
-				t.Errorf("Supports(%q) = %v, want %v", tt.model, result, tt.expected)
-			}
-		})
+	if provider.client == nil {
+		t.Error("client should not be nil")
 	}
 }
 
@@ -135,7 +105,6 @@ func TestChatCompletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify request headers
 				if r.Header.Get("Content-Type") != "application/json" {
 					t.Errorf("Content-Type = %q, want %q", r.Header.Get("Content-Type"), "application/json")
 				}
@@ -144,7 +113,6 @@ func TestChatCompletion(t *testing.T) {
 					t.Errorf("Authorization header should start with 'Bearer '")
 				}
 
-				// Verify request body
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
 					t.Fatalf("failed to read request body: %v", err)
@@ -160,7 +128,7 @@ func TestChatCompletion(t *testing.T) {
 			defer server.Close()
 
 			provider := New("test-api-key")
-			provider.baseURL = server.URL
+			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
 				Model: "gemini-2.0-flash",
@@ -216,7 +184,6 @@ data: [DONE]
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify request headers
 				if r.Header.Get("Content-Type") != "application/json" {
 					t.Errorf("Content-Type = %q, want %q", r.Header.Get("Content-Type"), "application/json")
 				}
@@ -225,7 +192,6 @@ data: [DONE]
 					t.Errorf("Authorization header should start with 'Bearer '")
 				}
 
-				// Verify stream is set in request body
 				body, err := io.ReadAll(r.Body)
 				if err != nil {
 					t.Fatalf("failed to read request body: %v", err)
@@ -244,7 +210,7 @@ data: [DONE]
 			defer server.Close()
 
 			provider := New("test-api-key")
-			provider.baseURL = server.URL
+			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
 				Model: "gemini-2.0-flash",
@@ -268,7 +234,6 @@ data: [DONE]
 				}
 				defer func() { _ = body.Close() }()
 
-				// Read and verify the streaming response
 				respBody, err := io.ReadAll(body)
 				if err != nil {
 					t.Fatalf("failed to read response body: %v", err)
@@ -325,7 +290,6 @@ func TestListModels(t *testing.T) {
 				if resp.Object != "list" {
 					t.Errorf("Object = %q, want %q", resp.Object, "list")
 				}
-				// Should only include models that support generateContent, not embedding
 				if len(resp.Data) != 2 {
 					t.Fatalf("len(Data) = %d, want 2", len(resp.Data))
 				}
@@ -351,7 +315,6 @@ func TestListModels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				// Verify request method and path
 				if r.Method != http.MethodGet {
 					t.Errorf("Method = %q, want %q", r.Method, http.MethodGet)
 				}
@@ -359,7 +322,6 @@ func TestListModels(t *testing.T) {
 					t.Errorf("Path = %q, want %q", r.URL.Path, "/models")
 				}
 
-				// Verify API key is in query parameter
 				apiKey := r.URL.Query().Get("key")
 				if apiKey == "" {
 					t.Error("API key should be in query parameter 'key'")
@@ -393,17 +355,16 @@ func TestListModels(t *testing.T) {
 
 func TestChatCompletionWithContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Simulate a slow response
 		<-r.Context().Done()
 		w.WriteHeader(http.StatusRequestTimeout)
 	}))
 	defer server.Close()
 
 	provider := New("test-api-key")
-	provider.baseURL = server.URL
+	provider.SetBaseURL(server.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
+	cancel()
 
 	req := &core.ChatRequest{
 		Model: "gemini-2.0-flash",
@@ -415,5 +376,222 @@ func TestChatCompletionWithContext(t *testing.T) {
 	_, err := provider.ChatCompletion(ctx, req)
 	if err == nil {
 		t.Error("expected error when context is cancelled, got nil")
+	}
+}
+
+func TestResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "gemini-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gemini-2.0-flash",
+			"choices": [{
+				"index": 0,
+				"message": {
+					"role": "assistant",
+					"content": "Hello! How can I help you today?"
+				},
+				"finish_reason": "stop"
+			}],
+			"usage": {
+				"prompt_tokens": 10,
+				"completion_tokens": 20,
+				"total_tokens": 30
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := New("test-api-key")
+	provider.SetBaseURL(server.URL)
+
+	req := &core.ResponsesRequest{
+		Model: "gemini-2.0-flash",
+		Input: "Hello",
+	}
+
+	resp, err := provider.Responses(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.ID != "gemini-123" {
+		t.Errorf("ID = %q, want %q", resp.ID, "gemini-123")
+	}
+	if resp.Object != "response" {
+		t.Errorf("Object = %q, want %q", resp.Object, "response")
+	}
+	if resp.Model != "gemini-2.0-flash" {
+		t.Errorf("Model = %q, want %q", resp.Model, "gemini-2.0-flash")
+	}
+}
+
+func TestStreamResponses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`data: {"id":"gemini-123","object":"chat.completion.chunk","created":1677652288,"model":"gemini-2.0-flash","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
+
+data: [DONE]
+`))
+	}))
+	defer server.Close()
+
+	provider := New("test-api-key")
+	provider.SetBaseURL(server.URL)
+
+	req := &core.ResponsesRequest{
+		Model: "gemini-2.0-flash",
+		Input: "Hello",
+	}
+
+	body, err := provider.StreamResponses(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if body == nil {
+		t.Fatal("body should not be nil")
+	}
+	defer func() { _ = body.Close() }()
+
+	respBody, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	responseStr := string(respBody)
+	if !strings.Contains(responseStr, "response.created") {
+		t.Error("response should contain response.created event")
+	}
+	if !strings.Contains(responseStr, "[DONE]") {
+		t.Error("response should end with [DONE]")
+	}
+}
+
+func TestConvertResponsesRequestToChat(t *testing.T) {
+	temp := 0.7
+	maxTokens := 1024
+
+	tests := []struct {
+		name    string
+		input   *core.ResponsesRequest
+		checkFn func(*testing.T, *core.ChatRequest)
+	}{
+		{
+			name: "string input",
+			input: &core.ResponsesRequest{
+				Model: "gemini-2.0-flash",
+				Input: "Hello",
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if req.Model != "gemini-2.0-flash" {
+					t.Errorf("Model = %q, want %q", req.Model, "gemini-2.0-flash")
+				}
+				if len(req.Messages) != 1 {
+					t.Errorf("len(Messages) = %d, want 1", len(req.Messages))
+				}
+				if req.Messages[0].Role != "user" {
+					t.Errorf("Messages[0].Role = %q, want %q", req.Messages[0].Role, "user")
+				}
+			},
+		},
+		{
+			name: "with instructions",
+			input: &core.ResponsesRequest{
+				Model:        "gemini-2.0-flash",
+				Input:        "Hello",
+				Instructions: "Be helpful",
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) < 2 {
+					t.Fatalf("len(Messages) = %d, want at least 2", len(req.Messages))
+				}
+				if req.Messages[0].Role != "system" {
+					t.Errorf("Messages[0].Role = %q, want %q", req.Messages[0].Role, "system")
+				}
+				if req.Messages[0].Content != "Be helpful" {
+					t.Errorf("Messages[0].Content = %q, want %q", req.Messages[0].Content, "Be helpful")
+				}
+			},
+		},
+		{
+			name: "with parameters",
+			input: &core.ResponsesRequest{
+				Model:           "gemini-2.0-flash",
+				Input:           "Hello",
+				Temperature:     &temp,
+				MaxOutputTokens: &maxTokens,
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if req.Temperature == nil || *req.Temperature != 0.7 {
+					t.Errorf("Temperature = %v, want 0.7", req.Temperature)
+				}
+				if req.MaxTokens == nil || *req.MaxTokens != 1024 {
+					t.Errorf("MaxTokens = %v, want 1024", req.MaxTokens)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertResponsesRequestToChat(tt.input)
+			tt.checkFn(t, result)
+		})
+	}
+}
+
+func TestConvertChatResponseToResponses(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:      "gemini-123",
+		Object:  "chat.completion",
+		Model:   "gemini-2.0-flash",
+		Created: 1677652288,
+		Choices: []core.Choice{
+			{
+				Index: 0,
+				Message: core.Message{
+					Role:    "assistant",
+					Content: "Hello! How can I help you today?",
+				},
+				FinishReason: "stop",
+			},
+		},
+		Usage: core.Usage{
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			TotalTokens:      30,
+		},
+	}
+
+	result := convertChatResponseToResponses(resp)
+
+	if result.ID != "gemini-123" {
+		t.Errorf("ID = %q, want %q", result.ID, "gemini-123")
+	}
+	if result.Object != "response" {
+		t.Errorf("Object = %q, want %q", result.Object, "response")
+	}
+	if result.Model != "gemini-2.0-flash" {
+		t.Errorf("Model = %q, want %q", result.Model, "gemini-2.0-flash")
+	}
+	if result.Status != "completed" {
+		t.Errorf("Status = %q, want %q", result.Status, "completed")
+	}
+	if len(result.Output) != 1 {
+		t.Fatalf("len(Output) = %d, want 1", len(result.Output))
+	}
+	if result.Usage == nil {
+		t.Fatal("Usage should not be nil")
+	}
+	if result.Usage.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", result.Usage.InputTokens)
+	}
+	if result.Usage.OutputTokens != 20 {
+		t.Errorf("OutputTokens = %d, want 20", result.Usage.OutputTokens)
+	}
+	if result.Usage.TotalTokens != 30 {
+		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
 	}
 }

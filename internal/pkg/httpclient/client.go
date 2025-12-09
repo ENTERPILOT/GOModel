@@ -11,25 +11,25 @@ import (
 type ClientConfig struct {
 	// MaxIdleConns controls the maximum number of idle (keep-alive) connections across all hosts
 	MaxIdleConns int
-	
+
 	// MaxIdleConnsPerHost controls the maximum idle (keep-alive) connections to keep per-host
 	MaxIdleConnsPerHost int
-	
+
 	// IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection will remain idle before closing itself
 	IdleConnTimeout time.Duration
-	
+
 	// Timeout specifies a time limit for requests made by the client
 	Timeout time.Duration
-	
+
 	// DialTimeout is the maximum amount of time a dial will wait for a connect to complete
 	DialTimeout time.Duration
-	
+
 	// KeepAlive specifies the interval between keep-alive probes for an active network connection
 	KeepAlive time.Duration
-	
+
 	// TLSHandshakeTimeout specifies the maximum amount of time to wait for a TLS handshake
 	TLSHandshakeTimeout time.Duration
-	
+
 	// ResponseHeaderTimeout specifies the amount of time to wait for a server's response headers
 	ResponseHeaderTimeout time.Duration
 }
@@ -55,7 +55,7 @@ func NewHTTPClient(config *ClientConfig) *http.Client {
 		cfg := DefaultConfig()
 		config = &cfg
 	}
-	
+
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
@@ -70,7 +70,7 @@ func NewHTTPClient(config *ClientConfig) *http.Client {
 		ForceAttemptHTTP2:     true,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-	
+
 	return &http.Client{
 		Transport: transport,
 		Timeout:   config.Timeout,
@@ -82,4 +82,3 @@ func NewHTTPClient(config *ClientConfig) *http.Client {
 func NewDefaultHTTPClient() *http.Client {
 	return NewHTTPClient(nil)
 }
-

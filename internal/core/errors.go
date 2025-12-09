@@ -168,4 +168,3 @@ func ParseProviderError(provider string, statusCode int, body []byte, originalEr
 		return NewProviderError(provider, http.StatusBadGateway, message, originalErr)
 	}
 }
-

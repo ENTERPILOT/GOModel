@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -14,7 +16,7 @@ type Server struct {
 }
 
 // New creates a new HTTP server
-func New(provider core.Provider) *Server {
+func New(provider core.RoutableProvider) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
@@ -28,6 +30,7 @@ func New(provider core.Provider) *Server {
 	e.GET("/health", handler.Health)
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
+	e.POST("/v1/responses", handler.Responses)
 
 	return &Server{
 		echo:    e,
@@ -38,4 +41,9 @@ func New(provider core.Provider) *Server {
 // Start starts the HTTP server on the given address
 func (s *Server) Start(addr string) error {
 	return s.echo.Start(addr)
+}
+
+// Shutdown gracefully shuts down the HTTP server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.echo.Shutdown(ctx)
 }

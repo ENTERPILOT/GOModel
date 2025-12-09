@@ -33,6 +33,14 @@ func (m *factoryMockProvider) ListModels(ctx context.Context) (*core.ModelsRespo
 	return &core.ModelsResponse{}, nil
 }
 
+func (m *factoryMockProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	return &core.ResponsesResponse{}, nil
+}
+
+func (m *factoryMockProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	return nil, nil
+}
+
 func TestRegister(t *testing.T) {
 	// Save current registry and restore after test
 	originalRegistry := registry
@@ -178,4 +186,3 @@ func TestCreate_WithBaseURL(t *testing.T) {
 		t.Errorf("expected base URL '%s', got '%s'", customBaseURL, capturedBaseURL)
 	}
 }
-

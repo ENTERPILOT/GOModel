@@ -9,71 +9,107 @@ import (
 	"gomodel/internal/core"
 )
 
-// Router routes requests to the appropriate provider based on the model
+// ErrRegistryNotInitialized is returned when the router is used before the registry has any models.
+var ErrRegistryNotInitialized = fmt.Errorf("model registry has no models: ensure Initialize() or LoadFromCache() is called before using the router")
+
+// Router routes requests to the appropriate provider based on the model registry.
+// It uses a dynamic model-to-provider mapping that is populated at startup
+// by fetching available models from each provider's /models endpoint.
 type Router struct {
-	providers []core.Provider
+	registry *ModelRegistry
 }
 
-// NewRouter creates a new provider router
-func NewRouter(providers ...core.Provider) *Router {
+// NewRouter creates a new provider router with a model registry.
+// The registry must be initialized (via Initialize() or LoadFromCache()) before using the router.
+// Returns an error if the registry is nil.
+func NewRouter(registry *ModelRegistry) (*Router, error) {
+	if registry == nil {
+		return nil, fmt.Errorf("registry cannot be nil")
+	}
 	return &Router{
-		providers: providers,
-	}
+		registry: registry,
+	}, nil
 }
 
-// Supports returns true if any provider supports the given model
+// checkReady verifies the registry has models available.
+// Returns ErrRegistryNotInitialized if no models are loaded.
+func (r *Router) checkReady() error {
+	if r.registry.ModelCount() == 0 {
+		return ErrRegistryNotInitialized
+	}
+	return nil
+}
+
+// Supports returns true if any provider supports the given model.
+// Returns false if the registry has no models loaded.
 func (r *Router) Supports(model string) bool {
-	for _, p := range r.providers {
-		if p.Supports(model) {
-			return true
-		}
+	if r.registry.ModelCount() == 0 {
+		return false
 	}
-	return false
+	return r.registry.Supports(model)
 }
 
-// ChatCompletion routes the request to the appropriate provider
+// ChatCompletion routes the request to the appropriate provider.
+// Returns ErrRegistryNotInitialized if the registry has no models loaded.
 func (r *Router) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	provider := r.findProvider(req.Model)
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	provider := r.registry.GetProvider(req.Model)
 	if provider == nil {
 		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
 	}
 	return provider.ChatCompletion(ctx, req)
 }
 
-// StreamChatCompletion routes the streaming request to the appropriate provider
+// StreamChatCompletion routes the streaming request to the appropriate provider.
+// Returns ErrRegistryNotInitialized if the registry has no models loaded.
 func (r *Router) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	provider := r.findProvider(req.Model)
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	provider := r.registry.GetProvider(req.Model)
 	if provider == nil {
 		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
 	}
 	return provider.StreamChatCompletion(ctx, req)
 }
 
-// ListModels returns models from all providers
-func (r *Router) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
-	allModels := make([]core.Model, 0)
-
-	for _, p := range r.providers {
-		resp, err := p.ListModels(ctx)
-		if err != nil {
-			// Log error but continue with other providers
-			continue
-		}
-		allModels = append(allModels, resp.Data...)
+// ListModels returns all models from the registry.
+// Returns ErrRegistryNotInitialized if the registry has no models loaded.
+func (r *Router) ListModels(_ context.Context) (*core.ModelsResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
 	}
-
+	models := r.registry.ListModels()
 	return &core.ModelsResponse{
 		Object: "list",
-		Data:   allModels,
+		Data:   models,
 	}, nil
 }
 
-// findProvider finds the first provider that supports the given model
-func (r *Router) findProvider(model string) core.Provider {
-	for _, p := range r.providers {
-		if p.Supports(model) {
-			return p
-		}
+// Responses routes the Responses API request to the appropriate provider.
+// Returns ErrRegistryNotInitialized if the registry has no models loaded.
+func (r *Router) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
 	}
-	return nil
+	provider := r.registry.GetProvider(req.Model)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	}
+	return provider.Responses(ctx, req)
+}
+
+// StreamResponses routes the streaming Responses API request to the appropriate provider.
+// Returns ErrRegistryNotInitialized if the registry has no models loaded.
+func (r *Router) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	provider := r.registry.GetProvider(req.Model)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	}
+	return provider.StreamResponses(ctx, req)
 }

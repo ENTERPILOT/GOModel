@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy test lint lint-fix
+.PHONY: build run clean tidy test test-unit test-e2e lint lint-fix
 
 # Build the application
 build:
@@ -16,15 +16,22 @@ clean:
 tidy:
 	go mod tidy
 
-# Run tests
+# Run unit tests only
 test:
-	go test ./... -v
+	go test ./internal/... ./config/... -v
+
+# Run e2e tests (uses an in-process mock LLM server; no Docker required)
+test-e2e:
+	go test -v -tags=e2e ./tests/e2e/...
+
+# Run all tests including e2e
+test-all: test test-e2e
 
 # Run linter
 lint:
 	golangci-lint run ./...
+	golangci-lint run --build-tags=e2e ./tests/e2e/...
 
 # Run linter with auto-fix
 lint-fix:
 	golangci-lint run --fix ./...
-
