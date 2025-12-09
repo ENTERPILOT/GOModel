@@ -16,14 +16,18 @@ func TestLoad_WithDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tempDir)
+		defer func() {
+			_ = os.RemoveAll(tempDir)
+		}()
 
 		// Save current directory and change to temp directory
 		originalDir, err := os.Getwd()
 		if err != nil {
 			t.Fatalf("Failed to get current directory: %v", err)
 		}
-		defer os.Chdir(originalDir)
+		defer func() {
+			_ = os.Chdir(originalDir)
+		}()
 
 		err = os.Chdir(tempDir)
 		if err != nil {
@@ -44,11 +48,15 @@ providers:
 			t.Fatalf("Failed to write config file: %v", err)
 		}
 
-		// Ensure env vars are unset
-		os.Unsetenv("TEST_PORT_DEFAULTS")
-		os.Unsetenv("TEST_KEY_DEFAULTS")
-		defer os.Unsetenv("TEST_PORT_DEFAULTS")
-		defer os.Unsetenv("TEST_KEY_DEFAULTS")
+	// Ensure env vars are unset
+	_ = os.Unsetenv("TEST_PORT_DEFAULTS")
+	_ = os.Unsetenv("TEST_KEY_DEFAULTS")
+	defer func() {
+		_ = os.Unsetenv("TEST_PORT_DEFAULTS")
+	}()
+	defer func() {
+		_ = os.Unsetenv("TEST_KEY_DEFAULTS")
+	}()
 
 		// Reset viper
 		viper.Reset()
@@ -75,26 +83,34 @@ providers:
 		if err != nil {
 			t.Fatalf("Failed to create temp dir: %v", err)
 		}
-		defer os.RemoveAll(tempDir)
+		defer func() {
+			_ = os.RemoveAll(tempDir)
+		}()
 
 		// Save current directory and change to temp directory
 		originalDir, err := os.Getwd()
 		if err != nil {
 			t.Fatalf("Failed to get current directory: %v", err)
 		}
-		defer os.Chdir(originalDir)
+		defer func() {
+			_ = os.Chdir(originalDir)
+		}()
 
 		err = os.Chdir(tempDir)
 		if err != nil {
 			t.Fatalf("Failed to change to temp directory: %v", err)
 		}
 
-		// Same config content...
-		// But set env vars
-		os.Setenv("TEST_PORT_DEFAULTS", "1111")
-		os.Setenv("TEST_KEY_DEFAULTS", "real-key")
-		defer os.Unsetenv("TEST_PORT_DEFAULTS")
-		defer os.Unsetenv("TEST_KEY_DEFAULTS")
+	// Same config content...
+	// But set env vars
+	_ = os.Setenv("TEST_PORT_DEFAULTS", "1111")
+	_ = os.Setenv("TEST_KEY_DEFAULTS", "real-key")
+	defer func() {
+		_ = os.Unsetenv("TEST_PORT_DEFAULTS")
+	}()
+	defer func() {
+		_ = os.Unsetenv("TEST_KEY_DEFAULTS")
+	}()
 
 		// Create config (need to recreate as Load might re-read)
 		configContent := `
