@@ -1,57 +1,32 @@
-metaData:
-  id: "Default flow"
-  description: "
-    Possible steps:
-    * 1 start and end
-  
-    (SISO)
-    * transform - it uses https://github.com/expr-lang/expr language on input and returns result of expression
-    * plugin - similar to transform but uses native GO plugin API - e.g. for calling external API
-    * flow - each flow can be reused as a step in different flow
-    * model - calls llm with fallback recovery
+name: "Default flow"
 
-    (SIMO)
-    * filter - to filter out based on condition - optional onFalse step to branch conditionally
-    * switch - multiple filters with optional default output evaluated from first to last
-    * split - splits flow into multiple parallel branches
-    
-    (MISO)
-    * join - it joins multiple branches - should be used to join filter, switch and split results
-      it has inputs field because inputs can be reordered - maybe delete
-  "
+#    Possible steps:
+ #   * 1 start and end
 
+  #  (SISO)
+   # * guard rails
+    #* model - calls llm with fallback recovery
+
+    #(SIMO)
+    #* split - splits flow into multiple parallel branches
+
+   # (MISO)
+   # * join - it joins multiple branches - should be used to join filter, switch and split results
+   #   it has inputs field because inputs can be reordered - maybe delete
+
+#TODO remove additional fields, replace outputs with inputs, rewrite config, disabled
 steps:
-  - id: "start"
-    type: start
-    additionalFields:
-      description: null
-      layoutData:
-        x: -162
-        y: -349
-    output: "Trim query"
 
   - id: "Trim query"
     type: transform
     expression:
       language: expr
       expression: "trim(input)"
-    disabled: false
-    additionalFields:
-      description: null
-      layoutData:
-        x: -162
-        y: -349
-    output: "Guard rail #1"
+    input: "start"
 
   - id: "Guard rail #1"
     type: plugin
     path: "some/fancy/path/guardRailPlugin.so"
-    disabled: true
-    additionalFields:
-      description: null
-      layoutData:
-        x: -165
-        y: -232
     output: "Filter based on length"
 
   - id: "Filter based on length"
@@ -59,63 +34,31 @@ steps:
     expression:
       language: expr
       expression: "len(input) <= 500"
-    disabled: false
-    additionalFields:
-      description: null
-      layoutData:
-        x: -170
-        y: -107
     onFalse: "standard-whatever-flow"
     output: "choice"
 
   - id: "standard-whatever-flow"
     type: flow
     path: "some/fancy/path/template"
-    additionalFields:
-      description: null
-      layoutData:
-        x: 250
-        y: 36
     output: "split"
 
   - id: "split"
     type: split
-    additionalFields:
-      description: null
-      layoutData:
-        x: 250
-        y: 142
     output: [ "guard rail #2", "some external api" ]
 
   - id: "guard rail #2"
-    type: plugin
+    type: guardrails
     path: "some/fancy/path/guardRail2Plugin.so"
-    additionalFields:
-      description: null
-      layoutData:
-        x: 100
-        y: 320
     output: "Gemini 3"
 
   - id: "Gemini 3"
     type: model
     model: gemini-3.0
-    disabled: false
-    additionalFields:
-      description: null
-      layoutData:
-        x: 100
-        y: 320
     output: "union"
 
   - id: "some external api"
     type: plugin
     path: "some/fancy/path/someExternalApiPlugin.so"
-    additionalFields:
-      description: null
-      layoutData:
-        x: 456
-        y: 325
     output: "union"
 
   - id: "choice"
@@ -164,12 +107,4 @@ steps:
         x: -193
         y: 512
     inputs: [ "Gemini 3", "gpt-5.0", "gpt-4.5", "some external api", "choice" ]
-    output: "end"
 
-  - id: "end"
-    type: end
-    additionalFields:
-      description: null
-      layoutData:
-        x: -194
-        y: 706
