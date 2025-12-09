@@ -156,7 +156,7 @@ docker run --rm -it \
   -e OPENAI_API_KEY="your-openai-key" \
   -e ANTHROPIC_API_KEY="your-anthropic-key" \
   -e GEMINI_API_KEY="your-gemini-key" \
-  golang:1.21-alpine \
+  golang:1.24-alpine \
   go run ./cmd/gomodel
 ```
 
