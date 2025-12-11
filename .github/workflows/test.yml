@@ -16,7 +16,6 @@ env:
 
 jobs:
   lint:
-  golangci:
     name: lint
     runs-on: ubuntu-latest
     steps:
