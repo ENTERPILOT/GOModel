@@ -1,0 +1,11 @@
+# Test configuration for E2E tests
+# This config points to mock LLM providers for deterministic testing
+
+server:
+  port: "${TEST_GATEWAY_PORT:-8080}"
+
+providers:
+  test-openai:
+    type: "openai"
+    api_key: "${MOCK_API_KEY}"
+    base_url: "${TEST_MOCK_LLM_URL}"
