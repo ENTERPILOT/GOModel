@@ -1,5 +1,4 @@
 # options for analysis running
-version: "2"
 run:
   timeout: 5m
 
