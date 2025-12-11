@@ -260,3 +260,4 @@ func TestChatCompletionTimeout(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+

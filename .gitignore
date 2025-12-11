@@ -4,3 +4,6 @@
 
 # Environment variables
 /.env
+
+# Others
+/*.bck.yml
