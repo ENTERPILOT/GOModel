@@ -306,3 +306,4 @@ func TestResponsesConcurrency(t *testing.T) {
 
 	assert.Equal(t, numRequests, successCount)
 }
+
