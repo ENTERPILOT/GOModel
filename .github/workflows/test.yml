@@ -16,30 +16,27 @@ env:
 
 jobs:
   lint:
-    name: Lint
+  golangci:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v6
+          go-version: stable
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64.5
-          skip-cache: true  # Use Go's cache from setup-go instead
+          version: v2.6
 
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -62,10 +59,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
