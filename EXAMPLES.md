@@ -356,11 +356,11 @@ for await (const chunk of stream) {
 
 3. **Streaming**: All providers support streaming responses. The gateway automatically converts provider-specific streaming formats to match OpenAI's SSE format.
 
-4. **System Messages**: 
+4. **System Messages**:
    - Anthropic handles system messages differently. The gateway automatically extracts system messages and sends them in Anthropic's required format.
    - Gemini uses Google's OpenAI-compatible endpoint which handles system messages natively.
 
-5. **Max Tokens**: 
+5. **Max Tokens**:
    - Anthropic requires `max_tokens` to be set. If not provided, the gateway uses a default of 4096 tokens.
    - Gemini and OpenAI have optional `max_tokens` parameters.
 
@@ -368,4 +368,3 @@ for await (const chunk of stream) {
    - Gemini 1.5 Pro offers an exceptionally large context window (up to 1M tokens), making it ideal for long-form content analysis.
    - OpenAI GPT-4 models typically support 8K-128K tokens depending on the variant.
    - Anthropic Claude models support up to 200K tokens.
-

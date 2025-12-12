@@ -1,6 +1,6 @@
 # Architecture Draft: GOModel (v1)
 
-**Goal:** A high-performance, drop-in replacement for LiteLLM with superior concurrency and strict type safety.  
+**Goal:** A high-performance, drop-in replacement for LiteLLM with superior concurrency and strict type safety.
 **Philosophy:** Pragmatic Modularity. Avoid "Java-style" over-abstraction (no deep infrastructure/persistence/impl trees). Focus on flat, composable packages.
 
 ---
@@ -71,21 +71,21 @@ gomodel/
 
 ### Core Frameworks
 
-**Web Framework:** `labstack/echo (v4)` or `go-chi/chi`  
+**Web Framework:** `labstack/echo (v4)` or `go-chi/chi`
 **Reason:** Chi is lighter/standard, but Echo provides a more robust context and built-in middleware which speeds up development of a Gateway. _Assume Echo for performance + features._
 
-**Configuration:** `spf13/viper`  
+**Configuration:** `spf13/viper`
 **Reason:** Industry standard for loading config from Env, YAML, and Flags simultaneously.
 
-**Logging:** `log/slog` (Go Standard Lib)  
+**Logging:** `log/slog` (Go Standard Lib)
 **Reason:** Zero dependency, structured JSON logging, fast.
 
 ### High-Performance Libraries
 
-**JSON:** `goccy/go-json` or `sonic`  
+**JSON:** `goccy/go-json` or `sonic`
 **Reason:** 2–3× faster than standard `encoding/json`. Critical for high-throughput heavy payloads.
 
-**HTTP Client:** `valyala/fasthttp` (if extreme perf needed) or standard `net/http` with connection pooling.  
+**HTTP Client:** `valyala/fasthttp` (if extreme perf needed) or standard `net/http` with connection pooling.
 **Decision:** Start with `net/http` tuned (KeepAlives, MaxIdleConns) for stability, swap later if needed.
 
 ---
