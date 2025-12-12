@@ -79,6 +79,11 @@ func TestMain(m *testing.M) {
 // cleanup shuts down all test resources.
 func cleanup() {
 	cancelFunc()
+	if testServer != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = testServer.Shutdown(ctx)
+	}
 	if mockServer != nil {
 		mockServer.Close()
 	}

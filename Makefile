@@ -24,7 +24,7 @@ test:
 test-unit:
 	go test ./internal/... ./config/... -v
 
-# Run e2e tests (requires Docker for full functionality)
+# Run e2e tests (uses an in-process mock LLM server; no Docker required)
 test-e2e:
 	go test -v -tags=e2e ./tests/e2e/...
 

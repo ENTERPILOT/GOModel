@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
@@ -38,4 +40,9 @@ func New(provider core.Provider) *Server {
 // Start starts the HTTP server on the given address
 func (s *Server) Start(addr string) error {
 	return s.echo.Start(addr)
+}
+
+// Shutdown gracefully shuts down the HTTP server.
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.echo.Shutdown(ctx)
 }
