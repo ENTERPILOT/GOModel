@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -417,7 +418,11 @@ func (sc *geminiResponsesStreamConverter) Read(p []byte) (n int, err error) {
 				"created_at": time.Now().Unix(),
 			},
 		}
-		jsonData, _ := json.Marshal(createdEvent)
+		jsonData, err := json.Marshal(createdEvent)
+		if err != nil {
+			slog.Error("failed to marshal response.created event", "error", err, "response_id", sc.responseID)
+			return 0, nil
+		}
 		created := fmt.Sprintf("event: response.created\ndata: %s\n\n", jsonData)
 		sc.buffer = append(sc.buffer, []byte(created)...)
 		n = copy(p, sc.buffer)
@@ -462,7 +467,11 @@ func (sc *geminiResponsesStreamConverter) Read(p []byte) (n int, err error) {
 								"created_at": time.Now().Unix(),
 							},
 						}
-						jsonData, _ := json.Marshal(doneEvent)
+						jsonData, err := json.Marshal(doneEvent)
+						if err != nil {
+							slog.Error("failed to marshal response.done event", "error", err, "response_id", sc.responseID)
+							continue
+						}
 						doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 						sc.buffer = append(sc.buffer, []byte(doneMsg)...)
 					}
@@ -484,7 +493,11 @@ func (sc *geminiResponsesStreamConverter) Read(p []byte) (n int, err error) {
 									"type":  "response.output_text.delta",
 									"delta": content,
 								}
-								jsonData, _ := json.Marshal(deltaEvent)
+								jsonData, err := json.Marshal(deltaEvent)
+								if err != nil {
+									slog.Error("failed to marshal content delta event", "error", err, "response_id", sc.responseID)
+									continue
+								}
 								sc.buffer = append(sc.buffer, []byte(fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData))...)
 							}
 						}
@@ -509,9 +522,13 @@ func (sc *geminiResponsesStreamConverter) Read(p []byte) (n int, err error) {
 						"created_at": time.Now().Unix(),
 					},
 				}
-				jsonData, _ := json.Marshal(doneEvent)
-				doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
-				sc.buffer = append(sc.buffer, []byte(doneMsg)...)
+				jsonData, err := json.Marshal(doneEvent)
+				if err != nil {
+					slog.Error("failed to marshal final response.done event", "error", err, "response_id", sc.responseID)
+				} else {
+					doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+					sc.buffer = append(sc.buffer, []byte(doneMsg)...)
+				}
 			}
 
 			if len(sc.buffer) > 0 {

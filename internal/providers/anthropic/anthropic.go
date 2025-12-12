@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -387,7 +388,11 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 					},
 				},
 			}
-			jsonData, _ := json.Marshal(chunk)
+			jsonData, err := json.Marshal(chunk)
+			if err != nil {
+				slog.Error("failed to marshal content_block_delta chunk", "error", err, "msg_id", sc.msgID)
+				return ""
+			}
 			return fmt.Sprintf("data: %s\n\n", string(jsonData))
 		}
 
@@ -409,7 +414,11 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 					},
 				},
 			}
-			jsonData, _ := json.Marshal(chunk)
+			jsonData, err := json.Marshal(chunk)
+			if err != nil {
+				slog.Error("failed to marshal message_delta chunk", "error", err, "msg_id", sc.msgID)
+				return ""
+			}
 			return fmt.Sprintf("data: %s\n\n", string(jsonData))
 		}
 
@@ -702,7 +711,13 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 							"created_at": time.Now().Unix(),
 						},
 					}
-					jsonData, _ := json.Marshal(doneEvent)
+					jsonData, marshalErr := json.Marshal(doneEvent)
+					if marshalErr != nil {
+						slog.Error("failed to marshal response.done event", "error", marshalErr, "response_id", sc.responseID)
+						sc.closed = true
+						_ = sc.body.Close() //nolint:errcheck
+						return 0, io.EOF
+					}
 					doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 					n = copy(p, doneMsg)
 					if n < len(doneMsg) {
@@ -771,7 +786,11 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 				"created_at": time.Now().Unix(),
 			},
 		}
-		jsonData, _ := json.Marshal(createdEvent)
+		jsonData, err := json.Marshal(createdEvent)
+		if err != nil {
+			slog.Error("failed to marshal response.created event", "error", err, "response_id", sc.responseID)
+			return ""
+		}
 		return fmt.Sprintf("event: response.created\ndata: %s\n\n", jsonData)
 
 	case "content_block_delta":
@@ -780,7 +799,11 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 				"type":  "response.output_text.delta",
 				"delta": event.Delta.Text,
 			}
-			jsonData, _ := json.Marshal(deltaEvent)
+			jsonData, err := json.Marshal(deltaEvent)
+			if err != nil {
+				slog.Error("failed to marshal content delta event", "error", err, "response_id", sc.responseID)
+				return ""
+			}
 			return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
 		}
 
