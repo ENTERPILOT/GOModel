@@ -16,10 +16,6 @@ clean:
 tidy:
 	go mod tidy
 
-# Run all tests (unit only, e2e requires explicit call)
-test:
-	go test ./internal/... ./config/... -v
-
 # Run unit tests only
 test:
 	go test ./internal/... ./config/... -v

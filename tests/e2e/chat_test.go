@@ -168,15 +168,15 @@ func TestChatCompletionErrors(t *testing.T) {
 		assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest)
 	})
 
-	t.Run("invalid model passthrough", func(t *testing.T) {
-		// Test provider accepts all models
+	t.Run("unsupported model", func(t *testing.T) {
+		// Gateway validates models against registry before routing
 		resp := sendRawChatRequest(t, map[string]interface{}{
 			"model":    "invalid-model-xyz",
 			"messages": []map[string]string{{"role": "user", "content": "Hello"}},
 		})
 		defer closeBody(resp)
 
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	})
 }
 
