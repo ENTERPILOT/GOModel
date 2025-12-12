@@ -70,11 +70,6 @@ func (p *Provider) SetBaseURL(url string) {
 	p.baseURL = url
 }
 
-// Supports returns true if this provider can handle the given model
-func (p *Provider) Supports(model string) bool {
-	return strings.HasPrefix(model, "gemini-")
-}
-
 // ChatCompletion sends a chat completion request to Gemini
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	body, err := json.Marshal(req)

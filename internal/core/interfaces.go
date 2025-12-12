@@ -8,9 +8,6 @@ import (
 
 // Provider defines the interface for LLM providers
 type Provider interface {
-	// Supports determines if this provider can handle the model name
-	Supports(model string) bool
-
 	// ChatCompletion executes a chat completion request
 	ChatCompletion(ctx context.Context, req *ChatRequest) (*ChatResponse, error)
 
@@ -25,4 +22,14 @@ type Provider interface {
 
 	// StreamResponses returns a raw SSE stream for Responses API (caller must close)
 	StreamResponses(ctx context.Context, req *ResponsesRequest) (io.ReadCloser, error)
+}
+
+// RoutableProvider extends Provider with routing capability.
+// This is implemented by the Router which uses a model registry
+// to determine if a model is supported.
+type RoutableProvider interface {
+	Provider
+
+	// Supports returns true if the provider can handle the given model
+	Supports(model string) bool
 }
