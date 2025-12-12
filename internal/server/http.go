@@ -16,7 +16,7 @@ type Server struct {
 }
 
 // New creates a new HTTP server
-func New(provider core.Provider) *Server {
+func New(provider core.RoutableProvider) *Server {
 	e := echo.New()
 	e.HideBanner = true
 

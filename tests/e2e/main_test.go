@@ -48,9 +48,18 @@ func TestMain(m *testing.M) {
 	}
 	gatewayURL = fmt.Sprintf("http://localhost:%d", gatewayPort)
 
-	// 4. Create a test provider that points to our mock
+	// 4. Create a test provider and registry
 	testProvider := NewTestProvider(mockLLMURL, "sk-test-key-12345")
-	router := providers.NewRouter(testProvider)
+	registry := providers.NewModelRegistry()
+	registry.RegisterProvider(testProvider)
+
+	// Initialize registry to discover models from test provider
+	if err := registry.Initialize(testContext); err != nil {
+		fmt.Printf("Failed to initialize model registry: %v\n", err)
+		os.Exit(1)
+	}
+
+	router := providers.NewRouter(registry)
 
 	// 5. Start the gateway server
 	testServer = server.New(router)
@@ -129,12 +138,6 @@ func NewTestProvider(baseURL, apiKey string) *TestProvider {
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
-}
-
-// Supports returns true for test models.
-func (p *TestProvider) Supports(model string) bool {
-	// Support all models for testing
-	return true
 }
 
 // ChatCompletion forwards the request to the mock server.

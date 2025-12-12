@@ -27,32 +27,6 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestSupports(t *testing.T) {
-	provider := New("test-api-key")
-
-	tests := []struct {
-		model    string
-		expected bool
-	}{
-		{"claude-3-5-sonnet-20241022", true},
-		{"claude-3-opus-20240229", true},
-		{"claude-3-haiku-20240307", true},
-		{"gpt-4o", false},
-		{"gpt-4o-mini", false},
-		{"o1-preview", false},
-		{"random-model", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.model, func(t *testing.T) {
-			result := provider.Supports(tt.model)
-			if result != tt.expected {
-				t.Errorf("Supports(%q) = %v, want %v", tt.model, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestChatCompletion(t *testing.T) {
 	tests := []struct {
 		name          string

@@ -66,11 +66,6 @@ func (p *Provider) SetBaseURL(url string) {
 	p.baseURL = url
 }
 
-// Supports returns true if this provider can handle the given model
-func (p *Provider) Supports(model string) bool {
-	return strings.HasPrefix(model, "claude-")
-}
-
 // anthropicRequest represents the Anthropic API request format
 type anthropicRequest struct {
 	Model       string             `json:"model"`

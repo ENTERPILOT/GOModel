@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"strings"
 
 	"gomodel/config"
 	"gomodel/internal/core"
@@ -59,11 +58,6 @@ func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
 	p.baseURL = url
-}
-
-// Supports returns true if this provider can handle the given model
-func (p *Provider) Supports(model string) bool {
-	return strings.HasPrefix(model, "gpt-") || strings.HasPrefix(model, "o1")
 }
 
 // ChatCompletion sends a chat completion request to OpenAI

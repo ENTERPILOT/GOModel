@@ -13,11 +13,11 @@ import (
 
 // Handler holds the HTTP handlers
 type Handler struct {
-	provider core.Provider
+	provider core.RoutableProvider
 }
 
-// NewHandler creates a new handler with the given provider
-func NewHandler(provider core.Provider) *Handler {
+// NewHandler creates a new handler with the given routable provider (typically the Router)
+func NewHandler(provider core.RoutableProvider) *Handler {
 	return &Handler{
 		provider: provider,
 	}

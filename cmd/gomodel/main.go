@@ -2,9 +2,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"sort"
+	"time"
 
 	"gomodel/config"
 	"gomodel/internal/core"
@@ -34,7 +36,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create providers dynamically using the factory
+	// Create model registry
+	registry := providers.NewModelRegistry()
+
+	// Create providers dynamically using the factory and register them
 	activeProviders := make([]core.Provider, 0, len(cfg.Providers))
 
 	// Sort provider names for deterministic initialization order
@@ -52,6 +57,7 @@ func main() {
 			continue
 		}
 		activeProviders = append(activeProviders, p)
+		registry.RegisterProvider(p)
 		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
 	}
 
@@ -61,11 +67,31 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize model registry by fetching models from all providers
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	slog.Info("initializing model registry...")
+	if err := registry.Initialize(ctx); err != nil {
+		slog.Error("failed to initialize model registry", "error", err)
+		os.Exit(1)
+	}
+
+	slog.Info("model registry ready",
+		"models", registry.ModelCount(),
+		"providers", registry.ProviderCount(),
+	)
+
+	// Optional: Start background refresh of model registry (every 5 minutes)
+	// This keeps the model list up-to-date as providers add/remove models
+	stopRefresh := registry.StartBackgroundRefresh(5 * time.Minute)
+	defer stopRefresh()
+
 	// Create provider router
-	provider := providers.NewRouter(activeProviders...)
+	router := providers.NewRouter(registry)
 
 	// Create and start server
-	srv := server.New(provider)
+	srv := server.New(router)
 
 	addr := ":" + cfg.Server.Port
 	slog.Info("starting server", "address", addr)
