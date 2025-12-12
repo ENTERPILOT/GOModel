@@ -21,7 +21,7 @@ test:
 	go test ./internal/... ./config/... -v
 
 # Run unit tests only
-test-unit:
+test:
 	go test ./internal/... ./config/... -v
 
 # Run e2e tests (uses an in-process mock LLM server; no Docker required)
@@ -29,7 +29,7 @@ test-e2e:
 	go test -v -tags=e2e ./tests/e2e/...
 
 # Run all tests including e2e
-test-all: test-unit test-e2e
+test-all: test test-e2e
 
 # Run linter
 lint:
