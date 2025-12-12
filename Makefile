@@ -39,4 +39,3 @@ lint:
 # Run linter with auto-fix
 lint-fix:
 	golangci-lint run --fix ./...
-

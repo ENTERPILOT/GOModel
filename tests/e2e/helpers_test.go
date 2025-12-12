@@ -188,8 +188,3 @@ func hasDoneEvent(events []ResponsesStreamEvent) bool {
 	}
 	return false
 }
-
-
-
-
-
