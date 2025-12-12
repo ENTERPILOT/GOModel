@@ -127,8 +127,11 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 		}
 	}
 
-	if totalModels == 0 && failedProviders == len(providers) {
-		return fmt.Errorf("failed to fetch models from any provider")
+	if totalModels == 0 {
+		if failedProviders == len(providers) {
+			return fmt.Errorf("failed to fetch models from any provider")
+		}
+		return fmt.Errorf("no models available: providers returned empty model lists")
 	}
 
 	// Atomically swap the models map
