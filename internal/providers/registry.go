@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"sync"
 	"time"
 
@@ -42,16 +43,20 @@ func (r *ModelRegistry) RegisterProvider(provider core.Provider) {
 // Initialize fetches models from all registered providers and populates the registry.
 // This should be called on application startup.
 func (r *ModelRegistry) Initialize(ctx context.Context) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	// Get a snapshot of providers with a read lock
+	r.mu.RLock()
+	providers := make([]core.Provider, len(r.providers))
+	copy(providers, r.providers)
+	r.mu.RUnlock()
 
-	// Clear existing models
-	r.models = make(map[string]*ModelInfo)
-
+	// Build new models map without holding the lock.
+	// This allows concurrent reads to continue using the existing map
+	// while we fetch models from providers (which may involve network calls).
+	newModels := make(map[string]*ModelInfo)
 	var totalModels int
 	var failedProviders int
 
-	for _, provider := range r.providers {
+	for _, provider := range providers {
 		resp, err := provider.ListModels(ctx)
 		if err != nil {
 			slog.Warn("failed to fetch models from provider",
@@ -62,7 +67,7 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 		}
 
 		for _, model := range resp.Data {
-			if _, exists := r.models[model.ID]; exists {
+			if _, exists := newModels[model.ID]; exists {
 				// Model already registered by another provider, skip
 				// First provider wins (could be made configurable)
 				slog.Debug("model already registered, skipping",
@@ -72,7 +77,7 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 				continue
 			}
 
-			r.models[model.ID] = &ModelInfo{
+			newModels[model.ID] = &ModelInfo{
 				Model:    model,
 				Provider: provider,
 			}
@@ -80,13 +85,18 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 		}
 	}
 
-	if totalModels == 0 && failedProviders == len(r.providers) {
+	if totalModels == 0 && failedProviders == len(providers) {
 		return fmt.Errorf("failed to fetch models from any provider")
 	}
 
+	// Atomically swap the models map
+	r.mu.Lock()
+	r.models = newModels
+	r.mu.Unlock()
+
 	slog.Info("model registry initialized",
 		"total_models", totalModels,
-		"providers", len(r.providers),
+		"providers", len(providers),
 		"failed_providers", failedProviders,
 	)
 
@@ -130,7 +140,7 @@ func (r *ModelRegistry) Supports(modelID string) bool {
 	return ok
 }
 
-// ListModels returns all models in the registry
+// ListModels returns all models in the registry, sorted by model ID for consistent ordering.
 func (r *ModelRegistry) ListModels() []core.Model {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -139,6 +149,12 @@ func (r *ModelRegistry) ListModels() []core.Model {
 	for _, info := range r.models {
 		models = append(models, info.Model)
 	}
+
+	// Sort by model ID for consistent ordering across calls
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].ID < models[j].ID
+	})
+
 	return models
 }
 

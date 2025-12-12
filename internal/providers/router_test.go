@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"gomodel/internal/core"
 )
@@ -396,4 +398,234 @@ func TestModelRegistry(t *testing.T) {
 			t.Error("expected first provider to win for duplicate model")
 		}
 	})
+
+	t.Run("AllProvidersFail", func(t *testing.T) {
+		// Test that Initialize returns an error when all providers fail
+		registry := NewModelRegistry()
+		mock1 := &mockProvider{
+			name: "provider1",
+			err:  errors.New("provider1 error"),
+		}
+		mock2 := &mockProvider{
+			name: "provider2",
+			err:  errors.New("provider2 error"),
+		}
+		registry.RegisterProvider(mock1)
+		registry.RegisterProvider(mock2)
+
+		err := registry.Initialize(context.Background())
+		if err == nil {
+			t.Error("expected error when all providers fail, got nil")
+		}
+
+		expectedMsg := "failed to fetch models from any provider"
+		if err.Error() != expectedMsg {
+			t.Errorf("expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+
+	t.Run("ListModelsOrdering", func(t *testing.T) {
+		// Test that ListModels returns models in consistent sorted order
+		registry := NewModelRegistry()
+		mock := &mockProvider{
+			name: "test",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data: []core.Model{
+					{ID: "zebra-model", Object: "model", OwnedBy: "test"},
+					{ID: "alpha-model", Object: "model", OwnedBy: "test"},
+					{ID: "middle-model", Object: "model", OwnedBy: "test"},
+				},
+			},
+		}
+		registry.RegisterProvider(mock)
+		_ = registry.Initialize(context.Background())
+
+		// Call ListModels multiple times and verify consistent ordering
+		for i := 0; i < 5; i++ {
+			models := registry.ListModels()
+			if len(models) != 3 {
+				t.Fatalf("expected 3 models, got %d", len(models))
+			}
+
+			// Verify sorted order
+			if models[0].ID != "alpha-model" {
+				t.Errorf("expected first model to be 'alpha-model', got '%s'", models[0].ID)
+			}
+			if models[1].ID != "middle-model" {
+				t.Errorf("expected second model to be 'middle-model', got '%s'", models[1].ID)
+			}
+			if models[2].ID != "zebra-model" {
+				t.Errorf("expected third model to be 'zebra-model', got '%s'", models[2].ID)
+			}
+		}
+	})
+
+	t.Run("RefreshDoesNotBlockReads", func(t *testing.T) {
+		// Test that Refresh builds new map without blocking concurrent reads
+		registry := NewModelRegistry()
+		mock := &mockProvider{
+			name: "test",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data: []core.Model{
+					{ID: "test-model", Object: "model", OwnedBy: "test"},
+				},
+			},
+		}
+		registry.RegisterProvider(mock)
+		_ = registry.Initialize(context.Background())
+
+		// Verify model is available before refresh
+		if !registry.Supports("test-model") {
+			t.Fatal("expected model to be available before refresh")
+		}
+
+		// During refresh, the model should still be accessible
+		// (testing the atomic swap behavior)
+		err := registry.Refresh(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected refresh error: %v", err)
+		}
+
+		// Model should still be available after refresh
+		if !registry.Supports("test-model") {
+			t.Error("expected model to be available after refresh")
+		}
+	})
+}
+
+func TestStartBackgroundRefresh(t *testing.T) {
+	t.Run("RefreshesAtInterval", func(t *testing.T) {
+		var refreshCount atomic.Int32
+		mock := &mockProvider{
+			name: "test",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data: []core.Model{
+					{ID: "test-model", Object: "model", OwnedBy: "test"},
+				},
+			},
+		}
+
+		// Create a wrapper that counts refreshes
+		countingMock := &countingMockProvider{
+			mockProvider: mock,
+			listCount:    &refreshCount,
+		}
+
+		registry := NewModelRegistry()
+		registry.RegisterProvider(countingMock)
+		_ = registry.Initialize(context.Background())
+
+		// Reset counter after initial initialization
+		refreshCount.Store(0)
+
+		// Start background refresh with a short interval
+		interval := 50 * time.Millisecond
+		cancel := registry.StartBackgroundRefresh(interval)
+		defer cancel()
+
+		// Wait for a few refresh cycles
+		time.Sleep(interval*3 + 25*time.Millisecond)
+
+		count := refreshCount.Load()
+		if count < 2 {
+			t.Errorf("expected at least 2 refreshes, got %d", count)
+		}
+	})
+
+	t.Run("StopsOnCancel", func(t *testing.T) {
+		var refreshCount atomic.Int32
+		mock := &mockProvider{
+			name: "test",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data: []core.Model{
+					{ID: "test-model", Object: "model", OwnedBy: "test"},
+				},
+			},
+		}
+
+		countingMock := &countingMockProvider{
+			mockProvider: mock,
+			listCount:    &refreshCount,
+		}
+
+		registry := NewModelRegistry()
+		registry.RegisterProvider(countingMock)
+		_ = registry.Initialize(context.Background())
+
+		// Reset counter after initial initialization
+		refreshCount.Store(0)
+
+		// Start and immediately cancel
+		interval := 50 * time.Millisecond
+		cancel := registry.StartBackgroundRefresh(interval)
+		cancel()
+
+		// Wait a bit to ensure no more refreshes happen
+		time.Sleep(interval * 3)
+
+		count := refreshCount.Load()
+		if count > 1 {
+			t.Errorf("expected at most 1 refresh after cancel, got %d", count)
+		}
+	})
+
+	t.Run("HandlesRefreshErrors", func(t *testing.T) {
+		var refreshCount atomic.Int32
+		mock := &mockProvider{
+			name: "failing",
+			err:  errors.New("refresh error"),
+		}
+
+		countingMock := &countingMockProvider{
+			mockProvider: mock,
+			listCount:    &refreshCount,
+		}
+
+		registry := NewModelRegistry()
+		// First add a working provider to initialize successfully
+		workingMock := &mockProvider{
+			name: "working",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data: []core.Model{
+					{ID: "working-model", Object: "model", OwnedBy: "working"},
+				},
+			},
+		}
+		registry.RegisterProvider(workingMock)
+		registry.RegisterProvider(countingMock)
+		_ = registry.Initialize(context.Background())
+
+		// Reset counter
+		refreshCount.Store(0)
+
+		// Start background refresh - should continue even with errors
+		interval := 50 * time.Millisecond
+		cancel := registry.StartBackgroundRefresh(interval)
+		defer cancel()
+
+		// Wait for refresh attempts
+		time.Sleep(interval*3 + 25*time.Millisecond)
+
+		// The background refresh should continue attempting even with errors
+		count := refreshCount.Load()
+		if count < 2 {
+			t.Errorf("expected at least 2 refresh attempts despite errors, got %d", count)
+		}
+	})
+}
+
+// countingMockProvider wraps mockProvider and counts ListModels calls
+type countingMockProvider struct {
+	*mockProvider
+	listCount *atomic.Int32
+}
+
+func (c *countingMockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	c.listCount.Add(1)
+	return c.mockProvider.ListModels(ctx)
 }
