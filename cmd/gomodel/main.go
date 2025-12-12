@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
@@ -17,6 +18,15 @@ import (
 	_ "gomodel/internal/providers/openai"
 	"gomodel/internal/server"
 )
+
+// getCacheDir returns the directory for cache files.
+// Uses $GOMODEL_CACHE_DIR if set, otherwise ./.cache (working directory)
+func getCacheDir() string {
+	if cacheDir := os.Getenv("GOMODEL_CACHE_DIR"); cacheDir != "" {
+		return cacheDir
+	}
+	return ".cache"
+}
 
 func main() {
 	// Setup structured logging
@@ -36,8 +46,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create model registry
+	// Create model registry with cache file for instant startup
 	registry := providers.NewModelRegistry()
+	cacheFile := filepath.Join(getCacheDir(), "models.json")
+	registry.SetCacheFile(cacheFile)
+	slog.Debug("cache file configured", "path", cacheFile)
 
 	// Sort provider names for deterministic initialization order
 	providerNames := make([]string, 0, len(cfg.Providers))
@@ -55,7 +68,8 @@ func main() {
 			slog.Error("failed to initialize provider", "name", name, "type", pCfg.Type, "error", err)
 			continue
 		}
-		registry.RegisterProvider(p)
+		// Register with type for cache persistence
+		registry.RegisterProviderWithType(p, pCfg.Type)
 		initializedCount++
 		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
 	}
@@ -66,22 +80,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize model registry by fetching models from all providers
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	// Non-blocking initialization: load from cache, then refresh in background
+	// This allows the server to start serving traffic immediately using cached data
+	slog.Info("starting non-blocking model registry initialization...")
+	registry.InitializeAsync(context.Background())
 
-	slog.Info("initializing model registry...")
-	if err := registry.Initialize(ctx); err != nil {
-		slog.Error("failed to initialize model registry", "error", err)
-		os.Exit(1)
-	}
-
-	slog.Info("model registry ready",
-		"models", registry.ModelCount(),
+	slog.Info("model registry starting",
+		"cached_models", registry.ModelCount(),
 		"providers", registry.ProviderCount(),
 	)
 
-	// Optional: Start background refresh of model registry (every 5 minutes)
+	// Start background refresh of model registry (every 5 minutes)
 	// This keeps the model list up-to-date as providers add/remove models
 	stopRefresh := registry.StartBackgroundRefresh(5 * time.Minute)
 	defer stopRefresh()

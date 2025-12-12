@@ -5,6 +5,9 @@
 # Environment variables
 /.env
 
+# Cache
+/.cache
+
 # Others
 /*.bck.yml
 /repomix-output.*
