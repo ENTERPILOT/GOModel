@@ -309,11 +309,6 @@ func (r *ModelRegistry) InitializeAsync(ctx context.Context) {
 			return
 		}
 
-		// Mark as initialized
-		r.initMu.Lock()
-		r.initialized = true
-		r.initMu.Unlock()
-
 		// Save to cache for next startup
 		if err := r.SaveToCache(); err != nil {
 			slog.Warn("failed to save models to cache", "error", err)
