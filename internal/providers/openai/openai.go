@@ -173,3 +173,77 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 
 	return &modelsResp, nil
 }
+
+// Responses sends a Responses API request to OpenAI
+func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to create request", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
+	}
+
+	var responsesResp core.ResponsesResponse
+	if err := json.Unmarshal(respBody, &responsesResp); err != nil {
+		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
+	}
+
+	return &responsesResp, nil
+}
+
+// StreamResponses returns a raw response body for streaming Responses API (caller must close)
+func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	req.Stream = true
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to create request", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			respBody = []byte("failed to read error response")
+		}
+		_ = resp.Body.Close() //nolint:errcheck
+		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
+	}
+
+	return resp.Body, nil
+}

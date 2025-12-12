@@ -68,6 +68,24 @@ func (r *Router) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	}, nil
 }
 
+// Responses routes the Responses API request to the appropriate provider
+func (r *Router) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	provider := r.findProvider(req.Model)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	}
+	return provider.Responses(ctx, req)
+}
+
+// StreamResponses routes the streaming Responses API request to the appropriate provider
+func (r *Router) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	provider := r.findProvider(req.Model)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	}
+	return provider.StreamResponses(ctx, req)
+}
+
 // findProvider finds the first provider that supports the given model
 func (r *Router) findProvider(model string) core.Provider {
 	for _, p := range r.providers {

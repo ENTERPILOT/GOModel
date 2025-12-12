@@ -30,6 +30,7 @@ func New(provider core.Provider) *Server {
 	e.GET("/health", handler.Health)
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
+	e.POST("/v1/responses", handler.Responses)
 
 	return &Server{
 		echo:    e,

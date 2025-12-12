@@ -470,3 +470,324 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 		Data:   models,
 	}, nil
 }
+
+// convertResponsesRequestToAnthropic converts a ResponsesRequest to Anthropic format
+func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRequest {
+	anthropicReq := &anthropicRequest{
+		Model:       req.Model,
+		Messages:    make([]anthropicMessage, 0),
+		MaxTokens:   4096, // Default max tokens
+		Temperature: req.Temperature,
+		Stream:      req.Stream,
+	}
+
+	if req.MaxOutputTokens != nil {
+		anthropicReq.MaxTokens = *req.MaxOutputTokens
+	}
+
+	// Set system instruction if provided
+	if req.Instructions != "" {
+		anthropicReq.System = req.Instructions
+	}
+
+	// Convert input to messages
+	switch input := req.Input.(type) {
+	case string:
+		anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
+			Role:    "user",
+			Content: input,
+		})
+	case []interface{}:
+		for _, item := range input {
+			if msgMap, ok := item.(map[string]interface{}); ok {
+				role, _ := msgMap["role"].(string)
+				content := extractContentFromResponsesInput(msgMap["content"])
+				if role != "" && content != "" {
+					anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
+						Role:    role,
+						Content: content,
+					})
+				}
+			}
+		}
+	}
+
+	return anthropicReq
+}
+
+// extractContentFromResponsesInput extracts text content from responses input
+func extractContentFromResponsesInput(content interface{}) string {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []interface{}:
+		// Array of content parts - extract text
+		var texts []string
+		for _, part := range c {
+			if partMap, ok := part.(map[string]interface{}); ok {
+				if text, ok := partMap["text"].(string); ok {
+					texts = append(texts, text)
+				}
+			}
+		}
+		return strings.Join(texts, " ")
+	}
+	return ""
+}
+
+// convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse
+func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) *core.ResponsesResponse {
+	content := ""
+	if len(resp.Content) > 0 {
+		content = resp.Content[0].Text
+	}
+
+	return &core.ResponsesResponse{
+		ID:        resp.ID,
+		Object:    "response",
+		CreatedAt: time.Now().Unix(),
+		Model:     model,
+		Status:    "completed",
+		Output: []core.ResponsesOutputItem{
+			{
+				ID:     "msg_" + time.Now().Format("150405"),
+				Type:   "message",
+				Role:   "assistant",
+				Status: "completed",
+				Content: []core.ResponsesContentItem{
+					{
+						Type:        "output_text",
+						Text:        content,
+						Annotations: []string{},
+					},
+				},
+			},
+		},
+		Usage: &core.ResponsesUsage{
+			InputTokens:  resp.Usage.InputTokens,
+			OutputTokens: resp.Usage.OutputTokens,
+			TotalTokens:  resp.Usage.InputTokens + resp.Usage.OutputTokens,
+		},
+	}
+}
+
+// Responses sends a Responses API request to Anthropic (converted to messages format)
+func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	anthropicReq := convertResponsesRequestToAnthropic(req)
+
+	body, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to create request", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", p.apiKey)
+	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
+	}
+	defer func() {
+		_ = resp.Body.Close() //nolint:errcheck
+	}()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
+	}
+
+	var anthropicResp anthropicResponse
+	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
+	}
+
+	return convertAnthropicResponseToResponses(&anthropicResp, req.Model), nil
+}
+
+// StreamResponses returns a raw response body for streaming Responses API (caller must close)
+func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	anthropicReq := convertResponsesRequestToAnthropic(req)
+	anthropicReq.Stream = true
+
+	body, err := json.Marshal(anthropicReq)
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to create request", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", p.apiKey)
+	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	resp, err := p.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, err := io.ReadAll(resp.Body)
+		if err != nil {
+			respBody = []byte("failed to read error response")
+		}
+		_ = resp.Body.Close() //nolint:errcheck
+		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
+	}
+
+	// Return a reader that converts Anthropic SSE format to Responses API format
+	return newResponsesStreamConverter(resp.Body, req.Model), nil
+}
+
+// responsesStreamConverter wraps an Anthropic stream and converts it to Responses API format
+type responsesStreamConverter struct {
+	reader     *bufio.Reader
+	body       io.ReadCloser
+	model      string
+	responseID string
+	buffer     []byte
+	closed     bool
+	sentDone   bool
+}
+
+func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
+	return &responsesStreamConverter{
+		reader:     bufio.NewReader(body),
+		body:       body,
+		model:      model,
+		responseID: fmt.Sprintf("resp_%d", time.Now().UnixNano()),
+		buffer:     make([]byte, 0, 1024),
+	}
+}
+
+func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
+	if sc.closed {
+		return 0, io.EOF
+	}
+
+	// If we have buffered data, return it first
+	if len(sc.buffer) > 0 {
+		n = copy(p, sc.buffer)
+		sc.buffer = sc.buffer[n:]
+		return n, nil
+	}
+
+	// Read the next SSE event from Anthropic
+	for {
+		line, err := sc.reader.ReadBytes('\n')
+		if err != nil {
+			if err == io.EOF {
+				// Send final done event and [DONE] message
+				if !sc.sentDone {
+					sc.sentDone = true
+					doneEvent := map[string]interface{}{
+						"type": "response.done",
+						"response": map[string]interface{}{
+							"id":         sc.responseID,
+							"object":     "response",
+							"status":     "completed",
+							"model":      sc.model,
+							"created_at": time.Now().Unix(),
+						},
+					}
+					jsonData, _ := json.Marshal(doneEvent)
+					doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+					n = copy(p, doneMsg)
+					if n < len(doneMsg) {
+						sc.buffer = append(sc.buffer, []byte(doneMsg)[n:]...)
+					}
+					return n, nil
+				}
+				sc.closed = true
+				_ = sc.body.Close() //nolint:errcheck
+				return 0, io.EOF
+			}
+			return 0, err
+		}
+
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+
+		// Parse SSE line
+		if bytes.HasPrefix(line, []byte("event:")) {
+			continue // Skip event type lines
+		}
+
+		if bytes.HasPrefix(line, []byte("data:")) {
+			data := bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:")))
+
+			var event anthropicStreamEvent
+			if err := json.Unmarshal(data, &event); err != nil {
+				continue
+			}
+
+			// Convert Anthropic event to Responses API format
+			responsesChunk := sc.convertEvent(&event)
+			if responsesChunk == "" {
+				continue
+			}
+
+			// Buffer the converted chunk
+			sc.buffer = append(sc.buffer, []byte(responsesChunk)...)
+
+			// Return as much as we can
+			n = copy(p, sc.buffer)
+			sc.buffer = sc.buffer[n:]
+			return n, nil
+		}
+	}
+}
+
+func (sc *responsesStreamConverter) Close() error {
+	sc.closed = true
+	return sc.body.Close()
+}
+
+func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) string {
+	switch event.Type {
+	case "message_start":
+		// Send response.created event
+		createdEvent := map[string]interface{}{
+			"type": "response.created",
+			"response": map[string]interface{}{
+				"id":         sc.responseID,
+				"object":     "response",
+				"status":     "in_progress",
+				"model":      sc.model,
+				"created_at": time.Now().Unix(),
+			},
+		}
+		jsonData, _ := json.Marshal(createdEvent)
+		return fmt.Sprintf("event: response.created\ndata: %s\n\n", jsonData)
+
+	case "content_block_delta":
+		if event.Delta != nil && event.Delta.Text != "" {
+			deltaEvent := map[string]interface{}{
+				"type":  "response.output_text.delta",
+				"delta": event.Delta.Text,
+			}
+			jsonData, _ := json.Marshal(deltaEvent)
+			return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
+		}
+
+	case "message_stop":
+		// Will be handled in Read() when we get EOF
+		return ""
+	}
+
+	return ""
+}

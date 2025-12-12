@@ -157,3 +157,13 @@ func (p *TestProvider) ListModels(ctx context.Context) (*core.ModelsResponse, er
 		},
 	}, nil
 }
+
+// Responses forwards the responses API request to the mock server.
+func (p *TestProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	return forwardResponsesRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req, false)
+}
+
+// StreamResponses forwards the streaming responses API request to the mock server.
+func (p *TestProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	return forwardResponsesStreamRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req)
+}

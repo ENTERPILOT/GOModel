@@ -11,11 +11,12 @@ import (
 
 // mockProvider is a simple mock implementation of core.Provider for testing
 type mockProvider struct {
-	name           string
-	supportedModel string
-	chatResponse   *core.ChatResponse
-	modelsResponse *core.ModelsResponse
-	err            error
+	name              string
+	supportedModel    string
+	chatResponse      *core.ChatResponse
+	responsesResponse *core.ResponsesResponse
+	modelsResponse    *core.ModelsResponse
+	err               error
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -41,6 +42,20 @@ func (m *mockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, er
 		return nil, m.err
 	}
 	return m.modelsResponse, nil
+}
+
+func (m *mockProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.responsesResponse, nil
+}
+
+func (m *mockProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return io.NopCloser(nil), nil
 }
 
 func TestRouterSupports(t *testing.T) {
