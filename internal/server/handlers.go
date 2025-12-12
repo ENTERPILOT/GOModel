@@ -80,6 +80,52 @@ func (h *Handler) ListModels(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
+// Responses handles POST /v1/responses
+func (h *Handler) Responses(c echo.Context) error {
+	var req core.ResponsesRequest
+	if err := c.Bind(&req); err != nil {
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
+	}
+
+	if req.Model == "" {
+		return handleError(c, core.NewInvalidRequestError("model is required", nil))
+	}
+
+	if !h.provider.Supports(req.Model) {
+		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
+	}
+
+	// Handle streaming: proxy the raw SSE stream
+	if req.Stream {
+		stream, err := h.provider.StreamResponses(c.Request().Context(), &req)
+		if err != nil {
+			return handleError(c, err)
+		}
+		defer func() {
+			_ = stream.Close() //nolint:errcheck
+		}()
+
+		c.Response().Header().Set("Content-Type", "text/event-stream")
+		c.Response().Header().Set("Cache-Control", "no-cache")
+		c.Response().Header().Set("Connection", "keep-alive")
+		c.Response().WriteHeader(http.StatusOK)
+
+		if _, err := io.Copy(c.Response().Writer, stream); err != nil {
+			// Can't return error after headers are sent, log it
+			return nil
+		}
+		return nil
+	}
+
+	// Non-streaming
+	resp, err := h.provider.Responses(c.Request().Context(), &req)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
 // handleError converts gateway errors to appropriate HTTP responses
 func handleError(c echo.Context, err error) error {
 	var gatewayErr *core.GatewayError

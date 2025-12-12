@@ -15,11 +15,12 @@ import (
 
 // mockProvider implements core.Provider for testing
 type mockProvider struct {
-	err             error
-	response        *core.ChatResponse
-	modelsResponse  *core.ModelsResponse
-	streamData      string
-	supportedModels []string
+	err               error
+	response          *core.ChatResponse
+	responsesResponse *core.ResponsesResponse
+	modelsResponse    *core.ModelsResponse
+	streamData        string
+	supportedModels   []string
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -50,6 +51,20 @@ func (m *mockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, er
 		return nil, m.err
 	}
 	return m.modelsResponse, nil
+}
+
+func (m *mockProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.responsesResponse, nil
+}
+
+func (m *mockProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return io.NopCloser(strings.NewReader(m.streamData)), nil
 }
 
 func TestChatCompletion(t *testing.T) {

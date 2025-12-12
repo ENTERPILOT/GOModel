@@ -532,3 +532,68 @@ func forwardStreamRequest(ctx context.Context, client *http.Client, baseURL, api
 
 	return resp.Body, nil
 }
+
+// forwardResponsesRequest forwards a responses API request to the mock server.
+func forwardResponsesRequest(ctx context.Context, client *http.Client, baseURL, apiKey string, req *core.ResponsesRequest, stream bool) (*core.ResponsesResponse, error) {
+	req.Stream = stream
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upstream error: %s", string(respBody))
+	}
+
+	var responsesResp core.ResponsesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&responsesResp); err != nil {
+		return nil, err
+	}
+
+	return &responsesResp, nil
+}
+
+// forwardResponsesStreamRequest forwards a streaming responses API request to the mock server.
+func forwardResponsesStreamRequest(ctx context.Context, client *http.Client, baseURL, apiKey string, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	req.Stream = true
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/responses", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("upstream error: %s", string(respBody))
+	}
+
+	return resp.Body, nil
+}

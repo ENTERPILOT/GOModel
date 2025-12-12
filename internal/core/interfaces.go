@@ -19,4 +19,10 @@ type Provider interface {
 
 	// ListModels returns the list of available models
 	ListModels(ctx context.Context) (*ModelsResponse, error)
+
+	// Responses executes a Responses API request (OpenAI-compatible)
+	Responses(ctx context.Context, req *ResponsesRequest) (*ResponsesResponse, error)
+
+	// StreamResponses returns a raw SSE stream for Responses API (caller must close)
+	StreamResponses(ctx context.Context, req *ResponsesRequest) (io.ReadCloser, error)
 }
