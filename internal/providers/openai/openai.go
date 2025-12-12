@@ -2,15 +2,13 @@
 package openai
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 
 	"gomodel/config"
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/httpclient"
+	"gomodel/internal/pkg/llmclient"
 	"gomodel/internal/providers"
 )
 
@@ -32,212 +30,98 @@ func init() {
 
 // Provider implements the core.Provider interface for OpenAI
 type Provider struct {
-	httpClient *http.Client
-	apiKey     string
-	baseURL    string
+	client *llmclient.Client
+	apiKey string
 }
 
 // New creates a new OpenAI provider
 func New(apiKey string) *Provider {
-	return &Provider{
-		apiKey:     apiKey,
-		baseURL:    defaultBaseURL,
-		httpClient: httpclient.NewDefaultHTTPClient(),
-	}
+	p := &Provider{apiKey: apiKey}
+	p.client = llmclient.New(
+		llmclient.DefaultConfig("openai", defaultBaseURL),
+		p.setHeaders,
+	)
+	return p
 }
 
 // NewWithHTTPClient creates a new OpenAI provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
-	return &Provider{
-		apiKey:     apiKey,
-		baseURL:    defaultBaseURL,
-		httpClient: client,
-	}
+func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+	p := &Provider{apiKey: apiKey}
+	p.client = llmclient.NewWithHTTPClient(
+		httpClient,
+		llmclient.DefaultConfig("openai", defaultBaseURL),
+		p.setHeaders,
+	)
+	return p
 }
 
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
-	p.baseURL = url
+	p.client.SetBaseURL(url)
+}
+
+// setHeaders sets the required headers for OpenAI API requests
+func (p *Provider) setHeaders(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 }
 
 // ChatCompletion sends a chat completion request to OpenAI
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	body, err := json.Marshal(req)
+	var resp core.ChatResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/chat/completions",
+		Body:     req,
+	}, &resp)
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+		return nil, err
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
-	}
-
-	var chatResp core.ChatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
-	}
-
-	return &chatResp, nil
+	return &resp, nil
 }
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
 	req.Stream = true
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			respBody = []byte("failed to read error response")
-		}
-		_ = resp.Body.Close() //nolint:errcheck
-		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
-	}
-
-	return resp.Body, nil
+	return p.client.DoStream(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/chat/completions",
+		Body:     req,
+	})
 }
 
 // ListModels retrieves the list of available models from OpenAI
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.baseURL+"/models", nil)
+	var resp core.ModelsResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/models",
+	}, &resp)
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
+		return nil, err
 	}
-
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
-	}
-
-	var modelsResp core.ModelsResponse
-	if err := json.Unmarshal(respBody, &modelsResp); err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
-	}
-
-	return &modelsResp, nil
+	return &resp, nil
 }
 
 // Responses sends a Responses API request to OpenAI
 func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
-	body, err := json.Marshal(req)
+	var resp core.ResponsesResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/responses",
+		Body:     req,
+	}, &resp)
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+		return nil, err
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/responses", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
-	}
-
-	var responsesResp core.ResponsesResponse
-	if err := json.Unmarshal(respBody, &responsesResp); err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
-	}
-
-	return &responsesResp, nil
+	return &resp, nil
 }
 
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	req.Stream = true
-
-	body, err := json.Marshal(req)
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/responses", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("openai", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			respBody = []byte("failed to read error response")
-		}
-		_ = resp.Body.Close() //nolint:errcheck
-		return nil, core.ParseProviderError("openai", resp.StatusCode, respBody, nil)
-	}
-
-	return resp.Body, nil
+	return p.client.DoStream(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/responses",
+		Body:     req,
+	})
 }

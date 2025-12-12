@@ -15,7 +15,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/httpclient"
+	"gomodel/internal/pkg/llmclient"
 	"gomodel/internal/providers"
 )
 
@@ -38,32 +38,40 @@ func init() {
 
 // Provider implements the core.Provider interface for Anthropic
 type Provider struct {
-	httpClient *http.Client
-	apiKey     string
-	baseURL    string
+	client *llmclient.Client
+	apiKey string
 }
 
 // New creates a new Anthropic provider
 func New(apiKey string) *Provider {
-	return &Provider{
-		apiKey:     apiKey,
-		baseURL:    defaultBaseURL,
-		httpClient: httpclient.NewDefaultHTTPClient(),
-	}
+	p := &Provider{apiKey: apiKey}
+	p.client = llmclient.New(
+		llmclient.DefaultConfig("anthropic", defaultBaseURL),
+		p.setHeaders,
+	)
+	return p
 }
 
 // NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
-	return &Provider{
-		apiKey:     apiKey,
-		baseURL:    defaultBaseURL,
-		httpClient: client,
-	}
+func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+	p := &Provider{apiKey: apiKey}
+	p.client = llmclient.NewWithHTTPClient(
+		httpClient,
+		llmclient.DefaultConfig("anthropic", defaultBaseURL),
+		p.setHeaders,
+	)
+	return p
 }
 
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
-	p.baseURL = url
+	p.client.SetBaseURL(url)
+}
+
+// setHeaders sets the required headers for Anthropic API requests
+func (p *Provider) setHeaders(req *http.Request) {
+	req.Header.Set("x-api-key", p.apiKey)
+	req.Header.Set("anthropic-version", anthropicAPIVersion)
 }
 
 // anthropicRequest represents the Anthropic API request format
@@ -190,40 +198,14 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	anthropicReq := convertToAnthropicRequest(req)
 
-	body, err := json.Marshal(anthropicReq)
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
-	}
-
 	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/messages",
+		Body:     anthropicReq,
+	}, &anthropicResp)
+	if err != nil {
+		return nil, err
 	}
 
 	return convertFromAnthropicResponse(&anthropicResp), nil
@@ -234,36 +216,17 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 	anthropicReq := convertToAnthropicRequest(req)
 	anthropicReq.Stream = true
 
-	body, err := json.Marshal(anthropicReq)
+	stream, err := p.client.DoStream(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/messages",
+		Body:     anthropicReq,
+	})
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			respBody = []byte("failed to read error response")
-		}
-		_ = resp.Body.Close() //nolint:errcheck
-		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
+		return nil, err
 	}
 
 	// Return a reader that converts Anthropic SSE format to OpenAI format
-	return newStreamConverter(resp.Body, req.Model), nil
+	return newStreamConverter(stream, req.Model), nil
 }
 
 // streamConverter wraps an Anthropic stream and converts it to OpenAI format
@@ -579,40 +542,14 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
 	anthropicReq := convertResponsesRequestToAnthropic(req)
 
-	body, err := json.Marshal(anthropicReq)
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
-	}
-
 	var anthropicResp anthropicResponse
-	if err := json.Unmarshal(respBody, &anthropicResp); err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/messages",
+		Body:     anthropicReq,
+	}, &anthropicResp)
+	if err != nil {
+		return nil, err
 	}
 
 	return convertAnthropicResponseToResponses(&anthropicResp, req.Model), nil
@@ -623,36 +560,17 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 	anthropicReq := convertResponsesRequestToAnthropic(req)
 	anthropicReq.Stream = true
 
-	body, err := json.Marshal(anthropicReq)
+	stream, err := p.client.DoStream(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/messages",
+		Body:     anthropicReq,
+	})
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/messages", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicAPIVersion)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			respBody = []byte("failed to read error response")
-		}
-		_ = resp.Body.Close() //nolint:errcheck
-		return nil, core.ParseProviderError("anthropic", resp.StatusCode, respBody, nil)
+		return nil, err
 	}
 
 	// Return a reader that converts Anthropic SSE format to Responses API format
-	return newResponsesStreamConverter(resp.Body, req.Model), nil
+	return newResponsesStreamConverter(stream, req.Model), nil
 }
 
 // responsesStreamConverter wraps an Anthropic stream and converts it to Responses API format

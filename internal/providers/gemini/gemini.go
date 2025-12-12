@@ -14,7 +14,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/httpclient"
+	"gomodel/internal/pkg/llmclient"
 	"gomodel/internal/providers"
 )
 
@@ -39,110 +39,76 @@ func init() {
 
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
-	httpClient *http.Client
-	apiKey     string
-	baseURL    string
-	modelsURL  string
+	client    *llmclient.Client
+	apiKey    string
+	modelsURL string
 }
 
 // New creates a new Gemini provider
 func New(apiKey string) *Provider {
-	return &Provider{
-		apiKey:     apiKey,
-		baseURL:    defaultOpenAICompatibleBaseURL,
-		modelsURL:  defaultModelsBaseURL,
-		httpClient: httpclient.NewDefaultHTTPClient(),
+	p := &Provider{
+		apiKey:    apiKey,
+		modelsURL: defaultModelsBaseURL,
 	}
+	p.client = llmclient.New(
+		llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL),
+		p.setHeaders,
+	)
+	return p
 }
 
 // NewWithHTTPClient creates a new Gemini provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, client *http.Client) *Provider {
-	return &Provider{
-		apiKey:     apiKey,
-		baseURL:    defaultOpenAICompatibleBaseURL,
-		modelsURL:  defaultModelsBaseURL,
-		httpClient: client,
+func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+	p := &Provider{
+		apiKey:    apiKey,
+		modelsURL: defaultModelsBaseURL,
 	}
+	p.client = llmclient.NewWithHTTPClient(
+		httpClient,
+		llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL),
+		p.setHeaders,
+	)
+	return p
 }
 
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
-	p.baseURL = url
+	p.client.SetBaseURL(url)
+}
+
+// setHeaders sets the required headers for Gemini API requests
+func (p *Provider) setHeaders(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 }
 
 // ChatCompletion sends a chat completion request to Gemini
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	body, err := json.Marshal(req)
+	var resp core.ChatResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/chat/completions",
+		Body:     req,
+	}, &resp)
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
+		return nil, err
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("gemini", resp.StatusCode, respBody, nil)
-	}
-
-	var chatResp core.ChatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
-	}
-
-	return &chatResp, nil
+	return &resp, nil
 }
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
 	req.Stream = true
-
-	body, err := json.Marshal(req)
+	stream, err := p.client.DoStream(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/chat/completions",
+		Body:     req,
+	})
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal request", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, err := io.ReadAll(resp.Body)
-		if err != nil {
-			respBody = []byte("failed to read error response")
-		}
-		_ = resp.Body.Close() //nolint:errcheck
-		return nil, core.ParseProviderError("gemini", resp.StatusCode, respBody, nil)
+		return nil, err
 	}
 
 	// Gemini's OpenAI-compatible endpoint returns OpenAI-format SSE, so we can pass it through directly
-	return resp.Body, nil
+	return stream, nil
 }
 
 // geminiModel represents a model in Gemini's native API response
@@ -166,39 +132,27 @@ type geminiModelsResponse struct {
 // ListModels retrieves the list of available models from Gemini
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	// Use the native Gemini API to list models
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, p.modelsURL+"/models", nil)
-	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to create request", err)
-	}
-
-	// Add API key as query parameter.
-	// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
-	// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
-	// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
-	q := httpReq.URL.Query()
-	q.Add("key", p.apiKey)
-	httpReq.URL.RawQuery = q.Encode()
-
-	resp, err := p.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-	}
-	defer func() {
-		_ = resp.Body.Close() //nolint:errcheck
-	}()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, core.ParseProviderError("gemini", resp.StatusCode, respBody, nil)
-	}
+	// We need to create a separate client for the models endpoint since it uses a different URL
+	modelsClient := llmclient.New(
+		llmclient.DefaultConfig("gemini", p.modelsURL),
+		func(req *http.Request) {
+			// Add API key as query parameter.
+			// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
+			// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
+			// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
+			q := req.URL.Query()
+			q.Add("key", p.apiKey)
+			req.URL.RawQuery = q.Encode()
+		},
+	)
 
 	var geminiResp geminiModelsResponse
-	if err := json.Unmarshal(respBody, &geminiResp); err != nil {
-		return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to unmarshal response: "+err.Error(), err)
+	err := modelsClient.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/models",
+	}, &geminiResp)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert Gemini models to core.Model format

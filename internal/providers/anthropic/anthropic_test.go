@@ -19,11 +19,8 @@ func TestNew(t *testing.T) {
 	if provider.apiKey != apiKey {
 		t.Errorf("apiKey = %q, want %q", provider.apiKey, apiKey)
 	}
-	if provider.baseURL != defaultBaseURL {
-		t.Errorf("baseURL = %q, want %q", provider.baseURL, defaultBaseURL)
-	}
-	if provider.httpClient == nil {
-		t.Error("httpClient should not be nil")
+	if provider.client == nil {
+		t.Error("client should not be nil")
 	}
 }
 
@@ -140,7 +137,7 @@ func TestChatCompletion(t *testing.T) {
 			defer server.Close()
 
 			provider := New("test-api-key")
-			provider.baseURL = server.URL
+			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
 				Model: "claude-3-5-sonnet-20241022",
@@ -267,7 +264,7 @@ data: {"type":"message_stop"}
 			defer server.Close()
 
 			provider := New("test-api-key")
-			provider.baseURL = server.URL
+			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
 				Model: "claude-3-5-sonnet-20241022",
@@ -359,7 +356,7 @@ func TestChatCompletionWithContext(t *testing.T) {
 	defer server.Close()
 
 	provider := New("test-api-key")
-	provider.baseURL = server.URL
+	provider.SetBaseURL(server.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -625,7 +622,7 @@ func TestResponses(t *testing.T) {
 			defer server.Close()
 
 			provider := New("test-api-key")
-			provider.baseURL = server.URL
+			provider.SetBaseURL(server.URL)
 
 			req := &core.ResponsesRequest{
 				Model: "claude-3-5-sonnet-20241022",
@@ -694,7 +691,7 @@ func TestResponsesWithArrayInput(t *testing.T) {
 	defer server.Close()
 
 	provider := New("test-api-key")
-	provider.baseURL = server.URL
+	provider.SetBaseURL(server.URL)
 
 	req := &core.ResponsesRequest{
 		Model: "claude-3-5-sonnet-20241022",
@@ -758,7 +755,7 @@ func TestResponsesWithInstructions(t *testing.T) {
 	defer server.Close()
 
 	provider := New("test-api-key")
-	provider.baseURL = server.URL
+	provider.SetBaseURL(server.URL)
 
 	req := &core.ResponsesRequest{
 		Model:        "claude-3-5-sonnet-20241022",
@@ -875,7 +872,7 @@ data: {"type":"message_stop"}
 			defer server.Close()
 
 			provider := New("test-api-key")
-			provider.baseURL = server.URL
+			provider.SetBaseURL(server.URL)
 
 			req := &core.ResponsesRequest{
 				Model: "claude-3-5-sonnet-20241022",
@@ -909,7 +906,7 @@ func TestResponsesWithContext(t *testing.T) {
 	defer server.Close()
 
 	provider := New("test-api-key")
-	provider.baseURL = server.URL
+	provider.SetBaseURL(server.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
