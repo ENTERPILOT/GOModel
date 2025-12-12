@@ -59,7 +59,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	router := providers.NewRouter(registry)
+	router, err := providers.NewRouter(registry)
+	if err != nil {
+		fmt.Printf("Failed to create router: %v\n", err)
+		os.Exit(1)
+	}
 
 	// 5. Start the gateway server
 	testServer = server.New(router)
