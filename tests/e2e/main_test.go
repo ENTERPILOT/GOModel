@@ -155,6 +155,7 @@ func (p *TestProvider) ListModels(ctx context.Context) (*core.ModelsResponse, er
 	return &core.ModelsResponse{
 		Object: "list",
 		Data: []core.Model{
+			{ID: "gpt-4.1", Object: "model", OwnedBy: "openai"},
 			{ID: "gpt-4", Object: "model", OwnedBy: "openai"},
 			{ID: "gpt-3.5-turbo", Object: "model", OwnedBy: "openai"},
 		},
