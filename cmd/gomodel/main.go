@@ -96,7 +96,11 @@ func main() {
 	defer stopRefresh()
 
 	// Create provider router
-	router := providers.NewRouter(registry)
+	router, err := providers.NewRouter(registry)
+	if err != nil {
+		slog.Error("failed to create router", "error", err)
+		os.Exit(1)
+	}
 
 	// Create and start server
 	srv := server.New(router)

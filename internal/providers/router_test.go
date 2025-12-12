@@ -66,6 +66,98 @@ func createTestRegistry(providers ...*mockProvider) *ModelRegistry {
 	return registry
 }
 
+func TestNewRouterValidation(t *testing.T) {
+	t.Run("NilRegistry", func(t *testing.T) {
+		router, err := NewRouter(nil)
+		if err == nil {
+			t.Error("expected error for nil registry")
+		}
+		if router != nil {
+			t.Error("expected nil router for nil registry")
+		}
+	})
+
+	t.Run("ValidRegistry", func(t *testing.T) {
+		registry := NewModelRegistry()
+		router, err := NewRouter(registry)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if router == nil {
+			t.Error("expected non-nil router")
+		}
+	})
+}
+
+func TestRouterUninitializedRegistry(t *testing.T) {
+	// Create a router with an empty registry (no models loaded)
+	registry := NewModelRegistry()
+	router, err := NewRouter(registry)
+	if err != nil {
+		t.Fatalf("failed to create router: %v", err)
+	}
+
+	t.Run("Supports returns false", func(t *testing.T) {
+		if router.Supports("any-model") {
+			t.Error("expected Supports to return false for uninitialized registry")
+		}
+	})
+
+	t.Run("ChatCompletion returns error", func(t *testing.T) {
+		req := &core.ChatRequest{Model: "any-model"}
+		_, err := router.ChatCompletion(context.Background(), req)
+		if err == nil {
+			t.Error("expected error for uninitialized registry")
+		}
+		if !errors.Is(err, ErrRegistryNotInitialized) {
+			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+	})
+
+	t.Run("StreamChatCompletion returns error", func(t *testing.T) {
+		req := &core.ChatRequest{Model: "any-model"}
+		_, err := router.StreamChatCompletion(context.Background(), req)
+		if err == nil {
+			t.Error("expected error for uninitialized registry")
+		}
+		if !errors.Is(err, ErrRegistryNotInitialized) {
+			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+	})
+
+	t.Run("ListModels returns error", func(t *testing.T) {
+		_, err := router.ListModels(context.Background())
+		if err == nil {
+			t.Error("expected error for uninitialized registry")
+		}
+		if !errors.Is(err, ErrRegistryNotInitialized) {
+			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+	})
+
+	t.Run("Responses returns error", func(t *testing.T) {
+		req := &core.ResponsesRequest{Model: "any-model"}
+		_, err := router.Responses(context.Background(), req)
+		if err == nil {
+			t.Error("expected error for uninitialized registry")
+		}
+		if !errors.Is(err, ErrRegistryNotInitialized) {
+			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+	})
+
+	t.Run("StreamResponses returns error", func(t *testing.T) {
+		req := &core.ResponsesRequest{Model: "any-model"}
+		_, err := router.StreamResponses(context.Background(), req)
+		if err == nil {
+			t.Error("expected error for uninitialized registry")
+		}
+		if !errors.Is(err, ErrRegistryNotInitialized) {
+			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+	})
+}
+
 func TestRouterSupports(t *testing.T) {
 	openaiMock := &mockProvider{
 		name: "openai",
@@ -87,7 +179,10 @@ func TestRouterSupports(t *testing.T) {
 	}
 
 	registry := createTestRegistry(openaiMock, anthropicMock)
-	router := NewRouter(registry)
+	router, err := NewRouter(registry)
+	if err != nil {
+		t.Fatalf("failed to create router: %v", err)
+	}
 
 	tests := []struct {
 		model    string
@@ -134,7 +229,10 @@ func TestRouterChatCompletion(t *testing.T) {
 	}
 
 	registry := createTestRegistry(openaiMock, anthropicMock)
-	router := NewRouter(registry)
+	router, err := NewRouter(registry)
+	if err != nil {
+		t.Fatalf("failed to create router: %v", err)
+	}
 
 	tests := []struct {
 		name          string
@@ -207,7 +305,10 @@ func TestRouterListModels(t *testing.T) {
 	}
 
 	registry := createTestRegistry(openaiMock, anthropicMock)
-	router := NewRouter(registry)
+	router, err := NewRouter(registry)
+	if err != nil {
+		t.Fatalf("failed to create router: %v", err)
+	}
 
 	resp, err := router.ListModels(context.Background())
 	if err != nil {
@@ -255,7 +356,10 @@ func TestRouterListModelsWithError(t *testing.T) {
 	}
 
 	registry := createTestRegistry(openaiMock, anthropicMock)
-	router := NewRouter(registry)
+	router, err := NewRouter(registry)
+	if err != nil {
+		t.Fatalf("failed to create router: %v", err)
+	}
 
 	resp, err := router.ListModels(context.Background())
 	if err != nil {
