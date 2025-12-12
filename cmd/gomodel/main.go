@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"gomodel/config"
-	"gomodel/internal/core"
 	"gomodel/internal/providers"
+
 	// Import provider packages to trigger their init() registration
 	_ "gomodel/internal/providers/anthropic"
 	_ "gomodel/internal/providers/gemini"
@@ -39,9 +39,6 @@ func main() {
 	// Create model registry
 	registry := providers.NewModelRegistry()
 
-	// Create providers dynamically using the factory and register them
-	activeProviders := make([]core.Provider, 0, len(cfg.Providers))
-
 	// Sort provider names for deterministic initialization order
 	providerNames := make([]string, 0, len(cfg.Providers))
 	for name := range cfg.Providers {
@@ -49,6 +46,8 @@ func main() {
 	}
 	sort.Strings(providerNames)
 
+	// Create providers dynamically using the factory and register them
+	var initializedCount int
 	for _, name := range providerNames {
 		pCfg := cfg.Providers[name]
 		p, err := providers.Create(pCfg)
@@ -56,13 +55,13 @@ func main() {
 			slog.Error("failed to initialize provider", "name", name, "type", pCfg.Type, "error", err)
 			continue
 		}
-		activeProviders = append(activeProviders, p)
 		registry.RegisterProvider(p)
+		initializedCount++
 		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
 	}
 
 	// Validate that at least one provider was successfully initialized
-	if len(activeProviders) == 0 {
+	if initializedCount == 0 {
 		slog.Error("no providers were successfully initialized")
 		os.Exit(1)
 	}
