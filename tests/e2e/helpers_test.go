@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -58,6 +59,26 @@ func sendJSONRequest(t *testing.T, url string, payload interface{}) *http.Respon
 	require.NoError(t, err)
 
 	return resp
+}
+
+// sendJSONRequestNoT sends a JSON POST request without using testing.T.
+//
+// This is specifically for concurrency tests, where calling t.FailNow / require from
+// goroutines is unsafe.
+func sendJSONRequestNoT(url string, payload interface{}) (*http.Response, error) {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	return client.Do(req)
 }
 
 // closeBody is a helper to close response body in defer statements.

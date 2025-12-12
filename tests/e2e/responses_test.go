@@ -277,7 +277,12 @@ func TestResponsesMultimodal(t *testing.T) {
 
 func TestResponsesConcurrency(t *testing.T) {
 	const numRequests = 5
-	results := make(chan int, numRequests)
+
+	type result struct {
+		statusCode int
+		err        error
+	}
+	results := make(chan result, numRequests)
 
 	for i := 0; i < numRequests; i++ {
 		go func(idx int) {
@@ -286,17 +291,26 @@ func TestResponsesConcurrency(t *testing.T) {
 				Input: "Quick test " + string(rune('A'+idx)),
 			}
 
-			resp := sendResponsesRequest(t, payload)
-			defer closeBody(resp)
-			results <- resp.StatusCode
+			resp, err := sendJSONRequestNoT(gatewayURL+responsesPath, payload)
+			if err != nil {
+				results <- result{err: err}
+				return
+			}
+			statusCode := resp.StatusCode
+			closeBody(resp)
+			results <- result{statusCode: statusCode}
 		}(i)
 	}
 
+	// Collect all results in the main goroutine before asserting
+	var errors []error
 	successCount := 0
 	for i := 0; i < numRequests; i++ {
 		select {
-		case status := <-results:
-			if status == http.StatusOK {
+		case r := <-results:
+			if r.err != nil {
+				errors = append(errors, r.err)
+			} else if r.statusCode == http.StatusOK {
 				successCount++
 			}
 		case <-time.After(30 * time.Second):
@@ -304,5 +318,7 @@ func TestResponsesConcurrency(t *testing.T) {
 		}
 	}
 
+	// Perform all assertions in the main goroutine
+	require.Empty(t, errors, "Expected no request errors")
 	assert.Equal(t, numRequests, successCount)
 }
