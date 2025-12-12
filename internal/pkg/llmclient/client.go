@@ -1,16 +1,18 @@
 // Package llmclient provides a base HTTP client for LLM providers with:
 // - Request marshaling/unmarshaling
-// - Retries with exponential backoff
-// - Standardized error parsing (429, 5xx)
-// - Circuit breaking
+// - Retries with exponential backoff and jitter
+// - Standardized error parsing (429, 502, 503, 504)
+// - Circuit breaking with half-open state protection
 package llmclient
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
+	"math/rand"
 	"net/http"
 	"sync"
 	"time"
@@ -32,6 +34,7 @@ type Config struct {
 	InitialBackoff time.Duration // Initial backoff duration (default: 1s)
 	MaxBackoff     time.Duration // Maximum backoff duration (default: 30s)
 	BackoffFactor  float64       // Backoff multiplier (default: 2.0)
+	JitterFactor   float64       // Jitter factor 0-1, adds randomness to backoff (default: 0.1)
 
 	// Circuit breaker configuration
 	CircuitBreaker *CircuitBreakerConfig
@@ -56,6 +59,7 @@ func DefaultConfig(providerName, baseURL string) Config {
 		InitialBackoff: 1 * time.Second,
 		MaxBackoff:     30 * time.Second,
 		BackoffFactor:  2.0,
+		JitterFactor:   0.1,
 		CircuitBreaker: &CircuitBreakerConfig{
 			FailureThreshold: 5,
 			SuccessThreshold: 2,
@@ -69,6 +73,7 @@ type HeaderSetter func(req *http.Request)
 
 // Client is a base HTTP client for LLM providers
 type Client struct {
+	mu             sync.RWMutex
 	httpClient     *http.Client
 	config         Config
 	headerSetter   HeaderSetter
@@ -113,13 +118,24 @@ func NewWithHTTPClient(httpClient *http.Client, config Config, headerSetter Head
 	return c
 }
 
-// SetBaseURL updates the base URL
+// SetBaseURL updates the base URL (thread-safe)
 func (c *Client) SetBaseURL(url string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.config.BaseURL = url
 }
 
-// BaseURL returns the current base URL
+// BaseURL returns the current base URL (thread-safe)
 func (c *Client) BaseURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.config.BaseURL
+}
+
+// getBaseURL returns the base URL for internal use (already holding lock or single-threaded)
+func (c *Client) getBaseURL() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	return c.config.BaseURL
 }
 
@@ -293,7 +309,23 @@ func (c *Client) doRequest(ctx context.Context, req Request) (*Response, error) 
 
 // buildRequest creates an HTTP request from a Request
 func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, error) {
-	url := c.config.BaseURL + req.Endpoint
+	// Validate request
+	if req.Method == "" {
+		return nil, core.NewInvalidRequestError("HTTP method is required", nil)
+	}
+	if req.Endpoint == "" {
+		return nil, core.NewInvalidRequestError("endpoint is required", nil)
+	}
+
+	// Validate HTTP method
+	switch req.Method {
+	case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead, http.MethodOptions:
+		// Valid methods
+	default:
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid HTTP method: %s", req.Method), nil)
+	}
+
+	url := c.getBaseURL() + req.Endpoint
 
 	var bodyReader io.Reader
 	if req.Body != nil {
@@ -327,27 +359,35 @@ func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, 
 	return httpReq, nil
 }
 
-// calculateBackoff calculates the backoff duration for a given attempt
+// calculateBackoff calculates the backoff duration for a given attempt with jitter
 func (c *Client) calculateBackoff(attempt int) time.Duration {
 	backoff := float64(c.config.InitialBackoff) * math.Pow(c.config.BackoffFactor, float64(attempt-1))
 	if backoff > float64(c.config.MaxBackoff) {
 		backoff = float64(c.config.MaxBackoff)
 	}
+
+	// Add jitter: randomize within ±jitterFactor of the backoff
+	if c.config.JitterFactor > 0 {
+		jitter := backoff * c.config.JitterFactor
+		//nolint:gosec // math/rand is fine for jitter, no crypto needed
+		backoff = backoff - jitter + (rand.Float64() * 2 * jitter)
+	}
+
 	return time.Duration(backoff)
 }
 
 // isRetryable returns true if the status code indicates a retryable error
 func (c *Client) isRetryable(statusCode int) bool {
-	// Retry on rate limits and server errors
+	// Retry on rate limits and specific server errors that are typically transient
 	return statusCode == http.StatusTooManyRequests ||
 		statusCode == http.StatusServiceUnavailable ||
 		statusCode == http.StatusBadGateway ||
 		statusCode == http.StatusGatewayTimeout
 }
 
-// circuitBreaker implements a simple circuit breaker pattern
+// circuitBreaker implements a circuit breaker pattern with half-open state protection
 type circuitBreaker struct {
-	mu               sync.RWMutex
+	mu               sync.Mutex
 	state            circuitState
 	failures         int
 	successes        int
@@ -355,6 +395,7 @@ type circuitBreaker struct {
 	successThreshold int
 	timeout          time.Duration
 	lastFailure      time.Time
+	halfOpenAllowed  bool // Controls single-request probe in half-open state
 }
 
 type circuitState int
@@ -371,10 +412,13 @@ func newCircuitBreaker(failureThreshold, successThreshold int, timeout time.Dura
 		failureThreshold: failureThreshold,
 		successThreshold: successThreshold,
 		timeout:          timeout,
+		halfOpenAllowed:  true,
 	}
 }
 
-// Allow checks if a request should be allowed through the circuit breaker
+// Allow checks if a request should be allowed through the circuit breaker.
+// In half-open state, only one request is allowed through at a time to prevent
+// thundering herd when the circuit first transitions from open to half-open.
 func (cb *circuitBreaker) Allow() bool {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
@@ -387,11 +431,20 @@ func (cb *circuitBreaker) Allow() bool {
 		if time.Since(cb.lastFailure) > cb.timeout {
 			cb.state = circuitHalfOpen
 			cb.successes = 0
+			cb.halfOpenAllowed = true // Allow the first probe request
+		} else {
+			return false
+		}
+		// Fall through to half-open handling
+		fallthrough
+	case circuitHalfOpen:
+		// Only allow one request through at a time in half-open state
+		// This prevents thundering herd when transitioning from open
+		if cb.halfOpenAllowed {
+			cb.halfOpenAllowed = false
 			return true
 		}
 		return false
-	case circuitHalfOpen:
-		return true
 	}
 	return true
 }
@@ -404,6 +457,7 @@ func (cb *circuitBreaker) RecordSuccess() {
 	switch cb.state {
 	case circuitHalfOpen:
 		cb.successes++
+		cb.halfOpenAllowed = true // Allow next probe request
 		if cb.successes >= cb.successThreshold {
 			cb.state = circuitClosed
 			cb.failures = 0
@@ -429,13 +483,14 @@ func (cb *circuitBreaker) RecordFailure() {
 	case circuitHalfOpen:
 		cb.state = circuitOpen
 		cb.successes = 0
+		cb.halfOpenAllowed = true // Reset for next timeout period
 	}
 }
 
 // State returns the current circuit state (for testing/monitoring)
 func (cb *circuitBreaker) State() string {
-	cb.mu.RLock()
-	defer cb.mu.RUnlock()
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
 
 	switch cb.state {
 	case circuitClosed:

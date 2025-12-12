@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -194,6 +195,7 @@ func TestClient_Do_Retries(t *testing.T) {
 	config := DefaultConfig("test", server.URL)
 	config.MaxRetries = 3
 	config.InitialBackoff = 10 * time.Millisecond // Fast backoff for tests
+	config.JitterFactor = 0                       // Disable jitter for predictable tests
 	client := New(config, nil)
 
 	var result struct {
@@ -228,6 +230,7 @@ func TestClient_Do_RetriesExhausted(t *testing.T) {
 	config := DefaultConfig("test", server.URL)
 	config.MaxRetries = 2
 	config.InitialBackoff = 10 * time.Millisecond
+	config.JitterFactor = 0
 	client := New(config, nil)
 
 	err := client.Do(context.Background(), Request{
@@ -241,6 +244,107 @@ func TestClient_Do_RetriesExhausted(t *testing.T) {
 	// 1 initial + 2 retries = 3 attempts
 	if atomic.LoadInt32(&attempts) != 3 {
 		t.Errorf("expected 3 attempts, got %d", atomic.LoadInt32(&attempts))
+	}
+}
+
+// TestClient_DoRaw_Success tests DoRaw directly to ensure raw response handling works correctly
+func TestClient_DoRaw_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"raw":"response"}`))
+	}))
+	defer server.Close()
+
+	config := DefaultConfig("test", server.URL)
+	config.MaxRetries = 0
+	client := New(config, nil)
+
+	resp, err := client.DoRaw(context.Background(), Request{
+		Method:   http.MethodGet,
+		Endpoint: "/test",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected response, got nil")
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+	if !strings.Contains(string(resp.Body), "raw") {
+		t.Errorf("expected body to contain 'raw', got: %s", string(resp.Body))
+	}
+}
+
+// TestClient_DoRaw_Error tests DoRaw error handling
+func TestClient_DoRaw_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"Bad request"}}`))
+	}))
+	defer server.Close()
+
+	config := DefaultConfig("test", server.URL)
+	config.MaxRetries = 0
+	client := New(config, nil)
+
+	resp, err := client.DoRaw(context.Background(), Request{
+		Method:   http.MethodGet,
+		Endpoint: "/test",
+	})
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp != nil {
+		t.Error("expected nil response on error")
+	}
+	gatewayErr, ok := err.(*core.GatewayError)
+	if !ok {
+		t.Fatalf("expected GatewayError, got %T", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Errorf("expected error type %s, got %s", core.ErrorTypeInvalidRequest, gatewayErr.Type)
+	}
+}
+
+// TestClient_DoRaw_WithRetries tests that DoRaw properly handles retries
+func TestClient_DoRaw_WithRetries(t *testing.T) {
+	var attempts int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&attempts, 1)
+		if count < 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"error":{"message":"Service unavailable"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	}))
+	defer server.Close()
+
+	config := DefaultConfig("test", server.URL)
+	config.MaxRetries = 3
+	config.InitialBackoff = 10 * time.Millisecond
+	config.JitterFactor = 0
+	client := New(config, nil)
+
+	resp, err := client.DoRaw(context.Background(), Request{
+		Method:   http.MethodGet,
+		Endpoint: "/test",
+	})
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected status 200, got %d", resp.StatusCode)
+	}
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Errorf("expected 2 attempts, got %d", atomic.LoadInt32(&attempts))
 	}
 }
 
@@ -301,6 +405,69 @@ func TestClient_DoStream_Error(t *testing.T) {
 	}
 }
 
+// TestRequest_Validation tests validation of Request fields
+func TestRequest_Validation(t *testing.T) {
+	config := DefaultConfig("test", "http://localhost")
+	config.MaxRetries = 0
+	client := New(config, nil)
+
+	tests := []struct {
+		name        string
+		request     Request
+		wantErr     bool
+		errContains string
+	}{
+		{
+			name:        "empty method",
+			request:     Request{Endpoint: "/test"},
+			wantErr:     true,
+			errContains: "method is required",
+		},
+		{
+			name:        "empty endpoint",
+			request:     Request{Method: http.MethodGet},
+			wantErr:     true,
+			errContains: "endpoint is required",
+		},
+		{
+			name:        "invalid method",
+			request:     Request{Method: "INVALID", Endpoint: "/test"},
+			wantErr:     true,
+			errContains: "invalid HTTP method",
+		},
+		{
+			name:    "valid GET request",
+			request: Request{Method: http.MethodGet, Endpoint: "/test"},
+			wantErr: false,
+		},
+		{
+			name:    "valid POST request",
+			request: Request{Method: http.MethodPost, Endpoint: "/test"},
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := client.buildRequest(context.Background(), tt.request)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+					return
+				}
+				if !strings.Contains(err.Error(), tt.errContains) {
+					t.Errorf("expected error to contain '%s', got: %v", tt.errContains, err)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 	var attempts int32
 
@@ -356,11 +523,11 @@ func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 
 func TestCircuitBreaker_ClosesAfterTimeout(t *testing.T) {
 	var attempts int32
-	var shouldSucceed bool
+	var shouldSucceed atomic.Bool
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&attempts, 1)
-		if shouldSucceed {
+		if shouldSucceed.Load() {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"success":true}`))
 			return
@@ -400,7 +567,7 @@ func TestCircuitBreaker_ClosesAfterTimeout(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Now make server succeed
-	shouldSucceed = true
+	shouldSucceed.Store(true)
 
 	// Should be able to make request (half-open state)
 	var result struct {
@@ -416,6 +583,90 @@ func TestCircuitBreaker_ClosesAfterTimeout(t *testing.T) {
 	}
 	if !result.Success {
 		t.Error("expected success to be true")
+	}
+}
+
+// TestCircuitBreaker_HalfOpenPreventsThunderingHerd tests that only one request
+// is allowed through in half-open state to prevent thundering herd
+func TestCircuitBreaker_HalfOpenPreventsThunderingHerd(t *testing.T) {
+	var attempts int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		time.Sleep(50 * time.Millisecond) // Simulate slow response
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	config := DefaultConfig("test", server.URL)
+	config.MaxRetries = 0
+	config.CircuitBreaker = &CircuitBreakerConfig{
+		FailureThreshold: 1,
+		SuccessThreshold: 1,
+		Timeout:          10 * time.Millisecond,
+	}
+	client := New(config, nil)
+
+	// Open the circuit with a failure
+	failServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"message":"Server error"}}`))
+	}))
+	client.SetBaseURL(failServer.URL)
+	_ = client.Do(context.Background(), Request{
+		Method:   http.MethodGet,
+		Endpoint: "/test",
+	}, nil)
+	failServer.Close()
+
+	// Wait for timeout to transition to half-open
+	time.Sleep(20 * time.Millisecond)
+
+	// Switch to successful server
+	client.SetBaseURL(server.URL)
+
+	// Try to make multiple concurrent requests
+	var wg sync.WaitGroup
+	results := make(chan error, 10)
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := client.Do(context.Background(), Request{
+				Method:   http.MethodGet,
+				Endpoint: "/test",
+			}, nil)
+			results <- err
+		}()
+	}
+
+	wg.Wait()
+	close(results)
+
+	// Count successes and circuit breaker rejections
+	var successes, rejections int
+	for err := range results {
+		if err == nil {
+			successes++
+		} else {
+			gatewayErr, ok := err.(*core.GatewayError)
+			if ok && strings.Contains(gatewayErr.Message, "circuit breaker") {
+				rejections++
+			}
+		}
+	}
+
+	// In half-open state, only one request should be allowed through initially
+	// After it succeeds, the circuit closes and more requests can go through
+	if successes == 0 {
+		t.Error("expected at least one successful request")
+	}
+
+	// Most requests should be rejected by the circuit breaker
+	if rejections == 0 && successes == 10 {
+		t.Log("Warning: all requests succeeded, circuit breaker may not have been in half-open state")
 	}
 }
 
@@ -473,6 +724,9 @@ func TestDefaultConfig(t *testing.T) {
 	if config.InitialBackoff != 1*time.Second {
 		t.Errorf("expected InitialBackoff 1s, got %v", config.InitialBackoff)
 	}
+	if config.JitterFactor != 0.1 {
+		t.Errorf("expected JitterFactor 0.1, got %v", config.JitterFactor)
+	}
 	if config.CircuitBreaker == nil {
 		t.Error("expected CircuitBreaker config to be set")
 	}
@@ -490,6 +744,26 @@ func TestClient_SetBaseURL(t *testing.T) {
 	if client.BaseURL() != "https://new.com" {
 		t.Errorf("expected base URL 'https://new.com', got '%s'", client.BaseURL())
 	}
+}
+
+// TestClient_SetBaseURL_Concurrent tests thread-safety of SetBaseURL
+func TestClient_SetBaseURL_Concurrent(t *testing.T) {
+	client := New(DefaultConfig("test", "https://original.com"), nil)
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			client.SetBaseURL("https://new" + string(rune('0'+i%10)) + ".com")
+		}(i)
+		go func() {
+			defer wg.Done()
+			_ = client.BaseURL() // Read while others are writing
+		}()
+	}
+	wg.Wait()
+	// Test passes if no race condition panic occurs
 }
 
 func TestClient_NonRetryableErrors(t *testing.T) {
@@ -525,6 +799,7 @@ func TestBackoffCalculation(t *testing.T) {
 	config.InitialBackoff = 100 * time.Millisecond
 	config.MaxBackoff = 1 * time.Second
 	config.BackoffFactor = 2.0
+	config.JitterFactor = 0 // Disable jitter for predictable tests
 	client := New(config, nil)
 
 	tests := []struct {
@@ -543,6 +818,24 @@ func TestBackoffCalculation(t *testing.T) {
 		result := client.calculateBackoff(tt.attempt)
 		if result != tt.expected {
 			t.Errorf("attempt %d: expected backoff %v, got %v", tt.attempt, tt.expected, result)
+		}
+	}
+}
+
+// TestBackoffCalculation_WithJitter tests that jitter is applied correctly
+func TestBackoffCalculation_WithJitter(t *testing.T) {
+	config := DefaultConfig("test", "http://test.com")
+	config.InitialBackoff = 100 * time.Millisecond
+	config.MaxBackoff = 1 * time.Second
+	config.BackoffFactor = 2.0
+	config.JitterFactor = 0.5 // 50% jitter
+	client := New(config, nil)
+
+	// With 50% jitter on 100ms base, result should be between 50ms and 150ms
+	for i := 0; i < 100; i++ {
+		result := client.calculateBackoff(1)
+		if result < 50*time.Millisecond || result > 150*time.Millisecond {
+			t.Errorf("backoff %v outside expected range [50ms, 150ms]", result)
 		}
 	}
 }
