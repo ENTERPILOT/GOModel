@@ -37,4 +37,3 @@ func ListRegistered() []string {
 	}
 	return types
 }
-

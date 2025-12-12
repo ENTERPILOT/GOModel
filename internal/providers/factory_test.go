@@ -178,4 +178,3 @@ func TestCreate_WithBaseURL(t *testing.T) {
 		t.Errorf("expected base URL '%s', got '%s'", customBaseURL, capturedBaseURL)
 	}
 }
-
