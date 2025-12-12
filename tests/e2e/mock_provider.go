@@ -256,7 +256,7 @@ func (m *MockLLMServer) handleResponses(w http.ResponseWriter, r *http.Request, 
 		"status":     "completed",
 		"output": []map[string]interface{}{
 			{
-				"id":     "msg_" + time.Now().Format("150405"),
+				"id":     fmt.Sprintf("msg_%d", time.Now().UnixNano()),
 				"type":   "message",
 				"role":   "assistant",
 				"status": "completed",
