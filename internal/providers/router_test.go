@@ -362,6 +362,49 @@ func TestModelRegistry(t *testing.T) {
 		}
 	})
 
+	t.Run("GetModel", func(t *testing.T) {
+		registry := NewModelRegistry()
+		expectedModel := core.Model{
+			ID:      "test-model",
+			Object:  "model",
+			OwnedBy: "test-provider",
+			Created: 1234567890,
+		}
+		mock := &mockProvider{
+			name: "test-provider",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data:   []core.Model{expectedModel},
+			},
+		}
+		registry.RegisterProvider(mock)
+		_ = registry.Initialize(context.Background())
+
+		// Test getting a registered model
+		modelInfo := registry.GetModel("test-model")
+		if modelInfo == nil {
+			t.Fatal("expected ModelInfo for registered model, got nil")
+		}
+		if modelInfo.Model.ID != expectedModel.ID {
+			t.Errorf("expected model ID %q, got %q", expectedModel.ID, modelInfo.Model.ID)
+		}
+		if modelInfo.Model.OwnedBy != expectedModel.OwnedBy {
+			t.Errorf("expected model OwnedBy %q, got %q", expectedModel.OwnedBy, modelInfo.Model.OwnedBy)
+		}
+		if modelInfo.Model.Created != expectedModel.Created {
+			t.Errorf("expected model Created %d, got %d", expectedModel.Created, modelInfo.Model.Created)
+		}
+		if modelInfo.Provider != mock {
+			t.Error("expected Provider to be the registered mock provider")
+		}
+
+		// Test getting an unknown model
+		unknownInfo := registry.GetModel("unknown-model")
+		if unknownInfo != nil {
+			t.Errorf("expected nil for unknown model, got %+v", unknownInfo)
+		}
+	})
+
 	t.Run("DuplicateModels", func(t *testing.T) {
 		// Test that first provider wins when models have the same ID
 		registry := NewModelRegistry()
