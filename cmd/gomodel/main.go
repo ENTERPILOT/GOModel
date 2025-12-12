@@ -85,7 +85,7 @@ func main() {
 	slog.Info("starting non-blocking model registry initialization...")
 	registry.InitializeAsync(context.Background())
 
-	slog.Info("model registry starting",
+	slog.Info("model registry configured",
 		"cached_models", registry.ModelCount(),
 		"providers", registry.ProviderCount(),
 	)
