@@ -402,8 +402,3 @@ func TestChatCompletionWithContext(t *testing.T) {
 		t.Error("expected error when context is cancelled, got nil")
 	}
 }
-
-
-
-
-

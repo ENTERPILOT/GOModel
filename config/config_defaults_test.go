@@ -48,15 +48,15 @@ providers:
 			t.Fatalf("Failed to write config file: %v", err)
 		}
 
-	// Ensure env vars are unset
-	_ = os.Unsetenv("TEST_PORT_DEFAULTS")
-	_ = os.Unsetenv("TEST_KEY_DEFAULTS")
-	defer func() {
+		// Ensure env vars are unset
 		_ = os.Unsetenv("TEST_PORT_DEFAULTS")
-	}()
-	defer func() {
 		_ = os.Unsetenv("TEST_KEY_DEFAULTS")
-	}()
+		defer func() {
+			_ = os.Unsetenv("TEST_PORT_DEFAULTS")
+		}()
+		defer func() {
+			_ = os.Unsetenv("TEST_KEY_DEFAULTS")
+		}()
 
 		// Reset viper
 		viper.Reset()
@@ -101,16 +101,16 @@ providers:
 			t.Fatalf("Failed to change to temp directory: %v", err)
 		}
 
-	// Same config content...
-	// But set env vars
-	_ = os.Setenv("TEST_PORT_DEFAULTS", "1111")
-	_ = os.Setenv("TEST_KEY_DEFAULTS", "real-key")
-	defer func() {
-		_ = os.Unsetenv("TEST_PORT_DEFAULTS")
-	}()
-	defer func() {
-		_ = os.Unsetenv("TEST_KEY_DEFAULTS")
-	}()
+		// Same config content...
+		// But set env vars
+		_ = os.Setenv("TEST_PORT_DEFAULTS", "1111")
+		_ = os.Setenv("TEST_KEY_DEFAULTS", "real-key")
+		defer func() {
+			_ = os.Unsetenv("TEST_PORT_DEFAULTS")
+		}()
+		defer func() {
+			_ = os.Unsetenv("TEST_KEY_DEFAULTS")
+		}()
 
 		// Create config (need to recreate as Load might re-read)
 		configContent := `

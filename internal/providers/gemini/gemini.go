@@ -150,15 +150,15 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 
 // geminiModel represents a model in Gemini's native API response
 type geminiModel struct {
-	Name               string   `json:"name"`
-	DisplayName        string   `json:"displayName"`
-	Description        string   `json:"description"`
-	SupportedMethods   []string `json:"supportedGenerationMethods"`
-	InputTokenLimit    int      `json:"inputTokenLimit"`
-	OutputTokenLimit   int      `json:"outputTokenLimit"`
-	Temperature        *float64 `json:"temperature,omitempty"`
-	TopP               *float64 `json:"topP,omitempty"`
-	TopK               *int     `json:"topK,omitempty"`
+	Name             string   `json:"name"`
+	DisplayName      string   `json:"displayName"`
+	Description      string   `json:"description"`
+	SupportedMethods []string `json:"supportedGenerationMethods"`
+	InputTokenLimit  int      `json:"inputTokenLimit"`
+	OutputTokenLimit int      `json:"outputTokenLimit"`
+	Temperature      *float64 `json:"temperature,omitempty"`
+	TopP             *float64 `json:"topP,omitempty"`
+	TopK             *int     `json:"topK,omitempty"`
 }
 
 // geminiModelsResponse represents the native Gemini models list response
@@ -207,11 +207,11 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	// Convert Gemini models to core.Model format
 	now := time.Now().Unix()
 	models := make([]core.Model, 0, len(geminiResp.Models))
-	
+
 	for _, gm := range geminiResp.Models {
 		// Extract model ID from name (format: "models/gemini-...")
 		modelID := strings.TrimPrefix(gm.Name, "models/")
-		
+
 		// Only include models that support generateContent (chat/completion)
 		supportsGenerate := false
 		for _, method := range gm.SupportedMethods {
@@ -220,7 +220,7 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 				break
 			}
 		}
-		
+
 		if supportsGenerate && strings.HasPrefix(modelID, "gemini-") {
 			models = append(models, core.Model{
 				ID:      modelID,
@@ -236,4 +236,3 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 		Data:   models,
 	}, nil
 }
-

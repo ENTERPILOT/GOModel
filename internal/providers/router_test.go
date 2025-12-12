@@ -224,8 +224,3 @@ func TestRouterListModelsWithError(t *testing.T) {
 		t.Errorf("expected gpt-4o, got %s", resp.Data[0].ID)
 	}
 }
-
-
-
-
-
