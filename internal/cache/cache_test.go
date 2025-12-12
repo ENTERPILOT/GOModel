@@ -180,4 +180,3 @@ func TestModelCacheSerialization(t *testing.T) {
 		}
 	})
 }
-
