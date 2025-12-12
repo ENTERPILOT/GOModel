@@ -550,7 +550,7 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
-				ID:     "msg_" + time.Now().Format("150405"),
+				ID:     fmt.Sprintf("msg_%d", time.Now().UnixNano()),
 				Type:   "message",
 				Role:   "assistant",
 				Status: "completed",
