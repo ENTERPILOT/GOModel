@@ -1,6 +1,16 @@
 server:
   port: "${PORT:-8080}"
 
+# Cache configuration for model storage
+# type: "local" (default) - file-based cache for single instance
+# type: "redis" - Redis cache for multiple instances behind load balancer
+cache:
+  type: "${CACHE_TYPE:-local}"
+  redis:
+    url: "${REDIS_URL:-redis://localhost:6379}"
+    key: "${REDIS_KEY:-gomodel:models}"
+    ttl: 86400 # 24 hours in seconds
+
 providers:
   openai-primary:
     type: "openai"

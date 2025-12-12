@@ -1,0 +1,39 @@
+services:
+  gomodel:
+    image: golang:1.24-alpine
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - PORT=8080
+      - CACHE_TYPE=redis
+      - REDIS_URL=redis://redis:6379
+      - REDIS_KEY=gomodel:models
+      # Provider API Keys - set these in your .env file or environment
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    command: go run ./cmd/gomodel
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:

@@ -12,7 +12,29 @@ import (
 // Config holds the application configuration
 type Config struct {
 	Server    ServerConfig              `mapstructure:"server"`
+	Cache     CacheConfig               `mapstructure:"cache"`
 	Providers map[string]ProviderConfig `mapstructure:"providers"`
+}
+
+// CacheConfig holds cache configuration for model storage
+type CacheConfig struct {
+	// Type specifies the cache backend: "local" (default) or "redis"
+	Type string `mapstructure:"type"`
+
+	// Redis configuration (only used when Type is "redis")
+	Redis RedisConfig `mapstructure:"redis"`
+}
+
+// RedisConfig holds Redis-specific configuration
+type RedisConfig struct {
+	// URL is the Redis connection URL (e.g., "redis://localhost:6379")
+	URL string `mapstructure:"url"`
+
+	// Key is the Redis key for storing the model cache (default: "gomodel:models")
+	Key string `mapstructure:"key"`
+
+	// TTL is the time-to-live for cached data in seconds (default: 86400 = 24 hours)
+	TTL int `mapstructure:"ttl"`
 }
 
 // ServerConfig holds HTTP server configuration
@@ -43,6 +65,9 @@ func Load() (*Config, error) {
 
 	// Set defaults
 	viper.SetDefault("server.port", "8080")
+	viper.SetDefault("cache.type", "local")
+	viper.SetDefault("cache.redis.key", "gomodel:models")
+	viper.SetDefault("cache.redis.ttl", 86400) // 24 hours
 
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
@@ -102,6 +127,11 @@ func Load() (*Config, error) {
 func expandEnvVars(cfg Config) Config {
 	// Expand server port
 	cfg.Server.Port = expandString(cfg.Server.Port)
+
+	// Expand cache configuration
+	cfg.Cache.Type = expandString(cfg.Cache.Type)
+	cfg.Cache.Redis.URL = expandString(cfg.Cache.Redis.URL)
+	cfg.Cache.Redis.Key = expandString(cfg.Cache.Redis.Key)
 
 	// Expand provider configurations
 	for name, pCfg := range cfg.Providers {

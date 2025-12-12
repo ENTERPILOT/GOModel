@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gomodel/config"
+	"gomodel/internal/cache"
 	"gomodel/internal/providers"
 
 	// Import provider packages to trigger their init() registration
@@ -26,6 +27,42 @@ func getCacheDir() string {
 		return cacheDir
 	}
 	return ".cache"
+}
+
+// initCache initializes the appropriate cache backend based on configuration.
+// Returns a local file cache by default, or Redis if configured.
+func initCache(cfg *config.Config) (cache.Cache, error) {
+	cacheType := cfg.Cache.Type
+	if cacheType == "" {
+		cacheType = "local"
+	}
+
+	switch cacheType {
+	case "redis":
+		ttl := time.Duration(cfg.Cache.Redis.TTL) * time.Second
+		if ttl == 0 {
+			ttl = cache.DefaultRedisTTL
+		}
+
+		redisCfg := cache.RedisConfig{
+			URL: cfg.Cache.Redis.URL,
+			Key: cfg.Cache.Redis.Key,
+			TTL: ttl,
+		}
+
+		redisCache, err := cache.NewRedisCache(redisCfg)
+		if err != nil {
+			return nil, err
+		}
+
+		slog.Info("using redis cache", "url", cfg.Cache.Redis.URL, "key", cfg.Cache.Redis.Key)
+		return redisCache, nil
+
+	default: // "local" or any other value defaults to local
+		cacheFile := filepath.Join(getCacheDir(), "models.json")
+		slog.Info("using local file cache", "path", cacheFile)
+		return cache.NewLocalCache(cacheFile), nil
+	}
 }
 
 func main() {
@@ -46,11 +83,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create model registry with cache file for instant startup
+	// Initialize cache backend based on configuration
+	modelCache, err := initCache(cfg)
+	if err != nil {
+		slog.Error("failed to initialize cache", "error", err)
+		os.Exit(1)
+	}
+	defer modelCache.Close()
+
+	// Create model registry with cache for instant startup
 	registry := providers.NewModelRegistry()
-	cacheFile := filepath.Join(getCacheDir(), "models.json")
-	registry.SetCacheFile(cacheFile)
-	slog.Debug("cache file configured", "path", cacheFile)
+	registry.SetCache(modelCache)
 
 	// Sort provider names for deterministic initialization order
 	providerNames := make([]string, 0, len(cfg.Providers))

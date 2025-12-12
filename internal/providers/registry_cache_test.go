@@ -8,14 +8,16 @@ import (
 	"testing"
 	"time"
 
+	"gomodel/internal/cache"
 	"gomodel/internal/core"
 )
 
 func TestCacheFile(t *testing.T) {
-	t.Run("SetCacheFile", func(t *testing.T) {
+	t.Run("SetCache", func(t *testing.T) {
 		registry := NewModelRegistry()
-		registry.SetCacheFile("/tmp/test-cache.json")
-		// Verify no panic, cache file is set (private field)
+		localCache := cache.NewLocalCache("/tmp/test-cache.json")
+		registry.SetCache(localCache)
+		// Verify no panic, cache is set (private field)
 	})
 
 	t.Run("SaveToCache", func(t *testing.T) {
@@ -23,7 +25,8 @@ func TestCacheFile(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
 		mock := &mockProvider{
 			name: "openai",
@@ -38,7 +41,7 @@ func TestCacheFile(t *testing.T) {
 		registry.RegisterProviderWithType(mock, "openai")
 		_ = registry.Initialize(context.Background())
 
-		err := registry.SaveToCache()
+		err := registry.SaveToCache(context.Background())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -54,16 +57,16 @@ func TestCacheFile(t *testing.T) {
 			t.Fatalf("failed to read cache file: %v", err)
 		}
 
-		var cache ModelCache
-		if err := json.Unmarshal(data, &cache); err != nil {
+		var modelCache cache.ModelCache
+		if err := json.Unmarshal(data, &modelCache); err != nil {
 			t.Fatalf("failed to unmarshal cache: %v", err)
 		}
 
-		if cache.Version != 1 {
-			t.Errorf("expected version 1, got %d", cache.Version)
+		if modelCache.Version != 1 {
+			t.Errorf("expected version 1, got %d", modelCache.Version)
 		}
-		if len(cache.Models) != 2 {
-			t.Errorf("expected 2 models, got %d", len(cache.Models))
+		if len(modelCache.Models) != 2 {
+			t.Errorf("expected 2 models, got %d", len(modelCache.Models))
 		}
 	})
 
@@ -72,10 +75,10 @@ func TestCacheFile(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		// Create a cache file (map-based structure)
-		cache := ModelCache{
+		modelCache := cache.ModelCache{
 			Version:   1,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]CachedModel{
+			Models: map[string]cache.CachedModel{
 				"gpt-4o": {
 					ProviderType: "openai",
 					Object:       "model",
@@ -90,14 +93,15 @@ func TestCacheFile(t *testing.T) {
 				},
 			},
 		}
-		data, _ := json.Marshal(cache)
+		data, _ := json.Marshal(modelCache)
 		if err := os.WriteFile(cacheFile, data, 0o644); err != nil {
 			t.Fatalf("failed to write cache file: %v", err)
 		}
 
 		// Create registry with providers
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
 		openaiMock := &mockProvider{
 			name:           "openai",
@@ -111,7 +115,7 @@ func TestCacheFile(t *testing.T) {
 		registry.RegisterProviderWithType(anthropicMock, "anthropic")
 
 		// Load from cache
-		loaded, err := registry.LoadFromCache()
+		loaded, err := registry.LoadFromCache(context.Background())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -145,10 +149,10 @@ func TestCacheFile(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		// Create cache with models from multiple providers
-		cache := ModelCache{
+		modelCache := cache.ModelCache{
 			Version:   1,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]CachedModel{
+			Models: map[string]cache.CachedModel{
 				"gpt-4o": {
 					ProviderType: "openai",
 					Object:       "model",
@@ -161,16 +165,17 @@ func TestCacheFile(t *testing.T) {
 				},
 			},
 		}
-		data, _ := json.Marshal(cache)
+		data, _ := json.Marshal(modelCache)
 		_ = os.WriteFile(cacheFile, data, 0o644)
 
 		// Only register OpenAI provider
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 		openaiMock := &mockProvider{name: "openai"}
 		registry.RegisterProviderWithType(openaiMock, "openai")
 
-		loaded, err := registry.LoadFromCache()
+		loaded, err := registry.LoadFromCache(context.Background())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -192,9 +197,10 @@ func TestCacheFile(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "nonexistent.json")
 
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
-		loaded, err := registry.LoadFromCache()
+		loaded, err := registry.LoadFromCache(context.Background())
 		if err != nil {
 			t.Fatalf("expected no error for missing file, got: %v", err)
 		}
@@ -203,24 +209,24 @@ func TestCacheFile(t *testing.T) {
 		}
 	})
 
-	t.Run("LoadFromCacheNoCacheFileSet", func(t *testing.T) {
+	t.Run("LoadFromCacheNoCacheSet", func(t *testing.T) {
 		registry := NewModelRegistry()
 
-		loaded, err := registry.LoadFromCache()
+		loaded, err := registry.LoadFromCache(context.Background())
 		if err != nil {
-			t.Fatalf("expected no error when no cache file set, got: %v", err)
+			t.Fatalf("expected no error when no cache set, got: %v", err)
 		}
 		if loaded != 0 {
 			t.Errorf("expected 0 models loaded, got %d", loaded)
 		}
 	})
 
-	t.Run("SaveToCacheNoCacheFileSet", func(t *testing.T) {
+	t.Run("SaveToCacheNoCacheSet", func(t *testing.T) {
 		registry := NewModelRegistry()
 
-		err := registry.SaveToCache()
+		err := registry.SaveToCache(context.Background())
 		if err != nil {
-			t.Fatalf("expected no error when no cache file set, got: %v", err)
+			t.Fatalf("expected no error when no cache set, got: %v", err)
 		}
 	})
 
@@ -229,7 +235,8 @@ func TestCacheFile(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "subdir", "nested", "models.json")
 
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
 		mock := &mockProvider{
 			name: "test",
@@ -243,7 +250,7 @@ func TestCacheFile(t *testing.T) {
 		registry.RegisterProviderWithType(mock, "test")
 		_ = registry.Initialize(context.Background())
 
-		err := registry.SaveToCache()
+		err := registry.SaveToCache(context.Background())
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -260,10 +267,10 @@ func TestInitializeAsync(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		// Create a cache file
-		cache := ModelCache{
+		modelCache := cache.ModelCache{
 			Version:   1,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]CachedModel{
+			Models: map[string]cache.CachedModel{
 				"cached-model": {
 					ProviderType: "test",
 					Object:       "model",
@@ -271,12 +278,13 @@ func TestInitializeAsync(t *testing.T) {
 				},
 			},
 		}
-		data, _ := json.Marshal(cache)
+		data, _ := json.Marshal(modelCache)
 		_ = os.WriteFile(cacheFile, data, 0o644)
 
 		// Create registry with slow provider
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
 		mock := &mockProvider{
 			name: "test",
@@ -306,7 +314,8 @@ func TestInitializeAsync(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
 		mock := &mockProvider{
 			name: "test",
@@ -341,7 +350,8 @@ func TestInitializeAsync(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 
 		mock := &mockProvider{
 			name: "test",
@@ -367,14 +377,14 @@ func TestInitializeAsync(t *testing.T) {
 
 		// Verify cache contains the network model
 		data, _ := os.ReadFile(cacheFile)
-		var cache ModelCache
-		_ = json.Unmarshal(data, &cache)
+		var modelCache cache.ModelCache
+		_ = json.Unmarshal(data, &modelCache)
 
-		if len(cache.Models) != 1 {
-			t.Fatalf("expected 1 model in cache, got %d", len(cache.Models))
+		if len(modelCache.Models) != 1 {
+			t.Fatalf("expected 1 model in cache, got %d", len(modelCache.Models))
 		}
-		if _, ok := cache.Models["new-model"]; !ok {
-			t.Errorf("expected new-model in cache, got %v", cache.Models)
+		if _, ok := modelCache.Models["new-model"]; !ok {
+			t.Errorf("expected new-model in cache, got %v", modelCache.Models)
 		}
 	})
 }
@@ -413,10 +423,10 @@ func TestIsInitialized(t *testing.T) {
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		// Create a cache file
-		cache := ModelCache{
+		modelCache := cache.ModelCache{
 			Version:   1,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]CachedModel{
+			Models: map[string]cache.CachedModel{
 				"cached-model": {
 					ProviderType: "test",
 					Object:       "model",
@@ -424,15 +434,16 @@ func TestIsInitialized(t *testing.T) {
 				},
 			},
 		}
-		data, _ := json.Marshal(cache)
+		data, _ := json.Marshal(modelCache)
 		_ = os.WriteFile(cacheFile, data, 0o644)
 
 		registry := NewModelRegistry()
-		registry.SetCacheFile(cacheFile)
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
 		mock := &mockProvider{name: "test"}
 		registry.RegisterProviderWithType(mock, "test")
 
-		_, _ = registry.LoadFromCache()
+		_, _ = registry.LoadFromCache(context.Background())
 
 		// Should not be marked as initialized (only loaded from cache)
 		if registry.IsInitialized() {

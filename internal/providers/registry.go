@@ -3,15 +3,13 @@ package providers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 
+	"gomodel/internal/cache"
 	"gomodel/internal/core"
 )
 
@@ -21,32 +19,15 @@ type ModelInfo struct {
 	Provider core.Provider
 }
 
-// CachedModel represents a model stored in the cache file.
-// We store provider type to re-associate with the correct provider on load.
-type CachedModel struct {
-	ProviderType string `json:"provider_type"`
-	Object       string `json:"object"`
-	OwnedBy      string `json:"owned_by"`
-	Created      int64  `json:"created"`
-}
-
-// ModelCache represents the cache file structure.
-// Models are stored as a map keyed by model ID for direct lookup.
-type ModelCache struct {
-	Version   int                    `json:"version"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	Models    map[string]CachedModel `json:"models"`
-}
-
 // ModelRegistry manages the mapping of models to their providers.
 // It fetches models from providers on startup and caches them in memory.
-// Supports loading from a cache file for instant startup.
+// Supports loading from a cache (local file or Redis) for instant startup.
 type ModelRegistry struct {
 	mu            sync.RWMutex
 	models        map[string]*ModelInfo // model ID -> model info
 	providers     []core.Provider
 	providerTypes map[core.Provider]string // provider -> type string
-	cacheFile     string                   // path to cache file
+	cache         cache.Cache              // cache backend (local or redis)
 	initialized   bool                     // true when at least one successful network fetch completed
 	initMu        sync.Mutex               // protects initialized flag
 }
@@ -59,11 +40,12 @@ func NewModelRegistry() *ModelRegistry {
 	}
 }
 
-// SetCacheFile sets the path to the cache file for persistent model storage
-func (r *ModelRegistry) SetCacheFile(path string) {
+// SetCache sets the cache backend for persistent model storage.
+// The cache can be a local file-based cache or a Redis cache.
+func (r *ModelRegistry) SetCache(c cache.Cache) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.cacheFile = path
+	r.cache = c
 }
 
 // RegisterProvider adds a provider to the registry
@@ -159,28 +141,24 @@ func (r *ModelRegistry) Refresh(ctx context.Context) error {
 	return r.Initialize(ctx)
 }
 
-// LoadFromCache loads the model list from the cache file.
+// LoadFromCache loads the model list from the cache backend.
 // Returns the number of models loaded and any error encountered.
-func (r *ModelRegistry) LoadFromCache() (int, error) {
+func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 	r.mu.RLock()
-	cacheFile := r.cacheFile
+	cacheBackend := r.cache
 	r.mu.RUnlock()
 
-	if cacheFile == "" {
+	if cacheBackend == nil {
 		return 0, nil
 	}
 
-	data, err := os.ReadFile(cacheFile)
+	modelCache, err := cacheBackend.Get(ctx)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil // No cache file yet, not an error
-		}
-		return 0, fmt.Errorf("failed to read cache file: %w", err)
+		return 0, fmt.Errorf("failed to read cache: %w", err)
 	}
 
-	var cache ModelCache
-	if err := json.Unmarshal(data, &cache); err != nil {
-		return 0, fmt.Errorf("failed to parse cache file: %w", err)
+	if modelCache == nil {
+		return 0, nil // No cache yet, not an error
 	}
 
 	// Build a map of provider type -> provider for lookup
@@ -192,8 +170,8 @@ func (r *ModelRegistry) LoadFromCache() (int, error) {
 	r.mu.RUnlock()
 
 	// Populate the models map from cache (direct map iteration)
-	newModels := make(map[string]*ModelInfo, len(cache.Models))
-	for modelID, cached := range cache.Models {
+	newModels := make(map[string]*ModelInfo, len(modelCache.Models))
+	for modelID, cached := range modelCache.Models {
 		provider, ok := typeToProvider[cached.ProviderType]
 		if !ok {
 			// Provider not configured, skip this model
@@ -216,16 +194,16 @@ func (r *ModelRegistry) LoadFromCache() (int, error) {
 
 	slog.Info("loaded models from cache",
 		"models", len(newModels),
-		"cache_updated_at", cache.UpdatedAt,
+		"cache_updated_at", modelCache.UpdatedAt,
 	)
 
 	return len(newModels), nil
 }
 
-// SaveToCache saves the current model list to the cache file.
-func (r *ModelRegistry) SaveToCache() error {
+// SaveToCache saves the current model list to the cache backend.
+func (r *ModelRegistry) SaveToCache(ctx context.Context) error {
 	r.mu.RLock()
-	cacheFile := r.cacheFile
+	cacheBackend := r.cache
 	models := make(map[string]*ModelInfo, len(r.models))
 	for k, v := range r.models {
 		models[k] = v
@@ -236,15 +214,15 @@ func (r *ModelRegistry) SaveToCache() error {
 	}
 	r.mu.RUnlock()
 
-	if cacheFile == "" {
+	if cacheBackend == nil {
 		return nil
 	}
 
 	// Build cache structure (map keyed by model ID)
-	cache := ModelCache{
+	modelCache := &cache.ModelCache{
 		Version:   1,
 		UpdatedAt: time.Now().UTC(),
-		Models:    make(map[string]CachedModel, len(models)),
+		Models:    make(map[string]cache.CachedModel, len(models)),
 	}
 
 	for modelID, info := range models {
@@ -253,7 +231,7 @@ func (r *ModelRegistry) SaveToCache() error {
 			// Skip models without a known provider type
 			continue
 		}
-		cache.Models[modelID] = CachedModel{
+		modelCache.Models[modelID] = cache.CachedModel{
 			ProviderType: pType,
 			Object:       info.Model.Object,
 			OwnedBy:      info.Model.OwnedBy,
@@ -261,28 +239,11 @@ func (r *ModelRegistry) SaveToCache() error {
 		}
 	}
 
-	// Ensure directory exists
-	dir := filepath.Dir(cacheFile)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %w", err)
+	if err := cacheBackend.Set(ctx, modelCache); err != nil {
+		return fmt.Errorf("failed to save cache: %w", err)
 	}
 
-	data, err := json.MarshalIndent(cache, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal cache: %w", err)
-	}
-
-	// Write atomically using temp file + rename
-	tmpFile := cacheFile + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0o644); err != nil {
-		return fmt.Errorf("failed to write cache file: %w", err)
-	}
-	if err := os.Rename(tmpFile, cacheFile); err != nil {
-		os.Remove(tmpFile) // Clean up temp file
-		return fmt.Errorf("failed to rename cache file: %w", err)
-	}
-
-	slog.Debug("saved models to cache", "models", len(cache.Models), "file", cacheFile)
+	slog.Debug("saved models to cache", "models", len(modelCache.Models))
 	return nil
 }
 
@@ -292,7 +253,7 @@ func (r *ModelRegistry) SaveToCache() error {
 // and save to cache when network fetch completes.
 func (r *ModelRegistry) InitializeAsync(ctx context.Context) {
 	// First, try to load from cache for instant startup
-	cached, err := r.LoadFromCache()
+	cached, err := r.LoadFromCache(ctx)
 	if err != nil {
 		slog.Warn("failed to load models from cache", "error", err)
 	} else if cached > 0 {
@@ -310,7 +271,7 @@ func (r *ModelRegistry) InitializeAsync(ctx context.Context) {
 		}
 
 		// Save to cache for next startup
-		if err := r.SaveToCache(); err != nil {
+		if err := r.SaveToCache(initCtx); err != nil {
 			slog.Warn("failed to save models to cache", "error", err)
 		}
 	}()
@@ -406,7 +367,7 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration) func() {
 					slog.Warn("background model refresh failed", "error", err)
 				} else {
 					// Save to cache after successful refresh
-					if err := r.SaveToCache(); err != nil {
+					if err := r.SaveToCache(refreshCtx); err != nil {
 						slog.Warn("failed to save models to cache after refresh", "error", err)
 					}
 				}

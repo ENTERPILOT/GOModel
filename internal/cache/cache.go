@@ -1,0 +1,38 @@
+// Package cache provides a cache abstraction for storing model data.
+// Supports both local (in-memory/file) and Redis backends for multi-instance deployments.
+package cache
+
+import (
+	"context"
+	"time"
+)
+
+// ModelCache represents the cached model data structure.
+// This is the data that gets stored and retrieved from the cache.
+type ModelCache struct {
+	Version   int                    `json:"version"`
+	UpdatedAt time.Time              `json:"updated_at"`
+	Models    map[string]CachedModel `json:"models"`
+}
+
+// CachedModel represents a single cached model entry.
+type CachedModel struct {
+	ProviderType string `json:"provider_type"`
+	Object       string `json:"object"`
+	OwnedBy      string `json:"owned_by"`
+	Created      int64  `json:"created"`
+}
+
+// Cache defines the interface for model cache storage.
+// Implementations must be safe for concurrent use.
+type Cache interface {
+	// Get retrieves the model cache data.
+	// Returns nil, nil if no cache exists yet.
+	Get(ctx context.Context) (*ModelCache, error)
+
+	// Set stores the model cache data.
+	Set(ctx context.Context, cache *ModelCache) error
+
+	// Close releases any resources held by the cache.
+	Close() error
+}
