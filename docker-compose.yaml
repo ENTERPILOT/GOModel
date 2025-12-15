@@ -6,15 +6,12 @@ services:
       - .:/app
     ports:
       - "${PORT:-8080}:8080"
+    env_file:
+      - .env
     environment:
-      - PORT=8080
       - CACHE_TYPE=redis
       - REDIS_URL=redis://redis:6379
       - REDIS_KEY=gomodel:models
-      # Provider API Keys - set these in your .env file or environment
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     command: go run ./cmd/gomodel
     depends_on:
       redis:

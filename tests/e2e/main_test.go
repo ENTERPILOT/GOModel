@@ -66,7 +66,8 @@ func TestMain(m *testing.M) {
 	}
 
 	// 5. Start the gateway server
-	testServer = server.New(router)
+	// Note: No master key for e2e tests (tests run in unsafe mode)
+	testServer = server.New(router, &server.Config{})
 	go func() {
 		addr := fmt.Sprintf(":%d", gatewayPort)
 		if err := testServer.Start(addr); err != nil && err != http.ErrServerClosed {

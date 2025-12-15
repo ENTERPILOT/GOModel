@@ -145,8 +145,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Security check: warn if no master key is configured
+	if cfg.Server.MasterKey == "" {
+		slog.Warn("SECURITY WARNING: GOMODEL_MASTER_KEY not set - server running in UNSAFE MODE",
+			"security_risk", "unauthenticated access allowed",
+			"recommendation", "set GOMODEL_MASTER_KEY environment variable to secure this gateway")
+	} else {
+		slog.Info("authentication enabled", "mode", "master_key")
+	}
+
 	// Create and start server
-	srv := server.New(router)
+	serverCfg := &server.Config{
+		MasterKey: cfg.Server.MasterKey,
+	}
+	srv := server.New(router, serverCfg)
 
 	addr := ":" + cfg.Server.Port
 	slog.Info("starting server", "address", addr)

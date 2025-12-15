@@ -10,7 +10,7 @@
 GOModel functions as a pipeline processor. Every request travels through a configurable chain of middleware before reaching the Provider adapter.
 
 **Flow:**
-`Client -> HTTP Handler -> Middleware Chain (Auth, RateLimit) -> Router (Load Balancing) -> Provider Adapter (OpenAI/Anthropic) -> Upstream`
+`Client -> HTTP Handler -> Middleware Chain (Auth, RateLimit) -> Router -> Provider Adapter (OpenAI/Anthropic) -> Upstream`
 
 ---
 

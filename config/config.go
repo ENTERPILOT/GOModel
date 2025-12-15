@@ -39,7 +39,8 @@ type RedisConfig struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port string `mapstructure:"port"`
+	Port      string `mapstructure:"port"`
+	MasterKey string `mapstructure:"master_key"` // Optional: Master key for authentication
 }
 
 // ProviderConfig holds generic provider configuration
@@ -94,7 +95,8 @@ func Load() (*Config, error) {
 		// No config file, use environment variables (legacy support)
 		cfg = Config{
 			Server: ServerConfig{
-				Port: viper.GetString("PORT"),
+				Port:      viper.GetString("PORT"),
+				MasterKey: viper.GetString("GOMODEL_MASTER_KEY"),
 			},
 			Providers: make(map[string]ProviderConfig),
 		}
@@ -127,6 +129,7 @@ func Load() (*Config, error) {
 func expandEnvVars(cfg Config) Config {
 	// Expand server port
 	cfg.Server.Port = expandString(cfg.Server.Port)
+	cfg.Server.MasterKey = expandString(cfg.Server.MasterKey)
 
 	// Expand cache configuration
 	cfg.Cache.Type = expandString(cfg.Cache.Type)
