@@ -20,6 +20,19 @@ func Register(providerType string, builder Builder) {
 	registry[providerType] = builder
 }
 
+// RegisterProvider registers a provider constructor with base URL support
+func RegisterProvider[T core.Provider](providerType string, newProvider func(string) T) {
+	Register(providerType, func(cfg config.ProviderConfig) (core.Provider, error) {
+		p := newProvider(cfg.APIKey)
+		if cfg.BaseURL != "" {
+			if setter, ok := any(p).(interface{ SetBaseURL(string) }); ok {
+				setter.SetBaseURL(cfg.BaseURL)
+			}
+		}
+		return p, nil
+	})
+}
+
 // Create instantiates a provider based on configuration
 func Create(cfg config.ProviderConfig) (core.Provider, error) {
 	builder, ok := registry[cfg.Type]

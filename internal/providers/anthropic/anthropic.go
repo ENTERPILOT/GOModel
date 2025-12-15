@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"gomodel/config"
 	"gomodel/internal/core"
 	"gomodel/internal/pkg/llmclient"
 	"gomodel/internal/providers"
@@ -26,14 +25,7 @@ const (
 
 func init() {
 	// Self-register with the factory
-	providers.Register("anthropic", func(cfg config.ProviderConfig) (core.Provider, error) {
-		p := New(cfg.APIKey)
-		// Override base URL if provided in config
-		if cfg.BaseURL != "" {
-			p.SetBaseURL(cfg.BaseURL)
-		}
-		return p, nil
-	})
+	providers.RegisterProvider("anthropic", New)
 }
 
 // Provider implements the core.Provider interface for Anthropic
