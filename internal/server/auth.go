@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"strings"
 
@@ -40,7 +41,7 @@ func AuthMiddleware(masterKey string) echo.MiddlewareFunc {
 			}
 
 			token := strings.TrimPrefix(authHeader, prefix)
-			if token != masterKey {
+			if subtle.ConstantTimeCompare([]byte(token), []byte(masterKey)) != 1 {
 				return c.JSON(http.StatusUnauthorized, map[string]interface{}{
 					"error": map[string]interface{}{
 						"type":    "authentication_error",

@@ -1,8 +1,10 @@
 package server
 
 import (
+	"crypto/subtle"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -145,5 +147,108 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 		e.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.Equal(t, "success", rec.Body.String())
+	})
+}
+
+func TestAuthMiddleware_ConstantTimeComparison(t *testing.T) {
+	t.Run("constant-time comparison prevents timing attacks", func(t *testing.T) {
+		// Test that the constant-time comparison works correctly for various inputs
+		testCases := []struct {
+			name        string
+			token       string
+			masterKey   string
+			shouldAllow bool
+		}{
+			{
+				name:        "equal strings",
+				token:       "secret-key-123",
+				masterKey:   "secret-key-123",
+				shouldAllow: true,
+			},
+			{
+				name:        "unequal strings - different at start",
+				token:       "wrong-key-123",
+				masterKey:   "secret-key-123",
+				shouldAllow: false,
+			},
+			{
+				name:        "unequal strings - different at end",
+				token:       "secret-key-456",
+				masterKey:   "secret-key-123",
+				shouldAllow: false,
+			},
+			{
+				name:        "unequal strings - different lengths",
+				token:       "secret-key",
+				masterKey:   "secret-key-123",
+				shouldAllow: false,
+			},
+			{
+				name:        "empty token",
+				token:       "",
+				masterKey:   "secret-key-123",
+				shouldAllow: false,
+			},
+			{
+				name:        "very long strings",
+				token:       "a" + strings.Repeat("x", 1000) + "z",
+				masterKey:   "a" + strings.Repeat("x", 1000) + "x",
+				shouldAllow: false,
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				e := echo.New()
+
+				// Create a test handler
+				testHandler := func(c echo.Context) error {
+					return c.String(http.StatusOK, "ok")
+				}
+
+				// Wrap with auth middleware
+				handler := AuthMiddleware(tc.masterKey)(testHandler)
+
+				// Create request
+				req := httptest.NewRequest(http.MethodGet, "/", nil)
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+				rec := httptest.NewRecorder()
+				c := e.NewContext(req, rec)
+
+				// Execute
+				err := handler(c)
+				require.NoError(t, err)
+
+				if tc.shouldAllow {
+					assert.Equal(t, http.StatusOK, rec.Code)
+					assert.Equal(t, "ok", rec.Body.String())
+				} else {
+					assert.Equal(t, http.StatusUnauthorized, rec.Code)
+				}
+			})
+		}
+	})
+
+	t.Run("direct constant-time comparison verification", func(t *testing.T) {
+		// Test the constant-time comparison directly to ensure it's working
+		testCases := []struct {
+			name     string
+			a        string
+			b        string
+			expected bool
+		}{
+			{"equal strings", "test", "test", true},
+			{"unequal strings", "test", "tset", false},
+			{"different lengths", "test", "testing", false},
+			{"empty strings", "", "", true},
+			{"one empty", "", "test", false},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				result := subtle.ConstantTimeCompare([]byte(tc.a), []byte(tc.b)) == 1
+				assert.Equal(t, tc.expected, result, "ConstantTimeCompare should return %v for %q vs %q", tc.expected, tc.a, tc.b)
+			})
+		}
 	})
 }
