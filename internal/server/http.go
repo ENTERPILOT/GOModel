@@ -27,7 +27,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.HideBanner = true
 
 	// Middleware
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
 	// Add authentication middleware if master key is configured
