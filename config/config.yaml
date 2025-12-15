@@ -1,5 +1,6 @@
 server:
   port: "${PORT:-8080}"
+  master_key: "${GOMODEL_MASTER_KEY:-}"
 
 # Cache configuration for model storage
 # type: "local" (default) - file-based cache for single instance
