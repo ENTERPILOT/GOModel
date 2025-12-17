@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(make test-all)",
-      "Bash(make lint)"
+      "Bash(make lint)",
+      "Bash(go test:*)"
     ],
     "deny": [],
     "ask": []

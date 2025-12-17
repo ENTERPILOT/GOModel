@@ -42,10 +42,10 @@ func New(apiKey string) *Provider {
 		apiKey:    apiKey,
 		modelsURL: defaultModelsBaseURL,
 	}
-	p.client = llmclient.New(
-		llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL),
-		p.setHeaders,
-	)
+	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
+	// Apply global hooks if available
+	cfg.Hooks = providers.GetGlobalHooks()
+	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
@@ -55,11 +55,10 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
 		apiKey:    apiKey,
 		modelsURL: defaultModelsBaseURL,
 	}
-	p.client = llmclient.NewWithHTTPClient(
-		httpClient,
-		llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL),
-		p.setHeaders,
-	)
+	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
+	// Apply global hooks if available
+	cfg.Hooks = providers.GetGlobalHooks()
+	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }
 
@@ -125,8 +124,11 @@ type geminiModelsResponse struct {
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	// Use the native Gemini API to list models
 	// We need to create a separate client for the models endpoint since it uses a different URL
+	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
+	// Apply global hooks if available
+	modelsCfg.Hooks = providers.GetGlobalHooks()
 	modelsClient := llmclient.New(
-		llmclient.DefaultConfig("gemini", p.modelsURL),
+		modelsCfg,
 		func(req *http.Request) {
 			// Add API key as query parameter.
 			// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.

@@ -6,6 +6,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"gomodel/internal/core"
 )
@@ -39,6 +40,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 
 	// Routes
 	e.GET("/health", handler.Health)
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)

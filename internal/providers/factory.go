@@ -6,6 +6,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/core"
+	"gomodel/internal/pkg/llmclient"
 )
 
 // Builder creates a provider instance from configuration
@@ -13,6 +14,9 @@ type Builder func(cfg config.ProviderConfig) (core.Provider, error)
 
 // registry holds all registered provider builders
 var registry = make(map[string]Builder)
+
+// globalHooks holds the observability hooks to inject into all providers
+var globalHooks llmclient.Hooks
 
 // Register allows provider packages to register themselves
 // This should be called from init() functions in provider packages
@@ -49,4 +53,16 @@ func ListRegistered() []string {
 		types = append(types, t)
 	}
 	return types
+}
+
+// SetGlobalHooks configures observability hooks that will be injected into all providers.
+// This must be called before Create() to take effect.
+// This enables metrics, tracing, and logging without modifying provider implementations.
+func SetGlobalHooks(hooks llmclient.Hooks) {
+	globalHooks = hooks
+}
+
+// GetGlobalHooks returns the currently configured global hooks
+func GetGlobalHooks() llmclient.Hooks {
+	return globalHooks
 }

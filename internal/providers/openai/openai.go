@@ -29,21 +29,20 @@ type Provider struct {
 // New creates a new OpenAI provider
 func New(apiKey string) *Provider {
 	p := &Provider{apiKey: apiKey}
-	p.client = llmclient.New(
-		llmclient.DefaultConfig("openai", defaultBaseURL),
-		p.setHeaders,
-	)
+	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
+	// Apply global hooks if available
+	cfg.Hooks = providers.GetGlobalHooks()
+	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
 // NewWithHTTPClient creates a new OpenAI provider with a custom HTTP client
 func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
 	p := &Provider{apiKey: apiKey}
-	p.client = llmclient.NewWithHTTPClient(
-		httpClient,
-		llmclient.DefaultConfig("openai", defaultBaseURL),
-		p.setHeaders,
-	)
+	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
+	// Apply global hooks if available
+	cfg.Hooks = providers.GetGlobalHooks()
+	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }
 

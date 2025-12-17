@@ -11,6 +11,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/cache"
+	"gomodel/internal/observability"
 	"gomodel/internal/providers"
 
 	// Import provider packages to trigger their init() registration
@@ -82,6 +83,12 @@ func main() {
 		slog.Error("at least one provider must be configured")
 		os.Exit(1)
 	}
+
+	// Setup observability hooks for metrics collection
+	// This must be done BEFORE creating providers so they can use the hooks
+	metricsHooks := observability.NewPrometheusHooks()
+	providers.SetGlobalHooks(metricsHooks)
+	slog.Info("prometheus metrics enabled", "endpoint", "/metrics")
 
 	// Initialize cache backend based on configuration
 	modelCache, err := initCache(cfg)
