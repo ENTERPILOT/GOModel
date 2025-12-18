@@ -84,11 +84,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup observability hooks for metrics collection
+	// Setup observability hooks for metrics collection (if enabled)
 	// This must be done BEFORE creating providers so they can use the hooks
-	metricsHooks := observability.NewPrometheusHooks()
-	providers.SetGlobalHooks(metricsHooks)
-	slog.Info("prometheus metrics enabled", "endpoint", "/metrics")
+	if cfg.Metrics.Enabled {
+		metricsHooks := observability.NewPrometheusHooks()
+		providers.SetGlobalHooks(metricsHooks)
+		slog.Info("prometheus metrics enabled", "endpoint", cfg.Metrics.Endpoint)
+	} else {
+		slog.Info("prometheus metrics disabled")
+	}
 
 	// Initialize cache backend based on configuration
 	modelCache, err := initCache(cfg)
@@ -163,7 +167,9 @@ func main() {
 
 	// Create and start server
 	serverCfg := &server.Config{
-		MasterKey: cfg.Server.MasterKey,
+		MasterKey:       cfg.Server.MasterKey,
+		MetricsEnabled:  cfg.Metrics.Enabled,
+		MetricsEndpoint: cfg.Metrics.Endpoint,
 	}
 	srv := server.New(router, serverCfg)
 

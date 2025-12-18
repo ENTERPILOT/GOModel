@@ -192,21 +192,96 @@ The `extractStatusCode()` helper properly extracts HTTP status codes:
 - `GatewayError`: Extracts `StatusCode` field
 - Network errors: Returns 0 (labeled as "network_error")
 
+## Configuration
+
+Prometheus metrics are **enabled by default** but can be configured via environment variables or `config.yaml`.
+
+### Environment Variables (.env)
+
+```bash
+# Enable/disable metrics (default: true)
+METRICS_ENABLED=true
+
+# Custom endpoint path (default: /metrics)
+METRICS_ENDPOINT=/metrics
+```
+
+### config.yaml
+
+```yaml
+metrics:
+  enabled: true          # Enable/disable metrics collection
+  endpoint: "/metrics"   # HTTP path for metrics endpoint
+```
+
+### Disabling Metrics
+
+To disable Prometheus metrics entirely:
+
+**Option 1: Environment Variable**
+```bash
+export METRICS_ENABLED=false
+./bin/gomodel
+```
+
+**Option 2: config.yaml**
+```yaml
+metrics:
+  enabled: false
+```
+
+When disabled:
+- No hooks are registered
+- No metrics are collected
+- `/metrics` endpoint returns 404
+- Zero performance overhead
+- Logs will show: `{"level":"INFO","msg":"prometheus metrics disabled"}`
+
+### Custom Metrics Endpoint
+
+To use a custom metrics path:
+
+```bash
+export METRICS_ENDPOINT=/internal/prometheus
+./bin/gomodel
+```
+
+Or in `config.yaml`:
+```yaml
+metrics:
+  endpoint: "/internal/prometheus"
+```
+
 ## Usage
 
-### Starting the Server
+### Starting the Server (Metrics Enabled)
 
 ```bash
 # Set up environment
 export OPENAI_API_KEY="your-key"
 export ANTHROPIC_API_KEY="your-key"
 export GEMINI_API_KEY="your-key"
+export METRICS_ENABLED=true
 
 # Run server
 ./bin/gomodel
 
 # Logs will show:
 # {"level":"INFO","msg":"prometheus metrics enabled","endpoint":"/metrics"}
+```
+
+### Starting the Server (Metrics Disabled)
+
+```bash
+# Set up environment
+export OPENAI_API_KEY="your-key"
+export METRICS_ENABLED=false
+
+# Run server
+./bin/gomodel
+
+# Logs will show:
+# {"level":"INFO","msg":"prometheus metrics disabled"}
 ```
 
 ### Accessing Metrics
@@ -393,16 +468,19 @@ providers.SetGlobalHooks(combinedHooks)
 ### New Files
 - `internal/observability/metrics.go` - Prometheus metrics and hooks
 - `internal/observability/metrics_test.go` - Comprehensive unit tests
+- `config.yaml.example` - Example configuration file with metrics options
 - `PROMETHEUS_IMPLEMENTATION.md` - This documentation
 
 ### Modified Files
+- `config/config.go` - Added MetricsConfig struct and configuration loading
+- `.env.template` - Added METRICS_ENABLED and METRICS_ENDPOINT variables
 - `internal/pkg/llmclient/client.go` - Added hooks system and instrumentation
 - `internal/providers/factory.go` - Added global hooks registry
 - `internal/providers/openai/openai.go` - Apply hooks during initialization
 - `internal/providers/anthropic/anthropic.go` - Apply hooks during initialization
 - `internal/providers/gemini/gemini.go` - Apply hooks during initialization
-- `internal/server/http.go` - Added `/metrics` endpoint
-- `cmd/gomodel/main.go` - Wire up Prometheus hooks before provider creation
+- `internal/server/http.go` - Conditionally register `/metrics` endpoint
+- `cmd/gomodel/main.go` - Conditional metrics initialization based on config
 - `go.mod`, `go.sum` - Added Prometheus client library dependencies
 
 ## Critical Analysis & Improvements Over Original Proposal

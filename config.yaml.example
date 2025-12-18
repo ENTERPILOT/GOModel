@@ -1,0 +1,68 @@
+# GOModel Configuration File
+# This is an example configuration file that demonstrates all available options.
+# Copy this to config.yaml and customize for your needs.
+
+# Server Configuration
+server:
+  port: "8080"
+  # Optional: Master key for authentication
+  # If not set, server runs in UNSAFE MODE with unauthenticated access
+  master_key: "${GOMODEL_MASTER_KEY}"
+
+# Metrics Configuration (Prometheus)
+metrics:
+  # Enable or disable Prometheus metrics collection
+  # When disabled, no metrics are collected and the /metrics endpoint returns 404
+  # Default: true
+  enabled: true
+
+  # HTTP endpoint path where metrics are exposed
+  # Default: /metrics
+  endpoint: "/metrics"
+
+# Cache Configuration
+cache:
+  # Cache type: "local" for single instance, "redis" for distributed deployments
+  type: "local"
+
+  # Redis configuration (only used when type: redis)
+  redis:
+    url: "${REDIS_URL:-redis://localhost:6379}"
+    key: "gomodel:models"
+    ttl: 86400  # 24 hours in seconds
+
+# Provider Configuration
+# You can configure multiple instances of the same provider type
+providers:
+  # OpenAI Configuration
+  openai-primary:
+    type: "openai"
+    api_key: "${OPENAI_API_KEY}"
+    # Optional: Override default base URL
+    # base_url: "https://api.openai.com/v1"
+
+  # Anthropic Configuration
+  anthropic-primary:
+    type: "anthropic"
+    api_key: "${ANTHROPIC_API_KEY}"
+    # Optional: Override default base URL
+    # base_url: "https://api.anthropic.com/v1"
+
+  # Google Gemini Configuration
+  gemini-primary:
+    type: "gemini"
+    api_key: "${GEMINI_API_KEY}"
+    # Optional: Override default base URL
+    # base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+
+  # Example: Multiple instances of same provider
+  # openai-secondary:
+  #   type: "openai"
+  #   api_key: "${OPENAI_SECONDARY_KEY}"
+  #   base_url: "https://custom-openai-endpoint.com/v1"
+
+# Notes:
+# - Environment variables can be referenced using ${VAR_NAME} syntax
+# - Default values can be specified using ${VAR_NAME:-default_value} syntax
+# - Providers with unresolved environment variables are automatically filtered out
+# - At least one provider with a valid API key is required

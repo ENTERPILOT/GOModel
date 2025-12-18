@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Server    ServerConfig              `mapstructure:"server"`
 	Cache     CacheConfig               `mapstructure:"cache"`
+	Metrics   MetricsConfig             `mapstructure:"metrics"`
 	Providers map[string]ProviderConfig `mapstructure:"providers"`
 }
 
@@ -43,6 +44,17 @@ type ServerConfig struct {
 	MasterKey string `mapstructure:"master_key"` // Optional: Master key for authentication
 }
 
+// MetricsConfig holds observability configuration for Prometheus metrics
+type MetricsConfig struct {
+	// Enabled controls whether Prometheus metrics are collected and exposed
+	// Default: true
+	Enabled bool `mapstructure:"enabled"`
+
+	// Endpoint is the HTTP path where metrics are exposed
+	// Default: "/metrics"
+	Endpoint string `mapstructure:"endpoint"`
+}
+
 // ProviderConfig holds generic provider configuration
 type ProviderConfig struct {
 	Type    string   `mapstructure:"type"`     // e.g., "openai", "anthropic", "gemini"
@@ -69,6 +81,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("cache.type", "local")
 	viper.SetDefault("cache.redis.key", "gomodel:models")
 	viper.SetDefault("cache.redis.ttl", 86400) // 24 hours
+	viper.SetDefault("metrics.enabled", true)
+	viper.SetDefault("metrics.endpoint", "/metrics")
 
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
@@ -97,6 +111,10 @@ func Load() (*Config, error) {
 			Server: ServerConfig{
 				Port:      viper.GetString("PORT"),
 				MasterKey: viper.GetString("GOMODEL_MASTER_KEY"),
+			},
+			Metrics: MetricsConfig{
+				Enabled:  viper.GetBool("METRICS_ENABLED"),
+				Endpoint: viper.GetString("METRICS_ENDPOINT"),
 			},
 			Providers: make(map[string]ProviderConfig),
 		}
@@ -130,6 +148,9 @@ func expandEnvVars(cfg Config) Config {
 	// Expand server port
 	cfg.Server.Port = expandString(cfg.Server.Port)
 	cfg.Server.MasterKey = expandString(cfg.Server.MasterKey)
+
+	// Expand metrics configuration
+	cfg.Metrics.Endpoint = expandString(cfg.Metrics.Endpoint)
 
 	// Expand cache configuration
 	cfg.Cache.Type = expandString(cfg.Cache.Type)
