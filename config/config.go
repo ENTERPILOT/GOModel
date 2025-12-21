@@ -81,7 +81,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("cache.type", "local")
 	viper.SetDefault("cache.redis.key", "gomodel:models")
 	viper.SetDefault("cache.redis.ttl", 86400) // 24 hours
-	viper.SetDefault("metrics.enabled", true)
+	viper.SetDefault("metrics.enabled", false)
 	viper.SetDefault("metrics.endpoint", "/metrics")
 
 	// Enable automatic environment variable reading
