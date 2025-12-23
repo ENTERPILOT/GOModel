@@ -56,6 +56,7 @@ Counts total LLM requests with rich labels for filtering.
 
 **Type**: Counter
 **Labels**:
+
 - `provider`: Provider name (openai, anthropic, gemini)
 - `model`: Model name (gpt-4, claude-3-opus, etc.)
 - `endpoint`: API endpoint (/chat/completions, /responses, /models)
@@ -64,6 +65,7 @@ Counts total LLM requests with rich labels for filtering.
 - `stream`: "true" or "false"
 
 **Example Queries**:
+
 ```promql
 # Total request rate across all providers
 rate(gomodel_requests_total[5m])
@@ -84,6 +86,7 @@ Measures request latency distribution.
 
 **Type**: Histogram
 **Labels**:
+
 - `provider`: Provider name
 - `model`: Model name
 - `endpoint`: API endpoint
@@ -94,6 +97,7 @@ Measures request latency distribution.
 **Important Note**: For streaming requests, duration is measured from start to stream establishment, not total stream duration. This is a known limitation for simplicity.
 
 **Example Queries**:
+
 ```promql
 # P95 latency by provider
 histogram_quantile(0.95,
@@ -116,11 +120,13 @@ Tracks concurrent requests per provider.
 
 **Type**: Gauge
 **Labels**:
+
 - `provider`: Provider name
 - `endpoint`: API endpoint
 - `stream`: "true" or "false"
 
 **Example Queries**:
+
 ```promql
 # Current concurrent requests per provider
 sum(gomodel_requests_in_flight) by (provider)
@@ -149,6 +155,7 @@ type Hooks struct {
 ```
 
 **RequestInfo** contains:
+
 - Provider name
 - Model name
 - Endpoint
@@ -156,6 +163,7 @@ type Hooks struct {
 - Whether request is streaming
 
 **ResponseInfo** contains:
+
 - All RequestInfo fields
 - HTTP status code
 - Request duration
@@ -166,10 +174,12 @@ type Hooks struct {
 The implementation instruments **three critical paths**:
 
 1. **Regular Requests** (`doRequest` method)
+
    - Used by `Do()` and `DoRaw()`
    - Handles chat completions, responses, and model listings
 
 2. **Streaming Requests** (`DoStream` method)
+
    - Used by `StreamChatCompletion()` and `StreamResponses()`
    - Duration measured to stream establishment, not stream close
 
@@ -181,6 +191,7 @@ The implementation instruments **three critical paths**:
 ### Model Extraction
 
 The `extractModel()` helper intelligently extracts model names from different request types:
+
 - `core.ChatRequest` → extracts `Model` field
 - `core.ResponsesRequest` → extracts `Model` field
 - Unknown types → returns "unknown"
@@ -188,13 +199,14 @@ The `extractModel()` helper intelligently extracts model names from different re
 ### Status Code Handling
 
 The `extractStatusCode()` helper properly extracts HTTP status codes:
+
 - Success: Uses actual HTTP status code
 - `GatewayError`: Extracts `StatusCode` field
 - Network errors: Returns 0 (labeled as "network_error")
 
 ## Configuration
 
-Prometheus metrics are **enabled by default** but can be configured via environment variables or `config.yaml`.
+Prometheus metrics are **disabled by default** but can be configured via environment variables or `config.yaml`.
 
 ### Environment Variables (.env)
 
@@ -210,8 +222,8 @@ METRICS_ENDPOINT=/metrics
 
 ```yaml
 metrics:
-  enabled: true          # Enable/disable metrics collection
-  endpoint: "/metrics"   # HTTP path for metrics endpoint
+  enabled: true # Enable/disable metrics collection
+  endpoint: "/metrics" # HTTP path for metrics endpoint
 ```
 
 ### Disabling Metrics
@@ -219,18 +231,21 @@ metrics:
 To disable Prometheus metrics entirely:
 
 **Option 1: Environment Variable**
+
 ```bash
 export METRICS_ENABLED=false
 ./bin/gomodel
 ```
 
 **Option 2: config.yaml**
+
 ```yaml
 metrics:
   enabled: false
 ```
 
 When disabled:
+
 - No hooks are registered
 - No metrics are collected
 - `/metrics` endpoint returns 404
@@ -247,6 +262,7 @@ export METRICS_ENDPOINT=/internal/prometheus
 ```
 
 Or in `config.yaml`:
+
 ```yaml
 metrics:
   endpoint: "/internal/prometheus"
@@ -301,17 +317,20 @@ curl http://localhost:8080/metrics
 ### Recommended Panels
 
 #### 1. Request Rate (Line Chart)
+
 ```promql
 sum(rate(gomodel_requests_total[5m])) by (provider)
 ```
 
 #### 2. Error Rate % (Gauge)
+
 ```promql
 sum(rate(gomodel_requests_total{status_type="error"}[5m])) /
 sum(rate(gomodel_requests_total[5m])) * 100
 ```
 
 #### 3. Latency Percentiles (Line Chart)
+
 ```promql
 # P50
 histogram_quantile(0.50, sum(rate(gomodel_request_duration_seconds_bucket[5m])) by (le, provider))
@@ -324,16 +343,19 @@ histogram_quantile(0.99, sum(rate(gomodel_request_duration_seconds_bucket[5m])) 
 ```
 
 #### 4. In-Flight Requests (Graph)
+
 ```promql
 sum(gomodel_requests_in_flight) by (provider)
 ```
 
 #### 5. Requests by Model (Bar Chart)
+
 ```promql
 sum(rate(gomodel_requests_total[5m])) by (model)
 ```
 
 #### 6. Streaming vs Non-Streaming (Pie Chart)
+
 ```promql
 sum(rate(gomodel_requests_total[5m])) by (stream)
 ```
@@ -349,6 +371,7 @@ go test ./internal/observability/... -v
 ```
 
 Tests cover:
+
 - Hook callbacks are properly registered
 - Success requests increment metrics correctly
 - Error requests are labeled properly
@@ -384,6 +407,7 @@ curl http://localhost:8080/metrics | grep gomodel_requests_total
 ## Alerting Examples
 
 ### High Error Rate
+
 ```yaml
 - alert: HighErrorRate
   expr: |
@@ -395,6 +419,7 @@ curl http://localhost:8080/metrics | grep gomodel_requests_total
 ```
 
 ### High Latency
+
 ```yaml
 - alert: HighP99Latency
   expr: |
@@ -407,6 +432,7 @@ curl http://localhost:8080/metrics | grep gomodel_requests_total
 ```
 
 ### High Concurrent Requests
+
 ```yaml
 - alert: HighConcurrency
   expr: |
@@ -419,7 +445,9 @@ curl http://localhost:8080/metrics | grep gomodel_requests_total
 ## Future Enhancements
 
 ### Token Usage Tracking
+
 Could be added by extracting usage data from responses:
+
 ```go
 // In ResponseInfo
 TokensPrompt     int
@@ -427,20 +455,26 @@ TokensCompletion int
 ```
 
 ### Cache Hit/Miss Metrics
+
 Could track model registry cache performance:
+
 ```go
 CacheHits   = promauto.NewCounter(...)
 CacheMisses = promauto.NewCounter(...)
 ```
 
 ### Circuit Breaker State
+
 Could expose circuit breaker state as a gauge:
+
 ```go
 CircuitBreakerState = promauto.NewGaugeVec(..., []string{"provider", "state"})
 ```
 
 ### Request Size Metrics
+
 Could track request/response payload sizes:
+
 ```go
 RequestSizeBytes  = promauto.NewHistogramVec(...)
 ResponseSizeBytes = promauto.NewHistogramVec(...)
@@ -466,12 +500,14 @@ providers.SetGlobalHooks(combinedHooks)
 ## Files Changed
 
 ### New Files
+
 - `internal/observability/metrics.go` - Prometheus metrics and hooks
 - `internal/observability/metrics_test.go` - Comprehensive unit tests
 - `config.yaml.example` - Example configuration file with metrics options
 - `PROMETHEUS_IMPLEMENTATION.md` - This documentation
 
 ### Modified Files
+
 - `config/config.go` - Added MetricsConfig struct and configuration loading
 - `.env.template` - Added METRICS_ENABLED and METRICS_ENDPOINT variables
 - `internal/pkg/llmclient/client.go` - Added hooks system and instrumentation
@@ -488,30 +524,37 @@ providers.SetGlobalHooks(combinedHooks)
 ### Issues Fixed
 
 1. **✅ Incomplete Hook Coverage**
+
    - Original: Only instrumented `doRequest`
    - Fixed: Instrumented both `doRequest` AND `DoStream` for complete coverage
 
 2. **✅ Model Extraction**
+
    - Original: Only handled `ChatRequest`
    - Fixed: Handles both `ChatRequest` and `ResponsesRequest`
 
 3. **✅ Status Code Handling**
+
    - Original: Set status to "0" for all errors
    - Fixed: Extract actual status codes from `GatewayError`, use "network_error" label for network failures
 
 4. **✅ Missing Endpoint Information**
+
    - Original: No endpoint tracking
    - Fixed: Added `endpoint` label to all metrics for granular debugging
 
 5. **✅ Streaming Metrics**
+
    - Original: Streaming not explicitly handled
    - Fixed: Separate `stream` label and explicit instrumentation
 
 6. **✅ Missing Imports**
+
    - Original: Missing `fmt` import
    - Fixed: All imports properly added
 
 7. **✅ Factory Wiring Unclear**
+
    - Original: No clear path to inject hooks
    - Fixed: Global hooks registry with `SetGlobalHooks()` and `GetGlobalHooks()`
 
@@ -522,6 +565,7 @@ providers.SetGlobalHooks(combinedHooks)
 ## Summary
 
 This implementation provides production-ready Prometheus metrics for GOModel with:
+
 - ✅ Zero impact on business logic
 - ✅ Complete request coverage (regular + streaming)
 - ✅ Rich labels for powerful queries
@@ -531,6 +575,7 @@ This implementation provides production-ready Prometheus metrics for GOModel wit
 - ✅ Real-world alerting examples
 
 The metrics are immediately useful for:
+
 - Monitoring request rates and error rates
 - Tracking latency percentiles
 - Detecting capacity issues via in-flight requests
