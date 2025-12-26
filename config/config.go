@@ -144,6 +144,12 @@ func Load() (*Config, error) {
 				APIKey: apiKey,
 			}
 		}
+		if apiKey := viper.GetString("GROQ_API_KEY"); apiKey != "" {
+			cfg.Providers["groq-primary"] = ProviderConfig{
+				Type:   "groq",
+				APIKey: apiKey,
+			}
+		}
 	}
 
 	return &cfg, nil
