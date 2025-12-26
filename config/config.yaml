@@ -48,6 +48,10 @@ providers:
     type: "xai"
     api_key: "${XAI_API_KEY}"
 
+  groq-primary:
+    type: "groq"
+    api_key: "${GROQ_API_KEY}"
+
   # Example: Groq (OpenAI-compatible)
   # groq:
   #   type: "openai"
