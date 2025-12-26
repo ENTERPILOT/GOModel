@@ -138,6 +138,12 @@ func Load() (*Config, error) {
 				APIKey: apiKey,
 			}
 		}
+		if apiKey := viper.GetString("XAI_API_KEY"); apiKey != "" {
+			cfg.Providers["xai-primary"] = ProviderConfig{
+				Type:   "xai",
+				APIKey: apiKey,
+			}
+		}
 	}
 
 	return &cfg, nil
