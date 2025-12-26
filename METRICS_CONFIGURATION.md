@@ -4,11 +4,12 @@ This guide explains how to configure Prometheus metrics in GOModel.
 
 ## Quick Start
 
-### Enabled by Default
+### Disabled by Default
 
-Metrics are **disabled by default**. No configuration needed to start collecting metrics:
+Metrics are **disabled by default**. To enable metrics collection, set `METRICS_ENABLED=true` and start GOModel:
 
 ```bash
+export METRICS_ENABLED=true
 ./bin/gomodel
 # Metrics available at http://localhost:8080/metrics
 ```
