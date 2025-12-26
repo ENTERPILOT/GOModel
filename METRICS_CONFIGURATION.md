@@ -162,9 +162,9 @@ curl http://localhost:8080/metrics
 
 ### Exposing Metrics Endpoint
 
-The `/metrics` endpoint is **not protected** by the master key authentication by default. This allows Prometheus to scrape metrics without authentication.
+The `/metrics` endpoint is protected by the master key authentication when a master key is configured, just like other HTTP endpoints. If no master key is configured, the endpoint is accessible without authentication, which allows Prometheus to scrape metrics without credentials.
 
-If you need to protect the metrics endpoint:
+If you need to protect the metrics endpoint further:
 
 1. **Use a custom internal path:**
 
