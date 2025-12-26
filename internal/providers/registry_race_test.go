@@ -2,7 +2,7 @@ package providers
 
 import (
 	"context"
-	"io" // Correct import
+	"io"
 	"sync"
 	"testing"
 	"time"
