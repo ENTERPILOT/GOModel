@@ -7,10 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 
 	"gomodel/internal/core"
 	"gomodel/internal/pkg/llmclient"
@@ -78,11 +79,10 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	req.Stream = true
 	return p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req,
+		Body:     req.WithStreaming(),
 	})
 }
 
@@ -180,7 +180,7 @@ func convertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
-				ID:     fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+				ID:     "msg_" + uuid.New().String(),
 				Type:   "message",
 				Role:   "assistant",
 				Status: "completed",
@@ -247,7 +247,7 @@ func newGroqResponsesStreamConverter(reader io.ReadCloser, model string) *groqRe
 	return &groqResponsesStreamConverter{
 		reader:     reader,
 		model:      model,
-		responseID: "resp_" + time.Now().Format("20060102150405"),
+		responseID: "resp_" + uuid.New().String(),
 		buffer:     make([]byte, 0, 4096),
 		lineBuffer: make([]byte, 0, 1024),
 	}
@@ -280,8 +280,7 @@ func (sc *groqResponsesStreamConverter) Read(p []byte) (n int, err error) {
 		}
 		jsonData, err := json.Marshal(createdEvent)
 		if err != nil {
-			slog.Error("failed to marshal response.created event", "error", err, "response_id", sc.responseID)
-			return 0, nil
+			return 0, fmt.Errorf("failed to marshal response.created event: %w", err)
 		}
 		created := fmt.Sprintf("event: response.created\ndata: %s\n\n", jsonData)
 		sc.buffer = append(sc.buffer, []byte(created)...)
@@ -329,8 +328,7 @@ func (sc *groqResponsesStreamConverter) Read(p []byte) (n int, err error) {
 						}
 						jsonData, err := json.Marshal(doneEvent)
 						if err != nil {
-							slog.Error("failed to marshal response.done event", "error", err, "response_id", sc.responseID)
-							continue
+							return 0, fmt.Errorf("failed to marshal response.done event: %w", err)
 						}
 						doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 						sc.buffer = append(sc.buffer, []byte(doneMsg)...)
@@ -355,8 +353,7 @@ func (sc *groqResponsesStreamConverter) Read(p []byte) (n int, err error) {
 								}
 								jsonData, err := json.Marshal(deltaEvent)
 								if err != nil {
-									slog.Error("failed to marshal content delta event", "error", err, "response_id", sc.responseID)
-									continue
+									return 0, fmt.Errorf("failed to marshal content delta event: %w", err)
 								}
 								sc.buffer = append(sc.buffer, []byte(fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData))...)
 							}
@@ -384,11 +381,10 @@ func (sc *groqResponsesStreamConverter) Read(p []byte) (n int, err error) {
 				}
 				jsonData, err := json.Marshal(doneEvent)
 				if err != nil {
-					slog.Error("failed to marshal final response.done event", "error", err, "response_id", sc.responseID)
-				} else {
-					doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
-					sc.buffer = append(sc.buffer, []byte(doneMsg)...)
+					return 0, fmt.Errorf("failed to marshal final response.done event: %w", err)
 				}
+				doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+				sc.buffer = append(sc.buffer, []byte(doneMsg)...)
 			}
 
 			if len(sc.buffer) > 0 {

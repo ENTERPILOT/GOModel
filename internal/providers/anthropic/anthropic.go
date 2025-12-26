@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"gomodel/internal/core"
 	"gomodel/internal/pkg/llmclient"
 	"gomodel/internal/providers"
@@ -508,7 +510,7 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
-				ID:     fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+				ID:     "msg_" + uuid.New().String(),
 				Type:   "message",
 				Role:   "assistant",
 				Status: "completed",
@@ -580,7 +582,7 @@ func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStr
 		reader:     bufio.NewReader(body),
 		body:       body,
 		model:      model,
-		responseID: fmt.Sprintf("resp_%d", time.Now().UnixNano()),
+		responseID: "resp_" + uuid.New().String(),
 		buffer:     make([]byte, 0, 1024),
 	}
 }

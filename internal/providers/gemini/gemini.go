@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"gomodel/internal/core"
 	"gomodel/internal/pkg/llmclient"
 	"gomodel/internal/providers"
@@ -262,7 +264,7 @@ func convertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
-				ID:     fmt.Sprintf("msg_%d", time.Now().UnixNano()),
+				ID:     "msg_" + uuid.New().String(),
 				Type:   "message",
 				Role:   "assistant",
 				Status: "completed",
@@ -328,7 +330,7 @@ func newGeminiResponsesStreamConverter(reader io.ReadCloser, model string) *gemi
 	return &geminiResponsesStreamConverter{
 		reader:     reader,
 		model:      model,
-		responseID: "resp_" + time.Now().Format("20060102150405"),
+		responseID: "resp_" + uuid.New().String(),
 		buffer:     make([]byte, 0, 4096),
 		lineBuffer: make([]byte, 0, 1024),
 	}
