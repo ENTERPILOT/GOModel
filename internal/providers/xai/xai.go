@@ -72,11 +72,18 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	req.Stream = true
+	// Create a shallow copy to avoid mutating the caller's request
+	streamReq := &core.ChatRequest{
+		Temperature: req.Temperature,
+		MaxTokens:   req.MaxTokens,
+		Model:       req.Model,
+		Messages:    req.Messages,
+		Stream:      true,
+	}
 	return p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req,
+		Body:     streamReq,
 	})
 }
 
@@ -109,10 +116,20 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
-	req.Stream = true
+	// Create a shallow copy to avoid mutating the caller's request
+	streamReq := &core.ResponsesRequest{
+		Model:           req.Model,
+		Input:           req.Input,
+		Instructions:    req.Instructions,
+		Tools:           req.Tools,
+		Temperature:     req.Temperature,
+		MaxOutputTokens: req.MaxOutputTokens,
+		Stream:          true,
+		Metadata:        req.Metadata,
+	}
 	return p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/responses",
-		Body:     req,
+		Body:     streamReq,
 	})
 }
