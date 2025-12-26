@@ -204,15 +204,73 @@ func (c *Client) Do(ctx context.Context, req Request, result interface{}) error 
 	return nil
 }
 
-// DoRaw executes a request with retries and circuit breaking, returning the raw response
+// DoRaw executes a request with retries and circuit breaking, returning the raw response.
+//
+// # Metrics Behavior
+//
+// Metrics hooks (OnRequestStart/OnRequestEnd) are called at this level to track logical
+// requests from the caller's perspective, not individual retry attempts. This ensures:
+//
+//   - Request counts reflect user-facing requests, not internal HTTP calls
+//   - Duration metrics include total time across all retries (useful for SLOs)
+//   - In-flight gauge accurately reflects concurrent logical requests
+//
+// Behavior comparison (hooks at DoRaw vs per-attempt):
+//
+//	| Scenario                             | Per-attempt (old)           | DoRaw level (current)            |
+//	|--------------------------------------|-----------------------------|----------------------------------|
+//	| 1 request, succeeds first try        | 1 observation               | 1 observation                    |
+//	| 1 request, fails twice then succeeds | 3 observations              | 1 observation (success)          |
+//	| 1 request, fails all 3 retries       | 3 observations              | 1 observation (error)            |
+//	| Duration metric                      | Each attempt's duration     | Total duration including retries |
+//	| In-flight gauge                      | Bounces up/down per attempt | Accurate concurrent count        |
+//
+// The final status code and error in metrics reflect the outcome after all retry attempts.
 func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
+	start := time.Now()
+
+	// Extract model for observability
+	modelName := extractModel(req.Body)
+
+	// Build request info for hooks
+	reqInfo := RequestInfo{
+		Provider: c.config.ProviderName,
+		Model:    modelName,
+		Endpoint: req.Endpoint,
+		Method:   req.Method,
+		Stream:   false,
+	}
+
+	// Call OnRequestStart hook (once per logical request, not per retry)
+	if c.config.Hooks.OnRequestStart != nil {
+		ctx = c.config.Hooks.OnRequestStart(ctx, reqInfo)
+	}
+
+	// Helper to call OnRequestEnd hook
+	callEndHook := func(statusCode int, err error) {
+		if c.config.Hooks.OnRequestEnd != nil {
+			c.config.Hooks.OnRequestEnd(ctx, ResponseInfo{
+				Provider:   c.config.ProviderName,
+				Model:      modelName,
+				Endpoint:   req.Endpoint,
+				StatusCode: statusCode,
+				Duration:   time.Since(start),
+				Stream:     false,
+				Error:      err,
+			})
+		}
+	}
+
 	// Check circuit breaker
 	if c.circuitBreaker != nil && !c.circuitBreaker.Allow() {
-		return nil, core.NewProviderError(c.config.ProviderName, http.StatusServiceUnavailable,
+		err := core.NewProviderError(c.config.ProviderName, http.StatusServiceUnavailable,
 			"circuit breaker is open - provider temporarily unavailable", nil)
+		callEndHook(http.StatusServiceUnavailable, err)
+		return nil, err
 	}
 
 	var lastErr error
+	var lastStatusCode int
 	maxAttempts := c.config.MaxRetries + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -224,6 +282,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 			backoff := c.calculateBackoff(attempt)
 			select {
 			case <-ctx.Done():
+				callEndHook(0, ctx.Err())
 				return nil, ctx.Err()
 			case <-time.After(backoff):
 			}
@@ -232,6 +291,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 		resp, err := c.doRequest(ctx, req)
 		if err != nil {
 			lastErr = err
+			lastStatusCode = extractStatusCode(err)
 			// Only retry on network errors
 			if c.circuitBreaker != nil {
 				c.circuitBreaker.RecordFailure()
@@ -245,6 +305,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 				c.circuitBreaker.RecordFailure()
 			}
 			lastErr = core.ParseProviderError(c.config.ProviderName, resp.StatusCode, resp.Body, nil)
+			lastStatusCode = resp.StatusCode
 			continue
 		}
 
@@ -256,21 +317,27 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 					c.circuitBreaker.RecordFailure()
 				}
 			}
-			return nil, core.ParseProviderError(c.config.ProviderName, resp.StatusCode, resp.Body, nil)
+			err := core.ParseProviderError(c.config.ProviderName, resp.StatusCode, resp.Body, nil)
+			callEndHook(resp.StatusCode, err)
+			return nil, err
 		}
 
 		// Success
 		if c.circuitBreaker != nil {
 			c.circuitBreaker.RecordSuccess()
 		}
+		callEndHook(resp.StatusCode, nil)
 		return resp, nil
 	}
 
 	// All retries exhausted
 	if lastErr != nil {
+		callEndHook(lastStatusCode, lastErr)
 		return nil, lastErr
 	}
-	return nil, core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "request failed after retries", nil)
+	err := core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "request failed after retries", nil)
+	callEndHook(http.StatusBadGateway, err)
+	return nil, err
 }
 
 // DoStream executes a streaming request, returning a ReadCloser
@@ -436,61 +503,18 @@ func extractStatusCode(err error) int {
 	return 0
 }
 
-// doRequest executes a single HTTP request without retries
+// doRequest executes a single HTTP request without retries.
+// Note: Metrics hooks are called at the DoRaw level, not here, to avoid
+// counting each retry attempt as a separate request.
 func (c *Client) doRequest(ctx context.Context, req Request) (*Response, error) {
-	start := time.Now()
-
-	// Extract model for observability
-	modelName := extractModel(req.Body)
-
-	// Build request info for hooks
-	reqInfo := RequestInfo{
-		Provider: c.config.ProviderName,
-		Model:    modelName,
-		Endpoint: req.Endpoint,
-		Method:   req.Method,
-		Stream:   false,
-	}
-
-	// Call OnRequestStart hook
-	if c.config.Hooks.OnRequestStart != nil {
-		ctx = c.config.Hooks.OnRequestStart(ctx, reqInfo)
-	}
-
-	// Build and execute HTTP request
 	httpReq, err := c.buildRequest(ctx, req)
 	if err != nil {
-		// Call OnRequestEnd hook on error
-		if c.config.Hooks.OnRequestEnd != nil {
-			c.config.Hooks.OnRequestEnd(ctx, ResponseInfo{
-				Provider:   c.config.ProviderName,
-				Model:      modelName,
-				Endpoint:   req.Endpoint,
-				StatusCode: extractStatusCode(err),
-				Duration:   time.Since(start),
-				Stream:     false,
-				Error:      err,
-			})
-		}
 		return nil, err
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		providerErr := core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "failed to send request: "+err.Error(), err)
-		// Call OnRequestEnd hook on error
-		if c.config.Hooks.OnRequestEnd != nil {
-			c.config.Hooks.OnRequestEnd(ctx, ResponseInfo{
-				Provider:   c.config.ProviderName,
-				Model:      modelName,
-				Endpoint:   req.Endpoint,
-				StatusCode: extractStatusCode(providerErr),
-				Duration:   time.Since(start),
-				Stream:     false,
-				Error:      providerErr,
-			})
-		}
-		return nil, providerErr
+		return nil, core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "failed to send request: "+err.Error(), err)
 	}
 	defer func() {
 		_ = resp.Body.Close()
@@ -498,41 +522,13 @@ func (c *Client) doRequest(ctx context.Context, req Request) (*Response, error) 
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		readErr := core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "failed to read response: "+err.Error(), err)
-		// Call OnRequestEnd hook on error
-		if c.config.Hooks.OnRequestEnd != nil {
-			c.config.Hooks.OnRequestEnd(ctx, ResponseInfo{
-				Provider:   c.config.ProviderName,
-				Model:      modelName,
-				Endpoint:   req.Endpoint,
-				StatusCode: resp.StatusCode,
-				Duration:   time.Since(start),
-				Stream:     false,
-				Error:      readErr,
-			})
-		}
-		return nil, readErr
+		return nil, core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "failed to read response: "+err.Error(), err)
 	}
 
-	response := &Response{
+	return &Response{
 		StatusCode: resp.StatusCode,
 		Body:       body,
-	}
-
-	// Call OnRequestEnd hook on success
-	if c.config.Hooks.OnRequestEnd != nil {
-		c.config.Hooks.OnRequestEnd(ctx, ResponseInfo{
-			Provider:   c.config.ProviderName,
-			Model:      modelName,
-			Endpoint:   req.Endpoint,
-			StatusCode: resp.StatusCode,
-			Duration:   time.Since(start),
-			Stream:     false,
-			Error:      nil,
-		})
-	}
-
-	return response, nil
+	}, nil
 }
 
 // buildRequest creates an HTTP request from a Request
