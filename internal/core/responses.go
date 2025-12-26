@@ -13,6 +13,21 @@ type ResponsesRequest struct {
 	Metadata        map[string]string `json:"metadata,omitempty"`
 }
 
+// WithStreaming returns a shallow copy of the request with Stream set to true.
+// This avoids mutating the caller's request object.
+func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
+	return &ResponsesRequest{
+		Model:           r.Model,
+		Input:           r.Input,
+		Instructions:    r.Instructions,
+		Tools:           r.Tools,
+		Temperature:     r.Temperature,
+		MaxOutputTokens: r.MaxOutputTokens,
+		Stream:          true,
+		Metadata:        r.Metadata,
+	}
+}
+
 // ResponsesInputItem represents an input item when Input is an array.
 type ResponsesInputItem struct {
 	Role    string      `json:"role"`
