@@ -88,11 +88,10 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	req.Stream = true
 	stream, err := p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req,
+		Body:     req.WithStreaming(),
 	})
 	if err != nil {
 		return nil, err
@@ -302,7 +301,6 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	// Convert ResponsesRequest to ChatRequest
 	chatReq := convertResponsesRequestToChat(req)
-	chatReq.Stream = true
 
 	// Get the streaming response from chat completions
 	stream, err := p.StreamChatCompletion(ctx, chatReq)

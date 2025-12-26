@@ -9,6 +9,18 @@ type ChatRequest struct {
 	Stream      bool      `json:"stream,omitempty"`
 }
 
+// WithStreaming returns a shallow copy of the request with Stream set to true.
+// This avoids mutating the caller's request object.
+func (r *ChatRequest) WithStreaming() *ChatRequest {
+	return &ChatRequest{
+		Temperature: r.Temperature,
+		MaxTokens:   r.MaxTokens,
+		Model:       r.Model,
+		Messages:    r.Messages,
+		Stream:      true,
+	}
+}
+
 // Message represents a single message in the chat
 type Message struct {
 	Role    string `json:"role"`

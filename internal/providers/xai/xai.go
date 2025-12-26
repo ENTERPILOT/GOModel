@@ -1,5 +1,5 @@
-// Package openai provides OpenAI API integration for the LLM gateway.
-package openai
+// Package xai provides xAI (Grok) API integration for the LLM gateway.
+package xai
 
 import (
 	"context"
@@ -12,34 +12,34 @@ import (
 )
 
 const (
-	defaultBaseURL = "https://api.openai.com/v1"
+	defaultBaseURL = "https://api.x.ai/v1"
 )
 
 func init() {
 	// Self-register with the factory
-	providers.RegisterProvider("openai", New)
+	providers.RegisterProvider("xai", New)
 }
 
-// Provider implements the core.Provider interface for OpenAI
+// Provider implements the core.Provider interface for xAI
 type Provider struct {
 	client *llmclient.Client
 	apiKey string
 }
 
-// New creates a new OpenAI provider
+// New creates a new xAI provider
 func New(apiKey string) *Provider {
 	p := &Provider{apiKey: apiKey}
-	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
+	cfg := llmclient.DefaultConfig("xai", defaultBaseURL)
 	// Apply global hooks if available
 	cfg.Hooks = providers.GetGlobalHooks()
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
-// NewWithHTTPClient creates a new OpenAI provider with a custom HTTP client
+// NewWithHTTPClient creates a new xAI provider with a custom HTTP client
 func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
 	p := &Provider{apiKey: apiKey}
-	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
+	cfg := llmclient.DefaultConfig("xai", defaultBaseURL)
 	// Apply global hooks if available
 	cfg.Hooks = providers.GetGlobalHooks()
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
@@ -51,12 +51,12 @@ func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
 }
 
-// setHeaders sets the required headers for OpenAI API requests
+// setHeaders sets the required headers for xAI API requests
 func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
 }
 
-// ChatCompletion sends a chat completion request to OpenAI
+// ChatCompletion sends a chat completion request to xAI
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	var resp core.ChatResponse
 	err := p.client.Do(ctx, llmclient.Request{
@@ -79,7 +79,7 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 	})
 }
 
-// ListModels retrieves the list of available models from OpenAI
+// ListModels retrieves the list of available models from xAI
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	var resp core.ModelsResponse
 	err := p.client.Do(ctx, llmclient.Request{
@@ -92,7 +92,7 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	return &resp, nil
 }
 
-// Responses sends a Responses API request to OpenAI
+// Responses sends a Responses API request to xAI
 func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
 	var resp core.ResponsesResponse
 	err := p.client.Do(ctx, llmclient.Request{

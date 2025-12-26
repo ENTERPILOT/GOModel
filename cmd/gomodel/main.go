@@ -18,6 +18,7 @@ import (
 	_ "gomodel/internal/providers/anthropic"
 	_ "gomodel/internal/providers/gemini"
 	_ "gomodel/internal/providers/openai"
+	_ "gomodel/internal/providers/xai"
 	"gomodel/internal/server"
 )
 

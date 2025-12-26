@@ -4,7 +4,8 @@
       "Bash(make test-all)",
       "Bash(make lint)",
       "Bash(go test:*)",
-      "Bash(make test:*)"
+      "Bash(make test:*)",
+      "WebFetch(domain:docs.x.ai)"
     ],
     "deny": [],
     "ask": []

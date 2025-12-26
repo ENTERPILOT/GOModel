@@ -44,6 +44,10 @@ providers:
     type: "gemini"
     api_key: "${GEMINI_API_KEY}"
 
+  xai-primary:
+    type: "xai"
+    api_key: "${XAI_API_KEY}"
+
   # Example: Groq (OpenAI-compatible)
   # groq:
   #   type: "openai"
