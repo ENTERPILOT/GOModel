@@ -24,6 +24,97 @@ func TestNew(t *testing.T) {
 	}
 }
 
+// customHeaderRoundTripper is a RoundTripper that injects a custom header
+type customHeaderRoundTripper struct {
+	transport http.RoundTripper
+	headerKey string
+	headerVal string
+}
+
+func (c *customHeaderRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req.Header.Set(c.headerKey, c.headerVal)
+	return c.transport.RoundTrip(req)
+}
+
+func TestNewWithHTTPClient(t *testing.T) {
+	const customHeaderKey = "X-Custom-Test-Header"
+	const customHeaderVal = "custom-test-value"
+
+	var receivedHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Capture the custom header to verify custom client was used
+		receivedHeader = r.Header.Get(customHeaderKey)
+
+		// Return a valid chat completion response
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "grok-2",
+			"choices": [{
+				"index": 0,
+				"message": {"role": "assistant", "content": "Hello!"},
+				"finish_reason": "stop"
+			}],
+			"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+		}`))
+	}))
+	defer server.Close()
+
+	// Create a custom HTTP client with a RoundTripper that injects a header
+	customClient := &http.Client{
+		Transport: &customHeaderRoundTripper{
+			transport: http.DefaultTransport,
+			headerKey: customHeaderKey,
+			headerVal: customHeaderVal,
+		},
+	}
+
+	// Create provider with custom HTTP client
+	provider := NewWithHTTPClient("test-api-key", customClient)
+
+	// Verify provider is non-nil
+	if provider == nil {
+		t.Fatal("provider should not be nil")
+	}
+	if provider.client == nil {
+		t.Fatal("provider.client should not be nil")
+	}
+	if provider.apiKey != "test-api-key" {
+		t.Errorf("apiKey = %q, want %q", provider.apiKey, "test-api-key")
+	}
+
+	// Set base URL to our test server
+	provider.SetBaseURL(server.URL)
+
+	// Make a request to verify custom client is wired correctly
+	req := &core.ChatRequest{
+		Model: "grok-2",
+		Messages: []core.Message{
+			{Role: "user", Content: "Hello"},
+		},
+	}
+
+	resp, err := provider.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify response is valid (server was hit)
+	if resp == nil {
+		t.Fatal("response should not be nil")
+	}
+	if resp.ID != "chatcmpl-123" {
+		t.Errorf("response ID = %q, want %q", resp.ID, "chatcmpl-123")
+	}
+
+	// Verify the custom header was injected by our custom RoundTripper
+	if receivedHeader != customHeaderVal {
+		t.Errorf("custom header = %q, want %q (custom HTTP client not wired correctly)", receivedHeader, customHeaderVal)
+	}
+}
+
 func TestChatCompletion(t *testing.T) {
 	tests := []struct {
 		name          string
