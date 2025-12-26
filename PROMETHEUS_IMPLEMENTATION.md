@@ -211,8 +211,8 @@ Prometheus metrics are **disabled by default** but can be configured via environ
 ### Environment Variables (.env)
 
 ```bash
-# Enable/disable metrics (default: true)
-METRICS_ENABLED=true
+# Enable/disable metrics (default: false)
+METRICS_ENABLED=false
 
 # Custom endpoint path (default: /metrics)
 METRICS_ENDPOINT=/metrics

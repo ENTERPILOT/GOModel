@@ -23,12 +23,13 @@ cache:
 metrics:
   # Enable or disable Prometheus metrics collection
   # When disabled, no metrics are collected and the /metrics endpoint returns 404
-  # Default: true
-  enabled: true
+  # Default: false
+  # TODO: the default value should be taken here from ENV variable METRICS_ENABLED explicitly
+  enabled: false
 
   # HTTP endpoint path where metrics are exposed
   # Default: /metrics
-  endpoint: "/metrics"
+  endpoint: "${METRICS_ENDPOINT:-/metrics}"
 
 providers:
   openai-primary:

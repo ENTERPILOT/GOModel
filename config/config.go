@@ -47,7 +47,7 @@ type ServerConfig struct {
 // MetricsConfig holds observability configuration for Prometheus metrics
 type MetricsConfig struct {
 	// Enabled controls whether Prometheus metrics are collected and exposed
-	// Default: true
+	// Default: false
 	Enabled bool `mapstructure:"enabled"`
 
 	// Endpoint is the HTTP path where metrics are exposed
