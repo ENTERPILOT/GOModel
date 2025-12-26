@@ -435,7 +435,6 @@ for await (const chunk of stream) {
 ### xAI
 
 - `grok-4-1-fast-non-reasoning` - Most capable Grok model (best for complex reasoning)
-- `grok-4-1-fast-non-reasoning` - Faster, cost-effective Grok model
 
 ## Tips
 
