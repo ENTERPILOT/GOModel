@@ -52,7 +52,7 @@ export METRICS_ENDPOINT=/internal/prometheus
 
 | Variable           | Default    | Description                       |
 | ------------------ | ---------- | --------------------------------- |
-| `METRICS_ENABLED`  | `true`     | Enable/disable metrics collection |
+| `METRICS_ENABLED`  | `false`    | Enable/disable metrics collection |
 | `METRICS_ENDPOINT` | `/metrics` | HTTP path for metrics endpoint    |
 
 ### Via config.yaml
