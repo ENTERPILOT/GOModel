@@ -12,6 +12,7 @@ services:
       - CACHE_TYPE=redis
       - REDIS_URL=redis://redis:6379
       - REDIS_KEY=gomodel:models
+      - METRICS_ENABLED=true
     command: go run ./cmd/gomodel
     depends_on:
       redis:
@@ -32,5 +33,21 @@ services:
       timeout: 5s
       retries: 5
 
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    depends_on:
+      - gomodel
+    restart: unless-stopped
+
 volumes:
   redis_data:
+  prometheus_data:

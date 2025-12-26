@@ -1,3 +1,5 @@
+# GOModel Configuration File
+#
 # Notes:
 # - Environment variables can be referenced using ${VAR_NAME} syntax
 # - Default values can be specified using ${VAR_NAME:-default_value} syntax

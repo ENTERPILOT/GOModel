@@ -3,7 +3,8 @@
     "allow": [
       "Bash(make test-all)",
       "Bash(make lint)",
-      "Bash(go test:*)"
+      "Bash(go test:*)",
+      "Bash(make test:*)"
     ],
     "deny": [],
     "ask": []

@@ -104,6 +104,36 @@ func TestExpandString(t *testing.T) {
 			expected: "${EMPTY_VAR}",
 		},
 		{
+			name:     "empty default value - env var missing",
+			input:    "${OPTIONAL_VAR:-}",
+			envVars:  map[string]string{},
+			expected: "",
+		},
+		{
+			name:     "empty default value - env var set",
+			input:    "${OPTIONAL_VAR:-}",
+			envVars:  map[string]string{"OPTIONAL_VAR": "actual-value"},
+			expected: "actual-value",
+		},
+		{
+			name:     "empty default value - env var empty",
+			input:    "${OPTIONAL_VAR:-}",
+			envVars:  map[string]string{"OPTIONAL_VAR": ""},
+			expected: "",
+		},
+		{
+			name:     "master key pattern - not set should be empty",
+			input:    "${GOMODEL_MASTER_KEY:-}",
+			envVars:  map[string]string{},
+			expected: "",
+		},
+		{
+			name:     "master key pattern - set to value",
+			input:    "${GOMODEL_MASTER_KEY:-}",
+			envVars:  map[string]string{"GOMODEL_MASTER_KEY": "secret-key"},
+			expected: "secret-key",
+		},
+		{
 			name:     "multiple placeholders some resolved some not",
 			input:    "prefix-${VAR1}-${VAR2}-${VAR3}-suffix",
 			envVars:  map[string]string{"VAR1": "a", "VAR3": "c"},
@@ -651,6 +681,90 @@ func TestRemoveEmptyProviders(t *testing.T) {
 				if _, exists := tt.expected.Providers[name]; !exists {
 					t.Errorf("Unexpected provider %q found in result", name)
 				}
+			}
+		})
+	}
+}
+
+// TestExpandEnvVars_MasterKey specifically tests master key expansion to prevent auth bypass bugs
+func TestExpandEnvVars_MasterKey(t *testing.T) {
+	tests := []struct {
+		name              string
+		input             Config
+		envVars           map[string]string
+		expectedMasterKey string
+	}{
+		{
+			name: "master key not set with empty default should be empty string",
+			input: Config{
+				Server: ServerConfig{
+					Port:      "8080",
+					MasterKey: "${GOMODEL_MASTER_KEY:-}",
+				},
+				Providers: map[string]ProviderConfig{},
+			},
+			envVars:           map[string]string{},
+			expectedMasterKey: "",
+		},
+		{
+			name: "master key set should use the value",
+			input: Config{
+				Server: ServerConfig{
+					Port:      "8080",
+					MasterKey: "${GOMODEL_MASTER_KEY:-}",
+				},
+				Providers: map[string]ProviderConfig{},
+			},
+			envVars:           map[string]string{"GOMODEL_MASTER_KEY": "my-secret-key"},
+			expectedMasterKey: "my-secret-key",
+		},
+		{
+			name: "master key with non-empty default - not set should use default",
+			input: Config{
+				Server: ServerConfig{
+					Port:      "8080",
+					MasterKey: "${GOMODEL_MASTER_KEY:-default-secret}",
+				},
+				Providers: map[string]ProviderConfig{},
+			},
+			envVars:           map[string]string{},
+			expectedMasterKey: "default-secret",
+		},
+		{
+			name: "master key without default syntax - not set should keep placeholder",
+			input: Config{
+				Server: ServerConfig{
+					Port:      "8080",
+					MasterKey: "${GOMODEL_MASTER_KEY}",
+				},
+				Providers: map[string]ProviderConfig{},
+			},
+			envVars:           map[string]string{},
+			expectedMasterKey: "${GOMODEL_MASTER_KEY}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up any existing env var first
+			_ = os.Unsetenv("GOMODEL_MASTER_KEY")
+
+			// Setup environment variables
+			for k, v := range tt.envVars {
+				_ = os.Setenv(k, v)
+			}
+			// Cleanup after test
+			defer func() {
+				_ = os.Unsetenv("GOMODEL_MASTER_KEY")
+				for k := range tt.envVars {
+					_ = os.Unsetenv(k)
+				}
+			}()
+
+			result := expandEnvVars(tt.input)
+
+			if result.Server.MasterKey != tt.expectedMasterKey {
+				t.Errorf("Server.MasterKey = %q, want %q", result.Server.MasterKey, tt.expectedMasterKey)
 			}
 		})
 	}

@@ -176,19 +176,22 @@ func expandString(s string) string {
 		// Check for default value syntax ${VAR:-default}
 		varname := key
 		defaultValue := ""
+		hasDefault := false
 		if strings.Contains(key, ":-") {
 			parts := strings.SplitN(key, ":-", 2)
 			varname = parts[0]
 			defaultValue = parts[1]
+			hasDefault = true
 		}
 
 		// Try to get from environment
 		value := os.Getenv(varname)
 		if value == "" {
-			if defaultValue != "" {
+			// If default syntax was used (even with empty default), return the default
+			if hasDefault {
 				return defaultValue
 			}
-			// If not in environment and no default, return the original placeholder
+			// If not in environment and no default syntax, return the original placeholder
 			// This allows config to work with or without env vars
 			return "${" + key + "}"
 		}
