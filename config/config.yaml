@@ -1,3 +1,9 @@
+# Notes:
+# - Environment variables can be referenced using ${VAR_NAME} syntax
+# - Default values can be specified using ${VAR_NAME:-default_value} syntax
+# - Providers with unresolved environment variables are automatically filtered out
+# - At least one provider with a valid API key is required
+
 server:
   port: "${PORT:-8080}"
   master_key: "${GOMODEL_MASTER_KEY:-}"
@@ -11,6 +17,16 @@ cache:
     url: "${REDIS_URL:-redis://localhost:6379}"
     key: "${REDIS_KEY:-gomodel:models}"
     ttl: 86400 # 24 hours in seconds
+
+metrics:
+  # Enable or disable Prometheus metrics collection
+  # When disabled, no metrics are collected and the /metrics endpoint returns 404
+  # Default: true
+  enabled: true
+
+  # HTTP endpoint path where metrics are exposed
+  # Default: /metrics
+  endpoint: "/metrics"
 
 providers:
   openai-primary:

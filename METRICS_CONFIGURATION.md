@@ -308,5 +308,5 @@ export METRICS_ENABLED=false
 ## See Also
 
 - [PROMETHEUS_IMPLEMENTATION.md](PROMETHEUS_IMPLEMENTATION.md) - Full implementation details
-- [config.yaml.example](config.yaml.example) - Complete configuration example
+- [config/config.yaml](config/config.yaml) - Complete configuration
 - [.env.template](.env.template) - Environment variable template
