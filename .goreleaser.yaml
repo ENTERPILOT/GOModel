@@ -1,0 +1,48 @@
+version: 2
+
+project_name: gomodel
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    main: ./cmd/gomodel
+    ldflags:
+      - -s -w
+      - -X gomodel/internal/version.Version={{.Version}}
+      - -X gomodel/internal/version.Commit={{.Commit}}
+      - -X gomodel/internal/version.Date={{.Date}}
+
+archives:
+  - format: tar.gz
+    # this name template makes the archive look like: gomodel_1.0.0_linux_amd64.tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ .Tag }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^refactor:"
+      - "^tests:"
