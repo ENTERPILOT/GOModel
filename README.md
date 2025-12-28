@@ -133,6 +133,7 @@ pre-commit install
 
 | Feature                    | Basic support     | Full support      |
 | -------------------------- | ----------------- | ----------------- |
+| Failover chains            | 🚧 Coming soon... | 🚧 Coming soon... |
 | Billing Management         | 🚧 Coming soon... | 🚧 Coming soon... |
 | Full-observability         | 🚧 Coming soon... | 🚧 Coming soon... |
 | Budget management          | 🚧 Coming soon... | 🚧 Coming soon... |
@@ -141,6 +142,7 @@ pre-commit install
 | Guardrails                 | 🚧 Coming soon... | 🚧 Coming soon... |
 | SSO                        | 🚧 Coming soon... | 🚧 Coming soon... |
 | System Prompt (GuardRails) | 🚧 Coming soon... | 🚧 Coming soon... |
+| Audit logging              | 🚧 Coming soon... | 🚧 Coming soon... |
 
 ## Integrations
 
@@ -149,3 +151,29 @@ pre-commit install
 | Prometheus    | ✅                | 🚧 Coming soon... |
 | DataDog       | 🚧 Coming soon... | 🚧 Coming soon... |
 | OpenTelemetry | 🚧 Coming soon... | 🚧 Coming soon... |
+
+## API Endpoints
+
+### Gateway API (Unified)
+
+The gateway provides a unified OpenAI-compatible API that routes to the appropriate provider:
+
+```
+/v1/chat/completions    # Routes based on model name
+/v1/models              # Lists all available models
+/v1/responses           # OpenAI Responses API
+```
+
+### Pass-through API (Coming Soon)
+
+Direct access to provider APIs with minimal processing (auth, metrics, audit):
+
+```
+/openai/*               # Proxied to api.openai.com
+/anthropic/*            # Proxied to api.anthropic.com
+/gemini/*               # Proxied to generativelanguage.googleapis.com
+/groq/*                 # Proxied to api.groq.com
+/xai/*                  # Proxied to api.x.ai
+```
+
+Example: `/openai/v1/chat/completions` → `https://api.openai.com/v1/chat/completions`
