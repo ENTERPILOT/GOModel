@@ -6,8 +6,6 @@ GoModel is a high-performance, easy-to-use AI gateway written in Go.
 
 ### Manually
 
-// TODO: add required changes. Make it concise
-
 1. Set environment variables (either via creating `.env` file based on `.env.template` or export):
 
    **Option A: Create a `.env` file based on `.env.template`:**
@@ -58,9 +56,33 @@ GoModel is a high-performance, easy-to-use AI gateway written in Go.
      -d '{"model": "gemini-2.0-flash", "messages": [{"role": "user", "content": "Hello!"}]}'
    ```
 
-### Really quick start With docker
+### Running with Docker
 
-To be added...
+You can use the official `golang:1.24-alpine` image to run the project in a container:
+
+```bash
+make build
+docker run --rm -it \
+  -v $(pwd):/app \
+  -w /app \
+  -p 8080:8080 \
+  -e OPENAI_API_KEY="your-openai-key" \
+  -e ANTHROPIC_API_KEY="your-anthropic-key" \
+  -e GEMINI_API_KEY="your-gemini-key" \
+  golang:1.24-alpine \
+  go run ./cmd/gomodel
+```
+
+Note: You can omit any API keys if you only want to use specific providers (at least one required).
+
+### Running with Docker Compose
+
+```bash
+$ cp .env.template .env
+# fill envs ...
+$ make build
+$ docker compose up -d
+```
 
 ## Development
 
@@ -95,25 +117,6 @@ You can install predefined pre-commit checks with [pre-commit CLI tool](https://
 pip install pre-commit
 pre-commit install
 ```
-
-## Running with Docker
-
-You can use the official `golang:1.24-alpine` image to run the project in a container:
-
-```bash
-make build
-docker run --rm -it \
-  -v $(pwd):/app \
-  -w /app \
-  -p 8080:8080 \
-  -e OPENAI_API_KEY="your-openai-key" \
-  -e ANTHROPIC_API_KEY="your-anthropic-key" \
-  -e GEMINI_API_KEY="your-gemini-key" \
-  golang:1.24-alpine \
-  go run ./cmd/gomodel
-```
-
-Note: You can omit any API keys if you only want to use specific providers (at least one required).
 
 # Roadmap
 
