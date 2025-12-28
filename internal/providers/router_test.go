@@ -18,6 +18,7 @@ type mockProvider struct {
 	responsesResponse *core.ResponsesResponse
 	modelsResponse    *core.ModelsResponse
 	err               error
+	listModelsDelay   time.Duration // optional delay before returning from ListModels
 }
 
 func (m *mockProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
@@ -34,7 +35,14 @@ func (m *mockProvider) StreamChatCompletion(_ context.Context, _ *core.ChatReque
 	return io.NopCloser(nil), nil
 }
 
-func (m *mockProvider) ListModels(_ context.Context) (*core.ModelsResponse, error) {
+func (m *mockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	if m.listModelsDelay > 0 {
+		select {
+		case <-time.After(m.listModelsDelay):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	if m.err != nil {
 		return nil, m.err
 	}

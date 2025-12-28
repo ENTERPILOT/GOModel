@@ -281,13 +281,14 @@ func TestInitializeAsync(t *testing.T) {
 		data, _ := json.Marshal(modelCache)
 		_ = os.WriteFile(cacheFile, data, 0o644)
 
-		// Create registry with slow provider
+		// Create registry with slow provider (delay ensures cache check happens before network fetch)
 		registry := NewModelRegistry()
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
 		mock := &mockProvider{
-			name: "test",
+			name:            "test",
+			listModelsDelay: 50 * time.Millisecond, // delay long enough for assertion to run
 			modelsResponse: &core.ModelsResponse{
 				Object: "list",
 				Data: []core.Model{
@@ -300,7 +301,7 @@ func TestInitializeAsync(t *testing.T) {
 		// InitializeAsync should return immediately after loading cache
 		registry.InitializeAsync(context.Background())
 
-		// Cached model should be available immediately
+		// Cached model should be available immediately (before background fetch completes)
 		if !registry.Supports("cached-model") {
 			t.Error("expected cached-model to be available immediately")
 		}
