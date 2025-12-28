@@ -61,7 +61,6 @@ GoModel is a high-performance, easy-to-use AI gateway written in Go.
 You can use the official `golang:1.24-alpine` image to run the project in a container:
 
 ```bash
-make build
 docker run --rm -it \
   -v $(pwd):/app \
   -w /app \
@@ -122,7 +121,7 @@ pre-commit install
 
 ## Supported Providers
 
-| Provider      | Basic support | Pass-through      | Voice models      | Image gen         | Image gen         | Full /responses API | Embedding         | Caching           |
+| Provider      | Basic support | Pass-through      | Voice models      | Image gen         | Video gen         | Full /responses API | Embedding         | Caching           |
 | ------------- | ------------- | ----------------- | ----------------- | ----------------- | ----------------- | ------------------- | ----------------- | ----------------- |
 | OpenAI        | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
 | Anthropic     | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
