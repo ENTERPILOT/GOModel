@@ -79,7 +79,6 @@ Note: You can omit any API keys if you only want to use specific providers (at l
 ```bash
 $ cp .env.template .env
 # fill envs ...
-$ make build
 $ docker compose up -d
 ```
 
