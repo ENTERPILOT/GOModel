@@ -4,7 +4,7 @@ GoModel is a high-performance, easy-to-use AI gateway written in Go.
 
 ## Quick Start
 
-### Manually
+### Running Manually
 
 1. Set environment variables (either via creating `.env` file based on `.env.template` or export):
 
