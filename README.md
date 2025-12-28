@@ -134,7 +134,7 @@ pre-commit install
 | Feature                    | Basic support     | Full support      |
 | -------------------------- | ----------------- | ----------------- |
 | Billing Management         | 🚧 Coming soon... | 🚧 Coming soon... |
-| Full-observibility         | 🚧 Coming soon... | 🚧 Coming soon... |
+| Full-observability         | 🚧 Coming soon... | 🚧 Coming soon... |
 | Budget management          | 🚧 Coming soon... | 🚧 Coming soon... |
 | Many keys support          | 🚧 Coming soon... | 🚧 Coming soon... |
 | Administrative endpoints   | 🚧 Coming soon... | 🚧 Coming soon... |
