@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"gomodel/internal/core"
+	"gomodel/internal/providers"
 )
 
 func TestNew(t *testing.T) {
@@ -886,7 +887,7 @@ data: [DONE]
 `
 
 	reader := io.NopCloser(strings.NewReader(mockStream))
-	converter := newGroqResponsesStreamConverter(reader, "llama-3.3-70b-versatile")
+	converter := providers.NewOpenAIResponsesStreamConverter(reader, "llama-3.3-70b-versatile")
 
 	// Read all data from converter
 	data, err := io.ReadAll(converter)
@@ -919,7 +920,7 @@ data: [DONE]
 
 func TestGroqResponsesStreamConverter_Close(t *testing.T) {
 	reader := io.NopCloser(strings.NewReader("data: [DONE]\n"))
-	converter := newGroqResponsesStreamConverter(reader, "test-model")
+	converter := providers.NewOpenAIResponsesStreamConverter(reader, "test-model")
 
 	err := converter.Close()
 	if err != nil {
@@ -946,7 +947,7 @@ data: [DONE]
 `
 
 	reader := io.NopCloser(strings.NewReader(mockStream))
-	converter := newGroqResponsesStreamConverter(reader, "llama-3.3-70b-versatile")
+	converter := providers.NewOpenAIResponsesStreamConverter(reader, "llama-3.3-70b-versatile")
 
 	data, err := io.ReadAll(converter)
 	if err != nil {
