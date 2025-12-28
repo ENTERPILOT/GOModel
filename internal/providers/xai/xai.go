@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/llmclient"
+	"gomodel/internal/llmclient"
 	"gomodel/internal/providers"
 )
 

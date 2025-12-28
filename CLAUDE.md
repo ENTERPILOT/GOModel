@@ -158,16 +158,19 @@ internal/
     openai/           # OpenAI provider
     anthropic/        # Anthropic provider
     gemini/           # Google Gemini provider
+    groq/             # Groq provider
+    xai/              # xAI (Grok) provider
     factory.go        # Provider factory with registration
     registry.go       # Model registry with caching
     router.go         # Request router
+    responses_converter.go  # Shared OpenAI→Responses stream converter
   cache/              # Cache backends (local file, Redis)
-  pkg/                # Internal shared packages
-    httpclient/       # HTTP client utilities
-    llmclient/        # LLM-specific client logic
+  httpclient/         # HTTP client utilities
+  llmclient/          # LLM-specific client logic
   server/             # HTTP server (Echo framework)
     http.go           # Server setup
     handlers.go       # Request handlers
+  observability/      # Prometheus metrics and hooks
 tests/e2e/            # End-to-end tests (requires -tags=e2e)
 ```
 

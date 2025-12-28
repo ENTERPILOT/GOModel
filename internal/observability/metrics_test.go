@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/llmclient"
+	"gomodel/internal/llmclient"
 )
 
 func TestPrometheusHooks(t *testing.T) {

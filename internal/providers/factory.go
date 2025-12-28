@@ -6,7 +6,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/llmclient"
+	"gomodel/internal/llmclient"
 )
 
 // Builder creates a provider instance from configuration

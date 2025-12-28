@@ -10,7 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/llmclient"
+	"gomodel/internal/llmclient"
 	"gomodel/internal/providers"
 )
 

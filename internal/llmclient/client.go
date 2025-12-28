@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"gomodel/internal/core"
-	"gomodel/internal/pkg/httpclient"
+	"gomodel/internal/httpclient"
 )
 
 // RequestInfo contains metadata about a request for observability hooks

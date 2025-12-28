@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"gomodel/internal/pkg/llmclient"
+	"gomodel/internal/llmclient"
 )
 
 // Prometheus metrics for LLM gateway observability
