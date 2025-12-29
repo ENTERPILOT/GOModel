@@ -158,25 +158,53 @@ func TestServerWithMasterKeyAndMetrics(t *testing.T) {
 		MetricsEndpoint: "/metrics",
 	})
 
-	t.Run("metrics endpoint requires auth when master key is set", func(t *testing.T) {
+	t.Run("metrics endpoint is public even when master key is set", func(t *testing.T) {
+		// Metrics endpoint should be accessible without auth for Prometheus scraping
 		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 		rec := httptest.NewRecorder()
 
 		srv.ServeHTTP(rec, req)
 
-		// Should return 401 because no auth header
-		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("expected status 401 without auth, got %d", rec.Code)
+		// Should return 200 - metrics is public for load balancers and monitoring
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200 for public metrics endpoint, got %d", rec.Code)
 		}
 	})
 
-	t.Run("metrics endpoint accessible with valid auth", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	t.Run("health endpoint is public even when master key is set", func(t *testing.T) {
+		// Health endpoint should be accessible without auth for load balancer health checks
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		rec := httptest.NewRecorder()
+
+		srv.ServeHTTP(rec, req)
+
+		// Should return 200 - health is public for load balancers
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected status 200 for public health endpoint, got %d", rec.Code)
+		}
+	})
+
+	t.Run("API endpoints require auth when master key is set", func(t *testing.T) {
+		// API endpoints should require auth
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		rec := httptest.NewRecorder()
+
+		srv.ServeHTTP(rec, req)
+
+		// Should return 401 - API requires auth
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("expected status 401 for protected API endpoint, got %d", rec.Code)
+		}
+	})
+
+	t.Run("API endpoints accessible with valid auth", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 		req.Header.Set("Authorization", "Bearer test-secret-key")
 		rec := httptest.NewRecorder()
 
 		srv.ServeHTTP(rec, req)
 
+		// Should return 200 with valid auth
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected status 200 with valid auth, got %d", rec.Code)
 		}

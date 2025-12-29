@@ -154,36 +154,34 @@ func TestAuthenticationE2E(t *testing.T) {
 			},
 		},
 		{
-			name:           "GET /health without auth",
+			name:           "GET /health without auth - public endpoint",
 			endpoint:       "/health",
 			method:         http.MethodGet,
 			authHeader:     "",
-			expectedStatus: http.StatusUnauthorized,
+			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, body []byte) {
-				var resp map[string]interface{}
+				// Health endpoint is public for load balancer health checks
+				var resp map[string]string
 				require.NoError(t, json.Unmarshal(body, &resp))
-				errMap := resp["error"].(map[string]interface{})
-				assert.Equal(t, "authentication_error", errMap["type"])
-				assert.Contains(t, errMap["message"], "missing authorization header")
+				assert.Equal(t, "ok", resp["status"])
 			},
 		},
 		{
-			name:           "GET /health with invalid auth",
+			name:           "GET /health with invalid auth - still works (public)",
 			endpoint:       "/health",
 			method:         http.MethodGet,
 			authHeader:     "Bearer wrong-key",
-			expectedStatus: http.StatusUnauthorized,
+			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, body []byte) {
-				var resp map[string]interface{}
+				// Health endpoint is public, ignores auth headers
+				var resp map[string]string
 				require.NoError(t, json.Unmarshal(body, &resp))
-				errMap := resp["error"].(map[string]interface{})
-				assert.Equal(t, "authentication_error", errMap["type"])
-				assert.Contains(t, errMap["message"], "invalid master key")
+				assert.Equal(t, "ok", resp["status"])
 			},
 		},
 		{
-			name:           "GET /health with malformed auth header",
-			endpoint:       "/health",
+			name:           "GET /v1/models with malformed auth header",
+			endpoint:       "/v1/models",
 			method:         http.MethodGet,
 			authHeader:     testMasterKey,
 			expectedStatus: http.StatusUnauthorized,
@@ -531,7 +529,8 @@ func TestAuthenticationCaseSensitivity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, ts.URL+"/health", nil)
+			// Use /v1/models instead of /health since /health is now public
+			req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/models", nil)
 			require.NoError(t, err)
 			req.Header.Set("Authorization", "Bearer "+tt.authKey)
 
@@ -568,8 +567,8 @@ func TestAuthenticationWithSpecialCharacters(t *testing.T) {
 			ts := httptest.NewServer(srv)
 			defer ts.Close()
 
-			// Test with correct key
-			req, err := http.NewRequest(http.MethodGet, ts.URL+"/health", nil)
+			// Test with correct key - use /v1/models since /health is now public
+			req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/models", nil)
 			require.NoError(t, err)
 			req.Header.Set("Authorization", "Bearer "+key)
 
@@ -580,7 +579,7 @@ func TestAuthenticationWithSpecialCharacters(t *testing.T) {
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 			// Test with incorrect key
-			req, err = http.NewRequest(http.MethodGet, ts.URL+"/health", nil)
+			req, err = http.NewRequest(http.MethodGet, ts.URL+"/v1/models", nil)
 			require.NoError(t, err)
 			req.Header.Set("Authorization", "Bearer wrong-key")
 
@@ -643,7 +642,8 @@ func TestAuthenticationBearerPrefixVariations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequest(http.MethodGet, ts.URL+"/health", nil)
+			// Use /v1/models instead of /health since /health is now public
+			req, err := http.NewRequest(http.MethodGet, ts.URL+"/v1/models", nil)
 			require.NoError(t, err)
 			req.Header.Set("Authorization", tt.authHeader)
 
