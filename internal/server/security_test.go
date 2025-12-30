@@ -123,7 +123,7 @@ func TestConfigurableBodySizeLimit(t *testing.T) {
 
 	t.Run("custom body size limit of 1M is respected", func(t *testing.T) {
 		srv := New(mock, &Config{
-			BodySizeLimit: "1M",
+			BodySizeLimit: 1 * 1024 * 1024, // 1MB
 		})
 
 		// 500KB should be accepted
@@ -149,7 +149,7 @@ func TestConfigurableBodySizeLimit(t *testing.T) {
 
 	t.Run("custom body size limit of 20M allows larger requests", func(t *testing.T) {
 		srv := New(mock, &Config{
-			BodySizeLimit: "20M",
+			BodySizeLimit: 20 * 1024 * 1024, // 20MB
 		})
 
 		// 15MB should be accepted
@@ -175,7 +175,7 @@ func TestConfigurableBodySizeLimit(t *testing.T) {
 
 	t.Run("body size limit with kilobytes unit", func(t *testing.T) {
 		srv := New(mock, &Config{
-			BodySizeLimit: "500K",
+			BodySizeLimit: 500 * 1024, // 500KB
 		})
 
 		// 400KB should be accepted

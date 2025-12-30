@@ -266,3 +266,82 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected API key from environment variable (not .env file), got %s", openaiProvider.APIKey)
 	}
 }
+
+func TestParseBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expected    int64
+		expectError bool
+	}{
+		// Valid formats
+		{"empty string returns default", "", DefaultBodySizeLimit, false},
+		{"plain number", "1048576", 1048576, false},
+		{"kilobytes lowercase", "100k", 100 * 1024, false},
+		{"kilobytes uppercase", "100K", 100 * 1024, false},
+		{"kilobytes with B suffix", "100KB", 100 * 1024, false},
+		{"megabytes lowercase", "10m", 10 * 1024 * 1024, false},
+		{"megabytes uppercase", "10M", 10 * 1024 * 1024, false},
+		{"megabytes with B suffix", "10MB", 10 * 1024 * 1024, false},
+		{"whitespace trimmed", "  10M  ", 10 * 1024 * 1024, false},
+
+		// Boundary values
+		{"minimum valid (1KB)", "1K", MinBodySizeLimit, false},
+		{"maximum valid (100MB)", "100M", MaxBodySizeLimit, false},
+
+		// Invalid formats
+		{"invalid format with letters", "abc", 0, true},
+		{"invalid unit", "10X", 0, true},
+		{"negative number", "-10M", 0, true},
+		{"decimal number", "10.5M", 0, true},
+		{"empty unit with B", "10B", 0, true},
+
+		// Boundary violations
+		{"below minimum (100 bytes)", "100", 0, true},
+		{"above maximum (200MB)", "200M", 0, true},
+		{"above maximum (1GB)", "1G", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := ParseBodySizeLimit(tt.input)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error for input %q, got result %d", tt.input, result)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error for input %q: %v", tt.input, err)
+				}
+				if result != tt.expected {
+					t.Errorf("for input %q, expected %d, got %d", tt.input, tt.expected, result)
+				}
+			}
+		})
+	}
+}
+
+func TestFormatBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		bytes    int64
+		expected string
+	}{
+		{1024, "1K"},
+		{10 * 1024, "10K"},
+		{1024 * 1024, "1M"},
+		{10 * 1024 * 1024, "10M"},
+		{1024 * 1024 * 1024, "1G"},
+		{1500, "1500"},          // Not evenly divisible by 1024
+		{1536 * 1024, "1536K"},  // Not evenly divisible by 1MB
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			result := FormatBodySizeLimit(tt.bytes)
+			if result != tt.expected {
+				t.Errorf("for %d bytes, expected %q, got %q", tt.bytes, tt.expected, result)
+			}
+		})
+	}
+}
