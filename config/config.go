@@ -55,7 +55,7 @@ type RedisConfig struct {
 type ServerConfig struct {
 	Port          string `mapstructure:"port"`
 	MasterKey     string `mapstructure:"master_key"`      // Optional: Master key for authentication
-	BodySizeLimit int64  `mapstructure:"body_size_limit"` // Parsed max request body size in bytes (default: 10MB)
+	BodySizeLimit string `mapstructure:"body_size_limit"` // Max request body size (e.g., "10M", "1024K")
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
@@ -110,9 +110,8 @@ func Load() (*Config, error) {
 	var cfg Config
 
 	// Read config file (optional, won't fail if not found)
-	var bodySizeLimitStr string
 	if err := viper.ReadInConfig(); err == nil {
-		// Config file found, unmarshal it (BodySizeLimit will be 0 since it's now int64)
+		// Config file found, unmarshal it
 		if err := viper.Unmarshal(&cfg); err != nil {
 			return nil, err
 		}
@@ -120,15 +119,13 @@ func Load() (*Config, error) {
 		cfg = expandEnvVars(cfg)
 		// Remove providers with unresolved environment variables
 		cfg = removeEmptyProviders(cfg)
-		// Get body size limit as string for parsing
-		bodySizeLimitStr = expandString(viper.GetString("server.body_size_limit"))
 	} else {
 		// No config file, use environment variables (legacy support)
-		bodySizeLimitStr = viper.GetString("BODY_SIZE_LIMIT")
 		cfg = Config{
 			Server: ServerConfig{
-				Port:      viper.GetString("PORT"),
-				MasterKey: viper.GetString("GOMODEL_MASTER_KEY"),
+				Port:          viper.GetString("PORT"),
+				MasterKey:     viper.GetString("GOMODEL_MASTER_KEY"),
+				BodySizeLimit: viper.GetString("BODY_SIZE_LIMIT"),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -170,12 +167,12 @@ func Load() (*Config, error) {
 		}
 	}
 
-	// Parse and validate body size limit
-	bodySize, err := ParseBodySizeLimit(bodySizeLimitStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
+	// Validate body size limit if provided
+	if cfg.Server.BodySizeLimit != "" {
+		if err := ValidateBodySizeLimit(cfg.Server.BodySizeLimit); err != nil {
+			return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
+		}
 	}
-	cfg.Server.BodySizeLimit = bodySize
 
 	return &cfg, nil
 }
@@ -185,6 +182,7 @@ func expandEnvVars(cfg Config) Config {
 	// Expand server config
 	cfg.Server.Port = expandString(cfg.Server.Port)
 	cfg.Server.MasterKey = expandString(cfg.Server.MasterKey)
+	cfg.Server.BodySizeLimit = expandString(cfg.Server.BodySizeLimit)
 
 	// Expand metrics configuration
 	cfg.Metrics.Endpoint = expandString(cfg.Metrics.Endpoint)
@@ -249,23 +247,23 @@ func removeEmptyProviders(cfg Config) Config {
 	return cfg
 }
 
-// ParseBodySizeLimit parses a human-readable body size limit string into bytes.
-// Accepts formats like: "10M", "10MB", "1024K", "1024KB", "104857600", "100G"
-// Returns the size in bytes or an error if the format is invalid.
-func ParseBodySizeLimit(s string) (int64, error) {
+// ValidateBodySizeLimit validates a body size limit string.
+// Accepts formats like: "10M", "10MB", "1024K", "1024KB", "104857600"
+// Returns an error if the format is invalid or value is outside bounds (1KB - 100MB).
+func ValidateBodySizeLimit(s string) error {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return DefaultBodySizeLimit, nil
+		return nil
 	}
 
 	matches := bodySizeLimitRegex.FindStringSubmatch(s)
 	if matches == nil {
-		return 0, fmt.Errorf("invalid format %q: expected pattern like '10M', '1024K', or '104857600'", s)
+		return fmt.Errorf("invalid format %q: expected pattern like '10M', '1024K', or '104857600'", s)
 	}
 
 	value, err := strconv.ParseInt(matches[1], 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid number in %q: %w", s, err)
+		return fmt.Errorf("invalid number in %q: %w", s, err)
 	}
 
 	// Apply unit multiplier (case-insensitive due to regex flag)
@@ -280,25 +278,11 @@ func ParseBodySizeLimit(s string) (int64, error) {
 
 	// Validate bounds
 	if value < MinBodySizeLimit {
-		return 0, fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
+		return fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
 	}
 	if value > MaxBodySizeLimit {
-		return 0, fmt.Errorf("value %d bytes exceeds maximum of %d bytes (100MB)", value, MaxBodySizeLimit)
+		return fmt.Errorf("value %d bytes exceeds maximum of %d bytes (100MB)", value, MaxBodySizeLimit)
 	}
 
-	return value, nil
-}
-
-// FormatBodySizeLimit returns a human-readable string for bytes (e.g., "10M")
-func FormatBodySizeLimit(b int64) string {
-	switch {
-	case b >= 1024*1024*1024 && b%(1024*1024*1024) == 0:
-		return fmt.Sprintf("%dG", b/(1024*1024*1024))
-	case b >= 1024*1024 && b%(1024*1024) == 0:
-		return fmt.Sprintf("%dM", b/(1024*1024))
-	case b >= 1024 && b%1024 == 0:
-		return fmt.Sprintf("%dK", b/1024)
-	default:
-		return strconv.FormatInt(b, 10)
-	}
+	return nil
 }

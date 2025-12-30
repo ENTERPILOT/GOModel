@@ -4,13 +4,11 @@ import (
 	"context"
 	"net/http"
 	"path"
-	"strconv"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"gomodel/config"
 	"gomodel/internal/core"
 )
 
@@ -25,7 +23,7 @@ type Config struct {
 	MasterKey       string // Optional: Master key for authentication
 	MetricsEnabled  bool   // Whether to expose Prometheus metrics endpoint
 	MetricsEndpoint string // HTTP path for metrics endpoint (default: /metrics)
-	BodySizeLimit   int64  // Max request body size in bytes (default: 10MB)
+	BodySizeLimit   string // Max request body size (e.g., "10M", "1024K")
 }
 
 // New creates a new HTTP server
@@ -53,11 +51,11 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.Use(middleware.Recover())
 
 	// Body size limit (default: 10MB)
-	bodySizeLimit := config.DefaultBodySizeLimit
-	if cfg != nil && cfg.BodySizeLimit > 0 {
+	bodySizeLimit := "10M"
+	if cfg != nil && cfg.BodySizeLimit != "" {
 		bodySizeLimit = cfg.BodySizeLimit
 	}
-	e.Use(middleware.BodyLimit(strconv.FormatInt(bodySizeLimit, 10)))
+	e.Use(middleware.BodyLimit(bodySizeLimit))
 
 	// Authentication (skips public paths)
 	if cfg != nil && cfg.MasterKey != "" {
