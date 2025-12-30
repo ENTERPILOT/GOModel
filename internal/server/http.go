@@ -2,8 +2,10 @@ package server
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"path"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -42,6 +44,13 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		if cfg.MetricsEndpoint != "" {
 			// Normalize path to prevent traversal attacks
 			metricsPath = path.Clean(cfg.MetricsEndpoint)
+		}
+		// Prevent metrics endpoint from shadowing API routes (security: auth bypass)
+		if metricsPath == "/v1" || strings.HasPrefix(metricsPath, "/v1/") {
+			slog.Warn("metrics endpoint conflicts with API routes, using /metrics instead",
+				"configured", cfg.MetricsEndpoint,
+				"normalized", metricsPath)
+			metricsPath = "/metrics"
 		}
 		authSkipPaths = append(authSkipPaths, metricsPath)
 	}

@@ -44,6 +44,71 @@ func TestMetricsEndpointCustomPaths(t *testing.T) {
 	})
 }
 
+// TestMetricsEndpointAPIRouteProtection verifies that metrics endpoint cannot shadow API routes
+func TestMetricsEndpointAPIRouteProtection(t *testing.T) {
+	mock := &mockProvider{}
+
+	t.Run("metrics at /v1/metrics falls back to /metrics", func(t *testing.T) {
+		srv := New(mock, &Config{
+			MasterKey:       "secret-key",
+			MetricsEnabled:  true,
+			MetricsEndpoint: "/v1/metrics",
+		})
+
+		// /v1/metrics should require auth (not be metrics endpoint)
+		req := httptest.NewRequest(http.MethodGet, "/v1/metrics", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for /v1/metrics, got %d", rec.Code)
+		}
+
+		// Metrics should be at /metrics instead
+		req2 := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusOK {
+			t.Errorf("Expected 200 for /metrics fallback, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("metrics at /v1/models falls back to /metrics", func(t *testing.T) {
+		srv := New(mock, &Config{
+			MasterKey:       "secret-key",
+			MetricsEnabled:  true,
+			MetricsEndpoint: "/v1/models",
+		})
+
+		// /v1/models should require auth
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("Expected 401 for /v1/models, got %d", rec.Code)
+		}
+	})
+
+	t.Run("path traversal to /v1/ is blocked", func(t *testing.T) {
+		srv := New(mock, &Config{
+			MasterKey:       "secret-key",
+			MetricsEnabled:  true,
+			MetricsEndpoint: "/foo/../v1/admin",
+		})
+
+		// Metrics should fall back to /metrics
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200 for /metrics fallback, got %d", rec.Code)
+		}
+	})
+}
+
 // TestBodyLimitHTTPMethodCoverage tests that body limits apply to all HTTP methods
 func TestBodyLimitHTTPMethodCoverage(t *testing.T) {
 	mock := &mockProvider{}
