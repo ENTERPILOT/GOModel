@@ -40,8 +40,9 @@ type RedisConfig struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port      string `mapstructure:"port"`
-	MasterKey string `mapstructure:"master_key"` // Optional: Master key for authentication
+	Port          string `mapstructure:"port"`
+	MasterKey     string `mapstructure:"master_key"`      // Optional: Master key for authentication
+	BodySizeLimit string `mapstructure:"body_size_limit"` // Optional: Max request body size (default: 10M)
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
@@ -109,8 +110,9 @@ func Load() (*Config, error) {
 		// No config file, use environment variables (legacy support)
 		cfg = Config{
 			Server: ServerConfig{
-				Port:      viper.GetString("PORT"),
-				MasterKey: viper.GetString("GOMODEL_MASTER_KEY"),
+				Port:          viper.GetString("PORT"),
+				MasterKey:     viper.GetString("GOMODEL_MASTER_KEY"),
+				BodySizeLimit: viper.GetString("BODY_SIZE_LIMIT"),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -157,9 +159,10 @@ func Load() (*Config, error) {
 
 // expandEnvVars expands environment variable references in configuration values
 func expandEnvVars(cfg Config) Config {
-	// Expand server port
+	// Expand server config
 	cfg.Server.Port = expandString(cfg.Server.Port)
 	cfg.Server.MasterKey = expandString(cfg.Server.MasterKey)
+	cfg.Server.BodySizeLimit = expandString(cfg.Server.BodySizeLimit)
 
 	// Expand metrics configuration
 	cfg.Metrics.Endpoint = expandString(cfg.Metrics.Endpoint)

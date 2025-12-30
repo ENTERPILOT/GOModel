@@ -25,6 +25,7 @@ type Config struct {
 	MasterKey       string // Optional: Master key for authentication
 	MetricsEnabled  bool   // Whether to expose Prometheus metrics endpoint
 	MetricsEndpoint string // HTTP path for metrics endpoint (default: /metrics)
+	BodySizeLimit   string // Max request body size (default: "10M")
 }
 
 // New creates a new HTTP server
@@ -63,8 +64,12 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// API routes group with authentication and body size limit
 	api := e.Group("/v1")
 
-	// Add body size limit to prevent DoS (10MB max)
-	api.Use(middleware.BodyLimit("10M"))
+	// Add body size limit to prevent DoS (default: 10MB)
+	bodySizeLimit := "10M"
+	if cfg != nil && cfg.BodySizeLimit != "" {
+		bodySizeLimit = cfg.BodySizeLimit
+	}
+	api.Use(middleware.BodyLimit(bodySizeLimit))
 
 	// Add authentication middleware if master key is configured
 	if cfg != nil && cfg.MasterKey != "" {

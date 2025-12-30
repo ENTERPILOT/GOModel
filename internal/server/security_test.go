@@ -117,6 +117,127 @@ func TestBodyLimitHTTPMethodCoverage(t *testing.T) {
 	})
 }
 
+// TestConfigurableBodySizeLimit tests that body size limit can be configured
+func TestConfigurableBodySizeLimit(t *testing.T) {
+	mock := &mockProvider{}
+
+	t.Run("default body size limit is 10M when not configured", func(t *testing.T) {
+		srv := New(mock, &Config{})
+
+		// 9MB should be accepted
+		body9MB := strings.Repeat("x", 9*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body9MB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("9MB body should be accepted with default 10M limit, got %d", rec.Code)
+		}
+
+		// 11MB should be rejected
+		body11MB := strings.Repeat("x", 11*1024*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body11MB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("11MB body should be rejected with default 10M limit, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("default body size limit is 10M when config is nil", func(t *testing.T) {
+		srv := New(mock, nil)
+
+		// 11MB should be rejected
+		body11MB := strings.Repeat("x", 11*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body11MB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("11MB body should be rejected with default 10M limit, got %d", rec.Code)
+		}
+	})
+
+	t.Run("custom body size limit of 1M is respected", func(t *testing.T) {
+		srv := New(mock, &Config{
+			BodySizeLimit: "1M",
+		})
+
+		// 500KB should be accepted
+		body500KB := strings.Repeat("x", 500*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body500KB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("500KB body should be accepted with 1M limit, got %d", rec.Code)
+		}
+
+		// 2MB should be rejected
+		body2MB := strings.Repeat("x", 2*1024*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body2MB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("2MB body should be rejected with 1M limit, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("custom body size limit of 20M allows larger requests", func(t *testing.T) {
+		srv := New(mock, &Config{
+			BodySizeLimit: "20M",
+		})
+
+		// 15MB should be accepted
+		body15MB := strings.Repeat("x", 15*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body15MB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("15MB body should be accepted with 20M limit, got %d", rec.Code)
+		}
+
+		// 25MB should be rejected
+		body25MB := strings.Repeat("x", 25*1024*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body25MB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("25MB body should be rejected with 20M limit, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("body size limit with kilobytes unit", func(t *testing.T) {
+		srv := New(mock, &Config{
+			BodySizeLimit: "500K",
+		})
+
+		// 400KB should be accepted
+		body400KB := strings.Repeat("x", 400*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body400KB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("400KB body should be accepted with 500K limit, got %d", rec.Code)
+		}
+
+		// 600KB should be rejected
+		body600KB := strings.Repeat("x", 600*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body600KB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("600KB body should be rejected with 500K limit, got %d", rec2.Code)
+		}
+	})
+}
+
 // TestHealthEndpointNotAffectedByBodyLimit tests that health endpoint
 // is not subject to API group body limits
 func TestHealthEndpointNotAffectedByBodyLimit(t *testing.T) {

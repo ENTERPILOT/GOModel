@@ -172,6 +172,7 @@ func main() {
 		MasterKey:       cfg.Server.MasterKey,
 		MetricsEnabled:  cfg.Metrics.Enabled,
 		MetricsEndpoint: cfg.Metrics.Endpoint,
+		BodySizeLimit:   cfg.Server.BodySizeLimit,
 	}
 	srv := server.New(router, serverCfg)
 
