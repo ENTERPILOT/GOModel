@@ -266,3 +266,54 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected API key from environment variable (not .env file), got %s", openaiProvider.APIKey)
 	}
 }
+
+func TestValidateBodySizeLimit(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectError bool
+	}{
+		// Valid formats
+		{"empty string is valid", "", false},
+		{"plain number", "1048576", false},
+		{"kilobytes lowercase", "100k", false},
+		{"kilobytes uppercase", "100K", false},
+		{"kilobytes with B suffix", "100KB", false},
+		{"megabytes lowercase", "10m", false},
+		{"megabytes uppercase", "10M", false},
+		{"megabytes with B suffix", "10MB", false},
+		{"whitespace trimmed", "  10M  ", false},
+
+		// Boundary values
+		{"minimum valid (1KB)", "1K", false},
+		{"maximum valid (100MB)", "100M", false},
+
+		// Invalid formats
+		{"invalid format with letters", "abc", true},
+		{"invalid unit", "10X", true},
+		{"negative number", "-10M", true},
+		{"decimal number", "10.5M", true},
+		{"empty unit with B", "10B", true},
+
+		// Boundary violations
+		{"below minimum (100 bytes)", "100", true},
+		{"above maximum (200MB)", "200M", true},
+		{"above maximum (1GB)", "1G", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateBodySizeLimit(tt.input)
+
+			if tt.expectError {
+				if err == nil {
+					t.Errorf("expected error for input %q, got nil", tt.input)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error for input %q: %v", tt.input, err)
+				}
+			}
+		})
+	}
+}

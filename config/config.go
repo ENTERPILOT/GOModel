@@ -2,12 +2,25 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
+
+// Body size limit constants
+const (
+	DefaultBodySizeLimit int64 = 10 * 1024 * 1024  // 10MB
+	MinBodySizeLimit     int64 = 1 * 1024          // 1KB
+	MaxBodySizeLimit     int64 = 100 * 1024 * 1024 // 100MB
+)
+
+// bodySizeLimitRegex validates body size limit format: digits followed by optional K/M/G unit and optional B suffix
+var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration
 type Config struct {
@@ -40,8 +53,9 @@ type RedisConfig struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port      string `mapstructure:"port"`
-	MasterKey string `mapstructure:"master_key"` // Optional: Master key for authentication
+	Port          string `mapstructure:"port"`
+	MasterKey     string `mapstructure:"master_key"`      // Optional: Master key for authentication
+	BodySizeLimit string `mapstructure:"body_size_limit"` // Max request body size (e.g., "10M", "1024K")
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
@@ -109,8 +123,9 @@ func Load() (*Config, error) {
 		// No config file, use environment variables (legacy support)
 		cfg = Config{
 			Server: ServerConfig{
-				Port:      viper.GetString("PORT"),
-				MasterKey: viper.GetString("GOMODEL_MASTER_KEY"),
+				Port:          viper.GetString("PORT"),
+				MasterKey:     viper.GetString("GOMODEL_MASTER_KEY"),
+				BodySizeLimit: viper.GetString("BODY_SIZE_LIMIT"),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -152,14 +167,22 @@ func Load() (*Config, error) {
 		}
 	}
 
+	// Validate body size limit if provided
+	if cfg.Server.BodySizeLimit != "" {
+		if err := ValidateBodySizeLimit(cfg.Server.BodySizeLimit); err != nil {
+			return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
+		}
+	}
+
 	return &cfg, nil
 }
 
 // expandEnvVars expands environment variable references in configuration values
 func expandEnvVars(cfg Config) Config {
-	// Expand server port
+	// Expand server config
 	cfg.Server.Port = expandString(cfg.Server.Port)
 	cfg.Server.MasterKey = expandString(cfg.Server.MasterKey)
+	cfg.Server.BodySizeLimit = expandString(cfg.Server.BodySizeLimit)
 
 	// Expand metrics configuration
 	cfg.Metrics.Endpoint = expandString(cfg.Metrics.Endpoint)
@@ -222,4 +245,44 @@ func removeEmptyProviders(cfg Config) Config {
 	}
 	cfg.Providers = filteredProviders
 	return cfg
+}
+
+// ValidateBodySizeLimit validates a body size limit string.
+// Accepts formats like: "10M", "10MB", "1024K", "1024KB", "104857600"
+// Returns an error if the format is invalid or value is outside bounds (1KB - 100MB).
+func ValidateBodySizeLimit(s string) error {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+
+	matches := bodySizeLimitRegex.FindStringSubmatch(s)
+	if matches == nil {
+		return fmt.Errorf("invalid format %q: expected pattern like '10M', '1024K', or '104857600'", s)
+	}
+
+	value, err := strconv.ParseInt(matches[1], 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid number in %q: %w", s, err)
+	}
+
+	// Apply unit multiplier (case-insensitive due to regex flag)
+	switch strings.ToUpper(matches[2]) {
+	case "K":
+		value *= 1024
+	case "M":
+		value *= 1024 * 1024
+	case "G":
+		value *= 1024 * 1024 * 1024
+	}
+
+	// Validate bounds
+	if value < MinBodySizeLimit {
+		return fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
+	}
+	if value > MaxBodySizeLimit {
+		return fmt.Errorf("value %d bytes exceeds maximum of %d bytes (100MB)", value, MaxBodySizeLimit)
+	}
+
+	return nil
 }

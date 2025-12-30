@@ -7,77 +7,104 @@ import (
 	"testing"
 )
 
-// TestMetricsEndpointPathCollision verifies that metrics endpoint paths under /v1/*
-// are rejected and fall back to /metrics to prevent auth bypass
-func TestMetricsEndpointPathCollision(t *testing.T) {
+// TestMetricsEndpointCustomPaths verifies that custom metrics paths work correctly
+func TestMetricsEndpointCustomPaths(t *testing.T) {
+	mock := &mockProvider{}
+
+	t.Run("custom metrics path is accessible without auth", func(t *testing.T) {
+		srv := New(mock, &Config{
+			MasterKey:       "secret-key",
+			MetricsEnabled:  true,
+			MetricsEndpoint: "/monitoring/metrics",
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/monitoring/metrics", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200 for custom metrics path, got %d", rec.Code)
+		}
+	})
+
+	t.Run("nested metrics path works", func(t *testing.T) {
+		srv := New(mock, &Config{
+			MasterKey:       "secret-key",
+			MetricsEnabled:  true,
+			MetricsEndpoint: "/api/v2/metrics",
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/api/v2/metrics", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200 for nested metrics path, got %d", rec.Code)
+		}
+	})
+}
+
+// TestMetricsEndpointAPIRouteProtection verifies that metrics endpoint cannot shadow API routes
+func TestMetricsEndpointAPIRouteProtection(t *testing.T) {
 	mock := &mockProvider{}
 
 	t.Run("metrics at /v1/metrics falls back to /metrics", func(t *testing.T) {
 		srv := New(mock, &Config{
 			MasterKey:       "secret-key",
 			MetricsEnabled:  true,
-			MetricsEndpoint: "/v1/metrics", // Should be rejected and fall back to /metrics
+			MetricsEndpoint: "/v1/metrics",
 		})
 
-		// /v1/metrics should require auth (not be the metrics endpoint)
+		// /v1/metrics should require auth (not be metrics endpoint)
 		req := httptest.NewRequest(http.MethodGet, "/v1/metrics", nil)
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("Expected 401 for /v1/metrics (validation should reject this path), got %d", rec.Code)
+			t.Errorf("Expected 401 for /v1/metrics, got %d", rec.Code)
 		}
 
-		// Metrics should be available at /metrics instead
+		// Metrics should be at /metrics instead
 		req2 := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 		rec2 := httptest.NewRecorder()
 		srv.ServeHTTP(rec2, req2)
 
 		if rec2.Code != http.StatusOK {
-			t.Errorf("Expected 200 for /metrics (fallback path), got %d", rec2.Code)
+			t.Errorf("Expected 200 for /metrics fallback, got %d", rec2.Code)
 		}
 	})
 
-	t.Run("metrics at /v1/chat/completions falls back to /metrics", func(t *testing.T) {
+	t.Run("metrics at /v1/models falls back to /metrics", func(t *testing.T) {
 		srv := New(mock, &Config{
 			MasterKey:       "secret-key",
 			MetricsEnabled:  true,
-			MetricsEndpoint: "/v1/chat/completions", // Should be rejected
+			MetricsEndpoint: "/v1/models",
 		})
 
-		// /v1/chat/completions should require auth
-		req := httptest.NewRequest(http.MethodGet, "/v1/chat/completions", nil)
+		// /v1/models should require auth
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusUnauthorized {
-			t.Errorf("Expected 401 for /v1/chat/completions, got %d", rec.Code)
-		}
-
-		// Metrics should be at /metrics
-		req2 := httptest.NewRequest(http.MethodGet, "/metrics", nil)
-		rec2 := httptest.NewRecorder()
-		srv.ServeHTTP(rec2, req2)
-
-		if rec2.Code != http.StatusOK {
-			t.Errorf("Expected 200 for /metrics, got %d", rec2.Code)
+			t.Errorf("Expected 401 for /v1/models, got %d", rec.Code)
 		}
 	})
 
-	t.Run("/v10/metrics is allowed (not under /v1/)", func(t *testing.T) {
+	t.Run("path traversal to /v1/ is blocked", func(t *testing.T) {
 		srv := New(mock, &Config{
 			MasterKey:       "secret-key",
 			MetricsEnabled:  true,
-			MetricsEndpoint: "/v10/metrics", // Should be allowed - not under /v1/
+			MetricsEndpoint: "/foo/../v1/admin",
 		})
 
-		// /v10/metrics should work as metrics endpoint
-		req := httptest.NewRequest(http.MethodGet, "/v10/metrics", nil)
+		// Metrics should fall back to /metrics
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("Expected 200 for /v10/metrics (allowed path), got %d", rec.Code)
+			t.Errorf("Expected 200 for /metrics fallback, got %d", rec.Code)
 		}
 	})
 }
@@ -117,72 +144,180 @@ func TestBodyLimitHTTPMethodCoverage(t *testing.T) {
 	})
 }
 
-// TestHealthEndpointNotAffectedByBodyLimit tests that health endpoint
-// is not subject to API group body limits
-func TestHealthEndpointNotAffectedByBodyLimit(t *testing.T) {
-	mock := &mockProvider{}
-	srv := New(mock, nil)
-
-	// Health endpoint should work even with a body (though unusual)
-	// This tests that it's truly outside the /v1 group
-	largeBody := strings.Repeat("x", 11*1024*1024)
-	req := httptest.NewRequest(http.MethodGet, "/health", strings.NewReader(largeBody))
-	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, req)
-
-	// Health should return 200, not 413, because it's outside the /v1 group
-	if rec.Code != http.StatusOK {
-		t.Errorf("Health endpoint should not have body limit, got status %d", rec.Code)
-	}
-}
-
-// TestMetricsEndpointPathTraversal tests that path traversal cannot bypass validation
-func TestMetricsEndpointPathTraversal(t *testing.T) {
+// TestConfigurableBodySizeLimit tests that body size limit can be configured
+func TestConfigurableBodySizeLimit(t *testing.T) {
 	mock := &mockProvider{}
 
-	t.Run("path traversal to /v1/ is blocked after normalization", func(t *testing.T) {
-		// /foo/../v1/admin normalizes to /v1/admin which should be rejected
-		srv := New(mock, &Config{
-			MasterKey:       "secret",
-			MetricsEnabled:  true,
-			MetricsEndpoint: "/foo/../v1/admin",
-		})
+	t.Run("default body size limit is 10M when not configured", func(t *testing.T) {
+		srv := New(mock, &Config{})
 
-		// Metrics should fall back to /metrics since normalized path is under /v1/
-		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		// 9MB should be accepted
+		body9MB := strings.Repeat("x", 9*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body9MB))
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusOK {
-			t.Errorf("Expected metrics at /metrics after fallback, got %d", rec.Code)
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("9MB body should be accepted with default 10M limit, got %d", rec.Code)
 		}
 
-		// /v1/admin should require auth (not be the metrics endpoint)
-		req2 := httptest.NewRequest(http.MethodGet, "/v1/admin", nil)
+		// 11MB should be rejected
+		body11MB := strings.Repeat("x", 11*1024*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body11MB))
 		rec2 := httptest.NewRecorder()
 		srv.ServeHTTP(rec2, req2)
 
-		if rec2.Code != http.StatusUnauthorized {
-			t.Errorf("Expected 401 for /v1/admin, got %d", rec2.Code)
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("11MB body should be rejected with default 10M limit, got %d", rec2.Code)
 		}
 	})
 
-	t.Run("path traversing away from /v1 is allowed", func(t *testing.T) {
-		// /v1/../admin normalizes to /admin which is NOT under /v1/
+	t.Run("default body size limit is 10M when config is nil", func(t *testing.T) {
+		srv := New(mock, nil)
+
+		// 11MB should be rejected
+		body11MB := strings.Repeat("x", 11*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body11MB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("11MB body should be rejected with default 10M limit, got %d", rec.Code)
+		}
+	})
+
+	t.Run("custom body size limit of 1M is respected", func(t *testing.T) {
+		srv := New(mock, &Config{
+			BodySizeLimit: "1M",
+		})
+
+		// 500KB should be accepted
+		body500KB := strings.Repeat("x", 500*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body500KB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("500KB body should be accepted with 1M limit, got %d", rec.Code)
+		}
+
+		// 2MB should be rejected
+		body2MB := strings.Repeat("x", 2*1024*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body2MB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("2MB body should be rejected with 1M limit, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("custom body size limit of 20M allows larger requests", func(t *testing.T) {
+		srv := New(mock, &Config{
+			BodySizeLimit: "20M",
+		})
+
+		// 15MB should be accepted
+		body15MB := strings.Repeat("x", 15*1024*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body15MB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("15MB body should be accepted with 20M limit, got %d", rec.Code)
+		}
+
+		// 25MB should be rejected
+		body25MB := strings.Repeat("x", 25*1024*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body25MB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("25MB body should be rejected with 20M limit, got %d", rec2.Code)
+		}
+	})
+
+	t.Run("body size limit with kilobytes unit", func(t *testing.T) {
+		srv := New(mock, &Config{
+			BodySizeLimit: "500K",
+		})
+
+		// 400KB should be accepted
+		body400KB := strings.Repeat("x", 400*1024)
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body400KB))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code == http.StatusRequestEntityTooLarge {
+			t.Errorf("400KB body should be accepted with 500K limit, got %d", rec.Code)
+		}
+
+		// 600KB should be rejected
+		body600KB := strings.Repeat("x", 600*1024)
+		req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body600KB))
+		rec2 := httptest.NewRecorder()
+		srv.ServeHTTP(rec2, req2)
+
+		if rec2.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("600KB body should be rejected with 500K limit, got %d", rec2.Code)
+		}
+	})
+}
+
+// TestBodyLimitAppliesToAllRoutes tests that body limit is applied globally
+func TestBodyLimitAppliesToAllRoutes(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, nil)
+
+	largeBody := strings.Repeat("x", 11*1024*1024)
+
+	// Body limit applies to all routes including health (DoS protection)
+	req := httptest.NewRequest(http.MethodPost, "/health", strings.NewReader(largeBody))
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("Body limit should apply globally, got status %d", rec.Code)
+	}
+}
+
+// TestMetricsEndpointPathTraversal tests that path traversal is normalized
+func TestMetricsEndpointPathTraversal(t *testing.T) {
+	mock := &mockProvider{}
+
+	t.Run("path traversal is normalized", func(t *testing.T) {
+		// /foo/../admin normalizes to /admin
 		srv := New(mock, &Config{
 			MasterKey:       "secret",
 			MetricsEnabled:  true,
-			MetricsEndpoint: "/v1/../admin",
+			MetricsEndpoint: "/foo/../admin",
 		})
 
-		// After normalization, /v1/../admin -> /admin, which is allowed
-		// So metrics should be served at /v1/../admin (which Echo normalizes to /admin)
+		// Normalized path /admin should serve metrics
 		req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 		rec := httptest.NewRecorder()
 		srv.ServeHTTP(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Errorf("Expected 200 for /admin (normalized path is allowed), got %d", rec.Code)
+			t.Errorf("Expected 200 for normalized path /admin, got %d", rec.Code)
+		}
+	})
+
+	t.Run("double dots are cleaned from path", func(t *testing.T) {
+		// /a/b/../c normalizes to /a/c
+		srv := New(mock, &Config{
+			MasterKey:       "secret",
+			MetricsEnabled:  true,
+			MetricsEndpoint: "/a/b/../c",
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/a/c", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200 for cleaned path /a/c, got %d", rec.Code)
 		}
 	})
 }

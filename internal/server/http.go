@@ -25,6 +25,7 @@ type Config struct {
 	MasterKey       string // Optional: Master key for authentication
 	MetricsEnabled  bool   // Whether to expose Prometheus metrics endpoint
 	MetricsEndpoint string // HTTP path for metrics endpoint (default: /metrics)
+	BodySizeLimit   string // Max request body size (e.g., "10M", "1024K")
 }
 
 // New creates a new HTTP server
@@ -32,48 +33,54 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
-	// Global middleware (applies to all routes)
+	handler := NewHandler(provider)
+
+	// Build list of paths that skip authentication
+	authSkipPaths := []string{"/health"}
+
+	// Determine metrics path
+	metricsPath := "/metrics"
+	if cfg != nil && cfg.MetricsEnabled {
+		if cfg.MetricsEndpoint != "" {
+			// Normalize path to prevent traversal attacks
+			metricsPath = path.Clean(cfg.MetricsEndpoint)
+		}
+		// Prevent metrics endpoint from shadowing API routes (security: auth bypass)
+		if metricsPath == "/v1" || strings.HasPrefix(metricsPath, "/v1/") {
+			slog.Warn("metrics endpoint conflicts with API routes, using /metrics instead",
+				"configured", cfg.MetricsEndpoint,
+				"normalized", metricsPath)
+			metricsPath = "/metrics"
+		}
+		authSkipPaths = append(authSkipPaths, metricsPath)
+	}
+
+	// Global middleware stack (order matters)
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 
-	handler := NewHandler(provider)
+	// Body size limit (default: 10MB)
+	bodySizeLimit := "10M"
+	if cfg != nil && cfg.BodySizeLimit != "" {
+		bodySizeLimit = cfg.BodySizeLimit
+	}
+	e.Use(middleware.BodyLimit(bodySizeLimit))
 
-	// Public routes (no authentication required)
-	// These must be registered BEFORE auth middleware is applied
+	// Authentication (skips public paths)
+	if cfg != nil && cfg.MasterKey != "" {
+		e.Use(AuthMiddleware(cfg.MasterKey, authSkipPaths))
+	}
+
+	// Public routes
 	e.GET("/health", handler.Health)
-
-	// Conditionally register metrics endpoint (public, no auth)
 	if cfg != nil && cfg.MetricsEnabled {
-		metricsPath := cfg.MetricsEndpoint
-		if metricsPath == "" {
-			metricsPath = "/metrics"
-		}
-		// Normalize path to prevent traversal attacks (e.g., /v1/../admin -> /admin)
-		// and then validate it doesn't shadow protected API routes
-		metricsPath = path.Clean(metricsPath)
-		if metricsPath == "/v1" || strings.HasPrefix(metricsPath, "/v1/") {
-			slog.Warn("metrics endpoint path conflicts with API routes, using /metrics instead",
-				"configured_path", cfg.MetricsEndpoint,
-				"normalized_path", metricsPath)
-			metricsPath = "/metrics"
-		}
 		e.GET(metricsPath, echo.WrapHandler(promhttp.Handler()))
 	}
 
-	// API routes group with authentication and body size limit
-	api := e.Group("/v1")
-
-	// Add body size limit to prevent DoS (10MB max)
-	api.Use(middleware.BodyLimit("10M"))
-
-	// Add authentication middleware if master key is configured
-	if cfg != nil && cfg.MasterKey != "" {
-		api.Use(AuthMiddleware(cfg.MasterKey))
-	}
-
-	api.GET("/models", handler.ListModels)
-	api.POST("/chat/completions", handler.ChatCompletion)
-	api.POST("/responses", handler.Responses)
+	// API routes
+	e.GET("/v1/models", handler.ListModels)
+	e.POST("/v1/chat/completions", handler.ChatCompletion)
+	e.POST("/v1/responses", handler.Responses)
 
 	return &Server{
 		echo:    e,
