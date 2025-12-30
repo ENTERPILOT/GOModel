@@ -81,7 +81,7 @@ func TestAuthMiddleware(t *testing.T) {
 			}
 
 			// Wrap the handler with auth middleware
-			handler := AuthMiddleware(tt.masterKey)(testHandler)
+			handler := AuthMiddleware(tt.masterKey, nil)(testHandler)
 
 			// Create request
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -112,7 +112,7 @@ func TestAuthMiddleware(t *testing.T) {
 func TestAuthMiddleware_Integration(t *testing.T) {
 	t.Run("with master key - protects all routes", func(t *testing.T) {
 		e := echo.New()
-		e.Use(AuthMiddleware("my-secret-key"))
+		e.Use(AuthMiddleware("my-secret-key", nil))
 
 		e.GET("/test", func(c echo.Context) error {
 			return c.String(http.StatusOK, "success")
@@ -135,7 +135,7 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 
 	t.Run("without master key - allows all routes", func(t *testing.T) {
 		e := echo.New()
-		e.Use(AuthMiddleware(""))
+		e.Use(AuthMiddleware("", nil))
 
 		e.GET("/test", func(c echo.Context) error {
 			return c.String(http.StatusOK, "success")
@@ -147,6 +147,66 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 		e.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code)
 		assert.Equal(t, "success", rec.Body.String())
+	})
+}
+
+func TestAuthMiddleware_SkipPaths(t *testing.T) {
+	t.Run("skips authentication for specified paths", func(t *testing.T) {
+		e := echo.New()
+		e.Use(AuthMiddleware("my-secret-key", []string{"/health", "/metrics"}))
+
+		e.GET("/health", func(c echo.Context) error {
+			return c.String(http.StatusOK, "healthy")
+		})
+		e.GET("/metrics", func(c echo.Context) error {
+			return c.String(http.StatusOK, "metrics")
+		})
+		e.GET("/api/protected", func(c echo.Context) error {
+			return c.String(http.StatusOK, "protected")
+		})
+
+		// Request to skip path without auth should succeed
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "healthy", rec.Body.String())
+
+		// Request to another skip path without auth should succeed
+		req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		rec = httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "metrics", rec.Body.String())
+
+		// Request to protected path without auth should fail
+		req = httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+		rec = httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+		// Request to protected path with valid auth should succeed
+		req = httptest.NewRequest(http.MethodGet, "/api/protected", nil)
+		req.Header.Set("Authorization", "Bearer my-secret-key")
+		rec = httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusOK, rec.Code)
+		assert.Equal(t, "protected", rec.Body.String())
+	})
+
+	t.Run("empty skip paths requires auth for all routes", func(t *testing.T) {
+		e := echo.New()
+		e.Use(AuthMiddleware("my-secret-key", []string{}))
+
+		e.GET("/health", func(c echo.Context) error {
+			return c.String(http.StatusOK, "healthy")
+		})
+
+		// Request without auth should fail even for /health
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
 }
 
@@ -207,7 +267,7 @@ func TestAuthMiddleware_ConstantTimeComparison(t *testing.T) {
 				}
 
 				// Wrap with auth middleware
-				handler := AuthMiddleware(tc.masterKey)(testHandler)
+				handler := AuthMiddleware(tc.masterKey, nil)(testHandler)
 
 				// Create request
 				req := httptest.NewRequest(http.MethodGet, "/", nil)
