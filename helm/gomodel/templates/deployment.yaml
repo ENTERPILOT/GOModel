@@ -1,0 +1,175 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "gomodel.fullname" . }}
+  labels:
+    {{- include "gomodel.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "gomodel.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "gomodel.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: {{ include "gomodel.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.port }}
+              protocol: TCP
+          env:
+            # Server configuration
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: PORT
+            - name: BODY_SIZE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: BODY_SIZE_LIMIT
+            # Cache configuration
+            - name: CACHE_TYPE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: CACHE_TYPE
+#            - name: GOMODEL_CACHE_DIR
+#              value: "/cache"
+            {{- if or .Values.redis.enabled (eq .Values.cache.type "redis") }}
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.providerSecretName" . }}
+                  key: REDIS_URL
+                  optional: true
+            - name: REDIS_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: REDIS_KEY
+            {{- end }}
+            # Metrics configuration
+            - name: METRICS_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: METRICS_ENABLED
+            - name: METRICS_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: METRICS_ENDPOINT
+            # Authentication
+            {{- if or .Values.auth.masterKey .Values.auth.existingSecret }}
+            - name: GOMODEL_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.authSecretName" . }}
+                  key: {{ .Values.auth.existingSecretKey | default "master-key" }}
+            {{- end }}
+            # Provider API keys (conditional based on enabled providers)
+            {{- if .Values.providers.openai.enabled }}
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.providerSecretName" . }}
+                  key: OPENAI_API_KEY
+            {{- if .Values.providers.openai.baseUrl }}
+            - name: OPENAI_BASE_URL
+              value: {{ .Values.providers.openai.baseUrl | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.providers.anthropic.enabled }}
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.providerSecretName" . }}
+                  key: ANTHROPIC_API_KEY
+            {{- if .Values.providers.anthropic.baseUrl }}
+            - name: ANTHROPIC_BASE_URL
+              value: {{ .Values.providers.anthropic.baseUrl | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.providers.gemini.enabled }}
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.providerSecretName" . }}
+                  key: GEMINI_API_KEY
+            {{- if .Values.providers.gemini.baseUrl }}
+            - name: GEMINI_BASE_URL
+              value: {{ .Values.providers.gemini.baseUrl | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.providers.groq.enabled }}
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.providerSecretName" . }}
+                  key: GROQ_API_KEY
+            {{- if .Values.providers.groq.baseUrl }}
+            - name: GROQ_BASE_URL
+              value: {{ .Values.providers.groq.baseUrl | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.providers.xai.enabled }}
+            - name: XAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "gomodel.providerSecretName" . }}
+                  key: XAI_API_KEY
+            {{- if .Values.providers.xai.baseUrl }}
+            - name: XAI_BASE_URL
+              value: {{ .Values.providers.xai.baseUrl | quote }}
+            {{- end }}
+            {{- end }}
+          volumeMounts:
+            - name: cache
+              mountPath: /cache
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: cache
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

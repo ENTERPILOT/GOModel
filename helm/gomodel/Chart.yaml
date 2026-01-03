@@ -1,0 +1,30 @@
+apiVersion: v2
+name: gomodel
+description: High-performance AI gateway for multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - llm
+  - ai
+  - gateway
+  - openai
+  - anthropic
+  - gemini
+  - groq
+  - xai
+  - proxy
+
+home: https://github.com/your-org/gomodel
+sources:
+  - https://github.com/your-org/gomodel
+
+maintainers:
+  - name: GOModel Team
+
+dependencies:
+  - name: redis
+    version: "*"
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis.enabled
