@@ -25,7 +25,7 @@ metrics:
   # When disabled, no metrics are collected and the /metrics endpoint returns 404
   # Default: false
   # TODO: the default value should be taken here from ENV variable METRICS_ENABLED explicitly
-  # Note: It should be commented out, because it overrides the ENV variable in th current form
+  # Note: It should be commented out, because it overrides the ENV variable in the current form
   # enabled: false
 
   # HTTP endpoint path where metrics are exposed
