@@ -134,7 +134,6 @@ func Load() (*Config, error) {
 			Providers: make(map[string]ProviderConfig),
 		}
 
-		// TODO: There should be iteration over all providers in config.yaml
 		// TODO: Similarly for ENV variables. All ENV variables like *_API_KEY should be taken and iterated over
 		// Add providers from environment variables if available
 		if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
