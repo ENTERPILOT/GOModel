@@ -16,9 +16,9 @@ keywords:
   - xai
   - proxy
 
-home: https://github.com/your-org/gomodel
+home: https://github.com/ENTERPILOT/GOModel
 sources:
-  - https://github.com/your-org/gomodel
+  - https://github.com/ENTERPILOT/GOModel
 
 maintainers:
   - name: GOModel Team
