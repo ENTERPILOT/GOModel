@@ -134,6 +134,7 @@ func Load() (*Config, error) {
 			Providers: make(map[string]ProviderConfig),
 		}
 
+		// TODO: Similarly for ENV variables. All ENV variables like *_API_KEY should be taken and iterated over
 		// Add providers from environment variables if available
 		if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
 			cfg.Providers["openai-primary"] = ProviderConfig{
@@ -185,6 +186,10 @@ func expandEnvVars(cfg Config) Config {
 	cfg.Server.BodySizeLimit = expandString(cfg.Server.BodySizeLimit)
 
 	// Expand metrics configuration
+	// Check METRICS_ENABLED env var - it should override YAML config
+	if metricsEnabled := os.Getenv("METRICS_ENABLED"); metricsEnabled != "" {
+		cfg.Metrics.Enabled = strings.EqualFold(metricsEnabled, "true") || metricsEnabled == "1"
+	}
 	cfg.Metrics.Endpoint = expandString(cfg.Metrics.Endpoint)
 
 	// Expand cache configuration

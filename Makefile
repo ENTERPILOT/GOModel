@@ -1,9 +1,17 @@
 .PHONY: build run clean tidy test test-unit test-e2e lint lint-fix
 
-# Build the application
-build:
-	go build -o bin/gomodel ./cmd/gomodel
+# Get version info
+VERSION ?= $(shell git describe --tags --always --dirty)
+COMMIT ?= $(shell git rev-parse --short HEAD)
+DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# Linker flags to inject version info
+LDFLAGS := -X "gomodel/internal/version.Version=$(VERSION)" \
+           -X "gomodel/internal/version.Commit=$(COMMIT)" \
+           -X "gomodel/internal/version.Date=$(DATE)"
+
+build:
+	go build -ldflags '$(LDFLAGS)' -o bin/gomodel ./cmd/gomodel
 # Run the application
 run:
 	go run ./cmd/gomodel

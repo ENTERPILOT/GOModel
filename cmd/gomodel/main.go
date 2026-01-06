@@ -3,6 +3,8 @@ package main
 
 import (
 	"context"
+	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -21,6 +23,7 @@ import (
 	_ "gomodel/internal/providers/openai"
 	_ "gomodel/internal/providers/xai"
 	"gomodel/internal/server"
+	"gomodel/internal/version"
 )
 
 // getCacheDir returns the directory for cache files.
@@ -69,9 +72,25 @@ func initCache(cfg *config.Config) (cache.Cache, error) {
 }
 
 func main() {
+	// Add a version flag check
+	versionFlag := flag.Bool("version", false, "Print version information")
+	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(version.Info())
+		os.Exit(0)
+	}
+
 	// Setup structured logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+
+	// Log the version immediately on startup
+	slog.Info("starting gomodel",
+		"version", version.Version,
+		"commit", version.Commit,
+		"build_date", version.Date,
+	)
 
 	// Load configuration
 	cfg, err := config.Load()
