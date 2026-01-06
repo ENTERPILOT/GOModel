@@ -1,4 +1,7 @@
 {{- if .Values.autoscaling.enabled }}
+{{- if not (or .Values.autoscaling.targetCPUUtilizationPercentage .Values.autoscaling.targetMemoryUtilizationPercentage) }}
+{{- fail "autoscaling.targetCPUUtilizationPercentage or autoscaling.targetMemoryUtilizationPercentage must be set when autoscaling is enabled" }}
+{{- end }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
