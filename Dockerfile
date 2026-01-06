@@ -20,9 +20,8 @@ FROM gcr.io/distroless/static-debian12:nonroot
 # Copy binary and ca-certificates
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /gomodel /gomodel
-COPY --from=builder /app/config /app/config
+COPY --from=builder /app/config/*.yaml /app/config
 
-# Create cache directory (writable by non-root user)
 WORKDIR /app
 
 # Run as non-root user
