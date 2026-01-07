@@ -94,61 +94,7 @@ spec:
                   key: {{ .Values.auth.existingSecretKey | default "master-key" }}
             {{- end }}
             # Provider API keys (conditional based on enabled providers)
-            {{- if .Values.providers.openai.enabled }}
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gomodel.providerSecretName" . }}
-                  key: OPENAI_API_KEY
-            {{- if .Values.providers.openai.baseUrl }}
-            - name: OPENAI_BASE_URL
-              value: {{ .Values.providers.openai.baseUrl | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.providers.anthropic.enabled }}
-            - name: ANTHROPIC_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gomodel.providerSecretName" . }}
-                  key: ANTHROPIC_API_KEY
-            {{- if .Values.providers.anthropic.baseUrl }}
-            - name: ANTHROPIC_BASE_URL
-              value: {{ .Values.providers.anthropic.baseUrl | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.providers.gemini.enabled }}
-            - name: GEMINI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gomodel.providerSecretName" . }}
-                  key: GEMINI_API_KEY
-            {{- if .Values.providers.gemini.baseUrl }}
-            - name: GEMINI_BASE_URL
-              value: {{ .Values.providers.gemini.baseUrl | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.providers.groq.enabled }}
-            - name: GROQ_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gomodel.providerSecretName" . }}
-                  key: GROQ_API_KEY
-            {{- if .Values.providers.groq.baseUrl }}
-            - name: GROQ_BASE_URL
-              value: {{ .Values.providers.groq.baseUrl | quote }}
-            {{- end }}
-            {{- end }}
-            {{- if .Values.providers.xai.enabled }}
-            - name: XAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "gomodel.providerSecretName" . }}
-                  key: XAI_API_KEY
-            {{- if .Values.providers.xai.baseUrl }}
-            - name: XAI_BASE_URL
-              value: {{ .Values.providers.xai.baseUrl | quote }}
-            {{- end }}
-            {{- end }}
+{{- include "gomodel.providerEnvVars" . | nindent 12 }}
           volumeMounts:
             - name: cache
               mountPath: /cache

@@ -102,3 +102,36 @@ Create the image reference
 {{- $tag := .Values.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}
+
+{{/*
+Generate provider API key entries for the Secret stringData.
+*/}}
+{{- define "gomodel.providerSecretData" -}}
+{{- range $name, $config := .Values.providers }}
+  {{- if and (kindIs "map" $config) (hasKey $config "enabled") }}
+    {{- if and $config.enabled $config.apiKey }}
+{{ upper $name }}_API_KEY: {{ $config.apiKey | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Generate provider environment variables for the Deployment.
+*/}}
+{{- define "gomodel.providerEnvVars" -}}
+{{- $secretName := include "gomodel.providerSecretName" . -}}
+{{- range $name, $config := .Values.providers }}
+  {{- if and (kindIs "map" $config) (hasKey $config "enabled") $config.enabled }}
+- name: {{ upper $name }}_API_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ $secretName }}
+      key: {{ upper $name }}_API_KEY
+    {{- if $config.baseUrl }}
+- name: {{ upper $name }}_BASE_URL
+  value: {{ $config.baseUrl | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
