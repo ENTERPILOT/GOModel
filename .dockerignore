@@ -1,0 +1,71 @@
+# ===================
+# Git
+# ===================
+.git
+.gitignore
+
+# ===================
+# Build artifacts
+# ===================
+bin/
+gomodel
+coverage.out
+
+# ===================
+# Tests
+# ===================
+tests/
+*_test.go
+**/*_test.go
+
+# ===================
+# Documentation
+# ===================
+*.md
+LICENSE
+
+# ===================
+# CI/CD & Release
+# ===================
+.github/
+.goreleaser.yaml
+
+# ===================
+# Development tooling
+# ===================
+.golangci.yml
+.pre-commit-config.yaml
+Makefile
+
+# ===================
+# Docker & Kubernetes
+# ===================
+Dockerfile
+.dockerignore
+docker-compose.yaml
+helm/
+prometheus.yml
+
+# ===================
+# IDE & Editor configs
+# ===================
+.claude/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===================
+# Environment & Secrets
+# ===================
+.env
+.env.*
+
+# ===================
+# Miscellaneous
+# ===================
+.cache/
+*.bck.yml
+repomix-output.*
+session-*.md

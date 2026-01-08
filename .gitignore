@@ -12,3 +12,6 @@
 /*.bck.yml
 /repomix-output.*
 /coverage.out
+
+# Helm chart dependencies
+**/charts/*.tgz
