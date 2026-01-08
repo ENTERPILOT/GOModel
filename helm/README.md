@@ -50,7 +50,7 @@ helm install gomodel ./helm/gomodel \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `replicaCount` | Number of replicas | `2` |
-| `image.repository` | Image repository | `your-registry/gomodel` |
+| `image.repository` | Image repository | `enterpilot/gomodel` |
 | `image.tag` | Image tag | `""` (uses appVersion) |
 | `server.port` | Server port | `8080` |
 | `server.bodySizeLimit` | Max request body size | `"10M"` |
