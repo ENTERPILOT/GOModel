@@ -554,9 +554,11 @@ func TestAuditLogErrorCapture(t *testing.T) {
 		}()
 
 		// Make a request with an unsupported model
-		payload := map[string]interface{}{
-			"model":    "unsupported-model-xyz",
-			"messages": []map[string]string{{"role": "user", "content": "Hello"}},
+		payload := core.ChatRequest{
+			Model: "unsupported-model-xyz",
+			Messages: []core.Message{
+				{Role: "user", Content: "Hello"},
+			},
 		}
 		body, _ := json.Marshal(payload)
 		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))

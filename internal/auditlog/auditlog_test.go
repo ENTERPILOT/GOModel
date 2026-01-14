@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -244,7 +245,7 @@ func TestLogger(t *testing.T) {
 	// Write some entries
 	for i := 0; i < 5; i++ {
 		logger.Write(&LogEntry{
-			ID:        "entry-" + string(rune('0'+i)),
+			ID:        fmt.Sprintf("entry-%d", i),
 			Timestamp: time.Now(),
 			Model:     "test-model",
 		})

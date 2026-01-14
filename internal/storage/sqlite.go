@@ -28,17 +28,15 @@ func NewSQLite(cfg SQLiteConfig) (Storage, error) {
 	}
 
 	// Open database with WAL mode and busy timeout
-	// WAL mode allows concurrent reads while writing
 	dsn := fmt.Sprintf("%s?_journal=WAL&_busy_timeout=5000&_synchronous=NORMAL", cfg.Path)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open SQLite database: %w", err)
 	}
 
-	// Set connection pool settings for SQLite
-	// SQLite doesn't benefit from multiple connections for writes,
-	// but we allow some for concurrent reads
-	db.SetMaxOpenConns(1) // SQLite only allows one writer at a time
+	// Use a single connection to serialize all database access.
+	// This prevents "database is locked" errors at the cost of no concurrent reads.
+	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
 	// Verify connection
