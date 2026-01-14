@@ -7,14 +7,21 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+
 	"gomodel/config"
+	"gomodel/internal/auditlog"
 	"gomodel/internal/cache"
 	"gomodel/internal/observability"
 	"gomodel/internal/providers"
+	"gomodel/internal/storage"
 
 	// Import provider packages to trigger their init() registration
 	_ "gomodel/internal/providers/anthropic"
@@ -186,20 +193,151 @@ func main() {
 		slog.Info("authentication enabled", "mode", "master_key")
 	}
 
+	// Initialize audit logging if enabled
+	var auditLogger auditlog.LoggerInterface = &auditlog.NoopLogger{}
+	if cfg.Logging.Enabled {
+		auditLogger, err = initAuditLogger(cfg)
+		if err != nil {
+			slog.Error("failed to initialize audit logging", "error", err)
+			os.Exit(1)
+		}
+		defer auditLogger.Close()
+		slog.Info("audit logging enabled",
+			"storage_type", cfg.Logging.StorageType,
+			"log_bodies", cfg.Logging.LogBodies,
+			"log_headers", cfg.Logging.LogHeaders,
+			"retention_days", cfg.Logging.RetentionDays,
+		)
+	} else {
+		slog.Info("audit logging disabled")
+	}
+
 	// Create and start server
 	serverCfg := &server.Config{
 		MasterKey:       cfg.Server.MasterKey,
 		MetricsEnabled:  cfg.Metrics.Enabled,
 		MetricsEndpoint: cfg.Metrics.Endpoint,
 		BodySizeLimit:   cfg.Server.BodySizeLimit,
+		AuditLogger:     auditLogger,
 	}
 	srv := server.New(router, serverCfg)
+
+	// Handle graceful shutdown
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+
+		slog.Info("shutting down server...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(ctx); err != nil {
+			slog.Error("server shutdown error", "error", err)
+		}
+	}()
 
 	addr := ":" + cfg.Server.Port
 	slog.Info("starting server", "address", addr)
 
 	if err := srv.Start(addr); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+		// http.ErrServerClosed is expected on graceful shutdown
+		slog.Info("server stopped", "reason", err)
 	}
+}
+
+// initAuditLogger initializes the audit logger with the appropriate storage backend.
+func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, error) {
+	// Create storage configuration using LOGGING_STORAGE_TYPE to select the backend
+	// but using the shared storage connection settings (SQLITE_PATH, POSTGRES_URL, etc.)
+	storageCfg := storage.Config{
+		Type: cfg.Logging.StorageType,
+		SQLite: storage.SQLiteConfig{
+			Path: cfg.Storage.SQLite.Path,
+		},
+		PostgreSQL: storage.PostgreSQLConfig{
+			URL:      cfg.Storage.PostgreSQL.URL,
+			MaxConns: cfg.Storage.PostgreSQL.MaxConns,
+		},
+		MongoDB: storage.MongoDBConfig{
+			URL:      cfg.Storage.MongoDB.URL,
+			Database: cfg.Storage.MongoDB.Database,
+		},
+	}
+
+	// Apply defaults
+	if storageCfg.Type == "" {
+		storageCfg.Type = storage.TypeSQLite
+	}
+	if storageCfg.SQLite.Path == "" {
+		storageCfg.SQLite.Path = ".cache/gomodel.db"
+	}
+	if storageCfg.MongoDB.Database == "" {
+		storageCfg.MongoDB.Database = "gomodel"
+	}
+
+	ctx := context.Background()
+
+	// Create storage connection
+	store, err := storage.New(ctx, storageCfg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create storage: %w", err)
+	}
+
+	// Create the appropriate log store based on storage type
+	var logStore auditlog.LogStore
+	switch store.Type() {
+	case storage.TypeSQLite:
+		logStore, err = auditlog.NewSQLiteStore(store.SQLiteDB(), cfg.Logging.RetentionDays)
+	case storage.TypePostgreSQL:
+		pool := store.PostgreSQLPool()
+		if pool == nil {
+			return nil, fmt.Errorf("PostgreSQL pool is nil")
+		}
+		// Use type assertion with the pgxpool.Pool type
+		pgxPool, ok := pool.(*pgxpool.Pool)
+		if !ok {
+			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
+		}
+		logStore, err = auditlog.NewPostgreSQLStore(pgxPool, cfg.Logging.RetentionDays)
+	case storage.TypeMongoDB:
+		db := store.MongoDatabase()
+		if db == nil {
+			return nil, fmt.Errorf("MongoDB database is nil")
+		}
+		// Use type assertion with the mongo.Database type
+		mongoDB, ok := db.(*mongo.Database)
+		if !ok {
+			return nil, fmt.Errorf("invalid MongoDB database type: %T", db)
+		}
+		logStore, err = auditlog.NewMongoDBStore(mongoDB, cfg.Logging.RetentionDays)
+	default:
+		return nil, fmt.Errorf("unknown storage type: %s", store.Type())
+	}
+
+	if err != nil {
+		store.Close()
+		return nil, fmt.Errorf("failed to create log store: %w", err)
+	}
+
+	// Create logger configuration
+	logCfg := auditlog.Config{
+		Enabled:       cfg.Logging.Enabled,
+		LogBodies:     cfg.Logging.LogBodies,
+		LogHeaders:    cfg.Logging.LogHeaders,
+		BufferSize:    cfg.Logging.BufferSize,
+		FlushInterval: time.Duration(cfg.Logging.FlushIntervalSeconds) * time.Second,
+		RetentionDays: cfg.Logging.RetentionDays,
+	}
+
+	// Apply defaults
+	if logCfg.BufferSize <= 0 {
+		logCfg.BufferSize = 1000
+	}
+	if logCfg.FlushInterval <= 0 {
+		logCfg.FlushInterval = 5 * time.Second
+	}
+
+	return auditlog.NewLogger(logStore, logCfg), nil
 }

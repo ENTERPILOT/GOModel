@@ -1,0 +1,608 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"gomodel/internal/auditlog"
+	"gomodel/internal/core"
+	"gomodel/internal/providers"
+	"gomodel/internal/server"
+)
+
+// mockLogStore is an in-memory log store for testing
+type mockLogStore struct {
+	mu      sync.Mutex
+	entries []*auditlog.LogEntry
+	flushed bool
+	closed  bool
+}
+
+func newMockLogStore() *mockLogStore {
+	return &mockLogStore{
+		entries: make([]*auditlog.LogEntry, 0),
+	}
+}
+
+func (m *mockLogStore) WriteBatch(_ context.Context, entries []*auditlog.LogEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.entries = append(m.entries, entries...)
+	return nil
+}
+
+func (m *mockLogStore) Flush(_ context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.flushed = true
+	return nil
+}
+
+func (m *mockLogStore) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.closed = true
+	return nil
+}
+
+func (m *mockLogStore) GetEntries() []*auditlog.LogEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// Return a copy to avoid race conditions
+	result := make([]*auditlog.LogEntry, len(m.entries))
+	copy(result, m.entries)
+	return result
+}
+
+// GetAPIEntries returns only entries for API paths (excludes health checks)
+func (m *mockLogStore) GetAPIEntries() []*auditlog.LogEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var result []*auditlog.LogEntry
+	for _, entry := range m.entries {
+		if entry.Data != nil && entry.Data.Path != "/health" {
+			result = append(result, entry)
+		}
+	}
+	return result
+}
+
+func (m *mockLogStore) WaitForEntries(count int, timeout time.Duration) []*auditlog.LogEntry {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		entries := m.GetEntries()
+		if len(entries) >= count {
+			return entries
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return m.GetEntries()
+}
+
+// WaitForAPIEntries waits for API entries (excludes health checks)
+func (m *mockLogStore) WaitForAPIEntries(count int, timeout time.Duration) []*auditlog.LogEntry {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		entries := m.GetAPIEntries()
+		if len(entries) >= count {
+			return entries
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return m.GetAPIEntries()
+}
+
+// setupAuditLogTestServer creates a test server with audit logging enabled
+func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogStore) (string, *server.Server, *auditlog.Logger) {
+	t.Helper()
+
+	// Find available port
+	listener, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	require.NoError(t, listener.Close())
+
+	// Create test provider and registry
+	testProvider := NewTestProvider(mockLLMURL, "sk-test-key-12345")
+	registry := providers.NewModelRegistry()
+	registry.RegisterProvider(testProvider)
+
+	ctx := context.Background()
+	require.NoError(t, registry.Initialize(ctx))
+
+	router, err := providers.NewRouter(registry)
+	require.NoError(t, err)
+
+	// Create logger with the mock store
+	logger := auditlog.NewLogger(store, cfg)
+
+	// Create server with audit logging
+	srv := server.New(router, &server.Config{
+		AuditLogger: logger,
+	})
+
+	// Start server
+	serverURL := fmt.Sprintf("http://localhost:%d", port)
+	go func() {
+		if err := srv.Start(fmt.Sprintf(":%d", port)); err != nil && err != http.ErrServerClosed {
+			t.Logf("Server error: %v", err)
+		}
+	}()
+
+	// Wait for server to be ready
+	client := &http.Client{Timeout: 2 * time.Second}
+	for i := 0; i < 30; i++ {
+		resp, err := client.Get(serverURL + "/health")
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				break
+			}
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	return serverURL, srv, logger
+}
+
+func TestAuditLogMiddleware(t *testing.T) {
+	t.Run("captures basic request metadata", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Wait for log entry to be written
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1, "Expected 1 log entry")
+
+		entry := entries[0]
+		assert.NotEmpty(t, entry.ID)
+		assert.NotZero(t, entry.Timestamp)
+		assert.Greater(t, entry.DurationNs, int64(0))
+		assert.Equal(t, http.StatusOK, entry.StatusCode)
+		assert.NotNil(t, entry.Data)
+		assert.Equal(t, "POST", entry.Data.Method)
+		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+		assert.NotEmpty(t, entry.Data.RequestID)
+	})
+
+	t.Run("captures request and response bodies when enabled", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     true,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Test message"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.NotNil(t, entry.Data.RequestBody)
+		assert.NotNil(t, entry.Data.ResponseBody)
+
+		// Verify request body contains our message
+		var reqBody map[string]interface{}
+		err = json.Unmarshal(entry.Data.RequestBody, &reqBody)
+		require.NoError(t, err)
+		assert.Equal(t, "gpt-4", reqBody["model"])
+	})
+
+	t.Run("captures headers with redaction when enabled", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    true,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request with Authorization header
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		req, _ := http.NewRequest("POST", serverURL+"/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer sk-secret-key-12345")
+		req.Header.Set("X-Custom-Header", "custom-value")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.NotNil(t, entry.Data.RequestHeaders)
+
+		// Authorization header should be redacted
+		assert.Equal(t, "[REDACTED]", entry.Data.RequestHeaders["Authorization"])
+
+		// Custom header should not be redacted
+		assert.Equal(t, "custom-value", entry.Data.RequestHeaders["X-Custom-Header"])
+	})
+
+	t.Run("does not log when disabled", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       false, // Disabled
+			LogBodies:     true,
+			LogHeaders:    true,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Wait a bit and verify no API entries were logged
+		time.Sleep(500 * time.Millisecond)
+		entries := store.GetAPIEntries()
+		assert.Len(t, entries, 0, "Expected no API log entries when logging is disabled")
+	})
+
+	t.Run("hashes API key for identification", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request with Authorization header
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		req, _ := http.NewRequest("POST", serverURL+"/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer sk-test-api-key")
+
+		client := &http.Client{}
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		defer closeBody(resp)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		// API key hash should be present (8 chars of SHA256)
+		assert.NotEmpty(t, entry.Data.APIKeyHash)
+		assert.Len(t, entry.Data.APIKeyHash, 8)
+		// Hash should NOT contain the actual key
+		assert.NotContains(t, entry.Data.APIKeyHash, "sk-test")
+	})
+}
+
+func TestAuditLogStreaming(t *testing.T) {
+	t.Run("logs streaming requests", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a streaming request
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Stream:   true,
+			Messages: []core.Message{{Role: "user", Content: "Count to 3"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Read the stream to completion
+		_ = readStreamingResponse(t, resp.Body)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, http.StatusOK, entry.StatusCode)
+		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+	})
+}
+
+func TestAuditLogConcurrency(t *testing.T) {
+	t.Run("handles concurrent requests", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    false,
+			BufferSize:    1000,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		const numRequests = 20
+		var wg sync.WaitGroup
+		wg.Add(numRequests)
+
+		for i := 0; i < numRequests; i++ {
+			go func(idx int) {
+				defer wg.Done()
+				payload := core.ChatRequest{
+					Model:    "gpt-4",
+					Messages: []core.Message{{Role: "user", Content: fmt.Sprintf("Request %d", idx)}},
+				}
+				body, _ := json.Marshal(payload)
+				resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+				if err != nil {
+					t.Logf("Request %d failed: %v", idx, err)
+					return
+				}
+				closeBody(resp)
+			}(i)
+		}
+
+		wg.Wait()
+
+		// Wait for all log entries
+		entries := store.WaitForAPIEntries(numRequests, 5*time.Second)
+		assert.GreaterOrEqual(t, len(entries), numRequests-2, "Expected most requests to be logged")
+
+		// Verify all entries have unique IDs
+		ids := make(map[string]bool)
+		for _, entry := range entries {
+			assert.NotEmpty(t, entry.ID)
+			assert.False(t, ids[entry.ID], "Duplicate entry ID found")
+			ids[entry.ID] = true
+		}
+	})
+}
+
+func TestAuditLogHeaderRedaction(t *testing.T) {
+	// Test that all sensitive headers are properly redacted
+	sensitiveHeaders := []string{
+		"Authorization",
+		"X-Api-Key",
+		"Cookie",
+		"X-Auth-Token",
+		"X-Access-Token",
+		"Proxy-Authorization",
+		"X-Gomodel-Key",
+	}
+
+	for _, header := range sensitiveHeaders {
+		t.Run(fmt.Sprintf("redacts %s header", header), func(t *testing.T) {
+			store := newMockLogStore()
+			cfg := auditlog.Config{
+				Enabled:       true,
+				LogBodies:     false,
+				LogHeaders:    true,
+				BufferSize:    100,
+				FlushInterval: 100 * time.Millisecond,
+			}
+
+			serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+			defer func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = srv.Shutdown(ctx)
+				_ = logger.Close()
+			}()
+
+			payload := core.ChatRequest{
+				Model:    "gpt-4",
+				Messages: []core.Message{{Role: "user", Content: "Hello"}},
+			}
+			body, _ := json.Marshal(payload)
+			req, _ := http.NewRequest("POST", serverURL+"/v1/chat/completions", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(header, "sensitive-secret-value")
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			require.NoError(t, err)
+			defer closeBody(resp)
+
+			entries := store.WaitForAPIEntries(1, 2*time.Second)
+			require.Len(t, entries, 1)
+
+			entry := entries[0]
+			require.NotNil(t, entry.Data.RequestHeaders)
+
+			// The header should be redacted
+			assert.Equal(t, "[REDACTED]", entry.Data.RequestHeaders[header],
+				"Header %s should be redacted", header)
+		})
+	}
+}
+
+func TestAuditLogErrorCapture(t *testing.T) {
+	t.Run("logs failed requests", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     true,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request with an unsupported model
+		payload := map[string]interface{}{
+			"model":    "unsupported-model-xyz",
+			"messages": []map[string]string{{"role": "user", "content": "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, http.StatusBadRequest, entry.StatusCode)
+		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+	})
+
+	t.Run("logs invalid JSON requests", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     true,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Send invalid JSON
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json",
+			bytes.NewReader([]byte(`{"model": "gpt-4", invalid json}`)))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, http.StatusBadRequest, entry.StatusCode)
+	})
+}

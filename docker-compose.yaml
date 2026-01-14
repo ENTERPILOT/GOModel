@@ -9,13 +9,28 @@ services:
     env_file:
       - .env
     environment:
+      # Cache configuration
       - CACHE_TYPE=redis
       - REDIS_URL=redis://redis:6379
       - REDIS_KEY=gomodel:models
+      # Metrics
       - METRICS_ENABLED=true
+      # Storage configuration (MongoDB for audit logs)
+      - MONGODB_URL=mongodb://mongodb:27017/gomodel
+      - MONGODB_DATABASE=gomodel
+      # Audit logging - all enabled for production with MongoDB
+      - LOGGING_ENABLED=true
+      - LOGGING_STORAGE_TYPE=mongodb
+      - LOGGING_LOG_BODIES=true
+      - LOGGING_LOG_HEADERS=true
+      - LOGGING_BUFFER_SIZE=1000
+      - LOGGING_FLUSH_INTERVAL=5
+      - LOGGING_RETENTION_DAYS=30
     command: go run ./cmd/gomodel
     depends_on:
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -32,6 +47,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  mongodb:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   prometheus:
     image: prom/prometheus:latest
@@ -50,4 +79,5 @@ services:
 
 volumes:
   redis_data:
+  mongodb_data:
   prometheus_data:

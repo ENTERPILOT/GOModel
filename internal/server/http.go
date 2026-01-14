@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 )
 
@@ -22,10 +23,11 @@ type Server struct {
 
 // Config holds server configuration options
 type Config struct {
-	MasterKey       string // Optional: Master key for authentication
-	MetricsEnabled  bool   // Whether to expose Prometheus metrics endpoint
-	MetricsEndpoint string // HTTP path for metrics endpoint (default: /metrics)
-	BodySizeLimit   string // Max request body size (e.g., "10M", "1024K")
+	MasterKey       string                   // Optional: Master key for authentication
+	MetricsEnabled  bool                     // Whether to expose Prometheus metrics endpoint
+	MetricsEndpoint string                   // HTTP path for metrics endpoint (default: /metrics)
+	BodySizeLimit   string                   // Max request body size (e.g., "10M", "1024K")
+	AuditLogger     auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 }
 
 // New creates a new HTTP server
@@ -65,6 +67,11 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		bodySizeLimit = cfg.BodySizeLimit
 	}
 	e.Use(middleware.BodyLimit(bodySizeLimit))
+
+	// Audit logging middleware (before authentication to capture all requests)
+	if cfg != nil && cfg.AuditLogger != nil && cfg.AuditLogger.Config().Enabled {
+		e.Use(auditlog.Middleware(cfg.AuditLogger))
+	}
 
 	// Authentication (skips public paths)
 	if cfg != nil && cfg.MasterKey != "" {
