@@ -2,13 +2,45 @@ package auditlog
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+// ErrPartialWrite indicates that a batch write only partially succeeded.
+// Use errors.As to extract details about the failure.
+var ErrPartialWrite = errors.New("partial write failure")
+
+// PartialWriteError wraps a mongo.BulkWriteException with additional context
+// about how many entries failed vs succeeded.
+type PartialWriteError struct {
+	TotalEntries int
+	FailedCount  int
+	Cause        mongo.BulkWriteException
+}
+
+func (e *PartialWriteError) Error() string {
+	return fmt.Sprintf("partial audit log insert: %d of %d entries failed: %v",
+		e.FailedCount, e.TotalEntries, e.Cause.Error())
+}
+
+func (e *PartialWriteError) Unwrap() error {
+	return ErrPartialWrite
+}
+
+// Prometheus metric for audit log partial write failures
+var auditLogPartialWriteFailures = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "gomodel_audit_log_partial_write_failures_total",
+		Help: "Total number of partial write failures when inserting audit logs to MongoDB",
+	},
 )
 
 // MongoDBStore implements LogStore for MongoDB.
@@ -88,12 +120,21 @@ func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*LogEntry) erro
 	if err != nil {
 		// Check if it's a bulk write error with some successes
 		if bulkErr, ok := err.(mongo.BulkWriteException); ok {
-			// Some documents may have been inserted successfully
+			failedCount := len(bulkErr.WriteErrors)
+			// Log for visibility
 			slog.Warn("partial audit log insert failure",
 				"total", len(entries),
-				"errors", len(bulkErr.WriteErrors),
+				"failed", failedCount,
+				"succeeded", len(entries)-failedCount,
 			)
-			return nil
+			// Increment metric for operators to detect data loss
+			auditLogPartialWriteFailures.Inc()
+			// Return distinguishable error so callers know insert was partial
+			return &PartialWriteError{
+				TotalEntries: len(entries),
+				FailedCount:  failedCount,
+				Cause:        bulkErr,
+			}
 		}
 		return fmt.Errorf("failed to insert audit logs: %w", err)
 	}

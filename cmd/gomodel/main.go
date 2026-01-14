@@ -204,8 +204,8 @@ func main() {
 			slog.Error("failed to initialize audit logging", "error", err)
 			os.Exit(1)
 		}
-		defer auditStore.Close()
 		defer auditLogger.Close()
+		defer auditStore.Close()
 		slog.Info("audit logging enabled",
 			"storage_type", cfg.Logging.StorageType,
 			"log_bodies", cfg.Logging.LogBodies,
