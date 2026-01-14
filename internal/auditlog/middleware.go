@@ -1,10 +1,12 @@
 package auditlog
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -115,7 +117,9 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 	}
 }
 
-// responseBodyCapture wraps http.ResponseWriter to capture the response body
+// responseBodyCapture wraps http.ResponseWriter to capture the response body.
+// It implements http.Flusher and http.Hijacker by delegating to the underlying
+// ResponseWriter if it supports those interfaces.
 type responseBodyCapture struct {
 	http.ResponseWriter
 	body *bytes.Buffer
@@ -128,6 +132,25 @@ func (r *responseBodyCapture) Write(b []byte) (int, error) {
 	}
 	// Write to the original response writer
 	return r.ResponseWriter.Write(b)
+}
+
+// Flush implements http.Flusher. It delegates to the underlying ResponseWriter
+// if it implements http.Flusher, otherwise it's a no-op.
+// This is required for SSE streaming to work correctly.
+func (r *responseBodyCapture) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+// Hijack implements http.Hijacker. It delegates to the underlying ResponseWriter
+// if it implements http.Hijacker, otherwise it returns an error.
+// This is required for WebSocket upgrades to work correctly.
+func (r *responseBodyCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
 }
 
 // extractHeaders extracts headers from http.Header, redacting sensitive ones

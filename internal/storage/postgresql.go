@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,7 +29,11 @@ func NewPostgreSQL(ctx context.Context, cfg PostgreSQLConfig) (Storage, error) {
 
 	// Set connection pool size
 	if cfg.MaxConns > 0 {
-		poolCfg.MaxConns = int32(cfg.MaxConns)
+		maxConns := cfg.MaxConns
+		if maxConns > math.MaxInt32 {
+			maxConns = math.MaxInt32
+		}
+		poolCfg.MaxConns = int32(maxConns)
 	} else {
 		poolCfg.MaxConns = 10 // default
 	}

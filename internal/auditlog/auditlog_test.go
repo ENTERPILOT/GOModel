@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -194,11 +195,14 @@ func TestLogDataWithBodies(t *testing.T) {
 
 // mockStore implements LogStore for testing
 type mockStore struct {
+	mu      sync.Mutex
 	entries []*LogEntry
 	closed  bool
 }
 
 func (m *mockStore) WriteBatch(_ context.Context, entries []*LogEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.entries = append(m.entries, entries...)
 	return nil
 }
@@ -208,8 +212,22 @@ func (m *mockStore) Flush(_ context.Context) error {
 }
 
 func (m *mockStore) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.closed = true
 	return nil
+}
+
+func (m *mockStore) getEntries() []*LogEntry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.entries
+}
+
+func (m *mockStore) isClosed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.closed
 }
 
 func TestLogger(t *testing.T) {
@@ -236,8 +254,8 @@ func TestLogger(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Verify entries were written
-	if len(store.entries) != 5 {
-		t.Errorf("expected 5 entries, got %d", len(store.entries))
+	if len(store.getEntries()) != 5 {
+		t.Errorf("expected 5 entries, got %d", len(store.getEntries()))
 	}
 }
 
@@ -261,12 +279,12 @@ func TestLoggerClose(t *testing.T) {
 	logger.Close()
 
 	// Verify entry was flushed
-	if len(store.entries) != 1 {
-		t.Errorf("expected 1 entry after close, got %d", len(store.entries))
+	if len(store.getEntries()) != 1 {
+		t.Errorf("expected 1 entry after close, got %d", len(store.getEntries()))
 	}
 
 	// Verify store was closed
-	if !store.closed {
+	if !store.isClosed() {
 		t.Error("store was not closed")
 	}
 }
@@ -446,8 +464,8 @@ data: [DONE]
 	time.Sleep(200 * time.Millisecond)
 
 	// Verify entry was logged
-	if len(store.entries) != 1 {
-		t.Errorf("expected 1 entry, got %d", len(store.entries))
+	if len(store.getEntries()) != 1 {
+		t.Errorf("expected 1 entry, got %d", len(store.getEntries()))
 	}
 }
 

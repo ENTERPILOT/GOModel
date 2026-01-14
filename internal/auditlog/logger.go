@@ -56,8 +56,12 @@ func (l *Logger) Write(entry *LogEntry) {
 		// Entry queued successfully
 	default:
 		// Buffer full - drop entry and log warning
+		requestID := "unknown"
+		if entry.Data != nil {
+			requestID = entry.Data.RequestID
+		}
 		slog.Warn("audit log buffer full, dropping entry",
-			"request_id", entry.Data.RequestID,
+			"request_id", requestID,
 			"model", entry.Model,
 		)
 	}
@@ -97,14 +101,14 @@ func (l *Logger) flushLoop() {
 			// Flush when batch reaches 100 entries
 			if len(batch) >= 100 {
 				l.flushBatch(batch)
-				batch = batch[:0] // Clear batch but keep capacity
+				batch = make([]*LogEntry, 0, 100)
 			}
 
 		case <-ticker.C:
 			// Periodic flush
 			if len(batch) > 0 {
 				l.flushBatch(batch)
-				batch = batch[:0]
+				batch = make([]*LogEntry, 0, 100)
 			}
 
 		case <-l.done:

@@ -3,9 +3,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -196,11 +198,13 @@ func main() {
 	// Initialize audit logging if enabled
 	var auditLogger auditlog.LoggerInterface = &auditlog.NoopLogger{}
 	if cfg.Logging.Enabled {
-		auditLogger, err = initAuditLogger(cfg)
+		var auditStore storage.Storage
+		auditLogger, auditStore, err = initAuditLogger(cfg)
 		if err != nil {
 			slog.Error("failed to initialize audit logging", "error", err)
 			os.Exit(1)
 		}
+		defer auditStore.Close()
 		defer auditLogger.Close()
 		slog.Info("audit logging enabled",
 			"storage_type", cfg.Logging.StorageType,
@@ -242,13 +246,18 @@ func main() {
 	slog.Info("starting server", "address", addr)
 
 	if err := srv.Start(addr); err != nil {
-		// http.ErrServerClosed is expected on graceful shutdown
-		slog.Info("server stopped", "reason", err)
+		if errors.Is(err, http.ErrServerClosed) {
+			slog.Info("server stopped gracefully")
+		} else {
+			slog.Error("server failed to start", "error", err)
+			os.Exit(1)
+		}
 	}
 }
 
 // initAuditLogger initializes the audit logger with the appropriate storage backend.
-func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, error) {
+// Returns the logger, the underlying storage (for cleanup), and any error.
+func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, storage.Storage, error) {
 	// Create storage configuration using LOGGING_STORAGE_TYPE to select the backend
 	// but using the shared storage connection settings (SQLITE_PATH, POSTGRES_URL, etc.)
 	storageCfg := storage.Config{
@@ -282,7 +291,7 @@ func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, error) {
 	// Create storage connection
 	store, err := storage.New(ctx, storageCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create storage: %w", err)
+		return nil, nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
 	// Create the appropriate log store based on storage type
@@ -293,32 +302,37 @@ func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, error) {
 	case storage.TypePostgreSQL:
 		pool := store.PostgreSQLPool()
 		if pool == nil {
-			return nil, fmt.Errorf("PostgreSQL pool is nil")
+			store.Close()
+			return nil, nil, fmt.Errorf("PostgreSQL pool is nil")
 		}
 		// Use type assertion with the pgxpool.Pool type
 		pgxPool, ok := pool.(*pgxpool.Pool)
 		if !ok {
-			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
+			store.Close()
+			return nil, nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
 		}
 		logStore, err = auditlog.NewPostgreSQLStore(pgxPool, cfg.Logging.RetentionDays)
 	case storage.TypeMongoDB:
 		db := store.MongoDatabase()
 		if db == nil {
-			return nil, fmt.Errorf("MongoDB database is nil")
+			store.Close()
+			return nil, nil, fmt.Errorf("MongoDB database is nil")
 		}
 		// Use type assertion with the mongo.Database type
 		mongoDB, ok := db.(*mongo.Database)
 		if !ok {
-			return nil, fmt.Errorf("invalid MongoDB database type: %T", db)
+			store.Close()
+			return nil, nil, fmt.Errorf("invalid MongoDB database type: %T", db)
 		}
 		logStore, err = auditlog.NewMongoDBStore(mongoDB, cfg.Logging.RetentionDays)
 	default:
-		return nil, fmt.Errorf("unknown storage type: %s", store.Type())
+		store.Close()
+		return nil, nil, fmt.Errorf("unknown storage type: %s", store.Type())
 	}
 
 	if err != nil {
 		store.Close()
-		return nil, fmt.Errorf("failed to create log store: %w", err)
+		return nil, nil, fmt.Errorf("failed to create log store: %w", err)
 	}
 
 	// Create logger configuration
@@ -339,5 +353,5 @@ func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, error) {
 		logCfg.FlushInterval = 5 * time.Second
 	}
 
-	return auditlog.NewLogger(logStore, logCfg), nil
+	return auditlog.NewLogger(logStore, logCfg), store, nil
 }
