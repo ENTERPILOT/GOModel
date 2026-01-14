@@ -109,8 +109,10 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 				entry.Data.ResponseBody = responseCapture.body.Bytes()
 			}
 
-			// Write log entry asynchronously
-			logger.Write(entry)
+			// Write log entry asynchronously (skip if streaming - StreamLogWrapper handles it)
+			if !IsEntryMarkedAsStreaming(c) {
+				logger.Write(entry)
+			}
 
 			return err
 		}

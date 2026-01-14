@@ -33,9 +33,6 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 	// Create indexes
 	indexes := []mongo.IndexModel{
 		{
-			Keys: bson.D{{Key: "timestamp", Value: -1}},
-		},
-		{
 			Keys: bson.D{{Key: "model", Value: 1}},
 		},
 		{
@@ -46,12 +43,18 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 		},
 	}
 
-	// Add TTL index if retention is configured
+	// Add timestamp index - use TTL index if retention is configured,
+	// otherwise use a regular descending index for query performance.
+	// MongoDB doesn't allow multiple indexes on the same field when one is TTL.
 	if retentionDays > 0 {
 		ttlSeconds := int32(retentionDays * 24 * 60 * 60)
 		indexes = append(indexes, mongo.IndexModel{
-			Keys:    bson.D{{Key: "timestamp", Value: 1}},
+			Keys:    bson.D{{Key: "timestamp", Value: -1}},
 			Options: options.Index().SetExpireAfterSeconds(ttlSeconds),
+		})
+	} else {
+		indexes = append(indexes, mongo.IndexModel{
+			Keys: bson.D{{Key: "timestamp", Value: -1}},
 		})
 	}
 

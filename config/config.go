@@ -56,9 +56,9 @@ type LogConfig struct {
 	// Default: 1000
 	BufferSize int `mapstructure:"buffer_size"`
 
-	// FlushIntervalSeconds is how often to flush buffered logs (in seconds)
+	// FlushInterval is how often to flush buffered logs (in seconds)
 	// Default: 5
-	FlushIntervalSeconds int `mapstructure:"flush_interval_seconds"`
+	FlushInterval int `mapstructure:"flush_interval"`
 
 	// RetentionDays is how long to keep logs (0 = forever)
 	// Default: 30
@@ -178,7 +178,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("logging.log_bodies", false)
 	viper.SetDefault("logging.log_headers", false)
 	viper.SetDefault("logging.buffer_size", 1000)
-	viper.SetDefault("logging.flush_interval_seconds", 5)
+	viper.SetDefault("logging.flush_interval", 5)
 	viper.SetDefault("logging.retention_days", 30)
 
 	// Enable automatic environment variable reading
@@ -229,7 +229,7 @@ func Load() (*Config, error) {
 				LogBodies:            getEnvBool("LOGGING_LOG_BODIES"),
 				LogHeaders:           getEnvBool("LOGGING_LOG_HEADERS"),
 				BufferSize:           getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
-				FlushIntervalSeconds: getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
+				FlushInterval: getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
 				RetentionDays:        getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
 			},
 			Metrics: MetricsConfig{

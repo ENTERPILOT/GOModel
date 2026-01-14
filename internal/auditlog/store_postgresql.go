@@ -114,10 +114,7 @@ func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEnt
 
 // writeBatchLarge uses batch insert for larger batches
 func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEntry) error {
-	batch := &pgxpool.Pool{}
-	_ = batch // Placeholder - we'll use a simpler approach
-
-	// For larger batches, still use individual inserts but in a transaction
+	// For larger batches, use individual inserts in a transaction
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

@@ -341,7 +341,7 @@ func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, storage.Stor
 		LogBodies:     cfg.Logging.LogBodies,
 		LogHeaders:    cfg.Logging.LogHeaders,
 		BufferSize:    cfg.Logging.BufferSize,
-		FlushInterval: time.Duration(cfg.Logging.FlushIntervalSeconds) * time.Second,
+		FlushInterval: time.Duration(cfg.Logging.FlushInterval) * time.Second,
 		RetentionDays: cfg.Logging.RetentionDays,
 	}
 
