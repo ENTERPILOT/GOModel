@@ -308,6 +308,26 @@ func expandEnvVars(cfg Config) Config {
 	cfg.Storage.MongoDB.URL = expandString(cfg.Storage.MongoDB.URL)
 	cfg.Storage.MongoDB.Database = expandString(cfg.Storage.MongoDB.Database)
 
+	// Override storage configuration from environment variables
+	// This allows env vars to take precedence over config file values
+	if sqlitePath := os.Getenv("SQLITE_PATH"); sqlitePath != "" {
+		cfg.Storage.SQLite.Path = sqlitePath
+	}
+	if postgresURL := os.Getenv("POSTGRES_URL"); postgresURL != "" {
+		cfg.Storage.PostgreSQL.URL = postgresURL
+	}
+	if postgresMaxConns := os.Getenv("POSTGRES_MAX_CONNS"); postgresMaxConns != "" {
+		if maxConns, err := strconv.Atoi(postgresMaxConns); err == nil {
+			cfg.Storage.PostgreSQL.MaxConns = maxConns
+		}
+	}
+	if mongoURL := os.Getenv("MONGODB_URL"); mongoURL != "" {
+		cfg.Storage.MongoDB.URL = mongoURL
+	}
+	if mongoDatabase := os.Getenv("MONGODB_DATABASE"); mongoDatabase != "" {
+		cfg.Storage.MongoDB.Database = mongoDatabase
+	}
+
 	// Override logging configuration from environment variables
 	if loggingEnabled := os.Getenv("LOGGING_ENABLED"); loggingEnabled != "" {
 		cfg.Logging.Enabled = strings.EqualFold(loggingEnabled, "true") || loggingEnabled == "1"
