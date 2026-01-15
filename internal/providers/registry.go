@@ -341,6 +341,20 @@ func (r *ModelRegistry) ModelCount() int {
 	return len(r.models)
 }
 
+// GetProviderType returns the provider type string for the given model ID.
+// Returns empty string if the model is not found.
+func (r *ModelRegistry) GetProviderType(modelID string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	info, ok := r.models[modelID]
+	if !ok {
+		return ""
+	}
+
+	return r.providerTypes[info.Provider]
+}
+
 // ProviderCount returns the number of registered providers
 func (r *ModelRegistry) ProviderCount() int {
 	r.mu.RLock()

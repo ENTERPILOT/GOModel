@@ -63,6 +63,12 @@ type LogConfig struct {
 	// RetentionDays is how long to keep logs (0 = forever)
 	// Default: 30
 	RetentionDays int `mapstructure:"retention_days"`
+
+	// OnlyModelInteractions limits audit logging to AI model endpoints only
+	// When true, only /v1/chat/completions, /v1/responses, /v1/models are logged
+	// Endpoints like /health, /metrics, /admin are skipped
+	// Default: true
+	OnlyModelInteractions bool `mapstructure:"only_model_interactions"`
 }
 
 // StorageConfig holds database storage configuration (used by audit logging, future IAM, etc.)
@@ -180,6 +186,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("logging.buffer_size", 1000)
 	viper.SetDefault("logging.flush_interval", 5)
 	viper.SetDefault("logging.retention_days", 30)
+	viper.SetDefault("logging.only_model_interactions", true)
 
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
@@ -224,13 +231,14 @@ func Load() (*Config, error) {
 				},
 			},
 			Logging: LogConfig{
-				Enabled:              getEnvBool("LOGGING_ENABLED"),
-				StorageType:          getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
-				LogBodies:            getEnvBool("LOGGING_LOG_BODIES"),
-				LogHeaders:           getEnvBool("LOGGING_LOG_HEADERS"),
-				BufferSize:           getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
-				FlushInterval: getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
-				RetentionDays:        getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
+				Enabled:               getEnvBool("LOGGING_ENABLED"),
+				StorageType:           getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
+				LogBodies:             getEnvBool("LOGGING_LOG_BODIES"),
+				LogHeaders:            getEnvBool("LOGGING_LOG_HEADERS"),
+				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
+				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
+				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
+				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -341,6 +349,9 @@ func expandEnvVars(cfg Config) Config {
 	if logHeaders := os.Getenv("LOGGING_LOG_HEADERS"); logHeaders != "" {
 		cfg.Logging.LogHeaders = strings.EqualFold(logHeaders, "true") || logHeaders == "1"
 	}
+	if onlyModel := os.Getenv("LOGGING_ONLY_MODEL_INTERACTIONS"); onlyModel != "" {
+		cfg.Logging.OnlyModelInteractions = strings.EqualFold(onlyModel, "true") || onlyModel == "1"
+	}
 
 	// Expand provider configurations
 	for name, pCfg := range cfg.Providers {
@@ -418,6 +429,15 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 // getEnvBool returns true if the environment variable is "true" or "1"
 func getEnvBool(key string) bool {
 	value := os.Getenv(key)
+	return strings.EqualFold(value, "true") || value == "1"
+}
+
+// getEnvBoolOrDefault returns the environment variable as bool or the default if not set
+func getEnvBoolOrDefault(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
 	return strings.EqualFold(value, "true") || value == "1"
 }
 

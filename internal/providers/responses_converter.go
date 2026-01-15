@@ -17,6 +17,7 @@ import (
 type OpenAIResponsesStreamConverter struct {
 	reader     io.ReadCloser
 	model      string
+	provider   string
 	responseID string
 	buffer     []byte
 	lineBuffer []byte
@@ -27,10 +28,11 @@ type OpenAIResponsesStreamConverter struct {
 
 // NewOpenAIResponsesStreamConverter creates a new converter that transforms
 // OpenAI-format SSE streams to Responses API format.
-func NewOpenAIResponsesStreamConverter(reader io.ReadCloser, model string) *OpenAIResponsesStreamConverter {
+func NewOpenAIResponsesStreamConverter(reader io.ReadCloser, model, provider string) *OpenAIResponsesStreamConverter {
 	return &OpenAIResponsesStreamConverter{
 		reader:     reader,
 		model:      model,
+		provider:   provider,
 		responseID: "resp_" + uuid.New().String(),
 		buffer:     make([]byte, 0, 4096),
 		lineBuffer: make([]byte, 0, 1024),
@@ -59,6 +61,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 				"object":     "response",
 				"status":     "in_progress",
 				"model":      sc.model,
+				"provider":   sc.provider,
 				"created_at": time.Now().Unix(),
 			},
 		}
@@ -108,6 +111,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 								"object":     "response",
 								"status":     "completed",
 								"model":      sc.model,
+								"provider":   sc.provider,
 								"created_at": time.Now().Unix(),
 							},
 						}
@@ -163,6 +167,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 						"object":     "response",
 						"status":     "completed",
 						"model":      sc.model,
+						"provider":   sc.provider,
 						"created_at": time.Now().Unix(),
 					},
 				}

@@ -4,7 +4,6 @@ package auditlog
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 )
@@ -74,8 +73,10 @@ type LogData struct {
 	ResponseHeaders map[string]string `json:"response_headers,omitempty" bson:"response_headers,omitempty"`
 
 	// Optional bodies (when LOGGING_LOG_BODIES=true)
-	RequestBody  json.RawMessage `json:"request_body,omitempty" bson:"request_body,omitempty"`
-	ResponseBody json.RawMessage `json:"response_body,omitempty" bson:"response_body,omitempty"`
+	// Stored as interface{} so MongoDB serializes as native BSON documents (queryable/readable)
+	// instead of BSON Binary (base64 in Compass)
+	RequestBody  interface{} `json:"request_body,omitempty" bson:"request_body,omitempty"`
+	ResponseBody interface{} `json:"response_body,omitempty" bson:"response_body,omitempty"`
 }
 
 // RedactedHeaders contains headers that should be automatically redacted.
@@ -135,16 +136,21 @@ type Config struct {
 
 	// RetentionDays is how long to keep logs (0 = forever)
 	RetentionDays int
+
+	// OnlyModelInteractions limits logging to AI model endpoints only
+	// When true, only /v1/chat/completions, /v1/responses, /v1/models are logged
+	OnlyModelInteractions bool
 }
 
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() Config {
 	return Config{
-		Enabled:       false,
-		LogBodies:     false,
-		LogHeaders:    false,
-		BufferSize:    1000,
-		FlushInterval: 5 * time.Second,
-		RetentionDays: 30,
+		Enabled:               false,
+		LogBodies:             false,
+		LogHeaders:            false,
+		BufferSize:            1000,
+		FlushInterval:         5 * time.Second,
+		RetentionDays:         30,
+		OnlyModelInteractions: true,
 	}
 }

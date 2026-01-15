@@ -70,6 +70,10 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	resp.Provider = "groq"
+	if resp.Model == "" {
+		resp.Model = req.Model
+	}
 	return &resp, nil
 }
 
@@ -173,6 +177,7 @@ func convertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 		Object:    "response",
 		CreatedAt: resp.Created,
 		Model:     resp.Model,
+		Provider:  resp.Provider,
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
@@ -224,5 +229,5 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 	}
 
 	// Wrap the stream to convert chat completion format to Responses API format
-	return providers.NewOpenAIResponsesStreamConverter(stream, req.Model), nil
+	return providers.NewOpenAIResponsesStreamConverter(stream, req.Model, "groq"), nil
 }

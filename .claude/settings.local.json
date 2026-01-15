@@ -7,7 +7,10 @@
       "Bash(make test:*)",
       "WebFetch(domain:docs.x.ai)",
       "Bash(go build:*)",
-      "Bash(golangci-lint run:*)"
+      "Bash(golangci-lint run:*)",
+      "Bash(make test-e2e:*)",
+      "WebSearch",
+      "Bash(go doc:*)"
     ],
     "deny": [],
     "ask": []

@@ -2,6 +2,8 @@ package auditlog
 
 import (
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/andybalholm/brotli"
 )
 
 func TestRedactHeaders(t *testing.T) {
@@ -163,8 +167,15 @@ func TestLogEntryJSON(t *testing.T) {
 }
 
 func TestLogDataWithBodies(t *testing.T) {
-	requestBody := json.RawMessage(`{"model":"gpt-4","messages":[]}`)
-	responseBody := json.RawMessage(`{"id":"resp-123","choices":[]}`)
+	// Use interface{} types (maps) for bodies - this is how they're stored now
+	requestBody := map[string]interface{}{
+		"model":    "gpt-4",
+		"messages": []interface{}{},
+	}
+	responseBody := map[string]interface{}{
+		"id":      "resp-123",
+		"choices": []interface{}{},
+	}
 
 	data := &LogData{
 		RequestID:    "req-123",
@@ -185,12 +196,21 @@ func TestLogDataWithBodies(t *testing.T) {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
 
-	// Verify bodies are preserved
-	if string(decoded.RequestBody) != string(requestBody) {
-		t.Errorf("RequestBody mismatch: expected %s, got %s", requestBody, decoded.RequestBody)
+	// Verify bodies are preserved (decoded as map[string]interface{})
+	decodedReqBody, ok := decoded.RequestBody.(map[string]interface{})
+	if !ok {
+		t.Fatalf("RequestBody is not a map, got %T", decoded.RequestBody)
 	}
-	if string(decoded.ResponseBody) != string(responseBody) {
-		t.Errorf("ResponseBody mismatch: expected %s, got %s", responseBody, decoded.ResponseBody)
+	if decodedReqBody["model"] != "gpt-4" {
+		t.Errorf("RequestBody model mismatch: expected gpt-4, got %v", decodedReqBody["model"])
+	}
+
+	decodedRespBody, ok := decoded.ResponseBody.(map[string]interface{})
+	if !ok {
+		t.Fatalf("ResponseBody is not a map, got %T", decoded.ResponseBody)
+	}
+	if decodedRespBody["id"] != "resp-123" {
+		t.Errorf("ResponseBody id mismatch: expected resp-123, got %v", decodedRespBody["id"])
 	}
 }
 
@@ -604,5 +624,146 @@ func TestHashAPIKey(t *testing.T) {
 	hash3 := hashAPIKey("Bearer different-key")
 	if hash1 == hash3 {
 		t.Error("different inputs should produce different hashes")
+	}
+}
+
+// Helper compression functions for tests
+func compressGzip(data []byte) []byte {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, _ = w.Write(data)
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func compressDeflate(data []byte) []byte {
+	var buf bytes.Buffer
+	w, _ := flate.NewWriter(&buf, flate.DefaultCompression)
+	_, _ = w.Write(data)
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func compressBrotli(data []byte) []byte {
+	var buf bytes.Buffer
+	w := brotli.NewWriter(&buf)
+	_, _ = w.Write(data)
+	_ = w.Close()
+	return buf.Bytes()
+}
+
+func TestDecompressBody(t *testing.T) {
+	originalData := []byte(`{"message": "hello world", "count": 42}`)
+
+	tests := []struct {
+		name             string
+		encoding         string
+		compressFunc     func([]byte) []byte
+		shouldDecompress bool
+	}{
+		{
+			name:             "no encoding",
+			encoding:         "",
+			compressFunc:     func(b []byte) []byte { return b },
+			shouldDecompress: false,
+		},
+		{
+			name:             "identity encoding",
+			encoding:         "identity",
+			compressFunc:     func(b []byte) []byte { return b },
+			shouldDecompress: false,
+		},
+		{
+			name:             "gzip encoding",
+			encoding:         "gzip",
+			compressFunc:     compressGzip,
+			shouldDecompress: true,
+		},
+		{
+			name:             "deflate encoding",
+			encoding:         "deflate",
+			compressFunc:     compressDeflate,
+			shouldDecompress: true,
+		},
+		{
+			name:             "brotli encoding",
+			encoding:         "br",
+			compressFunc:     compressBrotli,
+			shouldDecompress: true,
+		},
+		{
+			name:             "gzip with extra spaces",
+			encoding:         "  gzip  ",
+			compressFunc:     compressGzip,
+			shouldDecompress: true,
+		},
+		{
+			name:             "multiple encodings (first only)",
+			encoding:         "gzip, deflate",
+			compressFunc:     compressGzip,
+			shouldDecompress: true,
+		},
+		{
+			name:             "unknown encoding",
+			encoding:         "unknown",
+			compressFunc:     func(b []byte) []byte { return b },
+			shouldDecompress: false,
+		},
+		{
+			name:             "uppercase gzip",
+			encoding:         "GZIP",
+			compressFunc:     compressGzip,
+			shouldDecompress: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			compressed := tt.compressFunc(originalData)
+			result, decompressed := decompressBody(compressed, tt.encoding)
+
+			if decompressed != tt.shouldDecompress {
+				t.Errorf("decompressed = %v, want %v", decompressed, tt.shouldDecompress)
+			}
+
+			if tt.shouldDecompress {
+				if !bytes.Equal(result, originalData) {
+					t.Errorf("decompressed data mismatch: got %s, want %s", result, originalData)
+				}
+			}
+		})
+	}
+}
+
+func TestDecompressBodyInvalidData(t *testing.T) {
+	// Invalid compressed data should return original
+	invalidData := []byte("not valid compressed data")
+
+	result, decompressed := decompressBody(invalidData, "gzip")
+	if decompressed {
+		t.Error("expected decompression to fail for invalid gzip data")
+	}
+	if !bytes.Equal(result, invalidData) {
+		t.Error("expected original data to be returned on failure")
+	}
+}
+
+func TestDecompressBodyEmptyInput(t *testing.T) {
+	// Empty body should return unchanged
+	result, decompressed := decompressBody([]byte{}, "gzip")
+	if decompressed {
+		t.Error("expected no decompression for empty body")
+	}
+	if len(result) != 0 {
+		t.Error("expected empty result for empty input")
+	}
+
+	// Nil body should return unchanged
+	result, decompressed = decompressBody(nil, "gzip")
+	if decompressed {
+		t.Error("expected no decompression for nil body")
+	}
+	if result != nil {
+		t.Error("expected nil result for nil input")
 	}
 }

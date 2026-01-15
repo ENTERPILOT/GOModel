@@ -239,10 +239,9 @@ func TestAuditLogMiddleware(t *testing.T) {
 		assert.NotNil(t, entry.Data.RequestBody)
 		assert.NotNil(t, entry.Data.ResponseBody)
 
-		// Verify request body contains our message
-		var reqBody map[string]interface{}
-		err = json.Unmarshal(entry.Data.RequestBody, &reqBody)
-		require.NoError(t, err)
+		// Verify request body contains our message (now stored as interface{})
+		reqBody, ok := entry.Data.RequestBody.(map[string]interface{})
+		require.True(t, ok, "RequestBody should be a map[string]interface{}, got %T", entry.Data.RequestBody)
 		assert.Equal(t, "gpt-4", reqBody["model"])
 	})
 

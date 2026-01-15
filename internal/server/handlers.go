@@ -8,6 +8,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 )
 
@@ -33,6 +34,9 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	if !h.provider.Supports(req.Model) {
 		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
 	}
+
+	// Enrich audit log entry with model and provider
+	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model), nil)
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
@@ -94,6 +98,9 @@ func (h *Handler) Responses(c echo.Context) error {
 	if !h.provider.Supports(req.Model) {
 		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
 	}
+
+	// Enrich audit log entry with model and provider
+	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model), nil)
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {

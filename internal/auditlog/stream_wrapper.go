@@ -243,3 +243,18 @@ func SkipLoggingPaths(path string) bool {
 	}
 	return false
 }
+
+// IsModelInteractionPath returns true if the path is an AI model endpoint
+func IsModelInteractionPath(path string) bool {
+	modelPaths := []string{
+		"/v1/chat/completions",
+		"/v1/responses",
+		"/v1/models",
+	}
+	for _, p := range modelPaths {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}

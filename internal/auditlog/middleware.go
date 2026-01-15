@@ -3,14 +3,19 @@ package auditlog
 import (
 	"bufio"
 	"bytes"
+	"compress/flate"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/andybalholm/brotli"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 )
@@ -35,6 +40,12 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			}
 
 			cfg := logger.Config()
+
+			// Skip non-model paths if OnlyModelInteractions is enabled
+			if cfg.OnlyModelInteractions && !IsModelInteractionPath(c.Request().URL.Path) {
+				return next(c)
+			}
+
 			start := time.Now()
 			req := c.Request()
 
@@ -71,7 +82,14 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			if cfg.LogBodies && req.Body != nil && req.ContentLength > 0 {
 				bodyBytes, err := io.ReadAll(req.Body)
 				if err == nil {
-					entry.Data.RequestBody = bodyBytes
+					// Parse JSON to interface{} for native BSON storage in MongoDB
+					var parsed interface{}
+					if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
+						entry.Data.RequestBody = parsed
+					} else {
+						// Fallback: store as valid UTF-8 string if not valid JSON
+						entry.Data.RequestBody = toValidUTF8String(bodyBytes)
+					}
 					// Restore the body for the handler
 					req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 				}
@@ -106,7 +124,23 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 
 			// Capture response body if enabled
 			if cfg.LogBodies && responseCapture != nil && responseCapture.body.Len() > 0 {
-				entry.Data.ResponseBody = responseCapture.body.Bytes()
+				bodyBytes := responseCapture.body.Bytes()
+
+				// Decompress if Content-Encoding header is present
+				if contentEncoding := c.Response().Header().Get("Content-Encoding"); contentEncoding != "" {
+					if decompressed, ok := decompressBody(bodyBytes, contentEncoding); ok {
+						bodyBytes = decompressed
+					}
+				}
+
+				// Parse JSON to interface{} for native BSON storage in MongoDB
+				var parsed interface{}
+				if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
+					entry.Data.ResponseBody = parsed
+				} else {
+					// Fallback: store as valid UTF-8 string if not valid JSON
+					entry.Data.ResponseBody = toValidUTF8String(bodyBytes)
+				}
 			}
 
 			// Write log entry asynchronously (skip if streaming - StreamLogWrapper handles it)
@@ -243,6 +277,64 @@ func EnrichEntryWithStream(c echo.Context, stream bool) {
 	}
 
 	entry.Data.Stream = stream
+}
+
+// toValidUTF8String converts bytes to a valid UTF-8 string.
+// If the input is already valid UTF-8, it returns it as-is.
+// Otherwise, it replaces invalid bytes with the Unicode replacement character.
+// This prevents "Invalid UTF-8 string in BSON document" errors in MongoDB.
+func toValidUTF8String(b []byte) string {
+	if utf8.Valid(b) {
+		return string(b)
+	}
+	// Replace invalid UTF-8 sequences with replacement character
+	return strings.ToValidUTF8(string(b), "\uFFFD")
+}
+
+// decompressBody attempts to decompress the response body based on Content-Encoding.
+// Returns original body unchanged if no decompression needed or if decompression fails.
+// Supports gzip, deflate, and brotli (br) encodings.
+func decompressBody(body []byte, contentEncoding string) ([]byte, bool) {
+	if len(body) == 0 || contentEncoding == "" {
+		return body, false
+	}
+
+	// Parse encoding (handle "gzip, deflate" - take first)
+	encoding := strings.TrimSpace(strings.Split(contentEncoding, ",")[0])
+	encoding = strings.ToLower(encoding)
+
+	if encoding == "identity" || encoding == "" {
+		return body, false
+	}
+
+	const maxDecompressedSize = 2 * 1024 * 1024 // 2MB limit
+
+	var reader io.ReadCloser
+	var err error
+
+	switch encoding {
+	case "gzip":
+		reader, err = gzip.NewReader(bytes.NewReader(body))
+	case "deflate":
+		reader = flate.NewReader(bytes.NewReader(body))
+	case "br":
+		reader = io.NopCloser(brotli.NewReader(bytes.NewReader(body)))
+	default:
+		return body, false
+	}
+
+	if err != nil {
+		return body, false
+	}
+	defer reader.Close()
+
+	// Read with size limit (compression bomb protection)
+	decompressed, err := io.ReadAll(io.LimitReader(reader, maxDecompressedSize))
+	if err != nil {
+		return body, false
+	}
+
+	return decompressed, true
 }
 
 // Usage contains token usage information

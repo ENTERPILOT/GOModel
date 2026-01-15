@@ -32,6 +32,13 @@ func (m *mockProvider) Supports(model string) bool {
 	return false
 }
 
+func (m *mockProvider) GetProviderType(model string) string {
+	if m.Supports(model) {
+		return "mock"
+	}
+	return ""
+}
+
 func (m *mockProvider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	if m.err != nil {
 		return nil, m.err

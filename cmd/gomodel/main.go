@@ -218,11 +218,12 @@ func main() {
 
 	// Create and start server
 	serverCfg := &server.Config{
-		MasterKey:       cfg.Server.MasterKey,
-		MetricsEnabled:  cfg.Metrics.Enabled,
-		MetricsEndpoint: cfg.Metrics.Endpoint,
-		BodySizeLimit:   cfg.Server.BodySizeLimit,
-		AuditLogger:     auditLogger,
+		MasterKey:                cfg.Server.MasterKey,
+		MetricsEnabled:           cfg.Metrics.Enabled,
+		MetricsEndpoint:          cfg.Metrics.Endpoint,
+		BodySizeLimit:            cfg.Server.BodySizeLimit,
+		AuditLogger:              auditLogger,
+		LogOnlyModelInteractions: cfg.Logging.OnlyModelInteractions,
 	}
 	srv := server.New(router, serverCfg)
 
@@ -337,12 +338,13 @@ func initAuditLogger(cfg *config.Config) (auditlog.LoggerInterface, storage.Stor
 
 	// Create logger configuration
 	logCfg := auditlog.Config{
-		Enabled:       cfg.Logging.Enabled,
-		LogBodies:     cfg.Logging.LogBodies,
-		LogHeaders:    cfg.Logging.LogHeaders,
-		BufferSize:    cfg.Logging.BufferSize,
-		FlushInterval: time.Duration(cfg.Logging.FlushInterval) * time.Second,
-		RetentionDays: cfg.Logging.RetentionDays,
+		Enabled:               cfg.Logging.Enabled,
+		LogBodies:             cfg.Logging.LogBodies,
+		LogHeaders:            cfg.Logging.LogHeaders,
+		BufferSize:            cfg.Logging.BufferSize,
+		FlushInterval:         time.Duration(cfg.Logging.FlushInterval) * time.Second,
+		RetentionDays:         cfg.Logging.RetentionDays,
+		OnlyModelInteractions: cfg.Logging.OnlyModelInteractions,
 	}
 
 	// Apply defaults
