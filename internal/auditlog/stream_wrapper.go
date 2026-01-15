@@ -41,13 +41,17 @@ func (w *StreamLogWrapper) Read(p []byte) (n int, err error) {
 	n, err = w.ReadCloser.Read(p)
 	if n > 0 {
 		// Buffer recent data to parse final usage event
-		w.buffer.Write(p[:n])
+		if _, errBuf := w.buffer.Write(p[:n]); errBuf != nil {
+			return n, errBuf
+		}
 		// Keep only last 8KB to find "data: [DONE]" and usage
 		if w.buffer.Len() > 8192 {
 			// Discard old data, keep recent
 			data := w.buffer.Bytes()
 			w.buffer.Reset()
-			w.buffer.Write(data[len(data)-8192:])
+			if _, errBuf := w.buffer.Write(data[len(data)-8192:]); errBuf != nil {
+				return n, errBuf
+			}
 		}
 	}
 	return n, err
