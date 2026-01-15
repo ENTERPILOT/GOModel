@@ -323,32 +323,6 @@ func TestNoopLogger(t *testing.T) {
 	}
 }
 
-func TestSkipLoggingPaths(t *testing.T) {
-	tests := []struct {
-		path   string
-		skip   bool
-	}{
-		{"/health", true},
-		{"/health/", true},
-		{"/metrics", true},
-		{"/metrics/prometheus", true},
-		{"/favicon.ico", true},
-		{"/v1/chat/completions", false},
-		{"/v1/models", false},
-		{"/v1/responses", false},
-		{"/", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			result := SkipLoggingPaths(tt.path)
-			if result != tt.skip {
-				t.Errorf("SkipLoggingPaths(%q) = %v, want %v", tt.path, result, tt.skip)
-			}
-		})
-	}
-}
-
 func TestIsModelInteractionPath(t *testing.T) {
 	tests := []struct {
 		name     string

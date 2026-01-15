@@ -417,6 +417,101 @@ func TestAuditLogStreaming(t *testing.T) {
 		assert.Equal(t, http.StatusOK, entry.StatusCode)
 		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
 	})
+
+	t.Run("captures response headers for streaming requests", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    true, // Enable header logging
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a streaming request
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Stream:   true,
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Read the stream to completion
+		_ = readStreamingResponse(t, resp.Body)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+
+		// Verify request headers are captured
+		assert.NotNil(t, entry.Data.RequestHeaders)
+		assert.Equal(t, "application/json", entry.Data.RequestHeaders["Content-Type"])
+
+		// Verify response headers are captured for streaming
+		assert.NotNil(t, entry.Data.ResponseHeaders, "ResponseHeaders should be captured for streaming requests")
+		assert.Equal(t, "text/event-stream", entry.Data.ResponseHeaders["Content-Type"])
+		assert.Equal(t, "no-cache", entry.Data.ResponseHeaders["Cache-Control"])
+		assert.Equal(t, "keep-alive", entry.Data.ResponseHeaders["Connection"])
+	})
+
+	t.Run("captures duration for streaming requests", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a streaming request
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Stream:   true,
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Read the stream to completion
+		_ = readStreamingResponse(t, resp.Body)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+
+		// Verify duration is captured (should be > 0 since streaming takes time)
+		assert.Greater(t, entry.DurationNs, int64(0), "DurationNs should be captured for streaming requests")
+		// Duration should be reasonable (less than 10 seconds for this test)
+		assert.Less(t, entry.DurationNs, int64(10*time.Second), "DurationNs should be reasonable")
+	})
 }
 
 func TestAuditLogConcurrency(t *testing.T) {

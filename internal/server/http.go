@@ -36,7 +36,13 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
-	handler := NewHandler(provider)
+	// Get logger from config (may be nil)
+	var logger auditlog.LoggerInterface
+	if cfg != nil {
+		logger = cfg.AuditLogger
+	}
+
+	handler := NewHandler(provider, logger)
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}

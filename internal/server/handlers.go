@@ -15,12 +15,14 @@ import (
 // Handler holds the HTTP handlers
 type Handler struct {
 	provider core.RoutableProvider
+	logger   auditlog.LoggerInterface
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
-func NewHandler(provider core.RoutableProvider) *Handler {
+func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface) *Handler {
 	return &Handler{
 		provider: provider,
+		logger:   logger,
 	}
 }
 
@@ -40,23 +42,42 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
+		// Mark as streaming so middleware doesn't log (StreamLogWrapper handles it)
+		auditlog.MarkEntryAsStreaming(c, true)
+		auditlog.EnrichEntryWithStream(c, true)
+
 		stream, err := h.provider.StreamChatCompletion(c.Request().Context(), &req)
 		if err != nil {
 			return handleError(c, err)
 		}
+
+		// Get entry from context and wrap stream for logging
+		entry := auditlog.GetStreamEntryFromContext(c)
+		streamEntry := auditlog.CreateStreamEntry(entry)
+		if streamEntry != nil {
+			streamEntry.StatusCode = http.StatusOK // Streaming always starts with 200 OK
+		}
+		wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry)
 		defer func() {
-			_ = stream.Close() //nolint:errcheck
+			_ = wrappedStream.Close() //nolint:errcheck
 		}()
 
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
+
+		// Capture response headers on stream entry AFTER setting them
+		if streamEntry != nil && streamEntry.Data != nil {
+			streamEntry.Data.ResponseHeaders = map[string]string{
+				"Content-Type":  "text/event-stream",
+				"Cache-Control": "no-cache",
+				"Connection":    "keep-alive",
+			}
+		}
+
 		c.Response().WriteHeader(http.StatusOK)
 
-		if _, err := io.Copy(c.Response().Writer, stream); err != nil {
-			// Can't return error after headers are sent, log it
-			return nil
-		}
+		_, _ = io.Copy(c.Response().Writer, wrappedStream)
 		return nil
 	}
 
@@ -104,23 +125,42 @@ func (h *Handler) Responses(c echo.Context) error {
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
+		// Mark as streaming so middleware doesn't log (StreamLogWrapper handles it)
+		auditlog.MarkEntryAsStreaming(c, true)
+		auditlog.EnrichEntryWithStream(c, true)
+
 		stream, err := h.provider.StreamResponses(c.Request().Context(), &req)
 		if err != nil {
 			return handleError(c, err)
 		}
+
+		// Get entry from context and wrap stream for logging
+		entry := auditlog.GetStreamEntryFromContext(c)
+		streamEntry := auditlog.CreateStreamEntry(entry)
+		if streamEntry != nil {
+			streamEntry.StatusCode = http.StatusOK // Streaming always starts with 200 OK
+		}
+		wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry)
 		defer func() {
-			_ = stream.Close() //nolint:errcheck
+			_ = wrappedStream.Close() //nolint:errcheck
 		}()
 
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
+
+		// Capture response headers on stream entry AFTER setting them
+		if streamEntry != nil && streamEntry.Data != nil {
+			streamEntry.Data.ResponseHeaders = map[string]string{
+				"Content-Type":  "text/event-stream",
+				"Cache-Control": "no-cache",
+				"Connection":    "keep-alive",
+			}
+		}
+
 		c.Response().WriteHeader(http.StatusOK)
 
-		if _, err := io.Copy(c.Response().Writer, stream); err != nil {
-			// Can't return error after headers are sent, log it
-			return nil
-		}
+		_, _ = io.Copy(c.Response().Writer, wrappedStream)
 		return nil
 	}
 

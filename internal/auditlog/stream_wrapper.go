@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"time"
 )
 
 // StreamLogWrapper wraps an io.ReadCloser to capture usage data from SSE streams.
@@ -12,19 +13,26 @@ import (
 // final SSE event (typically contains usage data in OpenAI-compatible APIs).
 type StreamLogWrapper struct {
 	io.ReadCloser
-	logger LoggerInterface
-	entry  *LogEntry
-	buffer bytes.Buffer
-	closed bool
+	logger    LoggerInterface
+	entry     *LogEntry
+	buffer    bytes.Buffer
+	closed    bool
+	startTime time.Time
 }
 
 // NewStreamLogWrapper creates a wrapper around a stream to capture usage data.
 // When the stream is closed, it parses the final usage data and logs the entry.
 func NewStreamLogWrapper(stream io.ReadCloser, logger LoggerInterface, entry *LogEntry) *StreamLogWrapper {
+	// Use entry's timestamp as start time for duration calculation
+	var startTime time.Time
+	if entry != nil {
+		startTime = entry.Timestamp
+	}
 	return &StreamLogWrapper{
 		ReadCloser: stream,
 		logger:     logger,
 		entry:      entry,
+		startTime:  startTime,
 	}
 }
 
@@ -51,6 +59,11 @@ func (w *StreamLogWrapper) Close() error {
 		return nil
 	}
 	w.closed = true
+
+	// Calculate duration from start time
+	if w.entry != nil && !w.startTime.IsZero() {
+		w.entry.DurationNs = time.Since(w.startTime).Nanoseconds()
+	}
 
 	// Parse final usage from buffered SSE data
 	usage := parseUsageFromSSE(w.buffer.Bytes())
@@ -227,21 +240,6 @@ func IsEntryMarkedAsStreaming(c interface{ Get(string) interface{} }) bool {
 	}
 	streaming, _ := val.(bool)
 	return streaming
-}
-
-// SkipLoggingPaths returns true if the path should skip logging
-func SkipLoggingPaths(path string) bool {
-	skipPaths := []string{
-		"/health",
-		"/metrics",
-		"/favicon.ico",
-	}
-	for _, skip := range skipPaths {
-		if strings.HasPrefix(path, skip) {
-			return true
-		}
-	}
-	return false
 }
 
 // IsModelInteractionPath returns true if the path is an AI model endpoint
