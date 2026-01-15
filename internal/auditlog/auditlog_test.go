@@ -114,22 +114,22 @@ func TestRedactHeaders(t *testing.T) {
 
 func TestLogEntryJSON(t *testing.T) {
 	entry := &LogEntry{
-		ID:         "test-id-123",
-		Timestamp:  time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
-		DurationNs: 1500000,
-		Model:      "gpt-4",
-		Provider:   "openai",
-		StatusCode: 200,
+		ID:               "test-id-123",
+		Timestamp:        time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		DurationNs:       1500000,
+		Model:            "gpt-4",
+		Provider:         "openai",
+		StatusCode:       200,
+		RequestID:        "req-123",
+		ClientIP:         "192.168.1.1",
+		Method:           "POST",
+		Path:             "/v1/chat/completions",
+		Stream:           false,
+		PromptTokens:     100,
+		CompletionTokens: 50,
+		TotalTokens:      150,
 		Data: &LogData{
-			RequestID:        "req-123",
-			ClientIP:         "192.168.1.1",
-			UserAgent:        "test-agent",
-			Method:           "POST",
-			Path:             "/v1/chat/completions",
-			Stream:           false,
-			PromptTokens:     100,
-			CompletionTokens: 50,
-			TotalTokens:      150,
+			UserAgent: "test-agent",
 		},
 	}
 
@@ -158,11 +158,11 @@ func TestLogEntryJSON(t *testing.T) {
 	if decoded.StatusCode != entry.StatusCode {
 		t.Errorf("StatusCode mismatch: expected %d, got %d", entry.StatusCode, decoded.StatusCode)
 	}
-	if decoded.Data == nil {
-		t.Fatal("Data is nil after unmarshal")
+	if decoded.PromptTokens != entry.PromptTokens {
+		t.Errorf("PromptTokens mismatch: expected %d, got %d", entry.PromptTokens, decoded.PromptTokens)
 	}
-	if decoded.Data.PromptTokens != entry.Data.PromptTokens {
-		t.Errorf("PromptTokens mismatch: expected %d, got %d", entry.Data.PromptTokens, decoded.Data.PromptTokens)
+	if decoded.RequestID != entry.RequestID {
+		t.Errorf("RequestID mismatch: expected %q, got %q", entry.RequestID, decoded.RequestID)
 	}
 }
 
@@ -178,9 +178,7 @@ func TestLogDataWithBodies(t *testing.T) {
 	}
 
 	data := &LogData{
-		RequestID:    "req-123",
-		Method:       "POST",
-		Path:         "/v1/chat/completions",
+		UserAgent:    "test-agent",
 		RequestBody:  requestBody,
 		ResponseBody: responseBody,
 	}
@@ -475,15 +473,15 @@ data: [DONE]
 		t.Fatalf("failed to close wrapper: %v", err)
 	}
 
-	// Verify usage was captured
-	if entry.Data.PromptTokens != 10 {
-		t.Errorf("PromptTokens: expected 10, got %d", entry.Data.PromptTokens)
+	// Verify usage was captured (now on entry directly, not entry.Data)
+	if entry.PromptTokens != 10 {
+		t.Errorf("PromptTokens: expected 10, got %d", entry.PromptTokens)
 	}
-	if entry.Data.CompletionTokens != 5 {
-		t.Errorf("CompletionTokens: expected 5, got %d", entry.Data.CompletionTokens)
+	if entry.CompletionTokens != 5 {
+		t.Errorf("CompletionTokens: expected 5, got %d", entry.CompletionTokens)
 	}
-	if entry.Data.TotalTokens != 15 {
-		t.Errorf("TotalTokens: expected 15, got %d", entry.Data.TotalTokens)
+	if entry.TotalTokens != 15 {
+		t.Errorf("TotalTokens: expected 15, got %d", entry.TotalTokens)
 	}
 
 	// Wait for async write
@@ -527,13 +525,13 @@ func TestCreateStreamEntry(t *testing.T) {
 		Model:      "gpt-4",
 		Provider:   "openai",
 		StatusCode: 200,
+		RequestID:  "req-123",
+		ClientIP:   "127.0.0.1",
+		Method:     "POST",
+		Path:       "/v1/chat/completions",
+		Stream:     false,
 		Data: &LogData{
-			RequestID:  "req-123",
-			ClientIP:   "127.0.0.1",
-			UserAgent:  "test",
-			Method:     "POST",
-			Path:       "/v1/chat/completions",
-			Stream:     false,
+			UserAgent: "test",
 			RequestHeaders: map[string]string{
 				"Content-Type": "application/json",
 			},
@@ -552,14 +550,25 @@ func TestCreateStreamEntry(t *testing.T) {
 	if streamEntry.Model != baseEntry.Model {
 		t.Errorf("Model mismatch")
 	}
-	if streamEntry.Data == nil {
-		t.Fatal("Data is nil")
-	}
-	if !streamEntry.Data.Stream {
+	if !streamEntry.Stream {
 		t.Error("Stream should be true")
 	}
-	if streamEntry.Data.RequestID != baseEntry.Data.RequestID {
+	if streamEntry.RequestID != baseEntry.RequestID {
 		t.Error("RequestID not copied")
+	}
+	if streamEntry.ClientIP != baseEntry.ClientIP {
+		t.Error("ClientIP not copied")
+	}
+	if streamEntry.Method != baseEntry.Method {
+		t.Error("Method not copied")
+	}
+	if streamEntry.Path != baseEntry.Path {
+		t.Error("Path not copied")
+	}
+
+	// Verify Data fields are copied
+	if streamEntry.Data == nil {
+		t.Fatal("Data is nil")
 	}
 
 	// Verify headers are copied (not same reference)

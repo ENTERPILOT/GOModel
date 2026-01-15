@@ -25,7 +25,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("database connection is required")
 	}
 
-	// Create table with JSON data field
+	// Create table with commonly-filtered fields as columns
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS audit_logs (
 			id TEXT PRIMARY KEY,
@@ -34,6 +34,15 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 			model TEXT,
 			provider TEXT,
 			status_code INTEGER DEFAULT 0,
+			request_id TEXT,
+			client_ip TEXT,
+			method TEXT,
+			path TEXT,
+			stream INTEGER DEFAULT 0,
+			prompt_tokens INTEGER DEFAULT 0,
+			completion_tokens INTEGER DEFAULT 0,
+			total_tokens INTEGER DEFAULT 0,
+			error_type TEXT,
 			data JSON
 		)
 	`)
@@ -47,6 +56,10 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		"CREATE INDEX IF NOT EXISTS idx_audit_model ON audit_logs(model)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_status ON audit_logs(status_code)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_provider ON audit_logs(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_request_id ON audit_logs(request_id)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_client_ip ON audit_logs(client_ip)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_path ON audit_logs(path)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_error_type ON audit_logs(error_type)",
 	}
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
@@ -76,10 +89,10 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 
 	// Build batch insert query
 	placeholders := make([]string, len(entries))
-	values := make([]interface{}, 0, len(entries)*7)
+	values := make([]interface{}, 0, len(entries)*16)
 
 	for i, e := range entries {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?)"
+		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 		// Marshal data to JSON
 		var dataJSON []byte
@@ -92,6 +105,12 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 			}
 		}
 
+		// Convert bool to int for SQLite
+		streamInt := 0
+		if e.Stream {
+			streamInt = 1
+		}
+
 		values = append(values,
 			e.ID,
 			e.Timestamp.UTC().Format(time.RFC3339Nano),
@@ -99,11 +118,21 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 			e.Model,
 			e.Provider,
 			e.StatusCode,
+			e.RequestID,
+			e.ClientIP,
+			e.Method,
+			e.Path,
+			streamInt,
+			e.PromptTokens,
+			e.CompletionTokens,
+			e.TotalTokens,
+			e.ErrorType,
 			string(dataJSON),
 		)
 	}
 
-	query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code, data) VALUES ` +
+	query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
+		request_id, client_ip, method, path, stream, prompt_tokens, completion_tokens, total_tokens, error_type, data) VALUES ` +
 		strings.Join(placeholders, ",")
 
 	_, err := s.db.ExecContext(ctx, query, values...)

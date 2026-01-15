@@ -27,7 +27,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 
 	ctx := context.Background()
 
-	// Create table with JSONB data field
+	// Create table with commonly-filtered fields as columns
 	_, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS audit_logs (
 			id UUID PRIMARY KEY,
@@ -36,6 +36,15 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 			model TEXT,
 			provider TEXT,
 			status_code INTEGER DEFAULT 0,
+			request_id TEXT,
+			client_ip TEXT,
+			method TEXT,
+			path TEXT,
+			stream BOOLEAN DEFAULT FALSE,
+			prompt_tokens INTEGER DEFAULT 0,
+			completion_tokens INTEGER DEFAULT 0,
+			total_tokens INTEGER DEFAULT 0,
+			error_type TEXT,
 			data JSONB
 		)
 	`)
@@ -49,6 +58,10 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		"CREATE INDEX IF NOT EXISTS idx_audit_model ON audit_logs(model)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_status ON audit_logs(status_code)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_provider ON audit_logs(provider)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_request_id ON audit_logs(request_id)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_client_ip ON audit_logs(client_ip)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_path ON audit_logs(path)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_error_type ON audit_logs(error_type)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_data_gin ON audit_logs USING GIN (data)",
 	}
 	for _, idx := range indexes {
@@ -100,10 +113,14 @@ func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEnt
 		}
 
 		_, err := s.pool.Exec(ctx, `
-			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
+				request_id, client_ip, method, path, stream,
+				prompt_tokens, completion_tokens, total_tokens, error_type, data)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 			ON CONFLICT (id) DO NOTHING
-		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.Provider, e.StatusCode, dataJSON)
+		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.Provider, e.StatusCode,
+			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream,
+			e.PromptTokens, e.CompletionTokens, e.TotalTokens, e.ErrorType, dataJSON)
 
 		if err != nil {
 			slog.Warn("failed to insert audit log", "error", err, "id", e.ID)
@@ -132,10 +149,14 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEnt
 		}
 
 		_, err = tx.Exec(ctx, `
-			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
+				request_id, client_ip, method, path, stream,
+				prompt_tokens, completion_tokens, total_tokens, error_type, data)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 			ON CONFLICT (id) DO NOTHING
-		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.Provider, e.StatusCode, dataJSON)
+		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.Provider, e.StatusCode,
+			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream,
+			e.PromptTokens, e.CompletionTokens, e.TotalTokens, e.ErrorType, dataJSON)
 
 		if err != nil {
 			slog.Warn("failed to insert audit log in batch", "error", err, "id", e.ID)

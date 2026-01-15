@@ -72,7 +72,7 @@ func (m *mockLogStore) GetAPIEntries() []*auditlog.LogEntry {
 	defer m.mu.Unlock()
 	var result []*auditlog.LogEntry
 	for _, entry := range m.entries {
-		if entry.Data != nil && entry.Data.Path != "/health" {
+		if entry.Path != "/health" {
 			result = append(result, entry)
 		}
 	}
@@ -196,10 +196,9 @@ func TestAuditLogMiddleware(t *testing.T) {
 		assert.NotZero(t, entry.Timestamp)
 		assert.Greater(t, entry.DurationNs, int64(0))
 		assert.Equal(t, http.StatusOK, entry.StatusCode)
-		assert.NotNil(t, entry.Data)
-		assert.Equal(t, "POST", entry.Data.Method)
-		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
-		assert.NotEmpty(t, entry.Data.RequestID)
+		assert.Equal(t, "POST", entry.Method)
+		assert.Equal(t, "/v1/chat/completions", entry.Path)
+		assert.NotEmpty(t, entry.RequestID)
 	})
 
 	t.Run("captures request and response bodies when enabled", func(t *testing.T) {
@@ -415,7 +414,7 @@ func TestAuditLogStreaming(t *testing.T) {
 
 		entry := entries[0]
 		assert.Equal(t, http.StatusOK, entry.StatusCode)
-		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+		assert.Equal(t, "/v1/chat/completions", entry.Path)
 	})
 
 	t.Run("captures response headers for streaming requests", func(t *testing.T) {
@@ -666,7 +665,7 @@ func TestAuditLogErrorCapture(t *testing.T) {
 
 		entry := entries[0]
 		assert.Equal(t, http.StatusBadRequest, entry.StatusCode)
-		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+		assert.Equal(t, "/v1/chat/completions", entry.Path)
 	})
 
 	t.Run("logs invalid JSON requests", func(t *testing.T) {
@@ -739,7 +738,7 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 		require.Len(t, entries, 1, "Expected 1 log entry for model endpoint")
 
 		entry := entries[0]
-		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+		assert.Equal(t, "/v1/chat/completions", entry.Path)
 	})
 
 	t.Run("skips health endpoint when OnlyModelInteractions enabled", func(t *testing.T) {
@@ -809,7 +808,7 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 
 		// The last entry should be our health request
 		lastEntry := entries[len(entries)-1]
-		assert.Equal(t, "/health", lastEntry.Data.Path)
+		assert.Equal(t, "/health", lastEntry.Path)
 	})
 
 	t.Run("filters mixed requests correctly", func(t *testing.T) {
@@ -860,6 +859,6 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 
 		// Should only have the model endpoint logged
 		require.Len(t, entries, 1, "Expected only 1 log entry (model endpoint)")
-		assert.Equal(t, "/v1/chat/completions", entries[0].Data.Path)
+		assert.Equal(t, "/v1/chat/completions", entries[0].Path)
 	})
 }

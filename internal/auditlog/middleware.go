@@ -59,12 +59,12 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			entry := &LogEntry{
 				ID:        uuid.NewString(),
 				Timestamp: start,
+				RequestID: requestID,
+				ClientIP:  c.RealIP(),
+				Method:    req.Method,
+				Path:      req.URL.Path,
 				Data: &LogData{
-					RequestID: requestID,
-					ClientIP:  c.RealIP(),
 					UserAgent: req.UserAgent(),
-					Method:    req.Method,
-					Path:      req.URL.Path,
 				},
 			}
 
@@ -242,9 +242,9 @@ func EnrichEntry(c echo.Context, model, provider string, usage *Usage) {
 	entry.Provider = provider
 
 	if usage != nil {
-		entry.Data.PromptTokens = usage.PromptTokens
-		entry.Data.CompletionTokens = usage.CompletionTokens
-		entry.Data.TotalTokens = usage.TotalTokens
+		entry.PromptTokens = usage.PromptTokens
+		entry.CompletionTokens = usage.CompletionTokens
+		entry.TotalTokens = usage.TotalTokens
 	}
 }
 
@@ -256,12 +256,14 @@ func EnrichEntryWithError(c echo.Context, errorType, errorMessage string) {
 	}
 
 	entry, ok := entryVal.(*LogEntry)
-	if !ok || entry == nil || entry.Data == nil {
+	if !ok || entry == nil {
 		return
 	}
 
-	entry.Data.ErrorType = errorType
-	entry.Data.ErrorMessage = errorMessage
+	entry.ErrorType = errorType
+	if entry.Data != nil {
+		entry.Data.ErrorMessage = errorMessage
+	}
 }
 
 // EnrichEntryWithStream marks the log entry as a streaming request.
@@ -272,11 +274,11 @@ func EnrichEntryWithStream(c echo.Context, stream bool) {
 	}
 
 	entry, ok := entryVal.(*LogEntry)
-	if !ok || entry == nil || entry.Data == nil {
+	if !ok || entry == nil {
 		return
 	}
 
-	entry.Data.Stream = stream
+	entry.Stream = stream
 }
 
 // toValidUTF8String converts bytes to a valid UTF-8 string.

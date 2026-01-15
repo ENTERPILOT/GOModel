@@ -62,7 +62,7 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Create indexes
+	// Create indexes for common queries
 	indexes := []mongo.IndexModel{
 		{
 			Keys: bson.D{{Key: "model", Value: 1}},
@@ -72,6 +72,18 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 		},
 		{
 			Keys: bson.D{{Key: "provider", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "request_id", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "client_ip", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "path", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "error_type", Value: 1}},
 		},
 	}
 

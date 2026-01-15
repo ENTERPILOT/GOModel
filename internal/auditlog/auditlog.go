@@ -40,32 +40,35 @@ type LogEntry struct {
 	Provider   string `json:"provider" bson:"provider"`
 	StatusCode int    `json:"status_code" bson:"status_code"`
 
-	// Data contains flexible request/response information as JSON
-	Data *LogData `json:"data" bson:"data"`
-}
-
-// LogData contains flexible request/response information.
-// Fields are omitted when empty to save storage space.
-type LogData struct {
-	// Identity - "Who"
-	RequestID  string `json:"request_id,omitempty" bson:"request_id,omitempty"`
-	ClientIP   string `json:"client_ip,omitempty" bson:"client_ip,omitempty"`
-	UserAgent  string `json:"user_agent,omitempty" bson:"user_agent,omitempty"`
-	APIKeyHash string `json:"api_key_hash,omitempty" bson:"api_key_hash,omitempty"`
-
-	// Request - "What" (input)
-	Method      string   `json:"method,omitempty" bson:"method,omitempty"`
-	Path        string   `json:"path,omitempty" bson:"path,omitempty"`
-	Stream      bool     `json:"stream,omitempty" bson:"stream,omitempty"`
-	Temperature *float64 `json:"temperature,omitempty" bson:"temperature,omitempty"`
-	MaxTokens   *int     `json:"max_tokens,omitempty" bson:"max_tokens,omitempty"`
-
-	// Response - "What" (output)
+	// Extracted fields for efficient filtering (indexed in relational DBs)
+	RequestID        string `json:"request_id,omitempty" bson:"request_id,omitempty"`
+	ClientIP         string `json:"client_ip,omitempty" bson:"client_ip,omitempty"`
+	Method           string `json:"method,omitempty" bson:"method,omitempty"`
+	Path             string `json:"path,omitempty" bson:"path,omitempty"`
+	Stream           bool   `json:"stream,omitempty" bson:"stream,omitempty"`
 	PromptTokens     int    `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
 	CompletionTokens int    `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
 	TotalTokens      int    `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
 	ErrorType        string `json:"error_type,omitempty" bson:"error_type,omitempty"`
-	ErrorMessage     string `json:"error_message,omitempty" bson:"error_message,omitempty"`
+
+	// Data contains flexible request/response information as JSON
+	Data *LogData `json:"data,omitempty" bson:"data,omitempty"`
+}
+
+// LogData contains flexible request/response information.
+// Fields that are commonly filtered are stored as columns in LogEntry.
+// This struct contains the remaining flexible data.
+type LogData struct {
+	// Identity
+	UserAgent  string `json:"user_agent,omitempty" bson:"user_agent,omitempty"`
+	APIKeyHash string `json:"api_key_hash,omitempty" bson:"api_key_hash,omitempty"`
+
+	// Request parameters
+	Temperature *float64 `json:"temperature,omitempty" bson:"temperature,omitempty"`
+	MaxTokens   *int     `json:"max_tokens,omitempty" bson:"max_tokens,omitempty"`
+
+	// Error details (message can be long, so kept in JSON)
+	ErrorMessage string `json:"error_message,omitempty" bson:"error_message,omitempty"`
 
 	// Optional headers (when LOGGING_LOG_HEADERS=true)
 	// Sensitive headers are auto-redacted

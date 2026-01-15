@@ -71,10 +71,10 @@ func (w *StreamLogWrapper) Close() error {
 
 	// Parse final usage from buffered SSE data
 	usage := parseUsageFromSSE(w.buffer.Bytes())
-	if usage != nil && w.entry != nil && w.entry.Data != nil {
-		w.entry.Data.CompletionTokens = usage.CompletionTokens
-		w.entry.Data.TotalTokens = usage.TotalTokens
-		w.entry.Data.PromptTokens = usage.PromptTokens
+	if usage != nil && w.entry != nil {
+		w.entry.CompletionTokens = usage.CompletionTokens
+		w.entry.TotalTokens = usage.TotalTokens
+		w.entry.PromptTokens = usage.PromptTokens
 	}
 
 	// Write log entry
@@ -179,17 +179,18 @@ func CreateStreamEntry(baseEntry *LogEntry) *LogEntry {
 		Model:      baseEntry.Model,
 		Provider:   baseEntry.Provider,
 		StatusCode: baseEntry.StatusCode,
+		// Copy extracted fields
+		RequestID: baseEntry.RequestID,
+		ClientIP:  baseEntry.ClientIP,
+		Method:    baseEntry.Method,
+		Path:      baseEntry.Path,
+		Stream:    true, // Mark as streaming
 	}
 
 	if baseEntry.Data != nil {
 		entryCopy.Data = &LogData{
-			RequestID:       baseEntry.Data.RequestID,
-			ClientIP:        baseEntry.Data.ClientIP,
 			UserAgent:       baseEntry.Data.UserAgent,
 			APIKeyHash:      baseEntry.Data.APIKeyHash,
-			Method:          baseEntry.Data.Method,
-			Path:            baseEntry.Data.Path,
-			Stream:          true,
 			Temperature:     baseEntry.Data.Temperature,
 			MaxTokens:       baseEntry.Data.MaxTokens,
 			RequestHeaders:  copyMap(baseEntry.Data.RequestHeaders),

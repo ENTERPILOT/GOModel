@@ -56,9 +56,9 @@ func (l *Logger) Write(entry *LogEntry) {
 		// Entry queued successfully
 	default:
 		// Buffer full - drop entry and log warning
-		requestID := "unknown"
-		if entry.Data != nil {
-			requestID = entry.Data.RequestID
+		requestID := entry.RequestID
+		if requestID == "" {
+			requestID = "unknown"
 		}
 		slog.Warn("audit log buffer full, dropping entry",
 			"request_id", requestID,
