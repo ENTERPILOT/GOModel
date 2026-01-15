@@ -17,7 +17,7 @@ services:
       - METRICS_ENABLED=true
       # Storage configuration (MongoDB for audit logs)
       - MONGODB_URL=mongodb://mongodb:27017/gomodel
-      # Audit logging - all enabled for production with MongoDB
+      # Audit logging - all enabled with MongoDB
       - LOGGING_ENABLED=true
       - LOGGING_STORAGE_TYPE=mongodb
       - LOGGING_LOG_BODIES=true
