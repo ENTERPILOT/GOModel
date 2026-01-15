@@ -59,8 +59,6 @@ spec:
                 configMapKeyRef:
                   name: {{ include "gomodel.fullname" . }}
                   key: CACHE_TYPE
-#            - name: GOMODEL_CACHE_DIR
-#              value: "/cache"
             {{- if or .Values.redis.enabled (eq .Values.cache.type "redis") }}
             - name: REDIS_URL
               valueFrom:
