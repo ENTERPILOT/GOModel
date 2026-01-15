@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,6 +18,7 @@ type Logger struct {
 	done          chan struct{}
 	wg            sync.WaitGroup
 	flushInterval time.Duration
+	closed        atomic.Bool
 }
 
 // NewLogger creates a new async buffered Logger.
@@ -44,10 +46,15 @@ func NewLogger(store LogStore, cfg Config) *Logger {
 }
 
 // Write queues a log entry for async writing.
-// This method is non-blocking. If the buffer is full, the entry is dropped
-// and a warning is logged.
+// This method is non-blocking. If the buffer is full or the logger is closed,
+// the entry is dropped and a warning is logged.
 func (l *Logger) Write(entry *LogEntry) {
 	if entry == nil {
+		return
+	}
+
+	// Check if logger is shut down to avoid sending on closed channel
+	if l.closed.Load() {
 		return
 	}
 
@@ -112,8 +119,10 @@ func (l *Logger) flushLoop() {
 			}
 
 		case <-l.done:
-			// Shutdown: drain remaining entries from buffer
+			// Shutdown: mark as closed before closing buffer to prevent Write() panics
+			l.closed.Store(true)
 			close(l.buffer)
+			// Drain remaining entries from buffer
 			for entry := range l.buffer {
 				batch = append(batch, entry)
 			}
