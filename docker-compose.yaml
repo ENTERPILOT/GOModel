@@ -21,8 +21,8 @@ services:
       # - MONGODB_URL=mongodb://mongodb:27017/gomodel
       # Audit logging - all enabled with PostgreSQL
       - LOGGING_ENABLED=true
-      - LOGGING_STORAGE_TYPE=postgresql
-      # - LOGGING_STORAGE_TYPE=mongodb
+      # - LOGGING_STORAGE_TYPE=postgresql
+      - LOGGING_STORAGE_TYPE=mongodb
       - LOGGING_LOG_BODIES=true
       - LOGGING_LOG_HEADERS=true
       - LOGGING_BUFFER_SIZE=1000
