@@ -138,7 +138,7 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			if cfg.LogBodies && responseCapture != nil && responseCapture.body.Len() > 0 {
 				// Set truncation flag if response body exceeded limit
 				if responseCapture.truncated {
-					entry.Data.ResponseBodyTruncated = true
+					entry.Data.ResponseBodyTooBigToHandle = true
 				}
 
 				bodyBytes := responseCapture.body.Bytes()

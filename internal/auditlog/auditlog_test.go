@@ -459,7 +459,7 @@ data: [DONE]
 	}
 
 	// Wrap the stream
-	wrapper := NewStreamLogWrapper(stream, logger, entry)
+	wrapper := NewStreamLogWrapper(stream, logger, entry, "/v1/chat/completions")
 
 	// Read all content
 	var buf bytes.Buffer
@@ -497,14 +497,14 @@ func TestWrapStreamForLogging(t *testing.T) {
 	stream := io.NopCloser(strings.NewReader("test"))
 
 	// Test with nil logger
-	result := WrapStreamForLogging(stream, nil, nil)
+	result := WrapStreamForLogging(stream, nil, nil, "/v1/chat/completions")
 	if result != stream {
 		t.Error("expected original stream with nil logger")
 	}
 
 	// Test with disabled logger
 	noopLogger := &NoopLogger{}
-	result = WrapStreamForLogging(stream, noopLogger, &LogEntry{})
+	result = WrapStreamForLogging(stream, noopLogger, &LogEntry{}, "/v1/chat/completions")
 	if result != stream {
 		t.Error("expected original stream with disabled logger")
 	}

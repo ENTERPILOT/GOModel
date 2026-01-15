@@ -57,7 +57,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 		if streamEntry != nil {
 			streamEntry.StatusCode = http.StatusOK // Streaming always starts with 200 OK
 		}
-		wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry)
+		wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry, c.Request().URL.Path)
 		defer func() {
 			_ = wrappedStream.Close() //nolint:errcheck
 		}()
@@ -140,7 +140,7 @@ func (h *Handler) Responses(c echo.Context) error {
 		if streamEntry != nil {
 			streamEntry.StatusCode = http.StatusOK // Streaming always starts with 200 OK
 		}
-		wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry)
+		wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry, c.Request().URL.Path)
 		defer func() {
 			_ = wrappedStream.Close() //nolint:errcheck
 		}()
