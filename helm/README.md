@@ -21,13 +21,13 @@ helm repo update
 
 ```bash
 # Basic install with OpenAI
-helm install gomodel ./helm/gomodel \
+helm install gomodel ./helm \
   -n gomodel --create-namespace \
   --set providers.openai.enabled=true \
   --set providers.openai.apiKey="sk-..."
 
 # Multi-provider setup with Redis cache
-helm install gomodel ./helm/gomodel \
+helm install gomodel ./helm \
   -n gomodel --create-namespace \
   --set providers.openai.enabled=true \
   --set providers.openai.apiKey="sk-..." \
@@ -36,7 +36,7 @@ helm install gomodel ./helm/gomodel \
   --set redis.enabled=true
 
 # Using existing secrets (GitOps-friendly)
-helm install gomodel ./helm/gomodel \
+helm install gomodel ./helm \
   -n gomodel --create-namespace \
   --set providers.existingSecret="llm-api-keys" \
   --set providers.openai.enabled=true \
@@ -89,7 +89,7 @@ stringData:
 Then reference it:
 
 ```bash
-helm install gomodel ./helm/gomodel \
+helm install gomodel ./helm \
   --set providers.existingSecret="llm-api-keys" \
   --set providers.openai.enabled=true
 ```
@@ -128,7 +128,7 @@ gateway:
 ## Upgrading
 
 ```bash
-helm upgrade gomodel ./helm/gomodel -n gomodel -f values.yaml
+helm upgrade gomodel ./helm -n gomodel -f values.yaml
 ```
 
 ## Uninstalling
