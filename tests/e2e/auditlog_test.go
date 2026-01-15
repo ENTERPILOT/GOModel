@@ -607,3 +607,164 @@ func TestAuditLogErrorCapture(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, entry.StatusCode)
 	})
 }
+
+func TestAuditLogOnlyModelInteractions(t *testing.T) {
+	t.Run("logs model endpoints when OnlyModelInteractions enabled", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:               true,
+			LogBodies:             false,
+			LogHeaders:            false,
+			BufferSize:            100,
+			FlushInterval:         100 * time.Millisecond,
+			OnlyModelInteractions: true,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make a request to a model endpoint
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer closeBody(resp)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		// Wait for log entry to be written
+		entries := store.WaitForEntries(1, 2*time.Second)
+		require.Len(t, entries, 1, "Expected 1 log entry for model endpoint")
+
+		entry := entries[0]
+		assert.Equal(t, "/v1/chat/completions", entry.Data.Path)
+	})
+
+	t.Run("skips health endpoint when OnlyModelInteractions enabled", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:               true,
+			LogBodies:             false,
+			LogHeaders:            false,
+			BufferSize:            100,
+			FlushInterval:         100 * time.Millisecond,
+			OnlyModelInteractions: true,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make multiple requests to health endpoint
+		for i := 0; i < 3; i++ {
+			resp, err := http.Get(serverURL + "/health")
+			require.NoError(t, err)
+			closeBody(resp)
+		}
+
+		// Wait a bit and check that NO entries were logged
+		time.Sleep(500 * time.Millisecond)
+		entries := store.GetEntries()
+		assert.Empty(t, entries, "Expected no log entries for health endpoint when OnlyModelInteractions=true")
+	})
+
+	t.Run("logs health endpoint when OnlyModelInteractions disabled", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:               true,
+			LogBodies:             false,
+			LogHeaders:            false,
+			BufferSize:            100,
+			FlushInterval:         100 * time.Millisecond,
+			OnlyModelInteractions: false,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Note: setupAuditLogTestServer makes health check calls during startup
+		// so we may already have entries. Count before making our request.
+		time.Sleep(200 * time.Millisecond) // Wait for any buffered entries to flush
+		entriesBefore := len(store.GetEntries())
+
+		// Make requests to health endpoint
+		resp, err := http.Get(serverURL + "/health")
+		require.NoError(t, err)
+		closeBody(resp)
+
+		// Wait for log entry to be written (at least 1 more than before)
+		entries := store.WaitForEntries(entriesBefore+1, 2*time.Second)
+		require.Greater(t, len(entries), entriesBefore, "Expected new log entry for health endpoint when OnlyModelInteractions=false")
+
+		// The last entry should be our health request
+		lastEntry := entries[len(entries)-1]
+		assert.Equal(t, "/health", lastEntry.Data.Path)
+	})
+
+	t.Run("filters mixed requests correctly", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:               true,
+			LogBodies:             false,
+			LogHeaders:            false,
+			BufferSize:            100,
+			FlushInterval:         100 * time.Millisecond,
+			OnlyModelInteractions: true,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Make multiple health requests (should not be logged)
+		for i := 0; i < 5; i++ {
+			resp, err := http.Get(serverURL + "/health")
+			require.NoError(t, err)
+			closeBody(resp)
+		}
+
+		// Make a model request (should be logged)
+		payload := core.ChatRequest{
+			Model:    "gpt-4",
+			Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		}
+		body, _ := json.Marshal(payload)
+		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		closeBody(resp)
+
+		// Make more health requests (should not be logged)
+		for i := 0; i < 3; i++ {
+			resp, err := http.Get(serverURL + "/health")
+			require.NoError(t, err)
+			closeBody(resp)
+		}
+
+		// Wait for log entry to be written
+		entries := store.WaitForEntries(1, 2*time.Second)
+
+		// Should only have the model endpoint logged
+		require.Len(t, entries, 1, "Expected only 1 log entry (model endpoint)")
+		assert.Equal(t, "/v1/chat/completions", entries[0].Data.Path)
+	})
+}

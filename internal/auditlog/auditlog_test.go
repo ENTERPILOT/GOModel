@@ -349,6 +349,37 @@ func TestSkipLoggingPaths(t *testing.T) {
 	}
 }
 
+func TestIsModelInteractionPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		expected bool
+	}{
+		{"chat completions", "/v1/chat/completions", true},
+		{"chat completions with query", "/v1/chat/completions?stream=true", true},
+		{"responses", "/v1/responses", true},
+		{"responses with subpath", "/v1/responses/123", true},
+		{"models", "/v1/models", true},
+		{"models with subpath", "/v1/models/gpt-4", true},
+		{"health", "/health", false},
+		{"metrics", "/metrics", false},
+		{"admin", "/admin", false},
+		{"root", "/", false},
+		{"empty", "", false},
+		{"v1 prefix only", "/v1", false},
+		{"v1 other endpoint", "/v1/other", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsModelInteractionPath(tt.path)
+			if result != tt.expected {
+				t.Errorf("IsModelInteractionPath(%q) = %v, want %v", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestParseUsageFromSSE(t *testing.T) {
 	tests := []struct {
 		name     string
