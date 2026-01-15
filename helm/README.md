@@ -62,8 +62,8 @@ helm install gomodel ./helm/gomodel \
 | `providers.gemini.enabled` | Enable Gemini | `false` |
 | `providers.groq.enabled` | Enable Groq | `false` |
 | `providers.xai.enabled` | Enable xAI | `false` |
-| `cache.type` | Cache type (local/redis) | `"local"` |
-| `redis.enabled` | Deploy Redis subchart | `false` |
+| `cache.type` | Cache type (local/redis) | `"redis"` |
+| `redis.enabled` | Deploy Redis subchart | `true` |
 | `metrics.enabled` | Enable Prometheus metrics | `true` |
 | `metrics.serviceMonitor.enabled` | Create ServiceMonitor | `false` |
 | `ingress.enabled` | Enable Ingress | `false` |
