@@ -26,6 +26,30 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "cache": {
+            "properties": { "type": { "const": "redis" } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cache": {
+            "properties": {
+              "redis": {
+                "properties": {
+                  "url": { "minLength": 1 }
+                },
+                "required": ["url"]
+              }
+            },
+            "required": ["redis"]
+          }
+        }
+      }
     }
   ],
   "anyOf": [
