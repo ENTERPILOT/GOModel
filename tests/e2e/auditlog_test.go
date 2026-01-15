@@ -366,9 +366,9 @@ func TestAuditLogMiddleware(t *testing.T) {
 		require.Len(t, entries, 1)
 
 		entry := entries[0]
-		// API key hash should be present (8 chars of SHA256)
+		// API key hash should be present (16 chars of SHA256 for 64 bits of entropy)
 		assert.NotEmpty(t, entry.Data.APIKeyHash)
-		assert.Len(t, entry.Data.APIKeyHash, 8)
+		assert.Len(t, entry.Data.APIKeyHash, 16)
 		// Hash should NOT contain the actual key
 		assert.NotContains(t, entry.Data.APIKeyHash, "sk-test")
 	})
