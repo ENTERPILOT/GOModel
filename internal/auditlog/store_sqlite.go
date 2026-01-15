@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -15,6 +16,7 @@ type SQLiteStore struct {
 	db            *sql.DB
 	retentionDays int
 	stopCleanup   chan struct{}
+	closeOnce     sync.Once
 }
 
 // NewSQLiteStore creates a new SQLite audit log store.
@@ -150,9 +152,12 @@ func (s *SQLiteStore) Flush(_ context.Context) error {
 
 // Close stops the cleanup goroutine.
 // Note: We don't close the DB here as it's managed by the storage layer.
+// Safe to call multiple times.
 func (s *SQLiteStore) Close() error {
-	if s.retentionDays > 0 {
-		close(s.stopCleanup)
+	if s.retentionDays > 0 && s.stopCleanup != nil {
+		s.closeOnce.Do(func() {
+			close(s.stopCleanup)
+		})
 	}
 	return nil
 }

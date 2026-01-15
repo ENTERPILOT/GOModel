@@ -26,6 +26,9 @@ type contextKey string
 const (
 	// LogEntryKey is the context key for storing the log entry
 	LogEntryKey contextKey = "auditlog_entry"
+
+	// maxBodyCapture is the maximum size of request/response bodies to capture (1MB)
+	maxBodyCapture int64 = 1024 * 1024
 )
 
 // Middleware creates an Echo middleware for audit logging.
@@ -80,18 +83,23 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 
 			// Capture request body if enabled
 			if cfg.LogBodies && req.Body != nil && req.ContentLength > 0 {
-				bodyBytes, err := io.ReadAll(req.Body)
-				if err == nil {
-					// Parse JSON to interface{} for native BSON storage in MongoDB
-					var parsed interface{}
-					if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
-						entry.Data.RequestBody = parsed
-					} else {
-						// Fallback: store as valid UTF-8 string if not valid JSON
-						entry.Data.RequestBody = toValidUTF8String(bodyBytes)
+				// Skip body capture if too large to prevent memory exhaustion
+				if req.ContentLength > maxBodyCapture {
+					entry.Data.RequestBodyTooBigToHandle = true
+				} else {
+					bodyBytes, err := io.ReadAll(req.Body)
+					if err == nil {
+						// Parse JSON to interface{} for native BSON storage in MongoDB
+						var parsed interface{}
+						if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
+							entry.Data.RequestBody = parsed
+						} else {
+							// Fallback: store as valid UTF-8 string if not valid JSON
+							entry.Data.RequestBody = toValidUTF8String(bodyBytes)
+						}
+						// Restore the body for the handler
+						req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 					}
-					// Restore the body for the handler
-					req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 				}
 			}
 
@@ -119,11 +127,16 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 
 			// Log response headers if enabled
 			if cfg.LogHeaders {
-				entry.Data.ResponseHeaders = extractEchoHeaders(c.Response().Header())
+				entry.Data.ResponseHeaders = extractHeaders(c.Response().Header())
 			}
 
 			// Capture response body if enabled
 			if cfg.LogBodies && responseCapture != nil && responseCapture.body.Len() > 0 {
+				// Set truncation flag if response body exceeded limit
+				if responseCapture.truncated {
+					entry.Data.ResponseBodyTruncated = true
+				}
+
 				bodyBytes := responseCapture.body.Bytes()
 
 				// Decompress if Content-Encoding header is present
@@ -158,13 +171,18 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 // ResponseWriter if it supports those interfaces.
 type responseBodyCapture struct {
 	http.ResponseWriter
-	body *bytes.Buffer
+	body      *bytes.Buffer
+	truncated bool
 }
 
 func (r *responseBodyCapture) Write(b []byte) (int, error) {
-	// Write to the capture buffer (limit to 1MB to avoid memory issues)
-	if r.body.Len() < 1024*1024 {
+	// Write to the capture buffer (limit to maxBodyCapture to avoid memory issues)
+	if r.body.Len() < int(maxBodyCapture) {
 		r.body.Write(b)
+		// Check if we just hit the limit
+		if r.body.Len() >= int(maxBodyCapture) {
+			r.truncated = true
+		}
 	}
 	// Write to the original response writer
 	return r.ResponseWriter.Write(b)
@@ -189,19 +207,9 @@ func (r *responseBodyCapture) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return nil, nil, http.ErrNotSupported
 }
 
-// extractHeaders extracts headers from http.Header, redacting sensitive ones
+// extractHeaders extracts headers from a map[string][]string (http.Header or echo headers),
+// taking the first value for each key and redacting sensitive headers.
 func extractHeaders(headers map[string][]string) map[string]string {
-	result := make(map[string]string, len(headers))
-	for key, values := range headers {
-		if len(values) > 0 {
-			result[key] = values[0]
-		}
-	}
-	return RedactHeaders(result)
-}
-
-// extractEchoHeaders extracts headers from echo's header map
-func extractEchoHeaders(headers map[string][]string) map[string]string {
 	result := make(map[string]string, len(headers))
 	for key, values := range headers {
 		if len(values) > 0 {

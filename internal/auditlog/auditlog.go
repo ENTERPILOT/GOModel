@@ -80,6 +80,10 @@ type LogData struct {
 	// instead of BSON Binary (base64 in Compass)
 	RequestBody  interface{} `json:"request_body,omitempty" bson:"request_body,omitempty"`
 	ResponseBody interface{} `json:"response_body,omitempty" bson:"response_body,omitempty"`
+
+	// Body capture status flags (set when body exceeds 1MB limit)
+	RequestBodyTooBigToHandle bool `json:"request_body_too_big_to_handle,omitempty" bson:"request_body_too_big_to_handle,omitempty"`
+	ResponseBodyTruncated  bool `json:"response_body_truncated,omitempty" bson:"response_body_truncated,omitempty"`
 }
 
 // RedactedHeaders contains headers that should be automatically redacted.
@@ -95,6 +99,15 @@ var RedactedHeaders = []string{
 	"x-gomodel-key",
 }
 
+// redactedHeadersSet is built once at package init for O(1) lookups.
+var redactedHeadersSet = func() map[string]struct{} {
+	set := make(map[string]struct{}, len(RedactedHeaders))
+	for _, h := range RedactedHeaders {
+		set[h] = struct{}{}
+	}
+	return set
+}()
+
 // RedactHeaders redacts sensitive headers from a header map.
 // The original map is not modified; a new map is returned.
 func RedactHeaders(headers map[string]string) map[string]string {
@@ -104,16 +117,9 @@ func RedactHeaders(headers map[string]string) map[string]string {
 
 	result := make(map[string]string, len(headers))
 	for key, value := range headers {
-		keyLower := strings.ToLower(key)
-		redacted := false
-		for _, redactKey := range RedactedHeaders {
-			if keyLower == redactKey {
-				result[key] = "[REDACTED]"
-				redacted = true
-				break
-			}
-		}
-		if !redacted {
+		if _, ok := redactedHeadersSet[strings.ToLower(key)]; ok {
+			result[key] = "[REDACTED]"
+		} else {
 			result[key] = value
 		}
 	}

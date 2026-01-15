@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,7 @@ type PostgreSQLStore struct {
 	pool          *pgxpool.Pool
 	retentionDays int
 	stopCleanup   chan struct{}
+	closeOnce     sync.Once
 }
 
 // NewPostgreSQLStore creates a new PostgreSQL audit log store.
@@ -90,8 +92,8 @@ func (s *PostgreSQLStore) WriteBatch(ctx context.Context, entries []*LogEntry) e
 		return nil
 	}
 
-	// Use COPY for better performance with large batches
-	// But for smaller batches, use a simple INSERT
+	// For larger batches, use a transaction to ensure atomicity
+	// For smaller batches, use individual inserts without transaction overhead
 	if len(entries) < 10 {
 		return s.writeBatchSmall(ctx, entries)
 	}
@@ -177,9 +179,12 @@ func (s *PostgreSQLStore) Flush(_ context.Context) error {
 
 // Close stops the cleanup goroutine.
 // Note: We don't close the pool here as it's managed by the storage layer.
+// Safe to call multiple times.
 func (s *PostgreSQLStore) Close() error {
-	if s.retentionDays > 0 {
-		close(s.stopCleanup)
+	if s.retentionDays > 0 && s.stopCleanup != nil {
+		s.closeOnce.Do(func() {
+			close(s.stopCleanup)
+		})
 	}
 	return nil
 }

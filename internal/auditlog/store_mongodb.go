@@ -91,7 +91,7 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 	// otherwise use a regular descending index for query performance.
 	// MongoDB doesn't allow multiple indexes on the same field when one is TTL.
 	if retentionDays > 0 {
-		ttlSeconds := int32(retentionDays * 24 * 60 * 60)
+		ttlSeconds := int32(int64(retentionDays) * 24 * 60 * 60)
 		indexes = append(indexes, mongo.IndexModel{
 			Keys:    bson.D{{Key: "timestamp", Value: -1}},
 			Options: options.Index().SetExpireAfterSeconds(ttlSeconds),

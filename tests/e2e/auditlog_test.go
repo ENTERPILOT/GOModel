@@ -557,8 +557,7 @@ func TestAuditLogConcurrency(t *testing.T) {
 
 		// Wait for all log entries
 		entries := store.WaitForAPIEntries(numRequests, 5*time.Second)
-		assert.GreaterOrEqual(t, len(entries), numRequests-2, "Expected most requests to be logged")
-
+		assert.Len(t, entries, numRequests, "Expected all requests to be logged")
 		// Verify all entries have unique IDs
 		ids := make(map[string]bool)
 		for _, entry := range entries {
