@@ -20,7 +20,7 @@ FROM gcr.io/distroless/static-debian12:nonroot
 # Copy binary and ca-certificates
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /gomodel /gomodel
-COPY --from=builder /app/config/*.yaml /app/config
+COPY --from=builder /app/config/*.yaml /app/config/
 
 WORKDIR /app
 
