@@ -28,7 +28,6 @@ services:
       - LOGGING_BUFFER_SIZE=1000
       - LOGGING_FLUSH_INTERVAL=5
       - LOGGING_RETENTION_DAYS=30
-      - LOGGING_ONLY_MODEL_INTERACTIONS=false
     command: go run ./cmd/gomodel
     depends_on:
       redis:
