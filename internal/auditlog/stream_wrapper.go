@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// maxContentCapture is the maximum size of accumulated content (1MB)
-const maxContentCapture = 1024 * 1024
+// Note: MaxContentCapture, SSEBufferSize, and LogEntryStreamingKey
+// constants are defined in constants.go
 
 // streamResponseBuilder accumulates data from SSE events to reconstruct a response
 type streamResponseBuilder struct {
@@ -97,12 +97,12 @@ func (w *StreamLogWrapper) Read(p []byte) (n int, err error) {
 		if _, errBuf := w.buffer.Write(p[:n]); errBuf != nil {
 			return n, errBuf
 		}
-		// Keep only last 8KB to find "data: [DONE]" and usage
-		if w.buffer.Len() > 8192 {
+		// Keep only last SSEBufferSize bytes to find "data: [DONE]" and usage
+		if w.buffer.Len() > SSEBufferSize {
 			// Discard old data, keep recent
 			data := w.buffer.Bytes()
 			w.buffer.Reset()
-			if _, errBuf := w.buffer.Write(data[len(data)-8192:]); errBuf != nil {
+			if _, errBuf := w.buffer.Write(data[len(data)-SSEBufferSize:]); errBuf != nil {
 				return n, errBuf
 			}
 		}
@@ -201,8 +201,8 @@ func (w *StreamLogWrapper) parseChatCompletionEvent(event map[string]interface{}
 				}
 				// Extract and accumulate content
 				if content, ok := delta["content"].(string); ok && content != "" {
-					if !w.builder.truncated && w.builder.contentLen < maxContentCapture {
-						remaining := maxContentCapture - w.builder.contentLen
+					if !w.builder.truncated && w.builder.contentLen < MaxContentCapture {
+						remaining := MaxContentCapture - w.builder.contentLen
 						if len(content) > remaining {
 							content = content[:remaining]
 							w.builder.truncated = true
@@ -241,8 +241,8 @@ func (w *StreamLogWrapper) parseResponsesAPIEvent(event map[string]interface{}) 
 	case "response.output_text.delta":
 		// Accumulate text delta
 		if delta, ok := event["delta"].(string); ok && delta != "" {
-			if !w.builder.truncated && w.builder.contentLen < maxContentCapture {
-				remaining := maxContentCapture - w.builder.contentLen
+			if !w.builder.truncated && w.builder.contentLen < MaxContentCapture {
+				remaining := MaxContentCapture - w.builder.contentLen
 				if len(delta) > remaining {
 					delta = delta[:remaining]
 					w.builder.truncated = true
@@ -504,13 +504,12 @@ func GetStreamEntryFromContext(c interface{ Get(string) interface{} }) *LogEntry
 // MarkEntryAsStreaming marks the entry as a streaming request so the middleware
 // knows not to log it (the stream wrapper will handle logging).
 func MarkEntryAsStreaming(c interface{ Set(string, interface{}) }, isStreaming bool) {
-	// We use a simple marker in the context
-	c.Set(string(LogEntryKey)+"_streaming", isStreaming)
+	c.Set(string(LogEntryStreamingKey), isStreaming)
 }
 
 // IsEntryMarkedAsStreaming checks if the entry is marked as streaming.
 func IsEntryMarkedAsStreaming(c interface{ Get(string) interface{} }) bool {
-	val := c.Get(string(LogEntryKey) + "_streaming")
+	val := c.Get(string(LogEntryStreamingKey))
 	if val == nil {
 		return false
 	}

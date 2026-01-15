@@ -99,23 +99,23 @@ func (l *Logger) flushLoop() {
 	ticker := time.NewTicker(l.flushInterval)
 	defer ticker.Stop()
 
-	batch := make([]*LogEntry, 0, 100)
+	batch := make([]*LogEntry, 0, BatchFlushThreshold)
 
 	for {
 		select {
 		case entry := <-l.buffer:
 			batch = append(batch, entry)
-			// Flush when batch reaches 100 entries
-			if len(batch) >= 100 {
+			// Flush when batch reaches threshold
+			if len(batch) >= BatchFlushThreshold {
 				l.flushBatch(batch)
-				batch = make([]*LogEntry, 0, 100)
+				batch = make([]*LogEntry, 0, BatchFlushThreshold)
 			}
 
 		case <-ticker.C:
 			// Periodic flush
 			if len(batch) > 0 {
 				l.flushBatch(batch)
-				batch = make([]*LogEntry, 0, 100)
+				batch = make([]*LogEntry, 0, BatchFlushThreshold)
 			}
 
 		case <-l.done:

@@ -20,20 +20,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// contextKey is a type for context keys to avoid collisions
-type contextKey string
-
-const (
-	// LogEntryKey is the context key for storing the log entry
-	LogEntryKey contextKey = "auditlog_entry"
-
-	// maxBodyCapture is the maximum size of request/response bodies to capture (1MB)
-	maxBodyCapture int64 = 1024 * 1024
-
-	// apiKeyHashPrefixLength is the number of hex characters to use from the SHA256 hash
-	// of API keys. 16 hex chars = 64 bits of entropy, reducing collision risk compared to 8.
-	apiKeyHashPrefixLength = 16
-)
+// Note: contextKey type and constants (LogEntryKey, LogEntryStreamingKey,
+// MaxBodyCapture, APIKeyHashPrefixLength) are defined in constants.go
 
 // Middleware creates an Echo middleware for audit logging.
 // It captures request metadata at the start and response metadata at the end,
@@ -88,7 +76,7 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			// Capture request body if enabled
 			if cfg.LogBodies && req.Body != nil && req.ContentLength > 0 {
 				// Skip body capture if too large to prevent memory exhaustion
-				if req.ContentLength > maxBodyCapture {
+				if req.ContentLength > MaxBodyCapture {
 					entry.Data.RequestBodyTooBigToHandle = true
 				} else {
 					bodyBytes, err := io.ReadAll(req.Body)
@@ -180,11 +168,11 @@ type responseBodyCapture struct {
 }
 
 func (r *responseBodyCapture) Write(b []byte) (int, error) {
-	// Write to the capture buffer (limit to maxBodyCapture to avoid memory issues)
-	if r.body.Len() < int(maxBodyCapture) {
+	// Write to the capture buffer (limit to MaxBodyCapture to avoid memory issues)
+	if r.body.Len() < int(MaxBodyCapture) {
 		r.body.Write(b)
 		// Check if we just hit the limit
-		if r.body.Len() >= int(maxBodyCapture) {
+		if r.body.Len() >= int(MaxBodyCapture) {
 			r.truncated = true
 		}
 	}
@@ -224,7 +212,7 @@ func extractHeaders(headers map[string][]string) map[string]string {
 }
 
 // hashAPIKey creates a short hash of the API key for identification.
-// Returns first apiKeyHashPrefixLength hex characters of SHA256 hash.
+// Returns first APIKeyHashPrefixLength hex characters of SHA256 hash.
 func hashAPIKey(authHeader string) string {
 	// Extract token from "Bearer <token>"
 	token := strings.TrimPrefix(authHeader, "Bearer ")
@@ -234,7 +222,7 @@ func hashAPIKey(authHeader string) string {
 	}
 
 	hash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(hash[:])[:apiKeyHashPrefixLength]
+	return hex.EncodeToString(hash[:])[:APIKeyHashPrefixLength]
 }
 
 // EnrichEntry retrieves the log entry from context for enrichment by handlers.
