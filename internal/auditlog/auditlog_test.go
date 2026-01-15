@@ -620,8 +620,8 @@ func TestHashAPIKey(t *testing.T) {
 				if result == "" {
 					t.Error("expected non-empty hash")
 				}
-				if len(result) != 8 {
-					t.Errorf("expected 8 character hash, got %d characters", len(result))
+				if len(result) != 16 {
+					t.Errorf("expected 16 character hash, got %d characters", len(result))
 				}
 			}
 		})

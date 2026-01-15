@@ -3,6 +3,7 @@ package auditlog
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -103,6 +104,8 @@ func (s *PostgreSQLStore) WriteBatch(ctx context.Context, entries []*LogEntry) e
 
 // writeBatchSmall uses INSERT for small batches
 func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEntry) error {
+	var errs []error
+
 	for _, e := range entries {
 		var dataJSON []byte
 		if e.Data != nil {
@@ -126,7 +129,12 @@ func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEnt
 
 		if err != nil {
 			slog.Warn("failed to insert audit log", "error", err, "id", e.ID)
+			errs = append(errs, fmt.Errorf("insert %s: %w", e.ID, err))
 		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to insert %d of %d audit logs: %w", len(errs), len(entries), errors.Join(errs...))
 	}
 	return nil
 }

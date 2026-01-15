@@ -108,8 +108,8 @@ func (m *mockLogStore) WaitForAPIEntries(count int, timeout time.Duration) []*au
 func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogStore) (string, *server.Server, *auditlog.Logger) {
 	t.Helper()
 
-	// Find available port
-	listener, err := net.Listen("tcp", ":0")
+	// Find available port (bind to loopback only for security)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	port := listener.Addr().(*net.TCPAddr).Port
 	require.NoError(t, listener.Close())
@@ -133,10 +133,10 @@ func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogSt
 		AuditLogger: logger,
 	})
 
-	// Start server
-	serverURL := fmt.Sprintf("http://localhost:%d", port)
+	// Start server (bind to loopback only)
+	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	go func() {
-		if err := srv.Start(fmt.Sprintf(":%d", port)); err != nil && err != http.ErrServerClosed {
+		if err := srv.Start(fmt.Sprintf("127.0.0.1:%d", port)); err != nil && err != http.ErrServerClosed {
 			t.Logf("Server error: %v", err)
 		}
 	}()

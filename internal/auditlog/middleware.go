@@ -29,6 +29,10 @@ const (
 
 	// maxBodyCapture is the maximum size of request/response bodies to capture (1MB)
 	maxBodyCapture int64 = 1024 * 1024
+
+	// apiKeyHashPrefixLength is the number of hex characters to use from the SHA256 hash
+	// of API keys. 16 hex chars = 64 bits of entropy, reducing collision risk compared to 8.
+	apiKeyHashPrefixLength = 16
 )
 
 // Middleware creates an Echo middleware for audit logging.
@@ -219,8 +223,8 @@ func extractHeaders(headers map[string][]string) map[string]string {
 	return RedactHeaders(result)
 }
 
-// hashAPIKey creates a short hash of the API key for identification
-// Returns first 8 characters of SHA256 hash
+// hashAPIKey creates a short hash of the API key for identification.
+// Returns first apiKeyHashPrefixLength hex characters of SHA256 hash.
 func hashAPIKey(authHeader string) string {
 	// Extract token from "Bearer <token>"
 	token := strings.TrimPrefix(authHeader, "Bearer ")
@@ -230,7 +234,7 @@ func hashAPIKey(authHeader string) string {
 	}
 
 	hash := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(hash[:])[:8]
+	return hex.EncodeToString(hash[:])[:apiKeyHashPrefixLength]
 }
 
 // EnrichEntry retrieves the log entry from context for enrichment by handlers.
