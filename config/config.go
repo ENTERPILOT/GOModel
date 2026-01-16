@@ -432,15 +432,6 @@ func getEnvBool(key string) bool {
 	return strings.EqualFold(value, "true") || value == "1"
 }
 
-// getEnvBoolOrDefault returns the environment variable as bool or the default if not set
-func getEnvBoolOrDefault(key string, defaultValue bool) bool {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return strings.EqualFold(value, "true") || value == "1"
-}
-
 // ValidateBodySizeLimit validates a body size limit string.
 // Accepts formats like: "10M", "10MB", "1024K", "1024KB", "104857600"
 // Returns an error if the format is invalid or value is outside bounds (1KB - 100MB).
