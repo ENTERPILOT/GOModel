@@ -104,16 +104,6 @@ Create the image reference
 {{- end }}
 
 {{/*
-Check if a provider is enabled (explicitly or by having an API key)
-*/}}
-{{- define "gomodel.providerEnabled" -}}
-{{- $config := . -}}
-{{- if or $config.enabled $config.apiKey -}}
-true
-{{- end -}}
-{{- end -}}
-
-{{/*
 Generate provider API key entries for the Secret stringData.
 */}}
 {{- define "gomodel.providerSecretData" -}}
@@ -130,7 +120,7 @@ Generate provider environment variables for the Deployment.
 {{- define "gomodel.providerEnvVars" -}}
 {{- $secretName := include "gomodel.providerSecretName" . -}}
 {{- range $name, $config := .Values.providers }}
-  {{- if and (kindIs "map" $config) (hasKey $config "apiKey") (or $config.enabled $config.apiKey) }}
+  {{- if and (kindIs "map" $config) (hasKey $config "apiKey") $config.apiKey }}
 - name: {{ upper $name }}_API_KEY
   valueFrom:
     secretKeyRef:
