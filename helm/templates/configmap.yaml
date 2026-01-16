@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "gomodel.fullname" . }}
+  labels:
+    {{- include "gomodel.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.server.port | quote }}
+  BODY_SIZE_LIMIT: {{ .Values.server.bodySizeLimit | quote }}
+  CACHE_TYPE: {{ include "gomodel.cacheType" . | quote }}
+  {{- if or .Values.redis.enabled (eq .Values.cache.type "redis") }}
+  REDIS_KEY: {{ .Values.cache.redis.key | quote }}
+  {{- end }}
+  METRICS_ENABLED: {{ .Values.metrics.enabled | quote }}
+  METRICS_ENDPOINT: {{ .Values.metrics.endpoint | quote }}

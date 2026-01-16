@@ -1,0 +1,250 @@
+# Default values for gomodel
+# This is a YAML-formatted file.
+
+# -- Number of replicas (ignored if autoscaling.enabled is true)
+replicaCount: 2
+
+image:
+  # -- Image repository
+  repository: enterpilot/gomodel
+  # -- Image pull policy
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (default is the chart appVersion)
+  tag: ""
+
+# -- Image pull secrets
+imagePullSecrets: []
+# -- Override the name of the chart
+nameOverride: ""
+# -- Override the full name of the chart
+fullnameOverride: ""
+
+# Server configuration
+server:
+  # -- Server port
+  port: 8080
+  # -- Maximum request body size (e.g., "10M", "1G", "500K")
+  bodySizeLimit: "10M"
+
+# Authentication configuration
+auth:
+  # -- Master key for API authentication (leave empty to disable auth - NOT recommended for production)
+  masterKey: ""
+  # -- Use an existing secret for the master key
+  existingSecret: ""
+  # -- Key in the existing secret containing the master key
+  existingSecretKey: "master-key"
+
+# LLM Provider configuration
+providers:
+  # -- Use an existing secret for all provider API keys
+  # Secret should contain keys: OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, XAI_API_KEY
+  existingSecret: ""
+
+  openai:
+    # -- Enable OpenAI provider
+    enabled: false
+    # -- OpenAI API key (ignored if providers.existingSecret is set)
+    apiKey: ""
+    # -- Optional: Override OpenAI base URL
+    baseUrl: ""
+
+  anthropic:
+    # -- Enable Anthropic provider
+    enabled: false
+    # -- Anthropic API key (ignored if providers.existingSecret is set)
+    apiKey: ""
+    # -- Optional: Override Anthropic base URL
+    baseUrl: ""
+
+  gemini:
+    # -- Enable Google Gemini provider
+    enabled: false
+    # -- Gemini API key (ignored if providers.existingSecret is set)
+    apiKey: ""
+    # -- Optional: Override Gemini base URL
+    baseUrl: ""
+
+  groq:
+    # -- Enable Groq provider
+    enabled: false
+    # -- Groq API key (ignored if providers.existingSecret is set)
+    apiKey: ""
+    # -- Optional: Override Groq base URL
+    baseUrl: ""
+
+  xai:
+    # -- Enable xAI (Grok) provider
+    enabled: false
+    # -- xAI API key (ignored if providers.existingSecret is set)
+    apiKey: ""
+    # -- Optional: Override xAI base URL
+    baseUrl: ""
+
+# Cache configuration
+cache:
+  # -- Cache type: "local" or "redis"
+  type: "redis"
+
+  redis:
+    # -- Redis connection URL (e.g., "redis://redis:6379")
+    # If redis.enabled is true, this is auto-configured to use the subchart
+    url: ""
+    # -- Redis key for storing the model cache
+    key: "gomodel:models"
+    # -- TTL for cached data in seconds (default: 24 hours)
+    ttl: 86400
+
+# Redis subchart configuration (Bitnami Redis)
+redis:
+  # -- Deploy Redis subchart
+  enabled: true
+  # -- Redis architecture: standalone or replication
+  architecture: standalone
+  auth:
+    # -- Disable Redis authentication for simplicity
+    enabled: false
+  master:
+    persistence:
+      # -- Disable persistence for standalone mode
+      enabled: false
+
+# Prometheus metrics configuration
+metrics:
+  # -- Enable Prometheus metrics
+  enabled: true
+  # -- Metrics endpoint path
+  endpoint: "/metrics"
+
+  serviceMonitor:
+    # -- Create a ServiceMonitor for Prometheus Operator
+    enabled: false
+    # -- Scrape interval
+    interval: "15s"
+    # -- Additional labels for the ServiceMonitor
+    labels: {}
+
+# Kubernetes Service configuration
+service:
+  # -- Service type: ClusterIP, LoadBalancer, NodePort
+  type: ClusterIP
+  # -- Service port
+  port: 8080
+  # -- Service annotations
+  annotations: {}
+
+# Ingress configuration
+ingress:
+  # -- Enable Ingress
+  enabled: false
+  # -- Ingress class name
+  className: ""
+  # -- Ingress annotations
+  annotations: {}
+  # -- Ingress hosts configuration
+  hosts:
+    - host: gomodel.local
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- Ingress TLS configuration
+  tls: []
+  #  - secretName: gomodel-tls
+  #    hosts:
+  #      - gomodel.local
+
+# Gateway API configuration
+gateway:
+  # -- Enable Gateway API HTTPRoute
+  enabled: false
+  # -- Parent Gateway reference
+  parentRef:
+    # -- Gateway name
+    name: ""
+    # -- Gateway namespace (defaults to release namespace)
+    namespace: ""
+  # -- Hostnames for the HTTPRoute
+  hostnames: []
+  #  - gomodel.example.com
+
+# Resource requests and limits
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+
+# Horizontal Pod Autoscaler configuration
+autoscaling:
+  # -- Enable HPA
+  enabled: false
+  # -- Minimum replicas
+  minReplicas: 2
+  # -- Maximum replicas
+  maxReplicas: 10
+  # -- Target CPU utilization percentage
+  targetCPUUtilizationPercentage: 70
+  # -- Target memory utilization percentage (optional)
+  # targetMemoryUtilizationPercentage: 80
+
+# Pod Disruption Budget configuration
+podDisruptionBudget:
+  # -- Enable PDB
+  enabled: true
+  # -- Minimum available pods
+  minAvailable: 1
+  # -- Maximum unavailable pods (alternative to minAvailable)
+  # maxUnavailable: 1
+
+# Liveness probe configuration
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe configuration
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Pod security context
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# Container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+# -- Node selector
+nodeSelector: {}
+
+# -- Tolerations
+tolerations: []
+
+# -- Affinity rules
+affinity: {}
+
+# -- Additional pod annotations
+podAnnotations: {}
+
+# -- Additional pod labels
+podLabels: {}
