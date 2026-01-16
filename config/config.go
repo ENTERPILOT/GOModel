@@ -238,7 +238,7 @@ func Load() (*Config, error) {
 				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
 				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
 				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
-				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
+				OnlyModelInteractions: getEnvBool("LOGGING_ONLY_MODEL_INTERACTIONS"),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
