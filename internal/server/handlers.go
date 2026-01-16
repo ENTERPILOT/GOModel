@@ -29,14 +29,16 @@ func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface)
 // handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
 // It wraps the stream with audit logging and sets appropriate SSE headers.
 func (h *Handler) handleStreamingResponse(c echo.Context, streamFn func() (io.ReadCloser, error)) error {
-	// Mark as streaming so middleware doesn't log (StreamLogWrapper handles it)
-	auditlog.MarkEntryAsStreaming(c, true)
-	auditlog.EnrichEntryWithStream(c, true)
-
+	// Call streamFn first - only mark as streaming after success
+	// This ensures failed streams are logged normally by handleError/middleware
 	stream, err := streamFn()
 	if err != nil {
 		return handleError(c, err)
 	}
+
+	// Mark as streaming so middleware doesn't log (StreamLogWrapper handles it)
+	auditlog.MarkEntryAsStreaming(c, true)
+	auditlog.EnrichEntryWithStream(c, true)
 
 	// Get entry from context and wrap stream for logging
 	entry := auditlog.GetStreamEntryFromContext(c)

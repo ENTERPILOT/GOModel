@@ -148,6 +148,8 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEnt
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	var errs []error
+
 	for _, e := range entries {
 		var dataJSON []byte
 		if e.Data != nil {
@@ -170,7 +172,13 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEnt
 
 		if err != nil {
 			slog.Warn("failed to insert audit log in batch", "error", err, "id", e.ID)
+			errs = append(errs, fmt.Errorf("insert %s: %w", e.ID, err))
 		}
+	}
+
+	// If any inserts failed, rollback and return error (consistent with writeBatchSmall)
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to insert %d of %d audit logs: %w", len(errs), len(entries), errors.Join(errs...))
 	}
 
 	if err := tx.Commit(ctx); err != nil {
