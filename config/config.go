@@ -44,12 +44,12 @@ type LogConfig struct {
 
 	// LogBodies enables logging of full request/response bodies
 	// WARNING: May contain sensitive data (PII, API keys in prompts)
-	// Default: false
+	// Default: true
 	LogBodies bool `mapstructure:"log_bodies"`
 
 	// LogHeaders enables logging of request/response headers
 	// Sensitive headers (Authorization, Cookie, etc.) are auto-redacted
-	// Default: false
+	// Default: true
 	LogHeaders bool `mapstructure:"log_headers"`
 
 	// BufferSize is the number of log entries to buffer before flushing
@@ -181,8 +181,8 @@ func Load() (*Config, error) {
 	// Logging defaults
 	viper.SetDefault("logging.enabled", false)
 	viper.SetDefault("logging.storage_type", "sqlite")
-	viper.SetDefault("logging.log_bodies", false)
-	viper.SetDefault("logging.log_headers", false)
+	viper.SetDefault("logging.log_bodies", true)
+	viper.SetDefault("logging.log_headers", true)
 	viper.SetDefault("logging.buffer_size", 1000)
 	viper.SetDefault("logging.flush_interval", 5)
 	viper.SetDefault("logging.retention_days", 30)
@@ -233,8 +233,8 @@ func Load() (*Config, error) {
 			Logging: LogConfig{
 				Enabled:               getEnvBool("LOGGING_ENABLED"),
 				StorageType:           getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
-				LogBodies:             getEnvBool("LOGGING_LOG_BODIES"),
-				LogHeaders:            getEnvBool("LOGGING_LOG_HEADERS"),
+				LogBodies:             getEnvBoolOrDefault("LOGGING_LOG_BODIES", true),
+				LogHeaders:            getEnvBoolOrDefault("LOGGING_LOG_HEADERS", true),
 				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
 				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
 				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
@@ -432,7 +432,8 @@ func getEnvBool(key string) bool {
 	return strings.EqualFold(value, "true") || value == "1"
 }
 
-// getEnvBoolOrDefault returns the environment variable as bool or the default if not set
+// getEnvBoolOrDefault returns the boolean value of the environment variable,
+// or the default value if the variable is not set
 func getEnvBoolOrDefault(key string, defaultValue bool) bool {
 	value := os.Getenv(key)
 	if value == "" {
