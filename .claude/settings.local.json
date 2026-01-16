@@ -10,7 +10,8 @@
       "Bash(golangci-lint run:*)",
       "Bash(make test-e2e:*)",
       "WebSearch",
-      "Bash(go doc:*)"
+      "Bash(go doc:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

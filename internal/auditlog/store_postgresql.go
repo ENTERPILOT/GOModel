@@ -81,7 +81,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 
 	// Start background cleanup if retention is configured
 	if retentionDays > 0 {
-		go store.cleanupLoop()
+		go RunCleanupLoop(store.stopCleanup, store.cleanup)
 	}
 
 	return store, nil
@@ -203,25 +203,6 @@ func (s *PostgreSQLStore) Close() error {
 		})
 	}
 	return nil
-}
-
-// cleanupLoop runs periodically to delete old log entries.
-func (s *PostgreSQLStore) cleanupLoop() {
-	// Run cleanup every hour
-	ticker := time.NewTicker(1 * time.Hour)
-	defer ticker.Stop()
-
-	// Run initial cleanup
-	s.cleanup()
-
-	for {
-		select {
-		case <-ticker.C:
-			s.cleanup()
-		case <-s.stopCleanup:
-			return
-		}
-	}
 }
 
 // cleanup deletes log entries older than the retention period.
