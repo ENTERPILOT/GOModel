@@ -4,6 +4,8 @@ package auditlog
 
 import (
 	"context"
+	"encoding/json"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -84,6 +86,21 @@ type LogData struct {
 	// Body capture status flags (set when body exceeds 1MB limit)
 	RequestBodyTooBigToHandle bool `json:"request_body_too_big_to_handle,omitempty" bson:"request_body_too_big_to_handle,omitempty"`
 	ResponseBodyTooBigToHandle bool `json:"response_body_too_big_to_handle,omitempty" bson:"response_body_too_big_to_handle,omitempty"`
+}
+
+// marshalLogData marshals the Data field to JSON for SQL storage.
+// Returns nil if data is nil, or "{}" if marshaling fails.
+// This is used by PostgreSQL and SQLite stores.
+func marshalLogData(data *LogData, entryID string) []byte {
+	if data == nil {
+		return nil
+	}
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		slog.Warn("failed to marshal log data", "error", err, "id", entryID)
+		return []byte("{}")
+	}
+	return dataJSON
 }
 
 // RedactedHeaders contains headers that should be automatically redacted.

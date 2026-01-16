@@ -3,7 +3,6 @@ package auditlog
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -96,16 +95,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 	for i, e := range entries {
 		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-		// Marshal data to JSON
-		var dataJSON []byte
-		if e.Data != nil {
-			var err error
-			dataJSON, err = json.Marshal(e.Data)
-			if err != nil {
-				slog.Warn("failed to marshal log data", "error", err, "id", e.ID)
-				dataJSON = []byte("{}")
-			}
-		}
+		dataJSON := marshalLogData(e.Data, e.ID)
 
 		// Convert bool to int for SQLite
 		streamInt := 0

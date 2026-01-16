@@ -2,7 +2,6 @@ package auditlog
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -107,15 +106,7 @@ func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEnt
 	var errs []error
 
 	for _, e := range entries {
-		var dataJSON []byte
-		if e.Data != nil {
-			var err error
-			dataJSON, err = json.Marshal(e.Data)
-			if err != nil {
-				slog.Warn("failed to marshal log data", "error", err, "id", e.ID)
-				dataJSON = []byte("{}")
-			}
-		}
+		dataJSON := marshalLogData(e.Data, e.ID)
 
 		_, err := s.pool.Exec(ctx, `
 			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
@@ -151,14 +142,7 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEnt
 	var errs []error
 
 	for _, e := range entries {
-		var dataJSON []byte
-		if e.Data != nil {
-			dataJSON, err = json.Marshal(e.Data)
-			if err != nil {
-				slog.Warn("failed to marshal log data", "error", err, "id", e.ID)
-				dataJSON = []byte("{}")
-			}
-		}
+		dataJSON := marshalLogData(e.Data, e.ID)
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
