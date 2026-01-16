@@ -233,12 +233,12 @@ func Load() (*Config, error) {
 			Logging: LogConfig{
 				Enabled:               getEnvBool("LOGGING_ENABLED"),
 				StorageType:           getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
-				LogBodies:             getEnvBool("LOGGING_LOG_BODIES"),
-				LogHeaders:            getEnvBool("LOGGING_LOG_HEADERS"),
+				LogBodies:             getEnvBoolOrDefault("LOGGING_LOG_BODIES", true),
+				LogHeaders:            getEnvBoolOrDefault("LOGGING_LOG_HEADERS", true),
 				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
 				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
 				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
-				OnlyModelInteractions: getEnvBool("LOGGING_ONLY_MODEL_INTERACTIONS"),
+				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -429,6 +429,16 @@ func getEnvIntOrDefault(key string, defaultValue int) int {
 // getEnvBool returns true if the environment variable is "true" or "1"
 func getEnvBool(key string) bool {
 	value := os.Getenv(key)
+	return strings.EqualFold(value, "true") || value == "1"
+}
+
+// getEnvBoolOrDefault returns the boolean value of the environment variable,
+// or the default value if the variable is not set
+func getEnvBoolOrDefault(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
 	return strings.EqualFold(value, "true") || value == "1"
 }
 
