@@ -10,6 +10,15 @@ import (
 	"time"
 )
 
+// SQLite has a default limit of 999 bindable parameters per query (SQLITE_MAX_VARIABLE_NUMBER).
+// With 16 columns per log entry, we can safely insert up to 62 entries per batch (62 * 16 = 992).
+// We chunk larger batches to avoid hitting this limit.
+const (
+	maxSQLiteParams    = 999
+	columnsPerEntry    = 16
+	maxEntriesPerBatch = maxSQLiteParams / columnsPerEntry // 62 entries
+)
+
 // SQLiteStore implements LogStore for SQLite databases.
 type SQLiteStore struct {
 	db            *sql.DB
@@ -83,53 +92,69 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 }
 
 // WriteBatch writes multiple log entries to SQLite using batch insert.
+// Entries are chunked to stay within SQLite's parameter limit.
 func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
 
-	// Build batch insert query
-	placeholders := make([]string, len(entries))
-	values := make([]interface{}, 0, len(entries)*16)
+	// Process entries in chunks to stay within SQLite's parameter limit
+	for i := 0; i < len(entries); i += maxEntriesPerBatch {
+		end := i + maxEntriesPerBatch
+		if end > len(entries) {
+			end = len(entries)
+		}
+		chunk := entries[i:end]
 
-	for i, e := range entries {
-		placeholders[i] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+		// Build batch insert query for this chunk
+		placeholders := make([]string, len(chunk))
+		values := make([]interface{}, 0, len(chunk)*columnsPerEntry)
 
-		dataJSON := marshalLogData(e.Data, e.ID)
+		for j, e := range chunk {
+			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
-		// Convert bool to int for SQLite
-		streamInt := 0
-		if e.Stream {
-			streamInt = 1
+			dataJSON := marshalLogData(e.Data, e.ID)
+
+			// Convert bool to int for SQLite
+			streamInt := 0
+			if e.Stream {
+				streamInt = 1
+			}
+
+			// Handle NULL for data field: nil becomes SQL NULL, non-nil becomes JSON string
+			var dataValue interface{}
+			if dataJSON != nil {
+				dataValue = string(dataJSON)
+			}
+
+			values = append(values,
+				e.ID,
+				e.Timestamp.UTC().Format(time.RFC3339Nano),
+				e.DurationNs,
+				e.Model,
+				e.Provider,
+				e.StatusCode,
+				e.RequestID,
+				e.ClientIP,
+				e.Method,
+				e.Path,
+				streamInt,
+				e.PromptTokens,
+				e.CompletionTokens,
+				e.TotalTokens,
+				e.ErrorType,
+				dataValue,
+			)
 		}
 
-		values = append(values,
-			e.ID,
-			e.Timestamp.UTC().Format(time.RFC3339Nano),
-			e.DurationNs,
-			e.Model,
-			e.Provider,
-			e.StatusCode,
-			e.RequestID,
-			e.ClientIP,
-			e.Method,
-			e.Path,
-			streamInt,
-			e.PromptTokens,
-			e.CompletionTokens,
-			e.TotalTokens,
-			e.ErrorType,
-			string(dataJSON),
-		)
-	}
+		query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
+			request_id, client_ip, method, path, stream, prompt_tokens, completion_tokens, total_tokens, error_type, data) VALUES ` +
+			strings.Join(placeholders, ",")
 
-	query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
-		request_id, client_ip, method, path, stream, prompt_tokens, completion_tokens, total_tokens, error_type, data) VALUES ` +
-		strings.Join(placeholders, ",")
-
-	_, err := s.db.ExecContext(ctx, query, values...)
-	if err != nil {
-		return fmt.Errorf("failed to insert audit logs: %w", err)
+		_, err := s.db.ExecContext(ctx, query, values...)
+		if err != nil {
+			return fmt.Errorf("failed to insert audit logs batch %d: %w", i/maxEntriesPerBatch, err)
+		}
 	}
 
 	return nil
