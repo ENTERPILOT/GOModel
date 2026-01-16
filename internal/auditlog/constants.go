@@ -4,7 +4,7 @@ package auditlog
 const (
 	// MaxBodyCapture is the maximum size of request/response bodies to capture (1MB).
 	// Prevents memory exhaustion from large payloads.
-	MaxBodyCapture int64 = 1024 * 1024
+	MaxBodyCapture = 1024 * 1024
 
 	// MaxContentCapture is the maximum size of accumulated streaming content (1MB).
 	// Used by StreamLogWrapper to limit reconstructed response body size.
