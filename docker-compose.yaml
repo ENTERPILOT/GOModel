@@ -1,9 +1,8 @@
 services:
   gomodel:
-    image: golang:1.24-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "${PORT:-8080}:8080"
     env_file:
@@ -28,7 +27,6 @@ services:
       - LOGGING_BUFFER_SIZE=1000
       - LOGGING_FLUSH_INTERVAL=5
       - LOGGING_RETENTION_DAYS=30
-    command: go run ./cmd/gomodel
     depends_on:
       redis:
         condition: service_healthy
