@@ -47,6 +47,7 @@ type ResponsesResponse struct {
 	Object    string                `json:"object"` // "response"
 	CreatedAt int64                 `json:"created_at"`
 	Model     string                `json:"model"`
+	Provider  string                `json:"provider"`
 	Status    string                `json:"status"` // "completed", "failed", "in_progress"
 	Output    []ResponsesOutputItem `json:"output"`
 	Usage     *ResponsesUsage       `json:"usage,omitempty"`

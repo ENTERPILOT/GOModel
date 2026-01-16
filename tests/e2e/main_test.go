@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 		fmt.Printf("Failed to find available port: %v\n", err)
 		os.Exit(1)
 	}
-	gatewayURL = fmt.Sprintf("http://localhost:%d", gatewayPort)
+	gatewayURL = fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
 
 	// 4. Create a test provider and registry
 	testProvider := NewTestProvider(mockLLMURL, "sk-test-key-12345")
@@ -65,11 +65,11 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	// 5. Start the gateway server
+	// 5. Start the gateway server (bind to loopback only)
 	// Note: No master key for e2e tests (tests run in unsafe mode)
 	testServer = server.New(router, &server.Config{})
 	go func() {
-		addr := fmt.Sprintf(":%d", gatewayPort)
+		addr := fmt.Sprintf("127.0.0.1:%d", gatewayPort)
 		if err := testServer.Start(addr); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("Server error: %v\n", err)
 		}
@@ -119,9 +119,9 @@ func waitForServer(healthURL string) error {
 	return fmt.Errorf("server did not become healthy within timeout")
 }
 
-// findAvailablePort finds an available TCP port.
+// findAvailablePort finds an available TCP port on loopback.
 func findAvailablePort() (int, error) {
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}

@@ -32,4 +32,8 @@ type RoutableProvider interface {
 
 	// Supports returns true if the provider can handle the given model
 	Supports(model string) bool
+
+	// GetProviderType returns the provider type string for the given model.
+	// Returns empty string if the model is not found.
+	GetProviderType(model string) string
 }

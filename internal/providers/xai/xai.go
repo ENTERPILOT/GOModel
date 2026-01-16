@@ -67,6 +67,10 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	resp.Provider = "xai"
+	if resp.Model == "" {
+		resp.Model = req.Model
+	}
 	return &resp, nil
 }
 
@@ -102,6 +106,10 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 	}, &resp)
 	if err != nil {
 		return nil, err
+	}
+	resp.Provider = "xai"
+	if resp.Model == "" {
+		resp.Model = req.Model
 	}
 	return &resp, nil
 }

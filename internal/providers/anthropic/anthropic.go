@@ -165,10 +165,11 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	}
 
 	return &core.ChatResponse{
-		ID:      resp.ID,
-		Object:  "chat.completion",
-		Model:   resp.Model,
-		Created: time.Now().Unix(),
+		ID:       resp.ID,
+		Object:   "chat.completion",
+		Model:    resp.Model,
+		Provider: "anthropic",
+		Created:  time.Now().Unix(),
 		Choices: []core.Choice{
 			{
 				Index: 0,
@@ -325,10 +326,11 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 	case "content_block_delta":
 		if event.Delta != nil && event.Delta.Text != "" {
 			chunk := map[string]interface{}{
-				"id":      sc.msgID,
-				"object":  "chat.completion.chunk",
-				"created": time.Now().Unix(),
-				"model":   sc.model,
+				"id":       sc.msgID,
+				"object":   "chat.completion.chunk",
+				"created":  time.Now().Unix(),
+				"model":    sc.model,
+				"provider": "anthropic",
 				"choices": []map[string]interface{}{
 					{
 						"index": 0,
@@ -353,10 +355,11 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 	case "message_delta":
 		if event.Delta != nil && event.Delta.StopReason != "" {
 			chunk := map[string]interface{}{
-				"id":      sc.msgID,
-				"object":  "chat.completion.chunk",
-				"created": time.Now().Unix(),
-				"model":   sc.model,
+				"id":       sc.msgID,
+				"object":   "chat.completion.chunk",
+				"created":  time.Now().Unix(),
+				"model":    sc.model,
+				"provider": "anthropic",
 				"choices": []map[string]interface{}{
 					{
 						"index":         0,
@@ -507,6 +510,7 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		Object:    "response",
 		CreatedAt: time.Now().Unix(),
 		Model:     model,
+		Provider:  "anthropic",
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
@@ -614,6 +618,7 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 							"object":     "response",
 							"status":     "completed",
 							"model":      sc.model,
+							"provider":   "anthropic",
 							"created_at": time.Now().Unix(),
 						},
 					}
@@ -689,6 +694,7 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 				"object":     "response",
 				"status":     "in_progress",
 				"model":      sc.model,
+				"provider":   "anthropic",
 				"created_at": time.Now().Unix(),
 			},
 		}

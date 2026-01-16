@@ -29,12 +29,13 @@ type Message struct {
 
 // ChatResponse represents the chat completion response
 type ChatResponse struct {
-	ID      string   `json:"id"`
-	Object  string   `json:"object"`
-	Model   string   `json:"model"`
-	Choices []Choice `json:"choices"`
-	Usage   Usage    `json:"usage"`
-	Created int64    `json:"created"`
+	ID       string   `json:"id"`
+	Object   string   `json:"object"`
+	Model    string   `json:"model"`
+	Provider string   `json:"provider"`
+	Choices  []Choice `json:"choices"`
+	Usage    Usage    `json:"usage"`
+	Created  int64    `json:"created"`
 }
 
 // Choice represents a single completion choice

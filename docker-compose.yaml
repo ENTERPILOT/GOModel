@@ -1,21 +1,38 @@
 services:
   gomodel:
-    image: golang:1.24-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "${PORT:-8080}:8080"
     env_file:
       - .env
     environment:
+      # Cache configuration
       - CACHE_TYPE=redis
       - REDIS_URL=redis://redis:6379
       - REDIS_KEY=gomodel:models
+      # Metrics
       - METRICS_ENABLED=true
-    command: go run ./cmd/gomodel
+      # Storage configuration (PostgreSQL for audit logs)
+      - POSTGRES_URL=postgres://gomodel:gomodel@postgres:5432/gomodel
+      # MongoDB configuration (uncomment to use MongoDB instead)
+      - MONGODB_URL=mongodb://mongodb:27017/gomodel
+      # Audit logging - all enabled with PostgreSQL
+      - LOGGING_ENABLED=true
+      # - LOGGING_STORAGE_TYPE=postgresql
+      - LOGGING_STORAGE_TYPE=mongodb
+      - LOGGING_LOG_BODIES=true
+      - LOGGING_LOG_HEADERS=true
+      - LOGGING_BUFFER_SIZE=1000
+      - LOGGING_FLUSH_INTERVAL=5
+      - LOGGING_RETENTION_DAYS=30
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
     restart: unless-stopped
 
@@ -32,6 +49,46 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  postgres:
+    image: postgres:18-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=gomodel
+      - POSTGRES_PASSWORD=gomodel
+      - POSTGRES_DB=gomodel
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gomodel -d gomodel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mongodb:
+    image: mongo:8
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  adminer:
+    image: adminer:5
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:latest
@@ -50,4 +107,6 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
+  mongodb_data:
   prometheus_data:

@@ -113,3 +113,9 @@ func (r *Router) StreamResponses(ctx context.Context, req *core.ResponsesRequest
 	}
 	return provider.StreamResponses(ctx, req)
 }
+
+// GetProviderType returns the provider type string for the given model.
+// Returns empty string if the model is not found.
+func (r *Router) GetProviderType(model string) string {
+	return r.registry.GetProviderType(model)
+}

@@ -26,8 +26,83 @@ var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 type Config struct {
 	Server    ServerConfig              `mapstructure:"server"`
 	Cache     CacheConfig               `mapstructure:"cache"`
+	Storage   StorageConfig             `mapstructure:"storage"`
+	Logging   LogConfig                 `mapstructure:"logging"`
 	Metrics   MetricsConfig             `mapstructure:"metrics"`
 	Providers map[string]ProviderConfig `mapstructure:"providers"`
+}
+
+// LogConfig holds audit logging configuration
+type LogConfig struct {
+	// Enabled controls whether audit logging is active
+	// Default: false
+	Enabled bool `mapstructure:"enabled"`
+
+	// StorageType specifies the storage backend for audit logs: "sqlite" (default), "postgresql", or "mongodb"
+	// This selects which of the storage backends (configured separately) to use for audit logs
+	StorageType string `mapstructure:"storage_type"`
+
+	// LogBodies enables logging of full request/response bodies
+	// WARNING: May contain sensitive data (PII, API keys in prompts)
+	// Default: false
+	LogBodies bool `mapstructure:"log_bodies"`
+
+	// LogHeaders enables logging of request/response headers
+	// Sensitive headers (Authorization, Cookie, etc.) are auto-redacted
+	// Default: false
+	LogHeaders bool `mapstructure:"log_headers"`
+
+	// BufferSize is the number of log entries to buffer before flushing
+	// Default: 1000
+	BufferSize int `mapstructure:"buffer_size"`
+
+	// FlushInterval is how often to flush buffered logs (in seconds)
+	// Default: 5
+	FlushInterval int `mapstructure:"flush_interval"`
+
+	// RetentionDays is how long to keep logs (0 = forever)
+	// Default: 30
+	RetentionDays int `mapstructure:"retention_days"`
+
+	// OnlyModelInteractions limits audit logging to AI model endpoints only
+	// When true, only /v1/chat/completions, /v1/responses, /v1/models are logged
+	// Endpoints like /health, /metrics, /admin are skipped
+	// Default: true
+	OnlyModelInteractions bool `mapstructure:"only_model_interactions"`
+}
+
+// StorageConfig holds database storage configuration (used by audit logging, future IAM, etc.)
+type StorageConfig struct {
+	// SQLite configuration
+	SQLite SQLiteStorageConfig `mapstructure:"sqlite"`
+
+	// PostgreSQL configuration
+	PostgreSQL PostgreSQLStorageConfig `mapstructure:"postgresql"`
+
+	// MongoDB configuration
+	MongoDB MongoDBStorageConfig `mapstructure:"mongodb"`
+}
+
+// SQLiteStorageConfig holds SQLite-specific storage configuration
+type SQLiteStorageConfig struct {
+	// Path is the database file path (default: .cache/gomodel.db)
+	Path string `mapstructure:"path"`
+}
+
+// PostgreSQLStorageConfig holds PostgreSQL-specific storage configuration
+type PostgreSQLStorageConfig struct {
+	// URL is the connection string (e.g., postgres://user:pass@localhost/dbname)
+	URL string `mapstructure:"url"`
+	// MaxConns is the maximum connection pool size (default: 10)
+	MaxConns int `mapstructure:"max_conns"`
+}
+
+// MongoDBStorageConfig holds MongoDB-specific storage configuration
+type MongoDBStorageConfig struct {
+	// URL is the connection string (e.g., mongodb://localhost:27017)
+	URL string `mapstructure:"url"`
+	// Database is the database name (default: gomodel)
+	Database string `mapstructure:"database"`
 }
 
 // CacheConfig holds cache configuration for model storage
@@ -98,6 +173,21 @@ func Load() (*Config, error) {
 	viper.SetDefault("metrics.enabled", false)
 	viper.SetDefault("metrics.endpoint", "/metrics")
 
+	// Storage defaults
+	viper.SetDefault("storage.sqlite.path", ".cache/gomodel.db")
+	viper.SetDefault("storage.postgresql.max_conns", 10)
+	viper.SetDefault("storage.mongodb.database", "gomodel")
+
+	// Logging defaults
+	viper.SetDefault("logging.enabled", false)
+	viper.SetDefault("logging.storage_type", "sqlite")
+	viper.SetDefault("logging.log_bodies", false)
+	viper.SetDefault("logging.log_headers", false)
+	viper.SetDefault("logging.buffer_size", 1000)
+	viper.SetDefault("logging.flush_interval", 5)
+	viper.SetDefault("logging.retention_days", 30)
+	viper.SetDefault("logging.only_model_interactions", true)
+
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
 
@@ -126,6 +216,29 @@ func Load() (*Config, error) {
 				Port:          viper.GetString("PORT"),
 				MasterKey:     viper.GetString("GOMODEL_MASTER_KEY"),
 				BodySizeLimit: viper.GetString("BODY_SIZE_LIMIT"),
+			},
+			Storage: StorageConfig{
+				SQLite: SQLiteStorageConfig{
+					Path: getEnvOrDefault("SQLITE_PATH", ".cache/gomodel.db"),
+				},
+				PostgreSQL: PostgreSQLStorageConfig{
+					URL:      os.Getenv("POSTGRES_URL"),
+					MaxConns: getEnvIntOrDefault("POSTGRES_MAX_CONNS", 10),
+				},
+				MongoDB: MongoDBStorageConfig{
+					URL:      os.Getenv("MONGODB_URL"),
+					Database: getEnvOrDefault("MONGODB_DATABASE", "gomodel"),
+				},
+			},
+			Logging: LogConfig{
+				Enabled:               getEnvBool("LOGGING_ENABLED"),
+				StorageType:           getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
+				LogBodies:             getEnvBool("LOGGING_LOG_BODIES"),
+				LogHeaders:            getEnvBool("LOGGING_LOG_HEADERS"),
+				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
+				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
+				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
+				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -197,6 +310,49 @@ func expandEnvVars(cfg Config) Config {
 	cfg.Cache.Redis.URL = expandString(cfg.Cache.Redis.URL)
 	cfg.Cache.Redis.Key = expandString(cfg.Cache.Redis.Key)
 
+	// Expand storage configuration
+	cfg.Storage.SQLite.Path = expandString(cfg.Storage.SQLite.Path)
+	cfg.Storage.PostgreSQL.URL = expandString(cfg.Storage.PostgreSQL.URL)
+	cfg.Storage.MongoDB.URL = expandString(cfg.Storage.MongoDB.URL)
+	cfg.Storage.MongoDB.Database = expandString(cfg.Storage.MongoDB.Database)
+
+	// Override storage configuration from environment variables
+	// This allows env vars to take precedence over config file values
+	if sqlitePath := os.Getenv("SQLITE_PATH"); sqlitePath != "" {
+		cfg.Storage.SQLite.Path = sqlitePath
+	}
+	if postgresURL := os.Getenv("POSTGRES_URL"); postgresURL != "" {
+		cfg.Storage.PostgreSQL.URL = postgresURL
+	}
+	if postgresMaxConns := os.Getenv("POSTGRES_MAX_CONNS"); postgresMaxConns != "" {
+		if maxConns, err := strconv.Atoi(postgresMaxConns); err == nil {
+			cfg.Storage.PostgreSQL.MaxConns = maxConns
+		}
+	}
+	if mongoURL := os.Getenv("MONGODB_URL"); mongoURL != "" {
+		cfg.Storage.MongoDB.URL = mongoURL
+	}
+	if mongoDatabase := os.Getenv("MONGODB_DATABASE"); mongoDatabase != "" {
+		cfg.Storage.MongoDB.Database = mongoDatabase
+	}
+
+	// Override logging configuration from environment variables
+	if loggingEnabled := os.Getenv("LOGGING_ENABLED"); loggingEnabled != "" {
+		cfg.Logging.Enabled = strings.EqualFold(loggingEnabled, "true") || loggingEnabled == "1"
+	}
+	if storageType := os.Getenv("LOGGING_STORAGE_TYPE"); storageType != "" {
+		cfg.Logging.StorageType = storageType
+	}
+	if logBodies := os.Getenv("LOGGING_LOG_BODIES"); logBodies != "" {
+		cfg.Logging.LogBodies = strings.EqualFold(logBodies, "true") || logBodies == "1"
+	}
+	if logHeaders := os.Getenv("LOGGING_LOG_HEADERS"); logHeaders != "" {
+		cfg.Logging.LogHeaders = strings.EqualFold(logHeaders, "true") || logHeaders == "1"
+	}
+	if onlyModel := os.Getenv("LOGGING_ONLY_MODEL_INTERACTIONS"); onlyModel != "" {
+		cfg.Logging.OnlyModelInteractions = strings.EqualFold(onlyModel, "true") || onlyModel == "1"
+	}
+
 	// Expand provider configurations
 	for name, pCfg := range cfg.Providers {
 		pCfg.APIKey = expandString(pCfg.APIKey)
@@ -250,6 +406,39 @@ func removeEmptyProviders(cfg Config) Config {
 	}
 	cfg.Providers = filteredProviders
 	return cfg
+}
+
+// getEnvOrDefault returns the environment variable value or the default if not set
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// getEnvIntOrDefault returns the environment variable as int or the default if not set/invalid
+func getEnvIntOrDefault(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
+	}
+	return defaultValue
+}
+
+// getEnvBool returns true if the environment variable is "true" or "1"
+func getEnvBool(key string) bool {
+	value := os.Getenv(key)
+	return strings.EqualFold(value, "true") || value == "1"
+}
+
+// getEnvBoolOrDefault returns the environment variable as bool or the default if not set
+func getEnvBoolOrDefault(key string, defaultValue bool) bool {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+	return strings.EqualFold(value, "true") || value == "1"
 }
 
 // ValidateBodySizeLimit validates a body size limit string.

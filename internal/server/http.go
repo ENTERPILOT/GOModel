@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 )
 
@@ -22,10 +23,12 @@ type Server struct {
 
 // Config holds server configuration options
 type Config struct {
-	MasterKey       string // Optional: Master key for authentication
-	MetricsEnabled  bool   // Whether to expose Prometheus metrics endpoint
-	MetricsEndpoint string // HTTP path for metrics endpoint (default: /metrics)
-	BodySizeLimit   string // Max request body size (e.g., "10M", "1024K")
+	MasterKey                 string                   // Optional: Master key for authentication
+	MetricsEnabled            bool                     // Whether to expose Prometheus metrics endpoint
+	MetricsEndpoint           string                   // HTTP path for metrics endpoint (default: /metrics)
+	BodySizeLimit             string                   // Max request body size (e.g., "10M", "1024K")
+	AuditLogger               auditlog.LoggerInterface // Optional: Audit logger for request/response logging
+	LogOnlyModelInteractions  bool                     // Only log AI model endpoints (default: true)
 }
 
 // New creates a new HTTP server
@@ -33,7 +36,13 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
-	handler := NewHandler(provider)
+	// Get logger from config (may be nil)
+	var logger auditlog.LoggerInterface
+	if cfg != nil {
+		logger = cfg.AuditLogger
+	}
+
+	handler := NewHandler(provider, logger)
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}
@@ -56,7 +65,40 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	// Global middleware stack (order matters)
-	e.Use(middleware.RequestLogger())
+	// Request logger with optional filtering for model-only interactions
+	if cfg != nil && cfg.LogOnlyModelInteractions {
+		e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+			Skipper: func(c echo.Context) bool {
+				return !auditlog.IsModelInteractionPath(c.Request().URL.Path)
+			},
+			LogStatus:   true,
+			LogURI:      true,
+			LogError:    true,
+			LogMethod:   true,
+			LogLatency:  true,
+			LogProtocol: true,
+			LogRemoteIP: true,
+			LogHost:     true,
+			LogURIPath:  true,
+			LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+				slog.Info("REQUEST",
+					"method", v.Method,
+					"uri", v.URI,
+					"status", v.Status,
+					"latency", v.Latency.String(),
+					"host", v.Host,
+					"bytes_in", c.Request().ContentLength,
+					"bytes_out", c.Response().Size,
+					"user_agent", c.Request().UserAgent(),
+					"remote_ip", v.RemoteIP,
+					"request_id", c.Request().Header.Get("X-Request-ID"),
+				)
+				return nil
+			},
+		}))
+	} else {
+		e.Use(middleware.RequestLogger())
+	}
 	e.Use(middleware.Recover())
 
 	// Body size limit (default: 10MB)
@@ -65,6 +107,11 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		bodySizeLimit = cfg.BodySizeLimit
 	}
 	e.Use(middleware.BodyLimit(bodySizeLimit))
+
+	// Audit logging middleware (before authentication to capture all requests)
+	if cfg != nil && cfg.AuditLogger != nil && cfg.AuditLogger.Config().Enabled {
+		e.Use(auditlog.Middleware(cfg.AuditLogger))
+	}
 
 	// Authentication (skips public paths)
 	if cfg != nil && cfg.MasterKey != "" {

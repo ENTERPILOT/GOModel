@@ -887,7 +887,7 @@ data: [DONE]
 `
 
 	reader := io.NopCloser(strings.NewReader(mockStream))
-	converter := providers.NewOpenAIResponsesStreamConverter(reader, "llama-3.3-70b-versatile")
+	converter := providers.NewOpenAIResponsesStreamConverter(reader, "llama-3.3-70b-versatile", "groq")
 
 	// Read all data from converter
 	data, err := io.ReadAll(converter)
@@ -920,7 +920,7 @@ data: [DONE]
 
 func TestGroqResponsesStreamConverter_Close(t *testing.T) {
 	reader := io.NopCloser(strings.NewReader("data: [DONE]\n"))
-	converter := providers.NewOpenAIResponsesStreamConverter(reader, "test-model")
+	converter := providers.NewOpenAIResponsesStreamConverter(reader, "test-model", "groq")
 
 	err := converter.Close()
 	if err != nil {
@@ -947,7 +947,7 @@ data: [DONE]
 `
 
 	reader := io.NopCloser(strings.NewReader(mockStream))
-	converter := providers.NewOpenAIResponsesStreamConverter(reader, "llama-3.3-70b-versatile")
+	converter := providers.NewOpenAIResponsesStreamConverter(reader, "llama-3.3-70b-versatile", "groq")
 
 	data, err := io.ReadAll(converter)
 	if err != nil {

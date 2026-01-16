@@ -3,16 +3,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
-	"path/filepath"
-	"sort"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"gomodel/config"
-	"gomodel/internal/cache"
+	"gomodel/internal/auditlog"
 	"gomodel/internal/observability"
 	"gomodel/internal/providers"
 
@@ -25,51 +27,6 @@ import (
 	"gomodel/internal/server"
 	"gomodel/internal/version"
 )
-
-// getCacheDir returns the directory for cache files.
-// Uses $GOMODEL_CACHE_DIR if set, otherwise ./.cache (working directory)
-func getCacheDir() string {
-	if cacheDir := os.Getenv("GOMODEL_CACHE_DIR"); cacheDir != "" {
-		return cacheDir
-	}
-	return ".cache"
-}
-
-// initCache initializes the appropriate cache backend based on configuration.
-// Returns a local file cache by default, or Redis if configured.
-func initCache(cfg *config.Config) (cache.Cache, error) {
-	cacheType := cfg.Cache.Type
-	if cacheType == "" {
-		cacheType = "local"
-	}
-
-	switch cacheType {
-	case "redis":
-		ttl := time.Duration(cfg.Cache.Redis.TTL) * time.Second
-		if ttl == 0 {
-			ttl = cache.DefaultRedisTTL
-		}
-
-		redisCfg := cache.RedisConfig{
-			URL: cfg.Cache.Redis.URL,
-			Key: cfg.Cache.Redis.Key,
-			TTL: ttl,
-		}
-
-		redisCache, err := cache.NewRedisCache(redisCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		slog.Info("using redis cache", "url", cfg.Cache.Redis.URL, "key", cfg.Cache.Redis.Key)
-		return redisCache, nil
-
-	default: // "local" or any other value defaults to local
-		cacheFile := filepath.Join(getCacheDir(), "models.json")
-		slog.Info("using local file cache", "path", cacheFile)
-		return cache.NewLocalCache(cacheFile), nil
-	}
-}
 
 func main() {
 	// Add a version flag check
@@ -115,67 +72,13 @@ func main() {
 		slog.Info("prometheus metrics disabled")
 	}
 
-	// Initialize cache backend based on configuration
-	modelCache, err := initCache(cfg)
+	// Initialize provider infrastructure (cache, registry, router)
+	providerResult, err := providers.Init(context.Background(), cfg)
 	if err != nil {
-		slog.Error("failed to initialize cache", "error", err)
+		slog.Error("failed to initialize providers", "error", err)
 		os.Exit(1)
 	}
-	defer modelCache.Close()
-
-	// Create model registry with cache for instant startup
-	registry := providers.NewModelRegistry()
-	registry.SetCache(modelCache)
-
-	// Sort provider names for deterministic initialization order
-	providerNames := make([]string, 0, len(cfg.Providers))
-	for name := range cfg.Providers {
-		providerNames = append(providerNames, name)
-	}
-	sort.Strings(providerNames)
-
-	// Create providers dynamically using the factory and register them
-	var initializedCount int
-	for _, name := range providerNames {
-		pCfg := cfg.Providers[name]
-		p, err := providers.Create(pCfg)
-		if err != nil {
-			slog.Error("failed to initialize provider", "name", name, "type", pCfg.Type, "error", err)
-			continue
-		}
-		// Register with type for cache persistence
-		registry.RegisterProviderWithType(p, pCfg.Type)
-		initializedCount++
-		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
-	}
-
-	// Validate that at least one provider was successfully initialized
-	if initializedCount == 0 {
-		slog.Error("no providers were successfully initialized")
-		os.Exit(1)
-	}
-
-	// Non-blocking initialization: load from cache, then refresh in background
-	// This allows the server to start serving traffic immediately using cached data
-	slog.Info("starting non-blocking model registry initialization...")
-	registry.InitializeAsync(context.Background())
-
-	slog.Info("model registry configured",
-		"cached_models", registry.ModelCount(),
-		"providers", registry.ProviderCount(),
-	)
-
-	// Start background refresh of model registry (every 5 minutes)
-	// This keeps the model list up-to-date as providers add/remove models
-	stopRefresh := registry.StartBackgroundRefresh(5 * time.Minute)
-	defer stopRefresh()
-
-	// Create provider router
-	router, err := providers.NewRouter(registry)
-	if err != nil {
-		slog.Error("failed to create router", "error", err)
-		os.Exit(1)
-	}
+	defer providerResult.Close()
 
 	// Security check: warn if no master key is configured
 	if cfg.Server.MasterKey == "" {
@@ -186,20 +89,61 @@ func main() {
 		slog.Info("authentication enabled", "mode", "master_key")
 	}
 
+	// Initialize audit logging
+	auditResult, err := auditlog.New(context.Background(), cfg)
+	if err != nil {
+		slog.Error("failed to initialize audit logging", "error", err)
+		os.Exit(1)
+	}
+	defer auditResult.Close()
+
+	if cfg.Logging.Enabled {
+		slog.Info("audit logging enabled",
+			"storage_type", cfg.Logging.StorageType,
+			"log_bodies", cfg.Logging.LogBodies,
+			"log_headers", cfg.Logging.LogHeaders,
+			"retention_days", cfg.Logging.RetentionDays,
+		)
+	} else {
+		slog.Info("audit logging disabled")
+	}
+
 	// Create and start server
 	serverCfg := &server.Config{
-		MasterKey:       cfg.Server.MasterKey,
-		MetricsEnabled:  cfg.Metrics.Enabled,
-		MetricsEndpoint: cfg.Metrics.Endpoint,
-		BodySizeLimit:   cfg.Server.BodySizeLimit,
+		MasterKey:                cfg.Server.MasterKey,
+		MetricsEnabled:           cfg.Metrics.Enabled,
+		MetricsEndpoint:          cfg.Metrics.Endpoint,
+		BodySizeLimit:            cfg.Server.BodySizeLimit,
+		AuditLogger:              auditResult.Logger,
+		LogOnlyModelInteractions: cfg.Logging.OnlyModelInteractions,
 	}
-	srv := server.New(router, serverCfg)
+	srv := server.New(providerResult.Router, serverCfg)
+
+	// Handle graceful shutdown
+	go func() {
+		quit := make(chan os.Signal, 1)
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		<-quit
+
+		slog.Info("shutting down server...")
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(ctx); err != nil {
+			slog.Error("server shutdown error", "error", err)
+		}
+	}()
 
 	addr := ":" + cfg.Server.Port
 	slog.Info("starting server", "address", addr)
 
 	if err := srv.Start(addr); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+		if errors.Is(err, http.ErrServerClosed) {
+			slog.Info("server stopped gracefully")
+		} else {
+			slog.Error("server failed to start", "error", err)
+			os.Exit(1)
+		}
 	}
 }

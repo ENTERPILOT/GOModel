@@ -267,6 +267,64 @@ OPENAI_API_KEY=sk-from-dotenv-file
 	}
 }
 
+func TestLoggingOnlyModelInteractionsDefault(t *testing.T) {
+	// Reset viper state before test
+	viper.Reset()
+
+	// Clear all relevant environment variables
+	_ = os.Unsetenv("LOGGING_ONLY_MODEL_INTERACTIONS")
+	_ = os.Unsetenv("OPENAI_API_KEY")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	// Default should be true
+	if !cfg.Logging.OnlyModelInteractions {
+		t.Error("expected OnlyModelInteractions to default to true")
+	}
+}
+
+func TestLoggingOnlyModelInteractionsFromEnv(t *testing.T) {
+	tests := []struct {
+		name     string
+		envValue string
+		expected bool
+	}{
+		{"true lowercase", "true", true},
+		{"TRUE uppercase", "TRUE", true},
+		{"True mixed", "True", true},
+		{"false lowercase", "false", false},
+		{"FALSE uppercase", "FALSE", false},
+		{"False mixed", "False", false},
+		{"1 numeric", "1", true},
+		{"0 numeric", "0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Reset viper state before each subtest
+			viper.Reset()
+
+			// Clear and set environment variable
+			_ = os.Unsetenv("OPENAI_API_KEY")
+			_ = os.Setenv("LOGGING_ONLY_MODEL_INTERACTIONS", tt.envValue)
+			defer func() { _ = os.Unsetenv("LOGGING_ONLY_MODEL_INTERACTIONS") }()
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			if cfg.Logging.OnlyModelInteractions != tt.expected {
+				t.Errorf("expected OnlyModelInteractions=%v for env value %q, got %v",
+					tt.expected, tt.envValue, cfg.Logging.OnlyModelInteractions)
+			}
+		})
+	}
+}
+
 func TestValidateBodySizeLimit(t *testing.T) {
 	tests := []struct {
 		name        string

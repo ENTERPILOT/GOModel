@@ -8,19 +8,65 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 )
 
 // Handler holds the HTTP handlers
 type Handler struct {
 	provider core.RoutableProvider
+	logger   auditlog.LoggerInterface
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
-func NewHandler(provider core.RoutableProvider) *Handler {
+func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface) *Handler {
 	return &Handler{
 		provider: provider,
+		logger:   logger,
 	}
+}
+
+// handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
+// It wraps the stream with audit logging and sets appropriate SSE headers.
+func (h *Handler) handleStreamingResponse(c echo.Context, streamFn func() (io.ReadCloser, error)) error {
+	// Call streamFn first - only mark as streaming after success
+	// This ensures failed streams are logged normally by handleError/middleware
+	stream, err := streamFn()
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	// Mark as streaming so middleware doesn't log (StreamLogWrapper handles it)
+	auditlog.MarkEntryAsStreaming(c, true)
+	auditlog.EnrichEntryWithStream(c, true)
+
+	// Get entry from context and wrap stream for logging
+	entry := auditlog.GetStreamEntryFromContext(c)
+	streamEntry := auditlog.CreateStreamEntry(entry)
+	if streamEntry != nil {
+		streamEntry.StatusCode = http.StatusOK // Streaming always starts with 200 OK
+	}
+	wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry, c.Request().URL.Path)
+	defer func() {
+		_ = wrappedStream.Close() //nolint:errcheck
+	}()
+
+	c.Response().Header().Set("Content-Type", "text/event-stream")
+	c.Response().Header().Set("Cache-Control", "no-cache")
+	c.Response().Header().Set("Connection", "keep-alive")
+
+	// Capture response headers on stream entry AFTER setting them
+	if streamEntry != nil && streamEntry.Data != nil {
+		streamEntry.Data.ResponseHeaders = map[string]string{
+			"Content-Type":  "text/event-stream",
+			"Cache-Control": "no-cache",
+			"Connection":    "keep-alive",
+		}
+	}
+
+	c.Response().WriteHeader(http.StatusOK)
+	_, _ = io.Copy(c.Response().Writer, wrappedStream)
+	return nil
 }
 
 // ChatCompletion handles POST /v1/chat/completions
@@ -34,26 +80,14 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
 	}
 
+	// Enrich audit log entry with model and provider
+	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model), nil)
+
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
-		stream, err := h.provider.StreamChatCompletion(c.Request().Context(), &req)
-		if err != nil {
-			return handleError(c, err)
-		}
-		defer func() {
-			_ = stream.Close() //nolint:errcheck
-		}()
-
-		c.Response().Header().Set("Content-Type", "text/event-stream")
-		c.Response().Header().Set("Cache-Control", "no-cache")
-		c.Response().Header().Set("Connection", "keep-alive")
-		c.Response().WriteHeader(http.StatusOK)
-
-		if _, err := io.Copy(c.Response().Writer, stream); err != nil {
-			// Can't return error after headers are sent, log it
-			return nil
-		}
-		return nil
+		return h.handleStreamingResponse(c, func() (io.ReadCloser, error) {
+			return h.provider.StreamChatCompletion(c.Request().Context(), &req)
+		})
 	}
 
 	// Non-streaming
@@ -95,26 +129,14 @@ func (h *Handler) Responses(c echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
 	}
 
+	// Enrich audit log entry with model and provider
+	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model), nil)
+
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
-		stream, err := h.provider.StreamResponses(c.Request().Context(), &req)
-		if err != nil {
-			return handleError(c, err)
-		}
-		defer func() {
-			_ = stream.Close() //nolint:errcheck
-		}()
-
-		c.Response().Header().Set("Content-Type", "text/event-stream")
-		c.Response().Header().Set("Cache-Control", "no-cache")
-		c.Response().Header().Set("Connection", "keep-alive")
-		c.Response().WriteHeader(http.StatusOK)
-
-		if _, err := io.Copy(c.Response().Writer, stream); err != nil {
-			// Can't return error after headers are sent, log it
-			return nil
-		}
-		return nil
+		return h.handleStreamingResponse(c, func() (io.ReadCloser, error) {
+			return h.provider.StreamResponses(c.Request().Context(), &req)
+		})
 	}
 
 	// Non-streaming
