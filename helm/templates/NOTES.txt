@@ -34,16 +34,16 @@ To get the application URL:
 {{- end }}
 
 {{- $enabledProviders := list }}
-{{- if .Values.providers.openai.enabled }}{{ $enabledProviders = append $enabledProviders "openai" }}{{ end }}
-{{- if .Values.providers.anthropic.enabled }}{{ $enabledProviders = append $enabledProviders "anthropic" }}{{ end }}
-{{- if .Values.providers.gemini.enabled }}{{ $enabledProviders = append $enabledProviders "gemini" }}{{ end }}
-{{- if .Values.providers.groq.enabled }}{{ $enabledProviders = append $enabledProviders "groq" }}{{ end }}
-{{- if .Values.providers.xai.enabled }}{{ $enabledProviders = append $enabledProviders "xai" }}{{ end }}
+{{- if or .Values.providers.openai.enabled .Values.providers.openai.apiKey }}{{ $enabledProviders = append $enabledProviders "openai" }}{{ end }}
+{{- if or .Values.providers.anthropic.enabled .Values.providers.anthropic.apiKey }}{{ $enabledProviders = append $enabledProviders "anthropic" }}{{ end }}
+{{- if or .Values.providers.gemini.enabled .Values.providers.gemini.apiKey }}{{ $enabledProviders = append $enabledProviders "gemini" }}{{ end }}
+{{- if or .Values.providers.groq.enabled .Values.providers.groq.apiKey }}{{ $enabledProviders = append $enabledProviders "groq" }}{{ end }}
+{{- if or .Values.providers.xai.enabled .Values.providers.xai.apiKey }}{{ $enabledProviders = append $enabledProviders "xai" }}{{ end }}
 
 {{- if eq (len $enabledProviders) 0 }}
 
 ⚠️  WARNING: No providers enabled!
-    Enable at least one provider (e.g., providers.openai.enabled=true)
+    Provide an API key for at least one provider (e.g., providers.openai.apiKey)
 {{- else }}
 
 Enabled providers: {{ join ", " $enabledProviders }}

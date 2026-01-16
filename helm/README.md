@@ -20,18 +20,15 @@ helm repo update
 ### Install from local chart
 
 ```bash
-# Basic install with OpenAI
+# Basic install with OpenAI (provider auto-enables when apiKey is set)
 helm install gomodel ./helm \
   -n gomodel --create-namespace \
-  --set providers.openai.enabled=true \
   --set providers.openai.apiKey="sk-..."
 
 # Multi-provider setup with Redis cache
 helm install gomodel ./helm \
   -n gomodel --create-namespace \
-  --set providers.openai.enabled=true \
   --set providers.openai.apiKey="sk-..." \
-  --set providers.anthropic.enabled=true \
   --set providers.anthropic.apiKey="sk-ant-..." \
   --set redis.enabled=true
 
@@ -86,7 +83,7 @@ stringData:
   GEMINI_API_KEY: "..."
 ```
 
-Then reference it:
+Then reference it (use `enabled=true` when using existingSecret since apiKey isn't set directly):
 
 ```bash
 helm install gomodel ./helm \

@@ -42,7 +42,7 @@ providers:
   existingSecret: ""
 
   openai:
-    # -- Enable OpenAI provider
+    # -- Enable OpenAI provider (auto-enabled if apiKey is set)
     enabled: false
     # -- OpenAI API key (ignored if providers.existingSecret is set)
     apiKey: ""
@@ -50,7 +50,7 @@ providers:
     baseUrl: ""
 
   anthropic:
-    # -- Enable Anthropic provider
+    # -- Enable Anthropic provider (auto-enabled if apiKey is set)
     enabled: false
     # -- Anthropic API key (ignored if providers.existingSecret is set)
     apiKey: ""
@@ -58,7 +58,7 @@ providers:
     baseUrl: ""
 
   gemini:
-    # -- Enable Google Gemini provider
+    # -- Enable Google Gemini provider (auto-enabled if apiKey is set)
     enabled: false
     # -- Gemini API key (ignored if providers.existingSecret is set)
     apiKey: ""
@@ -66,7 +66,7 @@ providers:
     baseUrl: ""
 
   groq:
-    # -- Enable Groq provider
+    # -- Enable Groq provider (auto-enabled if apiKey is set)
     enabled: false
     # -- Groq API key (ignored if providers.existingSecret is set)
     apiKey: ""
@@ -74,7 +74,7 @@ providers:
     baseUrl: ""
 
   xai:
-    # -- Enable xAI (Grok) provider
+    # -- Enable xAI (Grok) provider (auto-enabled if apiKey is set)
     enabled: false
     # -- xAI API key (ignored if providers.existingSecret is set)
     apiKey: ""
