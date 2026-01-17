@@ -11,7 +11,6 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/cache"
-	"gomodel/internal/llmclient"
 )
 
 // InitResult holds the initialized provider infrastructure and cleanup functions.
@@ -44,11 +43,8 @@ type InitConfig struct {
 	// Default: 5 minutes
 	RefreshInterval time.Duration
 
-	// Hooks are observability hooks to inject into all providers.
-	Hooks llmclient.Hooks
-
 	// Factory is the provider factory with registered providers.
-	// Must be provided with providers already registered.
+	// Hooks should be set on the factory before passing it here.
 	Factory *ProviderFactory
 }
 

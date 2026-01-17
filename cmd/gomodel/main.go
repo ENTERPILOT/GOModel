@@ -61,7 +61,6 @@ func main() {
 	}
 
 	// Create provider factory and register all providers explicitly
-	// This replaces the implicit init() registration pattern
 	factory := providers.NewProviderFactory()
 
 	// Set observability hooks before registering providers
@@ -73,11 +72,11 @@ func main() {
 	}
 
 	// Register all providers with the factory
-	providers.RegisterProvider(factory, "openai", openai.New)
-	providers.RegisterProvider(factory, "anthropic", anthropic.New)
-	providers.RegisterProvider(factory, "gemini", gemini.New)
-	providers.RegisterProvider(factory, "groq", groq.New)
-	providers.RegisterProvider(factory, "xai", xai.New)
+	factory.Register(openai.Registration)
+	factory.Register(anthropic.Registration)
+	factory.Register(gemini.Registration)
+	factory.Register(groq.Registration)
+	factory.Register(xai.Registration)
 
 	// Setup initialization config
 	initCfg := providers.DefaultInitConfig()

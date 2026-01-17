@@ -10,58 +10,45 @@ import (
 	"gomodel/internal/llmclient"
 )
 
-// Builder creates a provider instance from configuration and hooks
-type Builder func(cfg config.ProviderConfig, hooks llmclient.Hooks) (core.Provider, error)
+// NewFunc is the constructor signature for providers.
+// Hooks can be nil if no observability is needed.
+type NewFunc func(apiKey string, hooks *llmclient.Hooks) core.Provider
+
+// Registration contains metadata for registering a provider with the factory.
+type Registration struct {
+	// Type is the provider identifier (e.g., "openai", "anthropic")
+	Type string
+
+	// New creates a new provider instance
+	New NewFunc
+}
 
 // ProviderFactory manages provider registration and creation.
-// It replaces the global registry pattern with explicit dependency injection.
 type ProviderFactory struct {
 	mu       sync.RWMutex
-	builders map[string]Builder
-	hooks    llmclient.Hooks
+	builders map[string]NewFunc
+	hooks    *llmclient.Hooks
 }
 
 // NewProviderFactory creates a new provider factory instance.
 func NewProviderFactory() *ProviderFactory {
 	return &ProviderFactory{
-		builders: make(map[string]Builder),
+		builders: make(map[string]NewFunc),
 	}
 }
 
-// SetHooks configures observability hooks that will be passed to all providers.
-// This must be called before Create() to take effect.
-func (f *ProviderFactory) SetHooks(hooks llmclient.Hooks) {
+// SetHooks configures observability hooks for all providers created by this factory.
+func (f *ProviderFactory) SetHooks(hooks *llmclient.Hooks) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.hooks = hooks
 }
 
-// GetHooks returns the currently configured hooks.
-func (f *ProviderFactory) GetHooks() llmclient.Hooks {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.hooks
-}
-
-// Register adds a provider builder to the factory.
-func (f *ProviderFactory) Register(providerType string, builder Builder) {
+// Register adds a provider to the factory.
+func (f *ProviderFactory) Register(reg Registration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.builders[providerType] = builder
-}
-
-// RegisterProvider registers a provider constructor with base URL support.
-// This is a convenience method that wraps simple constructors.
-func RegisterProvider[T core.Provider](f *ProviderFactory, providerType string, newProvider func(apiKey string, hooks llmclient.Hooks) T) {
-	f.Register(providerType, func(cfg config.ProviderConfig, hooks llmclient.Hooks) (core.Provider, error) {
-		p := newProvider(cfg.APIKey, hooks)
-		if cfg.BaseURL != "" {
-			if setter, ok := any(p).(interface{ SetBaseURL(string) }); ok {
-				setter.SetBaseURL(cfg.BaseURL)
-			}
-		}
-		return p, nil
-	})
+	f.builders[reg.Type] = reg.New
 }
 
 // Create instantiates a provider based on configuration.
@@ -74,11 +61,21 @@ func (f *ProviderFactory) Create(cfg config.ProviderConfig) (core.Provider, erro
 	if !ok {
 		return nil, fmt.Errorf("unknown provider type: %s", cfg.Type)
 	}
-	return builder(cfg, hooks)
+
+	p := builder(cfg.APIKey, hooks)
+
+	// Set custom base URL if configured
+	if cfg.BaseURL != "" {
+		if setter, ok := p.(interface{ SetBaseURL(string) }); ok {
+			setter.SetBaseURL(cfg.BaseURL)
+		}
+	}
+
+	return p, nil
 }
 
-// ListRegistered returns a list of all registered provider types.
-func (f *ProviderFactory) ListRegistered() []string {
+// RegisteredTypes returns a list of all registered provider types.
+func (f *ProviderFactory) RegisteredTypes() []string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 

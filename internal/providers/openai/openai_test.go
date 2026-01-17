@@ -10,18 +10,27 @@ import (
 	"testing"
 
 	"gomodel/internal/core"
-	"gomodel/internal/llmclient"
 )
 
 func TestNew(t *testing.T) {
 	apiKey := "test-api-key"
-	provider := New(apiKey, llmclient.Hooks{})
+	// Use NewWithHTTPClient to get concrete type for internal testing
+	provider := NewWithHTTPClient(apiKey, nil, nil)
 
 	if provider.apiKey != apiKey {
 		t.Errorf("apiKey = %q, want %q", provider.apiKey, apiKey)
 	}
 	if provider.client == nil {
 		t.Error("client should not be nil")
+	}
+}
+
+func TestNew_ReturnsProvider(t *testing.T) {
+	apiKey := "test-api-key"
+	provider := New(apiKey, nil)
+
+	if provider == nil {
+		t.Error("provider should not be nil")
 	}
 }
 
@@ -127,7 +136,7 @@ func TestChatCompletion(t *testing.T) {
 			}))
 			defer server.Close()
 
-			provider := New("test-api-key", llmclient.Hooks{})
+			provider := NewWithHTTPClient("test-api-key", nil, nil)
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
@@ -211,7 +220,7 @@ data: [DONE]
 			}))
 			defer server.Close()
 
-			provider := New("test-api-key", llmclient.Hooks{})
+			provider := NewWithHTTPClient("test-api-key", nil, nil)
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
@@ -323,7 +332,7 @@ func TestListModels(t *testing.T) {
 			}))
 			defer server.Close()
 
-			provider := New("test-api-key", llmclient.Hooks{})
+			provider := NewWithHTTPClient("test-api-key", nil, nil)
 			provider.SetBaseURL(server.URL)
 
 			resp, err := provider.ListModels(context.Background())
@@ -352,7 +361,7 @@ func TestChatCompletionWithContext(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := New("test-api-key", llmclient.Hooks{})
+	provider := NewWithHTTPClient("test-api-key", nil, nil)
 	provider.SetBaseURL(server.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -493,7 +502,7 @@ func TestResponses(t *testing.T) {
 			}))
 			defer server.Close()
 
-			provider := New("test-api-key", llmclient.Hooks{})
+			provider := NewWithHTTPClient("test-api-key", nil, nil)
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ResponsesRequest{
@@ -562,7 +571,7 @@ func TestResponsesWithArrayInput(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := New("test-api-key", llmclient.Hooks{})
+	provider := NewWithHTTPClient("test-api-key", nil, nil)
 	provider.SetBaseURL(server.URL)
 
 	req := &core.ResponsesRequest{
@@ -689,7 +698,7 @@ data: [DONE]
 			}))
 			defer server.Close()
 
-			provider := New("test-api-key", llmclient.Hooks{})
+			provider := NewWithHTTPClient("test-api-key", nil, nil)
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ResponsesRequest{
@@ -723,7 +732,7 @@ func TestResponsesWithContext(t *testing.T) {
 	}))
 	defer server.Close()
 
-	provider := New("test-api-key", llmclient.Hooks{})
+	provider := NewWithHTTPClient("test-api-key", nil, nil)
 	provider.SetBaseURL(server.URL)
 
 	ctx, cancel := context.WithCancel(context.Background())

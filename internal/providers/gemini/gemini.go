@@ -15,6 +15,12 @@ import (
 	"gomodel/internal/providers"
 )
 
+// Registration provides factory registration for the Gemini provider.
+var Registration = providers.Registration{
+	Type: "gemini",
+	New:  New,
+}
+
 const (
 	// Gemini provides an OpenAI-compatible endpoint
 	defaultOpenAICompatibleBaseURL = "https://generativelanguage.googleapis.com/v1beta/openai"
@@ -25,33 +31,41 @@ const (
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
 	client    *llmclient.Client
-	hooks     llmclient.Hooks
+	hooks     *llmclient.Hooks
 	apiKey    string
 	modelsURL string
 }
 
-// New creates a new Gemini provider with the given API key and hooks.
-func New(apiKey string, hooks llmclient.Hooks) *Provider {
+// New creates a new Gemini provider. Hooks can be nil.
+func New(apiKey string, hooks *llmclient.Hooks) core.Provider {
 	p := &Provider{
 		apiKey:    apiKey,
 		hooks:     hooks,
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	cfg.Hooks = hooks
+	if hooks != nil {
+		cfg.Hooks = *hooks
+	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
 // NewWithHTTPClient creates a new Gemini provider with a custom HTTP client.
-func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
+// If httpClient is nil, http.DefaultClient is used.
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks *llmclient.Hooks) *Provider {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	p := &Provider{
 		apiKey:    apiKey,
 		hooks:     hooks,
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	cfg.Hooks = hooks
+	if hooks != nil {
+		cfg.Hooks = *hooks
+	}
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }
@@ -122,7 +136,9 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	// Use the native Gemini API to list models
 	// We need to create a separate client for the models endpoint since it uses a different URL
 	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
-	modelsCfg.Hooks = p.hooks
+	if p.hooks != nil {
+		modelsCfg.Hooks = *p.hooks
+	}
 	modelsClient := llmclient.New(
 		modelsCfg,
 		func(req *http.Request) {
