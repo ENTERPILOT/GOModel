@@ -3,18 +3,16 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"gomodel/config"
-	"gomodel/internal/auditlog"
+	"gomodel/internal/app"
 	"gomodel/internal/observability"
 	"gomodel/internal/providers"
 	"gomodel/internal/providers/anthropic"
@@ -22,7 +20,6 @@ import (
 	"gomodel/internal/providers/groq"
 	"gomodel/internal/providers/openai"
 	"gomodel/internal/providers/xai"
-	"gomodel/internal/server"
 	"gomodel/internal/version"
 )
 
@@ -66,9 +63,6 @@ func main() {
 	// Set observability hooks before registering providers
 	if cfg.Metrics.Enabled {
 		factory.SetHooks(observability.NewPrometheusHooks())
-		slog.Info("prometheus metrics enabled", "endpoint", cfg.Metrics.Endpoint)
-	} else {
-		slog.Info("prometheus metrics disabled")
 	}
 
 	// Register all providers with the factory
@@ -78,56 +72,16 @@ func main() {
 	factory.Register(groq.Registration)
 	factory.Register(xai.Registration)
 
-	// Setup initialization config
-	initCfg := providers.DefaultInitConfig()
-	initCfg.Factory = factory
-
-	// Initialize provider infrastructure (cache, registry, router)
-	providerResult, err := providers.InitWithConfig(context.Background(), cfg, initCfg)
+	// Create the application
+	application, err := app.New(context.Background(), app.Config{
+		AppConfig:       cfg,
+		RefreshInterval: 5 * time.Minute,
+		Factory:         factory,
+	})
 	if err != nil {
-		slog.Error("failed to initialize providers", "error", err)
+		slog.Error("failed to initialize application", "error", err)
 		os.Exit(1)
 	}
-	defer providerResult.Close()
-
-	// Security check: warn if no master key is configured
-	if cfg.Server.MasterKey == "" {
-		slog.Warn("SECURITY WARNING: GOMODEL_MASTER_KEY not set - server running in UNSAFE MODE",
-			"security_risk", "unauthenticated access allowed",
-			"recommendation", "set GOMODEL_MASTER_KEY environment variable to secure this gateway")
-	} else {
-		slog.Info("authentication enabled", "mode", "master_key")
-	}
-
-	// Initialize audit logging
-	auditResult, err := auditlog.New(context.Background(), cfg)
-	if err != nil {
-		slog.Error("failed to initialize audit logging", "error", err)
-		os.Exit(1)
-	}
-	defer auditResult.Close()
-
-	if cfg.Logging.Enabled {
-		slog.Info("audit logging enabled",
-			"storage_type", cfg.Logging.StorageType,
-			"log_bodies", cfg.Logging.LogBodies,
-			"log_headers", cfg.Logging.LogHeaders,
-			"retention_days", cfg.Logging.RetentionDays,
-		)
-	} else {
-		slog.Info("audit logging disabled")
-	}
-
-	// Create and start server
-	serverCfg := &server.Config{
-		MasterKey:                cfg.Server.MasterKey,
-		MetricsEnabled:           cfg.Metrics.Enabled,
-		MetricsEndpoint:          cfg.Metrics.Endpoint,
-		BodySizeLimit:            cfg.Server.BodySizeLimit,
-		AuditLogger:              auditResult.Logger,
-		LogOnlyModelInteractions: cfg.Logging.OnlyModelInteractions,
-	}
-	srv := server.New(providerResult.Router, serverCfg)
 
 	// Handle graceful shutdown
 	go func() {
@@ -135,25 +89,18 @@ func main() {
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
 
-		slog.Info("shutting down server...")
-
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		if err := srv.Shutdown(ctx); err != nil {
-			slog.Error("server shutdown error", "error", err)
+		if err := application.Shutdown(ctx); err != nil {
+			slog.Error("application shutdown error", "error", err)
 		}
 	}()
 
+	// Start the server (blocking)
 	addr := ":" + cfg.Server.Port
-	slog.Info("starting server", "address", addr)
-
-	if err := srv.Start(addr); err != nil {
-		if errors.Is(err, http.ErrServerClosed) {
-			slog.Info("server stopped gracefully")
-		} else {
-			slog.Error("server failed to start", "error", err)
-			os.Exit(1)
-		}
+	if err := application.Start(addr); err != nil {
+		slog.Error("application failed", "error", err)
+		os.Exit(1)
 	}
 }
