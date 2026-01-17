@@ -11,6 +11,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/cache"
+	"gomodel/internal/llmclient"
 )
 
 // InitResult holds the initialized provider infrastructure and cleanup functions.
@@ -18,6 +19,7 @@ type InitResult struct {
 	Registry *ModelRegistry
 	Router   *Router
 	Cache    cache.Cache
+	Factory  *ProviderFactory
 
 	// stopRefresh is called to stop the background refresh goroutine
 	stopRefresh func()
@@ -41,6 +43,13 @@ type InitConfig struct {
 	// RefreshInterval is how often to refresh the model registry.
 	// Default: 5 minutes
 	RefreshInterval time.Duration
+
+	// Hooks are observability hooks to inject into all providers.
+	Hooks llmclient.Hooks
+
+	// Factory is the provider factory with registered providers.
+	// Must be provided with providers already registered.
+	Factory *ProviderFactory
 }
 
 // DefaultInitConfig returns sensible defaults for initialization.
@@ -67,18 +76,25 @@ func Init(ctx context.Context, cfg *config.Config) (*InitResult, error) {
 
 // InitWithConfig initializes the provider infrastructure with custom options.
 func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig) (*InitResult, error) {
+	// Validate that factory is provided
+	if initCfg.Factory == nil {
+		return nil, fmt.Errorf("InitConfig.Factory is required")
+	}
+
 	// Initialize cache backend based on configuration
 	modelCache, err := initCache(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize cache: %w", err)
 	}
 
+	factory := initCfg.Factory
+
 	// Create model registry with cache
 	registry := NewModelRegistry()
 	registry.SetCache(modelCache)
 
-	// Register providers
-	count, err := registerProviders(cfg, registry)
+	// Register providers using the factory
+	count, err := registerProviders(cfg, factory, registry)
 	if err != nil {
 		modelCache.Close()
 		return nil, err
@@ -116,6 +132,7 @@ func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig)
 		Registry:    registry,
 		Router:      router,
 		Cache:       modelCache,
+		Factory:     factory,
 		stopRefresh: stopRefresh,
 	}, nil
 }
@@ -166,7 +183,7 @@ func initCache(cfg *config.Config) (cache.Cache, error) {
 
 // registerProviders creates and registers all configured providers.
 // Returns the count of successfully initialized providers.
-func registerProviders(cfg *config.Config, registry *ModelRegistry) (int, error) {
+func registerProviders(cfg *config.Config, factory *ProviderFactory, registry *ModelRegistry) (int, error) {
 	// Sort provider names for deterministic initialization order
 	providerNames := make([]string, 0, len(cfg.Providers))
 	for name := range cfg.Providers {
@@ -177,7 +194,7 @@ func registerProviders(cfg *config.Config, registry *ModelRegistry) (int, error)
 	var initializedCount int
 	for _, name := range providerNames {
 		pCfg := cfg.Providers[name]
-		p, err := Create(pCfg)
+		p, err := factory.Create(pCfg)
 		if err != nil {
 			slog.Error("failed to initialize provider",
 				"name", name,

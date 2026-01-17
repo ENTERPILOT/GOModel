@@ -18,33 +18,26 @@ const (
 	defaultBaseURL = "https://api.groq.com/openai/v1"
 )
 
-func init() {
-	// Self-register with the factory
-	providers.RegisterProvider("groq", New)
-}
-
 // Provider implements the core.Provider interface for Groq
 type Provider struct {
 	client *llmclient.Client
 	apiKey string
 }
 
-// New creates a new Groq provider
-func New(apiKey string) *Provider {
+// New creates a new Groq provider with the given API key and hooks.
+func New(apiKey string, hooks llmclient.Hooks) *Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("groq", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
-// NewWithHTTPClient creates a new Groq provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+// NewWithHTTPClient creates a new Groq provider with a custom HTTP client.
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("groq", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }

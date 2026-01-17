@@ -17,13 +17,11 @@ import (
 	"gomodel/internal/auditlog"
 	"gomodel/internal/observability"
 	"gomodel/internal/providers"
-
-	// Import provider packages to trigger their init() registration
-	_ "gomodel/internal/providers/anthropic"
-	_ "gomodel/internal/providers/gemini"
-	_ "gomodel/internal/providers/groq"
-	_ "gomodel/internal/providers/openai"
-	_ "gomodel/internal/providers/xai"
+	"gomodel/internal/providers/anthropic"
+	"gomodel/internal/providers/gemini"
+	"gomodel/internal/providers/groq"
+	"gomodel/internal/providers/openai"
+	"gomodel/internal/providers/xai"
 	"gomodel/internal/server"
 	"gomodel/internal/version"
 )
@@ -62,18 +60,31 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Setup observability hooks for metrics collection (if enabled)
-	// This must be done BEFORE creating providers so they can use the hooks
+	// Create provider factory and register all providers explicitly
+	// This replaces the implicit init() registration pattern
+	factory := providers.NewProviderFactory()
+
+	// Set observability hooks before registering providers
 	if cfg.Metrics.Enabled {
-		metricsHooks := observability.NewPrometheusHooks()
-		providers.SetGlobalHooks(metricsHooks)
+		factory.SetHooks(observability.NewPrometheusHooks())
 		slog.Info("prometheus metrics enabled", "endpoint", cfg.Metrics.Endpoint)
 	} else {
 		slog.Info("prometheus metrics disabled")
 	}
 
+	// Register all providers with the factory
+	providers.RegisterProvider(factory, "openai", openai.New)
+	providers.RegisterProvider(factory, "anthropic", anthropic.New)
+	providers.RegisterProvider(factory, "gemini", gemini.New)
+	providers.RegisterProvider(factory, "groq", groq.New)
+	providers.RegisterProvider(factory, "xai", xai.New)
+
+	// Setup initialization config
+	initCfg := providers.DefaultInitConfig()
+	initCfg.Factory = factory
+
 	// Initialize provider infrastructure (cache, registry, router)
-	providerResult, err := providers.Init(context.Background(), cfg)
+	providerResult, err := providers.InitWithConfig(context.Background(), cfg, initCfg)
 	if err != nil {
 		slog.Error("failed to initialize providers", "error", err)
 		os.Exit(1)

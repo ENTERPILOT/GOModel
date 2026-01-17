@@ -17,7 +17,6 @@ import (
 
 	"gomodel/internal/core"
 	"gomodel/internal/llmclient"
-	"gomodel/internal/providers"
 )
 
 const (
@@ -25,33 +24,26 @@ const (
 	anthropicAPIVersion = "2023-06-01"
 )
 
-func init() {
-	// Self-register with the factory
-	providers.RegisterProvider("anthropic", New)
-}
-
 // Provider implements the core.Provider interface for Anthropic
 type Provider struct {
 	client *llmclient.Client
 	apiKey string
 }
 
-// New creates a new Anthropic provider
-func New(apiKey string) *Provider {
+// New creates a new Anthropic provider with the given API key and hooks.
+func New(apiKey string, hooks llmclient.Hooks) *Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
-// NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+// NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client.
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }

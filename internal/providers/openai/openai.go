@@ -8,17 +8,11 @@ import (
 
 	"gomodel/internal/core"
 	"gomodel/internal/llmclient"
-	"gomodel/internal/providers"
 )
 
 const (
 	defaultBaseURL = "https://api.openai.com/v1"
 )
-
-func init() {
-	// Self-register with the factory
-	providers.RegisterProvider("openai", New)
-}
 
 // Provider implements the core.Provider interface for OpenAI
 type Provider struct {
@@ -26,22 +20,20 @@ type Provider struct {
 	apiKey string
 }
 
-// New creates a new OpenAI provider
-func New(apiKey string) *Provider {
+// New creates a new OpenAI provider with the given API key and hooks.
+func New(apiKey string, hooks llmclient.Hooks) *Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
-// NewWithHTTPClient creates a new OpenAI provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+// NewWithHTTPClient creates a new OpenAI provider with a custom HTTP client.
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }

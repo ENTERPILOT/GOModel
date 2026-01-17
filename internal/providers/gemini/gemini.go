@@ -22,40 +22,36 @@ const (
 	defaultModelsBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 )
 
-func init() {
-	// Self-register with the factory
-	providers.RegisterProvider("gemini", New)
-}
-
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
 	client    *llmclient.Client
+	hooks     llmclient.Hooks
 	apiKey    string
 	modelsURL string
 }
 
-// New creates a new Gemini provider
-func New(apiKey string) *Provider {
+// New creates a new Gemini provider with the given API key and hooks.
+func New(apiKey string, hooks llmclient.Hooks) *Provider {
 	p := &Provider{
 		apiKey:    apiKey,
+		hooks:     hooks,
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
-// NewWithHTTPClient creates a new Gemini provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+// NewWithHTTPClient creates a new Gemini provider with a custom HTTP client.
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
 	p := &Provider{
 		apiKey:    apiKey,
+		hooks:     hooks,
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }
@@ -126,8 +122,7 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	// Use the native Gemini API to list models
 	// We need to create a separate client for the models endpoint since it uses a different URL
 	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
-	// Apply global hooks if available
-	modelsCfg.Hooks = providers.GetGlobalHooks()
+	modelsCfg.Hooks = p.hooks
 	modelsClient := llmclient.New(
 		modelsCfg,
 		func(req *http.Request) {
