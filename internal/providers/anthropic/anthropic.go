@@ -37,28 +37,24 @@ type Provider struct {
 	apiKey string
 }
 
-// New creates a new Anthropic provider. Hooks can be nil.
-func New(apiKey string, hooks *llmclient.Hooks) core.Provider {
+// New creates a new Anthropic provider.
+func New(apiKey string, hooks llmclient.Hooks) core.Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
-	if hooks != nil {
-		cfg.Hooks = *hooks
-	}
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
 // NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client.
 // If httpClient is nil, http.DefaultClient is used.
-func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks *llmclient.Hooks) *Provider {
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
-	if hooks != nil {
-		cfg.Hooks = *hooks
-	}
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }

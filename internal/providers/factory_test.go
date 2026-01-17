@@ -48,7 +48,7 @@ func TestProviderFactory_Register(t *testing.T) {
 	// Test registering a new provider type
 	factory.Register(Registration{
 		Type: "test-provider",
-		New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 			return &factoryMockProvider{}
 		},
 	})
@@ -87,7 +87,7 @@ func TestProviderFactory_Create_Success(t *testing.T) {
 	// Register a mock builder
 	factory.Register(Registration{
 		Type: "mock",
-		New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 			return &factoryMockProvider{}
 		},
 	})
@@ -114,7 +114,7 @@ func TestProviderFactory_RegisteredTypes(t *testing.T) {
 	for _, name := range []string{"provider1", "provider2", "provider3"} {
 		factory.Register(Registration{
 			Type: name,
-			New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+			New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 				return &factoryMockProvider{}
 			},
 		})
@@ -154,7 +154,7 @@ func TestProviderFactory_Create_WithBaseURL(t *testing.T) {
 	// Register a mock builder
 	factory.Register(Registration{
 		Type: "custom",
-		New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 			return mockProvider
 		},
 	})
@@ -181,7 +181,7 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 	factory := NewProviderFactory()
 
 	// Create mock hooks with identifiable callbacks
-	mockHooks := &llmclient.Hooks{
+	mockHooks := llmclient.Hooks{
 		OnRequestStart: func(ctx context.Context, info llmclient.RequestInfo) context.Context {
 			return ctx
 		},
@@ -189,10 +189,10 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 	factory.SetHooks(mockHooks)
 
 	// Verify hooks were set by creating a provider and checking it received them
-	var receivedHooks *llmclient.Hooks
+	var receivedHooks llmclient.Hooks
 	factory.Register(Registration{
 		Type: "test",
-		New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 			receivedHooks = hooks
 			return &factoryMockProvider{}
 		},
@@ -209,7 +209,7 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 	}
 
 	// Verify hooks were passed by checking callback exists
-	if receivedHooks == nil || receivedHooks.OnRequestStart == nil {
+	if receivedHooks.OnRequestStart == nil {
 		t.Error("expected hooks to be passed to builder")
 	}
 }
@@ -218,18 +218,18 @@ func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 	factory := NewProviderFactory()
 
 	// Create mock hooks
-	mockHooks := &llmclient.Hooks{
+	mockHooks := llmclient.Hooks{
 		OnRequestStart: func(ctx context.Context, info llmclient.RequestInfo) context.Context {
 			return ctx
 		},
 	}
 	factory.SetHooks(mockHooks)
 
-	var receivedHooks *llmclient.Hooks
+	var receivedHooks llmclient.Hooks
 
 	factory.Register(Registration{
 		Type: "test",
-		New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 			receivedHooks = hooks
 			return &factoryMockProvider{}
 		},
@@ -246,19 +246,19 @@ func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 	}
 
 	// Verify hooks were passed by checking callback exists
-	if receivedHooks == nil || receivedHooks.OnRequestStart == nil {
+	if receivedHooks.OnRequestStart == nil {
 		t.Error("expected hooks to be passed to builder")
 	}
 }
 
-func TestProviderFactory_NilHooks(t *testing.T) {
+func TestProviderFactory_ZeroHooks(t *testing.T) {
 	factory := NewProviderFactory()
 
-	var receivedHooks *llmclient.Hooks
+	var receivedHooks llmclient.Hooks
 
 	factory.Register(Registration{
 		Type: "test",
-		New: func(apiKey string, hooks *llmclient.Hooks) core.Provider {
+		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
 			receivedHooks = hooks
 			return &factoryMockProvider{}
 		},
@@ -274,8 +274,8 @@ func TestProviderFactory_NilHooks(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Without SetHooks being called, hooks should be nil
-	if receivedHooks != nil {
-		t.Error("expected nil hooks when SetHooks not called")
+	// Without SetHooks being called, hooks should be zero value (empty callbacks)
+	if receivedHooks.OnRequestStart != nil || receivedHooks.OnRequestEnd != nil {
+		t.Error("expected zero hooks when SetHooks not called")
 	}
 }

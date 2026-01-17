@@ -47,8 +47,8 @@ var (
 // NewPrometheusHooks returns hooks that instrument LLM requests with Prometheus metrics.
 // These hooks can be injected into llmclient.Config to enable observability without
 // polluting business logic.
-func NewPrometheusHooks() *llmclient.Hooks {
-	return &llmclient.Hooks{
+func NewPrometheusHooks() llmclient.Hooks {
+	return llmclient.Hooks{
 		OnRequestStart: func(ctx context.Context, info llmclient.RequestInfo) context.Context {
 			// Increment in-flight gauge
 			streamLabel := strconv.FormatBool(info.Stream)

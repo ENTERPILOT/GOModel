@@ -31,29 +31,27 @@ const (
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
 	client    *llmclient.Client
-	hooks     *llmclient.Hooks
+	hooks     llmclient.Hooks
 	apiKey    string
 	modelsURL string
 }
 
-// New creates a new Gemini provider. Hooks can be nil.
-func New(apiKey string, hooks *llmclient.Hooks) core.Provider {
+// New creates a new Gemini provider.
+func New(apiKey string, hooks llmclient.Hooks) core.Provider {
 	p := &Provider{
 		apiKey:    apiKey,
 		hooks:     hooks,
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	if hooks != nil {
-		cfg.Hooks = *hooks
-	}
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
 // NewWithHTTPClient creates a new Gemini provider with a custom HTTP client.
 // If httpClient is nil, http.DefaultClient is used.
-func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks *llmclient.Hooks) *Provider {
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -63,9 +61,7 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks *llmclient.
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	if hooks != nil {
-		cfg.Hooks = *hooks
-	}
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }
@@ -136,9 +132,7 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	// Use the native Gemini API to list models
 	// We need to create a separate client for the models endpoint since it uses a different URL
 	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
-	if p.hooks != nil {
-		modelsCfg.Hooks = *p.hooks
-	}
+	modelsCfg.Hooks = p.hooks
 	modelsClient := llmclient.New(
 		modelsCfg,
 		func(req *http.Request) {

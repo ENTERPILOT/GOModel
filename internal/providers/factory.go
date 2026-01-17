@@ -11,8 +11,7 @@ import (
 )
 
 // NewFunc is the constructor signature for providers.
-// Hooks can be nil if no observability is needed.
-type NewFunc func(apiKey string, hooks *llmclient.Hooks) core.Provider
+type NewFunc func(apiKey string, hooks llmclient.Hooks) core.Provider
 
 // Registration contains metadata for registering a provider with the factory.
 type Registration struct {
@@ -27,7 +26,7 @@ type Registration struct {
 type ProviderFactory struct {
 	mu       sync.RWMutex
 	builders map[string]NewFunc
-	hooks    *llmclient.Hooks
+	hooks    llmclient.Hooks
 }
 
 // NewProviderFactory creates a new provider factory instance.
@@ -38,7 +37,7 @@ func NewProviderFactory() *ProviderFactory {
 }
 
 // SetHooks configures observability hooks for all providers created by this factory.
-func (f *ProviderFactory) SetHooks(hooks *llmclient.Hooks) {
+func (f *ProviderFactory) SetHooks(hooks llmclient.Hooks) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.hooks = hooks
