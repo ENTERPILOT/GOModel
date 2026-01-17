@@ -1,13 +1,21 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude and other AI models and agents when working with the code in this repository.
 
 ## Project Overview
 
-GOModel is a high-performance AI gateway written in Go that routes requests to multiple LLM providers (OpenAI, Anthropic, Google Gemini). It's designed as a drop-in replacement for LiteLLM with superior concurrency and strict type safety.
+GOModel is a high-performance AI gateway written in Go that routes requests to multiple LLM providers (OpenAI, Anthropic, Google Gemini). It is designed as a drop-in replacement for LiteLLM, offering superior quality, speed, concurrency, and strict type safety.
 
 **Module name:** `gomodel`
 **Go version:** 1.24.0
+**GitHub link:** https://github.com/ENTERPILOT/GOModel
+**Stage:** Development — not used in a real project, so backward compatibility is not a concern.
+
+### Introductory Information
+
+Please note that some of the information below may be slightly outdated. It is always best to verify the current project structure. These are guidelines only.
+
+Feel free to suggest improvements to this file as you work with it.
 
 ## Common Development Commands
 
