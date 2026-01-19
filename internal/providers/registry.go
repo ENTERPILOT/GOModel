@@ -286,33 +286,33 @@ func (r *ModelRegistry) IsInitialized() bool {
 }
 
 // GetProvider returns the provider for the given model, or nil if not found
-func (r *ModelRegistry) GetProvider(modelID string) core.Provider {
+func (r *ModelRegistry) GetProvider(model string) core.Provider {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if info, ok := r.models[modelID]; ok {
+	if info, ok := r.models[model]; ok {
 		return info.Provider
 	}
 	return nil
 }
 
-// GetModel returns the model info for the given model ID, or nil if not found
-func (r *ModelRegistry) GetModel(modelID string) *ModelInfo {
+// GetModel returns the model info for the given model, or nil if not found
+func (r *ModelRegistry) GetModel(model string) *ModelInfo {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	if info, ok := r.models[modelID]; ok {
+	if info, ok := r.models[model]; ok {
 		return info
 	}
 	return nil
 }
 
 // Supports returns true if the registry has a provider for the given model
-func (r *ModelRegistry) Supports(modelID string) bool {
+func (r *ModelRegistry) Supports(model string) bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	_, ok := r.models[modelID]
+	_, ok := r.models[model]
 	return ok
 }
 
@@ -341,13 +341,13 @@ func (r *ModelRegistry) ModelCount() int {
 	return len(r.models)
 }
 
-// GetProviderType returns the provider type string for the given model ID.
+// GetProviderType returns the provider type string for the given model.
 // Returns empty string if the model is not found.
-func (r *ModelRegistry) GetProviderType(modelID string) string {
+func (r *ModelRegistry) GetProviderType(model string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	info, ok := r.models[modelID]
+	info, ok := r.models[model]
 	if !ok {
 		return ""
 	}

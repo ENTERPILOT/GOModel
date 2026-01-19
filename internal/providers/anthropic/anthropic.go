@@ -20,15 +20,16 @@ import (
 	"gomodel/internal/providers"
 )
 
+// Registration provides factory registration for the Anthropic provider.
+var Registration = providers.Registration{
+	Type: "anthropic",
+	New:  New,
+}
+
 const (
 	defaultBaseURL      = "https://api.anthropic.com/v1"
 	anthropicAPIVersion = "2023-06-01"
 )
-
-func init() {
-	// Self-register with the factory
-	providers.RegisterProvider("anthropic", New)
-}
 
 // Provider implements the core.Provider interface for Anthropic
 type Provider struct {
@@ -36,22 +37,24 @@ type Provider struct {
 	apiKey string
 }
 
-// New creates a new Anthropic provider
-func New(apiKey string) *Provider {
+// New creates a new Anthropic provider.
+func New(apiKey string, hooks llmclient.Hooks) core.Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
 
-// NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client
-func NewWithHTTPClient(apiKey string, httpClient *http.Client) *Provider {
+// NewWithHTTPClient creates a new Anthropic provider with a custom HTTP client.
+// If httpClient is nil, http.DefaultClient is used.
+func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.Hooks) *Provider {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
-	// Apply global hooks if available
-	cfg.Hooks = providers.GetGlobalHooks()
+	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
 	return p
 }

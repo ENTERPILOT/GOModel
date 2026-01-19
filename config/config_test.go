@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 )
 
@@ -67,9 +68,9 @@ func TestLoad_OpenAIAPIKeyFromEnv(t *testing.T) {
 	}
 
 	// Check that OpenAI provider was created from environment variable
-	provider, exists := cfg.Providers["openai-primary"]
+	provider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Fatal("expected 'openai-primary' provider to exist")
+		t.Fatal("expected 'openai' provider to exist")
 	}
 
 	if provider.Type != "openai" {
@@ -131,17 +132,17 @@ func TestLoad_MultipleEnvVars(t *testing.T) {
 	}
 
 	// Check OpenAI provider
-	openaiProvider, exists := cfg.Providers["openai-primary"]
+	openaiProvider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Error("expected 'openai-primary' provider to exist")
+		t.Error("expected 'openai' provider to exist")
 	} else if openaiProvider.APIKey != testAPIKey {
 		t.Errorf("expected OpenAI API key %s, got %s", testAPIKey, openaiProvider.APIKey)
 	}
 
 	// Check Anthropic provider
-	anthropicProvider, exists := cfg.Providers["anthropic-primary"]
+	anthropicProvider, exists := cfg.Providers["anthropic"]
 	if !exists {
-		t.Error("expected 'anthropic-primary' provider to exist")
+		t.Error("expected 'anthropic' provider to exist")
 	} else if anthropicProvider.APIKey != testAnthropicKey {
 		t.Errorf("expected Anthropic API key %s, got %s", testAnthropicKey, anthropicProvider.APIKey)
 	}
@@ -184,7 +185,7 @@ OPENAI_API_KEY=sk-from-dotenv-file
 
 	// Add provider from environment variable
 	if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-		cfg.Providers["openai-primary"] = ProviderConfig{
+		cfg.Providers["openai"] = ProviderConfig{
 			Type:   "openai",
 			APIKey: apiKey,
 		}
@@ -195,9 +196,9 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected port 7070 from .env file, got %s", cfg.Server.Port)
 	}
 
-	openaiProvider, exists := cfg.Providers["openai-primary"]
+	openaiProvider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Fatal("expected 'openai-primary' provider to exist")
+		t.Fatal("expected 'openai' provider to exist")
 	}
 
 	if openaiProvider.APIKey != "sk-from-dotenv-file" {
@@ -246,7 +247,7 @@ OPENAI_API_KEY=sk-from-dotenv-file
 
 	// Add provider from environment variable
 	if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-		cfg.Providers["openai-primary"] = ProviderConfig{
+		cfg.Providers["openai"] = ProviderConfig{
 			Type:   "openai",
 			APIKey: apiKey,
 		}
@@ -257,9 +258,9 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected port 9999 from environment variable (not .env file), got %s", cfg.Server.Port)
 	}
 
-	openaiProvider, exists := cfg.Providers["openai-primary"]
+	openaiProvider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Fatal("expected 'openai-primary' provider to exist")
+		t.Fatal("expected 'openai' provider to exist")
 	}
 
 	if openaiProvider.APIKey != "sk-from-real-env" {
@@ -322,6 +323,162 @@ func TestLoggingOnlyModelInteractionsFromEnv(t *testing.T) {
 					tt.expected, tt.envValue, cfg.Logging.OnlyModelInteractions)
 			}
 		})
+	}
+}
+
+func TestSnakeCaseMatchName(t *testing.T) {
+	tests := []struct {
+		name      string
+		mapKey    string
+		fieldName string
+		expected  bool
+	}{
+		// Snake case to PascalCase matches
+		{"body_size_limit matches BodySizeLimit", "body_size_limit", "BodySizeLimit", true},
+		{"api_key matches APIKey", "api_key", "APIKey", true},
+		{"base_url matches BaseURL", "base_url", "BaseURL", true},
+		{"storage_type matches StorageType", "storage_type", "StorageType", true},
+		{"log_bodies matches LogBodies", "log_bodies", "LogBodies", true},
+		{"only_model_interactions matches OnlyModelInteractions", "only_model_interactions", "OnlyModelInteractions", true},
+		{"max_conns matches MaxConns", "max_conns", "MaxConns", true},
+		{"flush_interval matches FlushInterval", "flush_interval", "FlushInterval", true},
+		{"retention_days matches RetentionDays", "retention_days", "RetentionDays", true},
+
+		// Simple case-insensitive matches (no underscores)
+		{"port matches Port", "port", "Port", true},
+		{"enabled matches Enabled", "enabled", "Enabled", true},
+		{"type matches Type", "type", "Type", true},
+		{"url matches URL", "url", "URL", true},
+		{"ttl matches TTL", "ttl", "TTL", true},
+		{"redis matches Redis", "redis", "Redis", true},
+		{"sqlite matches SQLite", "sqlite", "SQLite", true},
+		{"postgresql matches PostgreSQL", "postgresql", "PostgreSQL", true},
+		{"mongodb matches MongoDB", "mongodb", "MongoDB", true},
+
+		// Case variations
+		{"PORT matches Port", "PORT", "Port", true},
+		{"Port matches Port", "Port", "Port", true},
+		{"BODY_SIZE_LIMIT matches BodySizeLimit", "BODY_SIZE_LIMIT", "BodySizeLimit", true},
+
+		// Non-matches
+		{"different names don't match", "foo", "Bar", false},
+		{"partial match fails", "body_size", "BodySizeLimit", false},
+
+		// Malformed keys are rejected
+		{"consecutive underscores rejected", "body__size_limit", "BodySizeLimit", false},
+		{"leading underscore rejected", "_port", "Port", false},
+		{"trailing underscore rejected", "port_", "Port", false},
+		{"leading and trailing underscore rejected", "_port_", "Port", false},
+	}
+
+	// Get the MatchName function from snakeCaseMatchName
+	var decoderConfig mapstructure.DecoderConfig
+	opt := snakeCaseMatchName()
+	opt(&decoderConfig)
+	matchName := decoderConfig.MatchName
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := matchName(tt.mapKey, tt.fieldName)
+			if result != tt.expected {
+				t.Errorf("matchName(%q, %q) = %v, expected %v",
+					tt.mapKey, tt.fieldName, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSnakeCaseMatchNameWithViper(t *testing.T) {
+	// Reset viper state
+	viper.Reset()
+
+	// Create a map simulating YAML config with snake_case keys
+	configData := map[string]any{
+		"server": map[string]any{
+			"port":            "9090",
+			"master_key":      "test-master-key",
+			"body_size_limit": "50M",
+		},
+		"logging": map[string]any{
+			"enabled":                  true,
+			"storage_type":             "postgresql",
+			"log_bodies":               false,
+			"log_headers":              true,
+			"buffer_size":              500,
+			"flush_interval":           10,
+			"retention_days":           60,
+			"only_model_interactions":  false,
+		},
+		"cache": map[string]any{
+			"type": "redis",
+			"redis": map[string]any{
+				"url": "redis://localhost:6379",
+				"key": "test:models",
+				"ttl": 3600,
+			},
+		},
+	}
+
+	// Set the config data in viper
+	for k, v := range configData {
+		viper.Set(k, v)
+	}
+
+	var cfg Config
+	err := viper.Unmarshal(&cfg, snakeCaseMatchName())
+	if err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+
+	// Verify server config
+	if cfg.Server.Port != "9090" {
+		t.Errorf("expected Server.Port=9090, got %s", cfg.Server.Port)
+	}
+	if cfg.Server.MasterKey != "test-master-key" {
+		t.Errorf("expected Server.MasterKey=test-master-key, got %s", cfg.Server.MasterKey)
+	}
+	if cfg.Server.BodySizeLimit != "50M" {
+		t.Errorf("expected Server.BodySizeLimit=50M, got %s", cfg.Server.BodySizeLimit)
+	}
+
+	// Verify logging config
+	if !cfg.Logging.Enabled {
+		t.Error("expected Logging.Enabled=true")
+	}
+	if cfg.Logging.StorageType != "postgresql" {
+		t.Errorf("expected Logging.StorageType=postgresql, got %s", cfg.Logging.StorageType)
+	}
+	if cfg.Logging.LogBodies {
+		t.Error("expected Logging.LogBodies=false")
+	}
+	if !cfg.Logging.LogHeaders {
+		t.Error("expected Logging.LogHeaders=true")
+	}
+	if cfg.Logging.BufferSize != 500 {
+		t.Errorf("expected Logging.BufferSize=500, got %d", cfg.Logging.BufferSize)
+	}
+	if cfg.Logging.FlushInterval != 10 {
+		t.Errorf("expected Logging.FlushInterval=10, got %d", cfg.Logging.FlushInterval)
+	}
+	if cfg.Logging.RetentionDays != 60 {
+		t.Errorf("expected Logging.RetentionDays=60, got %d", cfg.Logging.RetentionDays)
+	}
+	if cfg.Logging.OnlyModelInteractions {
+		t.Error("expected Logging.OnlyModelInteractions=false")
+	}
+
+	// Verify cache config
+	if cfg.Cache.Type != "redis" {
+		t.Errorf("expected Cache.Type=redis, got %s", cfg.Cache.Type)
+	}
+	if cfg.Cache.Redis.URL != "redis://localhost:6379" {
+		t.Errorf("expected Cache.Redis.URL=redis://localhost:6379, got %s", cfg.Cache.Redis.URL)
+	}
+	if cfg.Cache.Redis.Key != "test:models" {
+		t.Errorf("expected Cache.Redis.Key=test:models, got %s", cfg.Cache.Redis.Key)
+	}
+	if cfg.Cache.Redis.TTL != 3600 {
+		t.Errorf("expected Cache.Redis.TTL=3600, got %d", cfg.Cache.Redis.TTL)
 	}
 }
 

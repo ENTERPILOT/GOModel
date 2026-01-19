@@ -28,7 +28,7 @@ func TestCacheFile(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
-		mock := &mockProvider{
+		mock := &registryMockProvider{
 			name: "openai",
 			modelsResponse: &core.ModelsResponse{
 				Object: "list",
@@ -103,11 +103,11 @@ func TestCacheFile(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
-		openaiMock := &mockProvider{
+		openaiMock := &registryMockProvider{
 			name:           "openai",
 			modelsResponse: &core.ModelsResponse{Object: "list"},
 		}
-		anthropicMock := &mockProvider{
+		anthropicMock := &registryMockProvider{
 			name:           "anthropic",
 			modelsResponse: &core.ModelsResponse{Object: "list"},
 		}
@@ -172,7 +172,7 @@ func TestCacheFile(t *testing.T) {
 		registry := NewModelRegistry()
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
-		openaiMock := &mockProvider{name: "openai"}
+		openaiMock := &registryMockProvider{name: "openai"}
 		registry.RegisterProviderWithType(openaiMock, "openai")
 
 		loaded, err := registry.LoadFromCache(context.Background())
@@ -238,7 +238,7 @@ func TestCacheFile(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
-		mock := &mockProvider{
+		mock := &registryMockProvider{
 			name: "test",
 			modelsResponse: &core.ModelsResponse{
 				Object: "list",
@@ -286,7 +286,7 @@ func TestInitializeAsync(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
-		mock := &mockProvider{
+		mock := &registryMockProvider{
 			name:            "test",
 			listModelsDelay: 50 * time.Millisecond, // delay long enough for assertion to run
 			modelsResponse: &core.ModelsResponse{
@@ -318,7 +318,7 @@ func TestInitializeAsync(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
-		mock := &mockProvider{
+		mock := &registryMockProvider{
 			name: "test",
 			modelsResponse: &core.ModelsResponse{
 				Object: "list",
@@ -354,7 +354,7 @@ func TestInitializeAsync(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 
-		mock := &mockProvider{
+		mock := &registryMockProvider{
 			name: "test",
 			modelsResponse: &core.ModelsResponse{
 				Object: "list",
@@ -401,7 +401,7 @@ func TestIsInitialized(t *testing.T) {
 
 	t.Run("TrueAfterInitialize", func(t *testing.T) {
 		registry := NewModelRegistry()
-		mock := &mockProvider{
+		mock := &registryMockProvider{
 			name: "test",
 			modelsResponse: &core.ModelsResponse{
 				Object: "list",
@@ -441,7 +441,7 @@ func TestIsInitialized(t *testing.T) {
 		registry := NewModelRegistry()
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
-		mock := &mockProvider{name: "test"}
+		mock := &registryMockProvider{name: "test"}
 		registry.RegisterProviderWithType(mock, "test")
 
 		_, _ = registry.LoadFromCache(context.Background())
@@ -456,7 +456,7 @@ func TestIsInitialized(t *testing.T) {
 func TestRegisterProviderWithType(t *testing.T) {
 	registry := NewModelRegistry()
 
-	mock := &mockProvider{
+	mock := &registryMockProvider{
 		name: "test",
 		modelsResponse: &core.ModelsResponse{
 			Object: "list",

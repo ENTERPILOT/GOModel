@@ -33,23 +33,23 @@ metrics:
   endpoint: "${METRICS_ENDPOINT:-/metrics}"
 
 providers:
-  openai-primary:
+  openai:
     type: "openai"
     api_key: "${OPENAI_API_KEY}"
 
-  anthropic-primary:
+  anthropic:
     type: "anthropic"
     api_key: "${ANTHROPIC_API_KEY}"
 
-  gemini-primary:
+  gemini:
     type: "gemini"
     api_key: "${GEMINI_API_KEY}"
 
-  xai-primary:
+  xai:
     type: "xai"
     api_key: "${XAI_API_KEY}"
 
-  groq-primary:
+  groq:
     type: "groq"
     api_key: "${GROQ_API_KEY}"
 
