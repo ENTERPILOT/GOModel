@@ -74,9 +74,8 @@ func main() {
 
 	// Create the application
 	application, err := app.New(context.Background(), app.Config{
-		AppConfig:       cfg,
-		RefreshInterval: 5 * time.Minute,
-		Factory:         factory,
+		AppConfig: cfg,
+		Factory:   factory,
 	})
 	if err != nil {
 		slog.Error("failed to initialize application", "error", err)

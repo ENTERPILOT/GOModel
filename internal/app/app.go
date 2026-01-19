@@ -36,7 +36,7 @@ type Config struct {
 	AppConfig *config.Config
 
 	// RefreshInterval is how often to refresh the model registry.
-	// Default: 5 minutes
+	// Default: 1 hour
 	RefreshInterval time.Duration
 
 	// Factory is the provider factory with registered providers.
@@ -59,7 +59,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 
 	// Initialize provider infrastructure
-	// RefreshInterval default (5 min) is applied in providers.InitWithConfig if zero
+	// RefreshInterval default (1 hour) is applied in providers.InitWithConfig if zero
 	initCfg := providers.InitConfig{
 		RefreshInterval: cfg.RefreshInterval,
 		Factory:         cfg.Factory,

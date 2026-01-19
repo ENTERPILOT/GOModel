@@ -40,7 +40,7 @@ func (r *InitResult) Close() error {
 // InitConfig holds options for provider initialization.
 type InitConfig struct {
 	// RefreshInterval is how often to refresh the model registry.
-	// Default: 5 minutes
+	// Default: 1 hour
 	RefreshInterval time.Duration
 
 	// Factory is the provider factory with registered providers.
@@ -51,7 +51,7 @@ type InitConfig struct {
 // DefaultInitConfig returns sensible defaults for initialization.
 func DefaultInitConfig() InitConfig {
 	return InitConfig{
-		RefreshInterval: 5 * time.Minute,
+		RefreshInterval: time.Hour,
 	}
 }
 
@@ -112,7 +112,7 @@ func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig)
 	// Start background refresh
 	interval := initCfg.RefreshInterval
 	if interval <= 0 {
-		interval = 5 * time.Minute
+		interval = time.Hour
 	}
 	stopRefresh := registry.StartBackgroundRefresh(interval)
 
