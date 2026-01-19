@@ -364,10 +364,11 @@ func TestSnakeCaseMatchName(t *testing.T) {
 		{"different names don't match", "foo", "Bar", false},
 		{"partial match fails", "body_size", "BodySizeLimit", false},
 
-		// Edge cases - all underscores are stripped, so these still match
-		{"extra underscores still match", "body__size_limit", "BodySizeLimit", true},
-		{"leading underscore still matches", "_port", "Port", true},
-		{"trailing underscore still matches", "port_", "Port", true},
+		// Malformed keys are rejected
+		{"consecutive underscores rejected", "body__size_limit", "BodySizeLimit", false},
+		{"leading underscore rejected", "_port", "Port", false},
+		{"trailing underscore rejected", "port_", "Port", false},
+		{"leading and trailing underscore rejected", "_port_", "Port", false},
 	}
 
 	// Get the MatchName function from snakeCaseMatchName

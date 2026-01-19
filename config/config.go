@@ -158,6 +158,14 @@ type ProviderConfig struct {
 func snakeCaseMatchName() viper.DecoderConfigOption {
 	return func(c *mapstructure.DecoderConfig) {
 		c.MatchName = func(mapKey, fieldName string) bool {
+			// Reject malformed keys: leading/trailing underscores or consecutive underscores
+			if strings.HasPrefix(mapKey, "_") || strings.HasSuffix(mapKey, "_") {
+				return false
+			}
+			if strings.Contains(mapKey, "__") {
+				return false
+			}
+
 			// Remove underscores and compare case-insensitively
 			normalizedKey := strings.ReplaceAll(mapKey, "_", "")
 			return strings.EqualFold(normalizedKey, fieldName)
