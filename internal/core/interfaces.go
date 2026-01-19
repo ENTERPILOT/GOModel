@@ -42,14 +42,14 @@ type RoutableProvider interface {
 // This abstraction allows the Router to be decoupled from the concrete ModelRegistry implementation.
 type ModelLookup interface {
 	// Supports returns true if the registry has a provider for the given model
-	Supports(modelID string) bool
+	Supports(model string) bool
 
 	// GetProvider returns the provider for the given model, or nil if not found
-	GetProvider(modelID string) Provider
+	GetProvider(model string) Provider
 
-	// GetProviderType returns the provider type string for the given model ID.
+	// GetProviderType returns the provider type string for the given model.
 	// Returns empty string if the model is not found.
-	GetProviderType(modelID string) string
+	GetProviderType(model string) string
 
 	// ListModels returns all models in the registry
 	ListModels() []Model

@@ -24,23 +24,23 @@ func newMockLookup() *mockModelLookup {
 	}
 }
 
-func (m *mockModelLookup) addModel(modelID string, provider core.Provider, providerType string) {
-	m.models[modelID] = provider
-	m.providerTypes[modelID] = providerType
-	m.modelList = append(m.modelList, core.Model{ID: modelID, Object: "model"})
+func (m *mockModelLookup) addModel(model string, provider core.Provider, providerType string) {
+	m.models[model] = provider
+	m.providerTypes[model] = providerType
+	m.modelList = append(m.modelList, core.Model{ID: model, Object: "model"})
 }
 
-func (m *mockModelLookup) Supports(modelID string) bool {
-	_, ok := m.models[modelID]
+func (m *mockModelLookup) Supports(model string) bool {
+	_, ok := m.models[model]
 	return ok
 }
 
-func (m *mockModelLookup) GetProvider(modelID string) core.Provider {
-	return m.models[modelID]
+func (m *mockModelLookup) GetProvider(model string) core.Provider {
+	return m.models[model]
 }
 
-func (m *mockModelLookup) GetProviderType(modelID string) string {
-	return m.providerTypes[modelID]
+func (m *mockModelLookup) GetProviderType(model string) string {
+	return m.providerTypes[model]
 }
 
 func (m *mockModelLookup) ListModels() []core.Model {
