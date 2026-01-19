@@ -59,12 +59,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 
 	// Initialize provider infrastructure
+	// RefreshInterval default (5 min) is applied in providers.InitWithConfig if zero
 	initCfg := providers.InitConfig{
 		RefreshInterval: cfg.RefreshInterval,
 		Factory:         cfg.Factory,
-	}
-	if initCfg.RefreshInterval <= 0 {
-		initCfg.RefreshInterval = 5 * time.Minute
 	}
 
 	providerResult, err := providers.InitWithConfig(ctx, cfg.AppConfig, initCfg)
