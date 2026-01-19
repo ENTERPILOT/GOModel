@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
@@ -24,132 +25,144 @@ var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration
 type Config struct {
-	Server    ServerConfig              `mapstructure:"server"`
-	Cache     CacheConfig               `mapstructure:"cache"`
-	Storage   StorageConfig             `mapstructure:"storage"`
-	Logging   LogConfig                 `mapstructure:"logging"`
-	Metrics   MetricsConfig             `mapstructure:"metrics"`
-	Providers map[string]ProviderConfig `mapstructure:"providers"`
+	Server    ServerConfig
+	Cache     CacheConfig
+	Storage   StorageConfig
+	Logging   LogConfig
+	Metrics   MetricsConfig
+	Providers map[string]ProviderConfig
 }
 
 // LogConfig holds audit logging configuration
 type LogConfig struct {
 	// Enabled controls whether audit logging is active
 	// Default: false
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool
 
 	// StorageType specifies the storage backend for audit logs: "sqlite" (default), "postgresql", or "mongodb"
 	// This selects which of the storage backends (configured separately) to use for audit logs
-	StorageType string `mapstructure:"storage_type"`
+	StorageType string
 
 	// LogBodies enables logging of full request/response bodies
 	// WARNING: May contain sensitive data (PII, API keys in prompts)
 	// Default: true
-	LogBodies bool `mapstructure:"log_bodies"`
+	LogBodies bool
 
 	// LogHeaders enables logging of request/response headers
 	// Sensitive headers (Authorization, Cookie, etc.) are auto-redacted
 	// Default: true
-	LogHeaders bool `mapstructure:"log_headers"`
+	LogHeaders bool
 
 	// BufferSize is the number of log entries to buffer before flushing
 	// Default: 1000
-	BufferSize int `mapstructure:"buffer_size"`
+	BufferSize int
 
 	// FlushInterval is how often to flush buffered logs (in seconds)
 	// Default: 5
-	FlushInterval int `mapstructure:"flush_interval"`
+	FlushInterval int
 
 	// RetentionDays is how long to keep logs (0 = forever)
 	// Default: 30
-	RetentionDays int `mapstructure:"retention_days"`
+	RetentionDays int
 
 	// OnlyModelInteractions limits audit logging to AI model endpoints only
 	// When true, only /v1/chat/completions, /v1/responses, /v1/models are logged
 	// Endpoints like /health, /metrics, /admin are skipped
 	// Default: true
-	OnlyModelInteractions bool `mapstructure:"only_model_interactions"`
+	OnlyModelInteractions bool
 }
 
 // StorageConfig holds database storage configuration (used by audit logging, future IAM, etc.)
 type StorageConfig struct {
 	// SQLite configuration
-	SQLite SQLiteStorageConfig `mapstructure:"sqlite"`
+	SQLite SQLiteStorageConfig
 
 	// PostgreSQL configuration
-	PostgreSQL PostgreSQLStorageConfig `mapstructure:"postgresql"`
+	PostgreSQL PostgreSQLStorageConfig
 
 	// MongoDB configuration
-	MongoDB MongoDBStorageConfig `mapstructure:"mongodb"`
+	MongoDB MongoDBStorageConfig
 }
 
 // SQLiteStorageConfig holds SQLite-specific storage configuration
 type SQLiteStorageConfig struct {
 	// Path is the database file path (default: .cache/gomodel.db)
-	Path string `mapstructure:"path"`
+	Path string
 }
 
 // PostgreSQLStorageConfig holds PostgreSQL-specific storage configuration
 type PostgreSQLStorageConfig struct {
 	// URL is the connection string (e.g., postgres://user:pass@localhost/dbname)
-	URL string `mapstructure:"url"`
+	URL string
 	// MaxConns is the maximum connection pool size (default: 10)
-	MaxConns int `mapstructure:"max_conns"`
+	MaxConns int
 }
 
 // MongoDBStorageConfig holds MongoDB-specific storage configuration
 type MongoDBStorageConfig struct {
 	// URL is the connection string (e.g., mongodb://localhost:27017)
-	URL string `mapstructure:"url"`
+	URL string
 	// Database is the database name (default: gomodel)
-	Database string `mapstructure:"database"`
+	Database string
 }
 
 // CacheConfig holds cache configuration for model storage
 type CacheConfig struct {
 	// Type specifies the cache backend: "local" (default) or "redis"
-	Type string `mapstructure:"type"`
+	Type string
 
 	// Redis configuration (only used when Type is "redis")
-	Redis RedisConfig `mapstructure:"redis"`
+	Redis RedisConfig
 }
 
 // RedisConfig holds Redis-specific configuration
 type RedisConfig struct {
 	// URL is the Redis connection URL (e.g., "redis://localhost:6379")
-	URL string `mapstructure:"url"`
+	URL string
 
 	// Key is the Redis key for storing the model cache (default: "gomodel:models")
-	Key string `mapstructure:"key"`
+	Key string
 
 	// TTL is the time-to-live for cached data in seconds (default: 86400 = 24 hours)
-	TTL int `mapstructure:"ttl"`
+	TTL int
 }
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port          string `mapstructure:"port"`
-	MasterKey     string `mapstructure:"master_key"`      // Optional: Master key for authentication
-	BodySizeLimit string `mapstructure:"body_size_limit"` // Max request body size (e.g., "10M", "1024K")
+	Port          string
+	MasterKey     string // Optional: Master key for authentication
+	BodySizeLimit string // Max request body size (e.g., "10M", "1024K")
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
 type MetricsConfig struct {
 	// Enabled controls whether Prometheus metrics are collected and exposed
 	// Default: false
-	Enabled bool `mapstructure:"enabled"`
+	Enabled bool
 
 	// Endpoint is the HTTP path where metrics are exposed
 	// Default: "/metrics"
-	Endpoint string `mapstructure:"endpoint"`
+	Endpoint string
 }
 
 // ProviderConfig holds generic provider configuration
 type ProviderConfig struct {
-	Type    string   `mapstructure:"type"`     // e.g., "openai", "anthropic", "gemini"
-	APIKey  string   `mapstructure:"api_key"`  // API key for authentication
-	BaseURL string   `mapstructure:"base_url"` // Optional: override default base URL
-	Models  []string `mapstructure:"models"`   // Optional: restrict to specific models
+	Type    string   // e.g., "openai", "anthropic", "gemini"
+	APIKey  string   // API key for authentication
+	BaseURL string   // Optional: override default base URL
+	Models  []string // Optional: restrict to specific models
+}
+
+// snakeCaseMatchName returns a DecoderConfigOption that matches
+// snake_case map keys to PascalCase struct field names.
+func snakeCaseMatchName() viper.DecoderConfigOption {
+	return func(c *mapstructure.DecoderConfig) {
+		c.MatchName = func(mapKey, fieldName string) bool {
+			// Remove underscores and compare case-insensitively
+			normalizedKey := strings.ReplaceAll(mapKey, "_", "")
+			return strings.EqualFold(normalizedKey, fieldName)
+		}
+	}
 }
 
 // Load reads configuration from file and environment
@@ -202,7 +215,7 @@ func Load() (*Config, error) {
 	// Read config file (optional, won't fail if not found)
 	if err := viper.ReadInConfig(); err == nil {
 		// Config file found, unmarshal it
-		if err := viper.Unmarshal(&cfg); err != nil {
+		if err := viper.Unmarshal(&cfg, snakeCaseMatchName()); err != nil {
 			return nil, err
 		}
 		// Expand environment variables in config values
