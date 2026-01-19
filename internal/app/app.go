@@ -74,7 +74,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	// Initialize audit logging
 	auditResult, err := auditlog.New(ctx, cfg.AppConfig)
 	if err != nil {
-		app.providers.Close()
+		closeErr := app.providers.Close()
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to initialize audit logging: %w (also: providers close error: %v)", err, closeErr)
+		}
 		return nil, fmt.Errorf("failed to initialize audit logging: %w", err)
 	}
 	app.audit = auditResult
@@ -115,6 +118,9 @@ func (a *App) AuditLogger() auditlog.LoggerInterface {
 // Start starts the HTTP server on the given address.
 // This is a blocking call that returns when the server stops.
 func (a *App) Start(addr string) error {
+	if a.server == nil {
+		return fmt.Errorf("server is not initialized")
+	}
 	slog.Info("starting server", "address", addr)
 	if err := a.server.Start(addr); err != nil {
 		if errors.Is(err, http.ErrServerClosed) {
