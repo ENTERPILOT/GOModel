@@ -34,7 +34,7 @@ func TestLoad_FromEnvironment(t *testing.T) {
 	}
 
 	// Check OpenAI provider
-	if openaiCfg, exists := cfg.Providers["openai-primary"]; exists {
+	if openaiCfg, exists := cfg.Providers["openai"]; exists {
 		if openaiCfg.Type != "openai" {
 			t.Errorf("expected openai type, got '%s'", openaiCfg.Type)
 		}
@@ -42,11 +42,11 @@ func TestLoad_FromEnvironment(t *testing.T) {
 			t.Errorf("expected openai key 'test-openai-key', got '%s'", openaiCfg.APIKey)
 		}
 	} else {
-		t.Error("expected 'openai-primary' provider to exist")
+		t.Error("expected 'openai' provider to exist")
 	}
 
 	// Check Anthropic provider
-	if anthropicCfg, exists := cfg.Providers["anthropic-primary"]; exists {
+	if anthropicCfg, exists := cfg.Providers["anthropic"]; exists {
 		if anthropicCfg.Type != "anthropic" {
 			t.Errorf("expected anthropic type, got '%s'", anthropicCfg.Type)
 		}
@@ -54,7 +54,7 @@ func TestLoad_FromEnvironment(t *testing.T) {
 			t.Errorf("expected anthropic key 'test-anthropic-key', got '%s'", anthropicCfg.APIKey)
 		}
 	} else {
-		t.Error("expected 'anthropic-primary' provider to exist")
+		t.Error("expected 'anthropic' provider to exist")
 	}
 }
 

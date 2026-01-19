@@ -68,9 +68,9 @@ func TestLoad_OpenAIAPIKeyFromEnv(t *testing.T) {
 	}
 
 	// Check that OpenAI provider was created from environment variable
-	provider, exists := cfg.Providers["openai-primary"]
+	provider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Fatal("expected 'openai-primary' provider to exist")
+		t.Fatal("expected 'openai' provider to exist")
 	}
 
 	if provider.Type != "openai" {
@@ -132,17 +132,17 @@ func TestLoad_MultipleEnvVars(t *testing.T) {
 	}
 
 	// Check OpenAI provider
-	openaiProvider, exists := cfg.Providers["openai-primary"]
+	openaiProvider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Error("expected 'openai-primary' provider to exist")
+		t.Error("expected 'openai' provider to exist")
 	} else if openaiProvider.APIKey != testAPIKey {
 		t.Errorf("expected OpenAI API key %s, got %s", testAPIKey, openaiProvider.APIKey)
 	}
 
 	// Check Anthropic provider
-	anthropicProvider, exists := cfg.Providers["anthropic-primary"]
+	anthropicProvider, exists := cfg.Providers["anthropic"]
 	if !exists {
-		t.Error("expected 'anthropic-primary' provider to exist")
+		t.Error("expected 'anthropic' provider to exist")
 	} else if anthropicProvider.APIKey != testAnthropicKey {
 		t.Errorf("expected Anthropic API key %s, got %s", testAnthropicKey, anthropicProvider.APIKey)
 	}
@@ -185,7 +185,7 @@ OPENAI_API_KEY=sk-from-dotenv-file
 
 	// Add provider from environment variable
 	if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-		cfg.Providers["openai-primary"] = ProviderConfig{
+		cfg.Providers["openai"] = ProviderConfig{
 			Type:   "openai",
 			APIKey: apiKey,
 		}
@@ -196,9 +196,9 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected port 7070 from .env file, got %s", cfg.Server.Port)
 	}
 
-	openaiProvider, exists := cfg.Providers["openai-primary"]
+	openaiProvider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Fatal("expected 'openai-primary' provider to exist")
+		t.Fatal("expected 'openai' provider to exist")
 	}
 
 	if openaiProvider.APIKey != "sk-from-dotenv-file" {
@@ -247,7 +247,7 @@ OPENAI_API_KEY=sk-from-dotenv-file
 
 	// Add provider from environment variable
 	if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-		cfg.Providers["openai-primary"] = ProviderConfig{
+		cfg.Providers["openai"] = ProviderConfig{
 			Type:   "openai",
 			APIKey: apiKey,
 		}
@@ -258,9 +258,9 @@ OPENAI_API_KEY=sk-from-dotenv-file
 		t.Errorf("expected port 9999 from environment variable (not .env file), got %s", cfg.Server.Port)
 	}
 
-	openaiProvider, exists := cfg.Providers["openai-primary"]
+	openaiProvider, exists := cfg.Providers["openai"]
 	if !exists {
-		t.Fatal("expected 'openai-primary' provider to exist")
+		t.Fatal("expected 'openai' provider to exist")
 	}
 
 	if openaiProvider.APIKey != "sk-from-real-env" {

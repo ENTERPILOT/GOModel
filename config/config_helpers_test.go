@@ -552,7 +552,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 			input: Config{
 				Server: ServerConfig{Port: "8080"},
 				Providers: map[string]ProviderConfig{
-					"openai-primary": {
+					"openai": {
 						Type:   "openai",
 						APIKey: "sk-openai-valid",
 					},
@@ -573,7 +573,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 			expected: Config{
 				Server: ServerConfig{Port: "8080"},
 				Providers: map[string]ProviderConfig{
-					"openai-primary": {
+					"openai": {
 						Type:   "openai",
 						APIKey: "sk-openai-valid",
 					},
@@ -785,7 +785,7 @@ func TestIntegration_ExpandAndFilter(t *testing.T) {
 					Port: "${PORT:-8080}",
 				},
 				Providers: map[string]ProviderConfig{
-					"openai-primary": {
+					"openai": {
 						Type:   "openai",
 						APIKey: "${OPENAI_API_KEY}",
 					},
@@ -808,7 +808,7 @@ func TestIntegration_ExpandAndFilter(t *testing.T) {
 					Port: "8080",
 				},
 				Providers: map[string]ProviderConfig{
-					"openai-primary": {
+					"openai": {
 						Type:   "openai",
 						APIKey: "sk-openai-123",
 					},

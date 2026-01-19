@@ -132,6 +132,22 @@ type Provider interface {
 - Automatically creates provider configs from environment variables
 - At least one provider API key is required
 
+**Provider naming in config.yaml:**
+
+Provider names (map keys) are arbitrary identifiers. Only the `type` field determines which provider implementation is used. You can use any name and have multiple providers of the same type:
+
+```yaml
+providers:
+  my-openai:           # Any name works
+    type: "openai"
+    api_key: "${OPENAI_API_KEY}"
+
+  backup-openai:       # Multiple providers of same type supported
+    type: "openai"
+    api_key: "${BACKUP_OPENAI_KEY}"
+    base_url: "https://custom.endpoint.com"
+```
+
 ### Adding a New Provider
 
 1. Create package in `internal/providers/{name}/`

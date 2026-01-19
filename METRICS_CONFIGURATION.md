@@ -105,7 +105,7 @@ metrics:
   endpoint: "/internal/prometheus" # Custom path
 
 providers:
-  openai-primary:
+  openai:
     type: "openai"
     api_key: "${OPENAI_API_KEY}"
 ```

@@ -271,31 +271,31 @@ func Load() (*Config, error) {
 		// TODO: Similarly for ENV variables. All ENV variables like *_API_KEY should be taken and iterated over
 		// Add providers from environment variables if available
 		if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-			cfg.Providers["openai-primary"] = ProviderConfig{
+			cfg.Providers["openai"] = ProviderConfig{
 				Type:   "openai",
 				APIKey: apiKey,
 			}
 		}
 		if apiKey := viper.GetString("ANTHROPIC_API_KEY"); apiKey != "" {
-			cfg.Providers["anthropic-primary"] = ProviderConfig{
+			cfg.Providers["anthropic"] = ProviderConfig{
 				Type:   "anthropic",
 				APIKey: apiKey,
 			}
 		}
 		if apiKey := viper.GetString("GEMINI_API_KEY"); apiKey != "" {
-			cfg.Providers["gemini-primary"] = ProviderConfig{
+			cfg.Providers["gemini"] = ProviderConfig{
 				Type:   "gemini",
 				APIKey: apiKey,
 			}
 		}
 		if apiKey := viper.GetString("XAI_API_KEY"); apiKey != "" {
-			cfg.Providers["xai-primary"] = ProviderConfig{
+			cfg.Providers["xai"] = ProviderConfig{
 				Type:   "xai",
 				APIKey: apiKey,
 			}
 		}
 		if apiKey := viper.GetString("GROQ_API_KEY"); apiKey != "" {
-			cfg.Providers["groq-primary"] = ProviderConfig{
+			cfg.Providers["groq"] = ProviderConfig{
 				Type:   "groq",
 				APIKey: apiKey,
 			}

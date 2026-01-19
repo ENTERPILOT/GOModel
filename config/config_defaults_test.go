@@ -39,7 +39,7 @@ func TestLoad_WithDefaults(t *testing.T) {
 server:
   port: "${TEST_PORT_DEFAULTS:-9999}"
 providers:
-  openai-primary:
+  openai:
     type: "openai"
     api_key: "${TEST_KEY_DEFAULTS:-default-key}"
 `
@@ -70,7 +70,7 @@ providers:
 			t.Errorf("Expected port 9999 (default), got %s", cfg.Server.Port)
 		}
 
-		provider := cfg.Providers["openai-primary"]
+		provider := cfg.Providers["openai"]
 		if provider.APIKey != "default-key" {
 			t.Errorf("Expected API key 'default-key', got %s", provider.APIKey)
 		}
@@ -117,7 +117,7 @@ providers:
 server:
   port: "${TEST_PORT_DEFAULTS:-9999}"
 providers:
-  openai-primary:
+  openai:
     type: "openai"
     api_key: "${TEST_KEY_DEFAULTS:-default-key}"
 `
@@ -137,7 +137,7 @@ providers:
 			t.Errorf("Expected port 1111 (env override), got %s", cfg.Server.Port)
 		}
 
-		provider := cfg.Providers["openai-primary"]
+		provider := cfg.Providers["openai"]
 		if provider.APIKey != "real-key" {
 			t.Errorf("Expected API key 'real-key', got %s", provider.APIKey)
 		}
