@@ -254,7 +254,7 @@ func (w *StreamLogWrapper) parseResponsesAPIEvent(event map[string]interface{}) 
 	}
 }
 
-// Close implements io.Closer, parses usage data, and logs the entry.
+// Close implements io.Closer and logs the entry.
 func (w *StreamLogWrapper) Close() error {
 	if w.closed {
 		return nil
@@ -266,20 +266,12 @@ func (w *StreamLogWrapper) Close() error {
 		w.entry.DurationNs = time.Since(w.startTime).Nanoseconds()
 	}
 
-	// Parse final usage from buffered SSE data
-	usage := parseUsageFromSSE(w.buffer.Bytes())
-	if usage != nil && w.entry != nil {
-		w.entry.CompletionTokens = usage.CompletionTokens
-		w.entry.TotalTokens = usage.TotalTokens
-		w.entry.PromptTokens = usage.PromptTokens
-	}
-
 	// Build and store reconstructed response body if enabled
 	if w.logBodies && w.builder != nil && w.entry != nil && w.entry.Data != nil {
 		if w.builder.IsResponsesAPI {
-			w.entry.Data.ResponseBody = w.builder.buildResponsesAPIResponse(usage)
+			w.entry.Data.ResponseBody = w.builder.buildResponsesAPIResponse()
 		} else {
-			w.entry.Data.ResponseBody = w.builder.buildChatCompletionResponse(usage)
+			w.entry.Data.ResponseBody = w.builder.buildChatCompletionResponse()
 		}
 		w.entry.Data.ResponseBodyTooBigToHandle = w.builder.truncated
 	}
@@ -293,8 +285,8 @@ func (w *StreamLogWrapper) Close() error {
 }
 
 // buildChatCompletionResponse constructs a ChatCompletion response from accumulated data
-func (b *streamResponseBuilder) buildChatCompletionResponse(usage *Usage) map[string]interface{} {
-	response := map[string]interface{}{
+func (b *streamResponseBuilder) buildChatCompletionResponse() map[string]interface{} {
+	return map[string]interface{}{
 		"id":      b.ID,
 		"object":  "chat.completion",
 		"model":   b.Model,
@@ -310,21 +302,11 @@ func (b *streamResponseBuilder) buildChatCompletionResponse(usage *Usage) map[st
 			},
 		},
 	}
-
-	if usage != nil {
-		response["usage"] = map[string]interface{}{
-			"prompt_tokens":     usage.PromptTokens,
-			"completion_tokens": usage.CompletionTokens,
-			"total_tokens":      usage.TotalTokens,
-		}
-	}
-
-	return response
 }
 
 // buildResponsesAPIResponse constructs a Responses API response from accumulated data
-func (b *streamResponseBuilder) buildResponsesAPIResponse(usage *Usage) map[string]interface{} {
-	response := map[string]interface{}{
+func (b *streamResponseBuilder) buildResponsesAPIResponse() map[string]interface{} {
+	return map[string]interface{}{
 		"id":         b.ResponseID,
 		"object":     "response",
 		"model":      b.Model,
@@ -343,85 +325,6 @@ func (b *streamResponseBuilder) buildResponsesAPIResponse(usage *Usage) map[stri
 			},
 		},
 	}
-
-	if usage != nil {
-		response["usage"] = map[string]interface{}{
-			"input_tokens":  usage.PromptTokens,
-			"output_tokens": usage.CompletionTokens,
-			"total_tokens":  usage.TotalTokens,
-		}
-	}
-
-	return response
-}
-
-// parseUsageFromSSE extracts usage data from SSE stream buffer.
-// OpenAI and compatible APIs include usage in the final event before [DONE].
-func parseUsageFromSSE(data []byte) *Usage {
-	// Split into SSE events
-	events := bytes.Split(data, []byte("\n\n"))
-
-	// Search from the end for usage data
-	for i := len(events) - 1; i >= 0; i-- {
-		event := events[i]
-		// Skip empty events and [DONE]
-		if len(event) == 0 || bytes.Contains(event, []byte("[DONE]")) {
-			continue
-		}
-
-		// Find data line
-		lines := bytes.Split(event, []byte("\n"))
-		for _, line := range lines {
-			if bytes.HasPrefix(line, []byte("data: ")) {
-				jsonData := bytes.TrimPrefix(line, []byte("data: "))
-				usage := extractUsageFromJSON(jsonData)
-				if usage != nil {
-					return usage
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// extractUsageFromJSON attempts to extract usage from a JSON chunk.
-func extractUsageFromJSON(data []byte) *Usage {
-	// Try to parse as a generic map
-	var chunk map[string]interface{}
-	if err := json.Unmarshal(data, &chunk); err != nil {
-		return nil
-	}
-
-	// Look for usage field (OpenAI format)
-	usageRaw, ok := chunk["usage"]
-	if !ok {
-		return nil
-	}
-
-	usageMap, ok := usageRaw.(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	usage := &Usage{}
-
-	if v, ok := usageMap["prompt_tokens"].(float64); ok {
-		usage.PromptTokens = int(v)
-	}
-	if v, ok := usageMap["completion_tokens"].(float64); ok {
-		usage.CompletionTokens = int(v)
-	}
-	if v, ok := usageMap["total_tokens"].(float64); ok {
-		usage.TotalTokens = int(v)
-	}
-
-	// Only return if we found some usage data
-	if usage.PromptTokens > 0 || usage.CompletionTokens > 0 || usage.TotalTokens > 0 {
-		return usage
-	}
-
-	return nil
 }
 
 // WrapStreamForLogging wraps a stream with logging if enabled.
