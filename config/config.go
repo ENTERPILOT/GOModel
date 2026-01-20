@@ -29,6 +29,7 @@ type Config struct {
 	Cache     CacheConfig
 	Storage   StorageConfig
 	Logging   LogConfig
+	Usage     UsageConfig
 	Metrics   MetricsConfig
 	Providers map[string]ProviderConfig
 }
@@ -70,6 +71,25 @@ type LogConfig struct {
 	// Endpoints like /health, /metrics, /admin are skipped
 	// Default: true
 	OnlyModelInteractions bool
+}
+
+// UsageConfig holds token usage tracking configuration
+type UsageConfig struct {
+	// Enabled controls whether usage tracking is active
+	// Default: false
+	Enabled bool
+
+	// BufferSize is the number of usage entries to buffer before flushing
+	// Default: 1000
+	BufferSize int
+
+	// FlushInterval is how often to flush buffered usage entries (in seconds)
+	// Default: 5
+	FlushInterval int
+
+	// RetentionDays is how long to keep usage data (0 = forever)
+	// Default: 90
+	RetentionDays int
 }
 
 // StorageConfig holds database storage configuration (used by audit logging, future IAM, etc.)
@@ -209,6 +229,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("logging.retention_days", 30)
 	viper.SetDefault("logging.only_model_interactions", true)
 
+	// Usage tracking defaults
+	viper.SetDefault("usage.enabled", false)
+	viper.SetDefault("usage.buffer_size", 1000)
+	viper.SetDefault("usage.flush_interval", 5)
+	viper.SetDefault("usage.retention_days", 90)
+
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
 
@@ -260,6 +286,12 @@ func Load() (*Config, error) {
 				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
 				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
 				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
+			},
+			Usage: UsageConfig{
+				Enabled:       getEnvBool("USAGE_ENABLED"),
+				BufferSize:    getEnvIntOrDefault("USAGE_BUFFER_SIZE", 1000),
+				FlushInterval: getEnvIntOrDefault("USAGE_FLUSH_INTERVAL", 5),
+				RetentionDays: getEnvIntOrDefault("USAGE_RETENTION_DAYS", 90),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -372,6 +404,26 @@ func expandEnvVars(cfg Config) Config {
 	}
 	if onlyModel := os.Getenv("LOGGING_ONLY_MODEL_INTERACTIONS"); onlyModel != "" {
 		cfg.Logging.OnlyModelInteractions = strings.EqualFold(onlyModel, "true") || onlyModel == "1"
+	}
+
+	// Override usage tracking configuration from environment variables
+	if usageEnabled := os.Getenv("USAGE_ENABLED"); usageEnabled != "" {
+		cfg.Usage.Enabled = strings.EqualFold(usageEnabled, "true") || usageEnabled == "1"
+	}
+	if usageBufferSize := os.Getenv("USAGE_BUFFER_SIZE"); usageBufferSize != "" {
+		if bufferSize, err := strconv.Atoi(usageBufferSize); err == nil {
+			cfg.Usage.BufferSize = bufferSize
+		}
+	}
+	if usageFlushInterval := os.Getenv("USAGE_FLUSH_INTERVAL"); usageFlushInterval != "" {
+		if flushInterval, err := strconv.Atoi(usageFlushInterval); err == nil {
+			cfg.Usage.FlushInterval = flushInterval
+		}
+	}
+	if usageRetentionDays := os.Getenv("USAGE_RETENTION_DAYS"); usageRetentionDays != "" {
+		if retentionDays, err := strconv.Atoi(usageRetentionDays); err == nil {
+			cfg.Usage.RetentionDays = retentionDays
+		}
 	}
 
 	// Expand provider configurations

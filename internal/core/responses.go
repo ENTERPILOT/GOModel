@@ -72,9 +72,10 @@ type ResponsesContentItem struct {
 
 // ResponsesUsage represents token usage for the Responses API.
 type ResponsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens  int            `json:"input_tokens"`
+	OutputTokens int            `json:"output_tokens"`
+	TotalTokens  int            `json:"total_tokens"`
+	RawUsage     map[string]any `json:"raw_usage,omitempty"`
 }
 
 // ResponsesError represents an error in the response.
