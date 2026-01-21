@@ -233,7 +233,7 @@ STORAGE_TYPE=postgresql POSTGRES_URL=postgres://gomodel:gomodel@localhost:5432/g
 STORAGE_TYPE=mongodb MONGODB_URL=mongodb://localhost:27017/gomodel go run ./cmd/gomodel
 ```
 
-This allows testing storage implementations independently without rebuilding the Docker image.
+This allows testing storage implementations independently without rebuilding the Docker image. Note that Docker Compose is optional and intended solely for manual storage-backend validation; automated unit and E2E tests must run in-process without Docker (see `make test` and `make test-e2e`).
 
 ## HTTP Framework
 
