@@ -303,7 +303,43 @@ data: {"type":"message_stop"}
 }
 
 func TestListModels(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify request path and method
+		if r.URL.Path != "/models" {
+			t.Errorf("Path = %q, want %q", r.URL.Path, "/models")
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("Method = %q, want %q", r.Method, http.MethodGet)
+		}
+
+		// Verify required headers
+		apiKey := r.Header.Get("x-api-key")
+		if apiKey == "" {
+			t.Error("x-api-key header should not be empty")
+		}
+		if r.Header.Get("anthropic-version") != anthropicAPIVersion {
+			t.Errorf("anthropic-version = %q, want %q", r.Header.Get("anthropic-version"), anthropicAPIVersion)
+		}
+
+		// Verify limit query param (passed in URL)
+		if limit := r.URL.Query().Get("limit"); limit != "1000" {
+			t.Errorf("limit query param = %q, want %q", limit, "1000")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"data": [
+				{"id": "claude-sonnet-4-5-20250929", "type": "model", "created_at": "2025-09-29T00:00:00Z", "display_name": "Claude Sonnet 4.5"},
+				{"id": "claude-opus-4-5-20251101", "type": "model", "created_at": "2025-11-01T00:00:00Z", "display_name": "Claude Opus 4.5"},
+				{"id": "claude-3-haiku-20240307", "type": "model", "created_at": "2024-03-07T00:00:00Z", "display_name": "Claude 3 Haiku"}
+			],
+			"has_more": false
+		}`))
+	}))
+	defer server.Close()
+
 	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
 
 	resp, err := provider.ListModels(context.Background())
 
@@ -315,8 +351,8 @@ func TestListModels(t *testing.T) {
 		t.Errorf("Object = %q, want %q", resp.Object, "list")
 	}
 
-	if len(resp.Data) == 0 {
-		t.Error("Data should not be empty")
+	if len(resp.Data) != 3 {
+		t.Errorf("len(Data) = %d, want 3", len(resp.Data))
 	}
 
 	// Verify that all models have the correct fields
@@ -338,7 +374,7 @@ func TestListModels(t *testing.T) {
 		}
 	}
 
-	// Verify some expected models are present
+	// Verify expected models are present
 	expectedModels := map[string]bool{
 		"claude-sonnet-4-5-20250929": false,
 		"claude-opus-4-5-20251101":   false,
@@ -355,6 +391,69 @@ func TestListModels(t *testing.T) {
 		if !found {
 			t.Errorf("Expected model %q not found in response", model)
 		}
+	}
+
+	// Verify created timestamps are parsed correctly
+	for _, model := range resp.Data {
+		if model.ID == "claude-sonnet-4-5-20250929" {
+			// 2025-09-29T00:00:00Z in Unix
+			expected := int64(1759104000)
+			if model.Created != expected {
+				t.Errorf("Created for claude-sonnet-4-5-20250929 = %d, want %d", model.Created, expected)
+			}
+		}
+	}
+}
+
+func TestListModels_APIError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"type": "error", "error": {"type": "authentication_error", "message": "Invalid API key"}}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("invalid-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	_, err := provider.ListModels(context.Background())
+	if err == nil {
+		t.Error("expected error, got nil")
+	}
+}
+
+func TestParseCreatedAt(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		wantTime int64
+	}{
+		{
+			name:     "valid RFC3339 timestamp",
+			input:    "2025-09-29T00:00:00Z",
+			wantTime: 1759104000,
+		},
+		{
+			name:     "valid RFC3339 timestamp with different time",
+			input:    "2024-03-07T12:30:00Z",
+			wantTime: 1709814600,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseCreatedAt(tt.input)
+			if got != tt.wantTime {
+				t.Errorf("parseCreatedAt(%q) = %d, want %d", tt.input, got, tt.wantTime)
+			}
+		})
+	}
+}
+
+func TestParseCreatedAt_InvalidFormat(t *testing.T) {
+	// For invalid format, it should return current time (non-zero)
+	got := parseCreatedAt("invalid-date")
+	if got == 0 {
+		t.Error("parseCreatedAt with invalid format should return non-zero (current time)")
 	}
 }
 

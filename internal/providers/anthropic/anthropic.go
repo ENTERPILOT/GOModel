@@ -126,6 +126,22 @@ type anthropicDelta struct {
 	StopReason string `json:"stop_reason,omitempty"`
 }
 
+// anthropicModelInfo represents a model in Anthropic's models API response
+type anthropicModelInfo struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	CreatedAt   string `json:"created_at"`
+	DisplayName string `json:"display_name"`
+}
+
+// anthropicModelsResponse represents the Anthropic models API response
+type anthropicModelsResponse struct {
+	Data    []anthropicModelInfo `json:"data"`
+	FirstID string               `json:"first_id"`
+	HasMore bool                 `json:"has_more"`
+	LastID  string               `json:"last_id"`
+}
+
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
 func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 	anthropicReq := &anthropicRequest{
@@ -386,70 +402,42 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 	return ""
 }
 
-// ListModels retrieves the list of available models from Anthropic
+// ListModels retrieves the list of available models from Anthropic's /v1/models endpoint
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
-	// Anthropic doesn't have a models endpoint, so we return a static list
-	// of commonly available models
-	now := time.Now().Unix()
+	var anthropicResp anthropicModelsResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/models?limit=1000",
+	}, &anthropicResp)
+	if err != nil {
+		return nil, err
+	}
 
-	models := []core.Model{
-		// Claude 4.5 models (latest)
-		{
-			ID:      "claude-sonnet-4-5-20250929",
+	// Convert to core.Model format
+	models := make([]core.Model, 0, len(anthropicResp.Data))
+	for _, m := range anthropicResp.Data {
+		created := parseCreatedAt(m.CreatedAt)
+		models = append(models, core.Model{
+			ID:      m.ID,
 			Object:  "model",
 			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-haiku-4-5-20251001",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-opus-4-5-20251101",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		// Claude 4.x models (legacy but available)
-		{
-			ID:      "claude-opus-4-1-20250805",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-sonnet-4-20250514",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-opus-4-20250514",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		// Claude 3.x models (legacy but available)
-		{
-			ID:      "claude-3-7-sonnet-20250219",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-3-haiku-20240307",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
+			Created: created,
+		})
 	}
 
 	return &core.ModelsResponse{
 		Object: "list",
 		Data:   models,
 	}, nil
+}
+
+// parseCreatedAt parses an RFC3339 timestamp string to Unix timestamp
+func parseCreatedAt(createdAt string) int64 {
+	t, err := time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return time.Now().Unix()
+	}
+	return t.Unix()
 }
 
 // convertResponsesRequestToAnthropic converts a ResponsesRequest to Anthropic format
