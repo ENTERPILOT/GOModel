@@ -79,6 +79,11 @@ type UsageConfig struct {
 	// Default: true
 	Enabled bool
 
+	// EnforceReturningUsageData controls whether to enforce returning usage data in streaming responses.
+	// When true, stream_options: {"include_usage": true} is automatically added to streaming requests.
+	// Default: true
+	EnforceReturningUsageData bool
+
 	// BufferSize is the number of usage entries to buffer before flushing
 	// Default: 1000
 	BufferSize int
@@ -231,6 +236,7 @@ func Load() (*Config, error) {
 
 	// Usage tracking defaults
 	viper.SetDefault("usage.enabled", true)
+	viper.SetDefault("usage.enforce_returning_usage_data", true)
 	viper.SetDefault("usage.buffer_size", 1000)
 	viper.SetDefault("usage.flush_interval", 5)
 	viper.SetDefault("usage.retention_days", 90)
@@ -288,10 +294,11 @@ func Load() (*Config, error) {
 				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
 			},
 			Usage: UsageConfig{
-				Enabled:       getEnvBoolOrDefault("USAGE_ENABLED", true),
-				BufferSize:    getEnvIntOrDefault("USAGE_BUFFER_SIZE", 1000),
-				FlushInterval: getEnvIntOrDefault("USAGE_FLUSH_INTERVAL", 5),
-				RetentionDays: getEnvIntOrDefault("USAGE_RETENTION_DAYS", 90),
+				Enabled:                   getEnvBoolOrDefault("USAGE_ENABLED", true),
+				EnforceReturningUsageData: getEnvBoolOrDefault("ENFORCE_RETURNING_USAGE_DATA", true),
+				BufferSize:                getEnvIntOrDefault("USAGE_BUFFER_SIZE", 1000),
+				FlushInterval:             getEnvIntOrDefault("USAGE_FLUSH_INTERVAL", 5),
+				RetentionDays:             getEnvIntOrDefault("USAGE_RETENTION_DAYS", 90),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -409,6 +416,9 @@ func expandEnvVars(cfg Config) Config {
 	// Override usage tracking configuration from environment variables
 	if usageEnabled := os.Getenv("USAGE_ENABLED"); usageEnabled != "" {
 		cfg.Usage.Enabled = strings.EqualFold(usageEnabled, "true") || usageEnabled == "1"
+	}
+	if enforceUsage := os.Getenv("ENFORCE_RETURNING_USAGE_DATA"); enforceUsage != "" {
+		cfg.Usage.EnforceReturningUsageData = strings.EqualFold(enforceUsage, "true") || enforceUsage == "1"
 	}
 	if usageBufferSize := os.Getenv("USAGE_BUFFER_SIZE"); usageBufferSize != "" {
 		if bufferSize, err := strconv.Atoi(usageBufferSize); err == nil {

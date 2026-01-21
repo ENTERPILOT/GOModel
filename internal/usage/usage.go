@@ -59,6 +59,11 @@ type Config struct {
 	// Enabled controls whether usage tracking is active
 	Enabled bool
 
+	// EnforceReturningUsageData controls whether to enforce returning usage data in streaming responses.
+	// When true, stream_options: {"include_usage": true} is automatically added to streaming requests.
+	// Default: true
+	EnforceReturningUsageData bool
+
 	// BufferSize is the number of usage entries to buffer before flushing
 	BufferSize int
 
@@ -72,9 +77,10 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() Config {
 	return Config{
-		Enabled:       false,
-		BufferSize:    1000,
-		FlushInterval: 5 * time.Second,
-		RetentionDays: 90,
+		Enabled:                   false,
+		EnforceReturningUsageData: true,
+		BufferSize:                1000,
+		FlushInterval:             5 * time.Second,
+		RetentionDays:             90,
 	}
 }
