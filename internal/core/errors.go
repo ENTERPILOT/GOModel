@@ -159,6 +159,7 @@ func ParseProviderError(provider string, statusCode int, body []byte, originalEr
 		// 404 - model or resource not found
 		err := NewNotFoundError(message)
 		err.Provider = provider
+		err.Err = originalErr
 		return err
 	case statusCode >= 400 && statusCode < 500:
 		// Client errors from provider - mark as invalid request and preserve both provider info and original status code
