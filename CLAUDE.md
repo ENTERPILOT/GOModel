@@ -1,271 +1,84 @@
 # CLAUDE.md
 
-This file provides guidance to Claude and other AI models and agents when working with the code in this repository.
+Guidance for AI models (like Claude) working with this codebase. Some information may be slightly outdated—verify current structure as needed.
 
 ## Project Overview
 
-GOModel is a high-performance AI gateway written in Go that routes requests to multiple LLM providers (OpenAI, Anthropic, Google Gemini). It is designed as a drop-in replacement for LiteLLM, offering superior quality, speed, concurrency, and strict type safety.
+**GOModel** is a high-performance AI gateway in Go that routes requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI). Drop-in LiteLLM replacement.
 
-**Module name:** `gomodel`
-**Go version:** 1.24.0
-**GitHub link:** https://github.com/ENTERPILOT/GOModel
-**Stage:** Development — not used in a real project, so backward compatibility is not a concern. Do not worry about breaking changes.
+- **Module:** `gomodel` | **Go:** 1.24.0 | **Repo:** https://github.com/ENTERPILOT/GOModel
+- **Stage:** Development—backward compatibility is not a concern
 
-### Introductory Information
-
-Please note that some of the information below may be slightly outdated. It is always best to verify the current project structure. These are guidelines only.
-
-Feel free to suggest improvements to this file as you work with it.
-
-## Common Development Commands
-
-### Running the Server
+## Commands
 
 ```bash
-make run                 # Run the server (requires .env with at least one API key)
-go run ./cmd/gomodel     # Direct run without make
+make run          # Run server (requires .env with API key)
+make build        # Build to bin/gomodel
+make test         # Unit tests only
+make test-e2e     # E2E tests (in-process mock, no Docker)
+make test-all     # All tests
+make lint         # Run golangci-lint
+make lint-fix     # Auto-fix lint issues
 ```
 
-### Building
+**Single test:** `go test ./internal/providers -v -run TestName`
+**E2E single test:** `go test -v -tags=e2e ./tests/e2e/... -run TestName`
 
-```bash
-make build              # Builds binary to bin/gomodel
-make clean              # Removes build artifacts
-```
+## Architecture
 
-### Testing
+**Request flow:** `Client → Echo Handler → Router → Provider Adapter → Upstream API`
 
-```bash
-make test               # Run unit tests only (internal/... and config/...)
-make test-e2e           # Run e2e tests (uses in-process mock server, no Docker)
-make test-all           # Run all tests (unit + e2e)
-```
+**Core components:**
+- `internal/providers/registry.go` — Model-to-provider mapping, local/Redis cache, hourly background refresh
+- `internal/providers/router.go` — Routes by model name, returns `ErrRegistryNotInitialized` if used before init
+- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Register()` calls
+- `internal/core/interfaces.go` — `Provider` interface (ChatCompletion, StreamChatCompletion, ListModels, Responses, StreamResponses)
 
-**Running a single test:**
+**Startup:** Load from cache → start server → refresh models in background
 
-```bash
-go test ./internal/providers -v -run TestSpecificFunction
-go test -v -tags=e2e ./tests/e2e/... -run TestSpecificE2E
-```
+**Config** (via `.env` created from `.env.template`, and `config/config.yaml`):
+- `PORT` (default 8080), `CACHE_TYPE` (local/redis), `REDIS_URL`, `REDIS_KEY`
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` — at least one required
 
-### Linting
+## Adding a Provider
 
-```bash
-make lint               # Run golangci-lint on all code
-make lint-fix           # Auto-fix linting issues
-```
-
-**Note:** E2E tests require the `e2e` build tag. The linter runs twice (once for main code, once for e2e tests).
-
-### Dependencies
-
-```bash
-make tidy               # Run go mod tidy
-```
-
-## Architecture Overview
-
-### Request Flow
-
-The system operates as a pipeline processor:
-
-```
-Client -> HTTP Handler (Echo) -> Router -> Provider Adapter (OpenAI/Anthropic/Gemini) -> Upstream API
-```
-
-### Core Components
-
-**Provider Registry** (`internal/providers/registry.go`)
-
-- Central model-to-provider mapping system
-- Fetches available models from each provider's `/models` endpoint at startup
-- Supports both local file cache and Redis cache for instant startup
-- Background refresh every 5 minutes to keep model lists current
-- Thread-safe with RWMutex for concurrent access
-
-**Router** (`internal/providers/router.go`)
-
-- Routes requests to correct provider based on model name
-- Uses the ModelRegistry to determine which provider handles each model
-- Returns `ErrRegistryNotInitialized` if used before registry has models
-
-**Provider Interface** (`internal/core/interfaces.go`)
-
-```go
-type Provider interface {
-    ChatCompletion(ctx context.Context, req *ChatRequest) (*ChatResponse, error)
-    StreamChatCompletion(ctx context.Context, req *ChatRequest) (io.ReadCloser, error)
-    ListModels(ctx context.Context) (*ModelsResponse, error)
-    Responses(ctx context.Context, req *ResponsesRequest) (*ResponsesResponse, error)
-    StreamResponses(ctx context.Context, req *ResponsesRequest) (io.ReadCloser, error)
-}
-```
-
-**Provider Factory** (`internal/providers/factory.go`)
-
-- Dynamically instantiates providers based on configuration
-- Uses init() registration pattern (see below)
-
-### Initialization Flow
-
-1. **main.go** loads config and creates cache backend (local or Redis)
-2. Provider packages are imported with blank imports (`_ "gomodel/internal/providers/openai"`)
-3. Each provider's `init()` registers itself with the factory
-4. main.go creates providers via factory and registers them with the ModelRegistry
-5. **Non-blocking startup:** Registry loads from cache first, then refreshes in background
-6. Server starts immediately with cached models while fresh data is fetched
-7. Background goroutine refreshes models every 5 minutes and updates cache
-
-### Configuration
-
-**Environment variables** (via .env or export):
-
-- `PORT`: Server port (default 8080)
-- `CACHE_TYPE`: "local" or "redis"
-- `REDIS_URL`, `REDIS_KEY`: Redis configuration if using redis cache
-- `GOMODEL_CACHE_DIR`: Override cache directory (default: ./.cache)
-- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`: Provider credentials
-
-**Config loading** (`config/config.go`):
-
-- Uses Viper to load from environment variables and .env file
-- Automatically creates provider configs from environment variables
-- At least one provider API key is required
-
-**Provider naming in config.yaml:**
-
-Provider names (map keys) are arbitrary identifiers. Only the `type` field determines which provider implementation is used. You can use any name and have multiple providers of the same type:
-
-```yaml
-providers:
-  my-openai:           # Any name works
-    type: "openai"
-    api_key: "${OPENAI_API_KEY}"
-
-  backup-openai:       # Multiple providers of same type supported
-    type: "openai"
-    api_key: "${BACKUP_OPENAI_KEY}"
-    base_url: "https://custom.endpoint.com"
-```
-
-### Adding a New Provider
-
-1. Create package in `internal/providers/{name}/`
-2. Implement the `core.Provider` interface
-3. Add `init()` function to register with factory:
-   ```go
-   func init() {
-       providers.RegisterFactory("provider-name", NewProvider)
-   }
-   ```
-4. Import provider in `cmd/gomodel/main.go` with blank import
-5. Add API key environment variable to `.env.template`
-
-### Key Design Principles
-
-**Pragmatic Modularity:** Avoid over-abstraction. Use flat, composable packages instead of deep hierarchies.
-
-**Concurrency:** Heavy use of goroutines and channels for high-throughput scenarios (10k+ concurrent connections).
-
-**Strict Typing:** All request/response payloads use strongly-typed structs to catch errors at compile time.
-
-**Non-blocking I/O:** The registry loads from cache synchronously, then refreshes asynchronously to enable instant startup.
+1. Create `internal/providers/{name}/` implementing `core.Provider`
+2. Export a `Registration` variable with type and constructor
+3. Register in `cmd/gomodel/main.go` via `factory.Register({name}.Registration)`
+4. Add API key to `.env.template`
 
 ## Project Structure
 
 ```
-cmd/gomodel/          # Application entrypoint
-config/               # Configuration structs (Viper + env loading)
+cmd/gomodel/           # Entrypoint
+config/                # Viper config loading
 internal/
-  core/               # Core interfaces and types (Provider, ChatRequest, etc.)
-  providers/          # Provider implementations and routing
-    openai/           # OpenAI provider
-    anthropic/        # Anthropic provider
-    gemini/           # Google Gemini provider
-    groq/             # Groq provider
-    xai/              # xAI (Grok) provider
-    factory.go        # Provider factory with registration
-    registry.go       # Model registry with caching
-    router.go         # Request router
-    responses_converter.go  # Shared OpenAI→Responses stream converter
-  cache/              # Cache backends (local file, Redis)
-  httpclient/         # HTTP client utilities
-  llmclient/          # LLM-specific client logic
-  server/             # HTTP server (Echo framework)
-    http.go           # Server setup
-    handlers.go       # Request handlers
-  observability/      # Prometheus metrics and hooks
-tests/e2e/            # End-to-end tests (requires -tags=e2e)
+  core/                # Interfaces, types
+  providers/           # Provider implementations, router, registry, factory
+  cache/               # Local/Redis cache backends
+  server/              # Echo HTTP server, handlers
+  observability/       # Prometheus metrics
+tests/e2e/             # E2E tests (requires -tags=e2e)
 ```
 
-## Testing Notes
+## Testing
 
-- **Unit tests:** Located alongside implementation files (`*_test.go`)
-- **E2E tests:** Require `-tags=e2e` build tag and use in-process mock LLM server
-- No Docker or external dependencies needed for testing
-- Mock provider available in `tests/e2e/mock_provider.go`
-
-### Manual Testing with Docker
-
-You can test the project manually using Docker Compose. After making changes, rebuild and restart the services:
+- **Unit tests:** Alongside implementation files (`*_test.go`)
+- **E2E tests:** In-process mock server, no Docker required
+- **Manual storage testing:** Docker Compose is optional, for manual validation only
 
 ```bash
-docker compose down && docker compose up -d --build
-```
-
-**Inspecting stored data:**
-
-You can verify data directly in the databases using the credentials defined in `docker-compose.yaml`:
-
-- **MongoDB:** Connect to `mongodb://localhost:27017/gomodel` (no auth required)
-- **PostgreSQL:** Connect with user `gomodel`, password `gomodel`, database `gomodel` on port 5432
-- **Adminer UI:** Available at `http://localhost:8081` for PostgreSQL inspection
-
-**Testing with different storage backends:**
-
-To test against a specific storage backend, run a local (non-Dockerized) instance of GOModel and connect it to one of the Dockerized databases. Set the appropriate environment variable:
-
-```bash
-# Use PostgreSQL
+# Connect local GOModel to Dockerized DB for manual testing
 STORAGE_TYPE=postgresql POSTGRES_URL=postgres://gomodel:gomodel@localhost:5432/gomodel go run ./cmd/gomodel
-
-# Use MongoDB
 STORAGE_TYPE=mongodb MONGODB_URL=mongodb://localhost:27017/gomodel go run ./cmd/gomodel
 ```
 
-This allows testing storage implementations independently without rebuilding the Docker image. Note that Docker Compose is optional and intended solely for manual storage-backend validation; automated unit and E2E tests must run in-process without Docker (see `make test` and `make test-e2e`).
+Note that Docker Compose is optional and intended solely for manual storage-backend validation; automated unit and E2E tests must run in-process without Docker (see `make test` and `make test-e2e`).
 
-## HTTP Framework
+## Key Details
 
-Uses **Echo (v4)** for the HTTP layer:
-
-- Robust request context
-- Built-in middleware support
-- Better suited for gateway architecture than Chi
-
-## Cache System
-
-**Purpose:** Store model-to-provider mappings to enable instant startup
-
-**Backends:**
-
-- **Local** (default): JSON file in `.cache/models.json`
-- **Redis**: Shared cache for multi-instance deployments
-
-**Cache structure:**
-
-```go
-type ModelCache struct {
-    Version   int
-    UpdatedAt time.Time
-    Models    map[string]CachedModel  // modelID -> cached model info
-}
-```
-
-## Important Implementation Details
-
-1. **Provider registration uses init()**: Providers self-register when imported
-2. **Router requires initialized registry**: Always check `ModelCount() > 0` or use after `InitializeAsync()`
-3. **Streaming responses return io.ReadCloser**: Caller must close the stream
-4. **First provider wins**: If multiple providers support same model, first registered wins
-5. **Background refresh**: Models auto-refresh every 5 minutes without downtime
+1. Providers are registered explicitly via `factory.Register()` in main.go
+2. Router requires initialized registry—check `ModelCount() > 0`
+3. Streaming returns `io.ReadCloser`—caller must close
+4. First registered provider wins for shared models
+5. Models auto-refresh hourly by default (configurable via `RefreshInterval`)
