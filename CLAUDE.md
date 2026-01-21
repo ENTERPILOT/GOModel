@@ -9,7 +9,7 @@ GOModel is a high-performance AI gateway written in Go that routes requests to m
 **Module name:** `gomodel`
 **Go version:** 1.24.0
 **GitHub link:** https://github.com/ENTERPILOT/GOModel
-**Stage:** Development — not used in a real project, so backward compatibility is not a concern.
+**Stage:** Development — not used in a real project, so backward compatibility is not a concern. Do not worry about breaking changes.
 
 ### Introductory Information
 

@@ -120,6 +120,24 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 
 	// Look for usage field (OpenAI/ChatCompletion format)
 	usageRaw, ok := chunk["usage"]
+
+	// If not found at top level, check for Responses API format:
+	// {"type": "response.done", "response": {"id": "...", "usage": {...}}}
+	if !ok {
+		if eventType, _ := chunk["type"].(string); eventType == "response.done" {
+			if response, respOk := chunk["response"].(map[string]interface{}); respOk {
+				usageRaw, ok = response["usage"]
+				// Extract provider ID and model from response object
+				if id, idOk := response["id"].(string); idOk && id != "" {
+					providerID = id
+				}
+				if m, mOk := response["model"].(string); mOk && m != "" {
+					model = m
+				}
+			}
+		}
+	}
+
 	if !ok {
 		return nil
 	}

@@ -15,15 +15,16 @@ import (
 // and converts it to Responses API format.
 // Used by providers that have OpenAI-compatible streaming (Groq, Gemini, etc.)
 type OpenAIResponsesStreamConverter struct {
-	reader     io.ReadCloser
-	model      string
-	provider   string
-	responseID string
-	buffer     []byte
-	lineBuffer []byte
-	closed     bool
-	sentCreate bool
-	sentDone   bool
+	reader      io.ReadCloser
+	model       string
+	provider    string
+	responseID  string
+	buffer      []byte
+	lineBuffer  []byte
+	closed      bool
+	sentCreate  bool
+	sentDone    bool
+	cachedUsage map[string]interface{} // Stores usage from final chunk for inclusion in response.done
 }
 
 // NewOpenAIResponsesStreamConverter creates a new converter that transforms
@@ -104,16 +105,21 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 					// Send done event
 					if !sc.sentDone {
 						sc.sentDone = true
+						responseData := map[string]interface{}{
+							"id":         sc.responseID,
+							"object":     "response",
+							"status":     "completed",
+							"model":      sc.model,
+							"provider":   sc.provider,
+							"created_at": time.Now().Unix(),
+						}
+						// Include usage data if captured from OpenAI stream
+						if sc.cachedUsage != nil {
+							responseData["usage"] = sc.cachedUsage
+						}
 						doneEvent := map[string]interface{}{
-							"type": "response.done",
-							"response": map[string]interface{}{
-								"id":         sc.responseID,
-								"object":     "response",
-								"status":     "completed",
-								"model":      sc.model,
-								"provider":   sc.provider,
-								"created_at": time.Now().Unix(),
-							},
+							"type":     "response.done",
+							"response": responseData,
 						}
 						jsonData, err := json.Marshal(doneEvent)
 						if err != nil {
@@ -130,6 +136,11 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 				var chunk map[string]interface{}
 				if err := json.Unmarshal(data, &chunk); err != nil {
 					continue
+				}
+
+				// Capture usage data if present (OpenAI sends this in the final chunk)
+				if usage, ok := chunk["usage"].(map[string]interface{}); ok {
+					sc.cachedUsage = usage
 				}
 
 				// Extract content delta
@@ -160,16 +171,21 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 			// Send final done event if we haven't already
 			if !sc.sentDone {
 				sc.sentDone = true
+				responseData := map[string]interface{}{
+					"id":         sc.responseID,
+					"object":     "response",
+					"status":     "completed",
+					"model":      sc.model,
+					"provider":   sc.provider,
+					"created_at": time.Now().Unix(),
+				}
+				// Include usage data if captured from OpenAI stream
+				if sc.cachedUsage != nil {
+					responseData["usage"] = sc.cachedUsage
+				}
 				doneEvent := map[string]interface{}{
-					"type": "response.done",
-					"response": map[string]interface{}{
-						"id":         sc.responseID,
-						"object":     "response",
-						"status":     "completed",
-						"model":      sc.model,
-						"provider":   sc.provider,
-						"created_at": time.Now().Unix(),
-					},
+					"type":     "response.done",
+					"response": responseData,
 				}
 				jsonData, err := json.Marshal(doneEvent)
 				if err != nil {

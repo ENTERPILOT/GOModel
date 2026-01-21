@@ -372,7 +372,12 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		return ""
 
 	case "message_delta":
-		if event.Delta != nil && event.Delta.StopReason != "" {
+		// Emit chunk if we have stop_reason or usage data
+		if (event.Delta != nil && event.Delta.StopReason != "") || event.Usage != nil {
+			var finishReason interface{}
+			if event.Delta != nil && event.Delta.StopReason != "" {
+				finishReason = event.Delta.StopReason
+			}
 			chunk := map[string]interface{}{
 				"id":       sc.msgID,
 				"object":   "chat.completion.chunk",
@@ -383,9 +388,17 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 					{
 						"index":         0,
 						"delta":         map[string]interface{}{},
-						"finish_reason": event.Delta.StopReason,
+						"finish_reason": finishReason,
 					},
 				},
+			}
+			// Include usage data if present (OpenAI format)
+			if event.Usage != nil {
+				chunk["usage"] = map[string]interface{}{
+					"prompt_tokens":     event.Usage.InputTokens,
+					"completion_tokens": event.Usage.OutputTokens,
+					"total_tokens":      event.Usage.InputTokens + event.Usage.OutputTokens,
+				}
 			}
 			jsonData, err := json.Marshal(chunk)
 			if err != nil {
@@ -578,13 +591,14 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 
 // responsesStreamConverter wraps an Anthropic stream and converts it to Responses API format
 type responsesStreamConverter struct {
-	reader     *bufio.Reader
-	body       io.ReadCloser
-	model      string
-	responseID string
-	buffer     []byte
-	closed     bool
-	sentDone   bool
+	reader      *bufio.Reader
+	body        io.ReadCloser
+	model       string
+	responseID  string
+	buffer      []byte
+	closed      bool
+	sentDone    bool
+	cachedUsage *anthropicUsage // Stores usage from message_delta for inclusion in response.done
 }
 
 func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
@@ -617,16 +631,25 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 				// Send final done event and [DONE] message
 				if !sc.sentDone {
 					sc.sentDone = true
+					responseData := map[string]interface{}{
+						"id":         sc.responseID,
+						"object":     "response",
+						"status":     "completed",
+						"model":      sc.model,
+						"provider":   "anthropic",
+						"created_at": time.Now().Unix(),
+					}
+					// Include usage data if captured from message_delta
+					if sc.cachedUsage != nil {
+						responseData["usage"] = map[string]interface{}{
+							"input_tokens":  sc.cachedUsage.InputTokens,
+							"output_tokens": sc.cachedUsage.OutputTokens,
+							"total_tokens":  sc.cachedUsage.InputTokens + sc.cachedUsage.OutputTokens,
+						}
+					}
 					doneEvent := map[string]interface{}{
-						"type": "response.done",
-						"response": map[string]interface{}{
-							"id":         sc.responseID,
-							"object":     "response",
-							"status":     "completed",
-							"model":      sc.model,
-							"provider":   "anthropic",
-							"created_at": time.Now().Unix(),
-						},
+						"type":     "response.done",
+						"response": responseData,
 					}
 					jsonData, marshalErr := json.Marshal(doneEvent)
 					if marshalErr != nil {
@@ -724,6 +747,13 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 			}
 			return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
 		}
+
+	case "message_delta":
+		// Capture usage data for inclusion in response.done
+		if event.Usage != nil {
+			sc.cachedUsage = event.Usage
+		}
+		return ""
 
 	case "message_stop":
 		// Will be handled in Read() when we get EOF

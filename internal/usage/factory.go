@@ -177,10 +177,11 @@ func createUsageStore(store storage.Storage, retentionDays int) (UsageStore, err
 // buildLoggerConfig creates a usage.Config from config.UsageConfig.
 func buildLoggerConfig(usageCfg config.UsageConfig) Config {
 	cfg := Config{
-		Enabled:       usageCfg.Enabled,
-		BufferSize:    usageCfg.BufferSize,
-		FlushInterval: time.Duration(usageCfg.FlushInterval) * time.Second,
-		RetentionDays: usageCfg.RetentionDays,
+		Enabled:                   usageCfg.Enabled,
+		EnforceReturningUsageData: usageCfg.EnforceReturningUsageData,
+		BufferSize:                usageCfg.BufferSize,
+		FlushInterval:             time.Duration(usageCfg.FlushInterval) * time.Second,
+		RetentionDays:             usageCfg.RetentionDays,
 	}
 
 	// Apply defaults
