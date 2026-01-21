@@ -205,6 +205,36 @@ tests/e2e/            # End-to-end tests (requires -tags=e2e)
 - No Docker or external dependencies needed for testing
 - Mock provider available in `tests/e2e/mock_provider.go`
 
+### Manual Testing with Docker
+
+You can test the project manually using Docker Compose. After making changes, rebuild and restart the services:
+
+```bash
+docker compose down && docker compose up -d --build
+```
+
+**Inspecting stored data:**
+
+You can verify data directly in the databases using the credentials defined in `docker-compose.yaml`:
+
+- **MongoDB:** Connect to `mongodb://localhost:27017/gomodel` (no auth required)
+- **PostgreSQL:** Connect with user `gomodel`, password `gomodel`, database `gomodel` on port 5432
+- **Adminer UI:** Available at `http://localhost:8081` for PostgreSQL inspection
+
+**Testing with different storage backends:**
+
+To test against a specific storage backend, run a local (non-Dockerized) instance of GOModel and connect it to one of the Dockerized databases. Set the appropriate environment variable:
+
+```bash
+# Use PostgreSQL
+STORAGE_TYPE=postgresql POSTGRES_URL=postgres://gomodel:gomodel@localhost:5432/gomodel go run ./cmd/gomodel
+
+# Use MongoDB
+STORAGE_TYPE=mongodb MONGODB_URL=mongodb://localhost:27017/gomodel go run ./cmd/gomodel
+```
+
+This allows testing storage implementations independently without rebuilding the Docker image.
+
 ## HTTP Framework
 
 Uses **Echo (v4)** for the HTTP layer:
