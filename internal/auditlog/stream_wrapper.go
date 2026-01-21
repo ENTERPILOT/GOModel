@@ -421,11 +421,11 @@ func IsEntryMarkedAsStreaming(c interface{ Get(string) interface{} }) bool {
 }
 
 // IsModelInteractionPath returns true if the path is an AI model endpoint
+// Note: /v1/models is excluded as it's just a metadata listing, not a model interaction
 func IsModelInteractionPath(path string) bool {
 	modelPaths := []string{
 		"/v1/chat/completions",
 		"/v1/responses",
-		"/v1/models",
 	}
 	for _, p := range modelPaths {
 		if strings.HasPrefix(path, p) {
