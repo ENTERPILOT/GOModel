@@ -95,6 +95,13 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
+		// Enforce returning usage data in streaming responses if configured
+		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
+			if req.StreamOptions == nil {
+				req.StreamOptions = &core.StreamOptions{}
+			}
+			req.StreamOptions.IncludeUsage = true
+		}
 		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
 			return h.provider.StreamChatCompletion(c.Request().Context(), &req)
 		})
@@ -154,6 +161,13 @@ func (h *Handler) Responses(c echo.Context) error {
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
+		// Enforce returning usage data in streaming responses if configured
+		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
+			if req.StreamOptions == nil {
+				req.StreamOptions = &core.StreamOptions{}
+			}
+			req.StreamOptions.IncludeUsage = true
+		}
 		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
 			return h.provider.StreamResponses(c.Request().Context(), &req)
 		})

@@ -10,6 +10,7 @@ type ResponsesRequest struct {
 	Temperature     *float64          `json:"temperature,omitempty"`
 	MaxOutputTokens *int              `json:"max_output_tokens,omitempty"`
 	Stream          bool              `json:"stream,omitempty"`
+	StreamOptions   *StreamOptions    `json:"stream_options,omitempty"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
 }
 
@@ -24,6 +25,7 @@ func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
 		Temperature:     r.Temperature,
 		MaxOutputTokens: r.MaxOutputTokens,
 		Stream:          true,
+		StreamOptions:   r.StreamOptions,
 		Metadata:        r.Metadata,
 	}
 }
