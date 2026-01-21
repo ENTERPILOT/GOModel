@@ -81,7 +81,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	}
 
 	// Enrich audit log entry with model and provider
-	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model), nil)
+	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model))
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
@@ -130,7 +130,7 @@ func (h *Handler) Responses(c echo.Context) error {
 	}
 
 	// Enrich audit log entry with model and provider
-	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model), nil)
+	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model))
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
