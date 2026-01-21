@@ -125,7 +125,8 @@ func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*UsageEntry) er
 	_, err := s.collection.InsertMany(ctx, docs, opts)
 	if err != nil {
 		// Check if it's a bulk write error with some successes
-		if bulkErr, ok := err.(mongo.BulkWriteException); ok {
+		var bulkErr *mongo.BulkWriteException
+		if errors.As(err, &bulkErr) {
 			failedCount := len(bulkErr.WriteErrors)
 			// Log for visibility
 			slog.Warn("partial usage insert failure",
@@ -139,7 +140,7 @@ func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*UsageEntry) er
 			return &PartialWriteError{
 				TotalEntries: len(entries),
 				FailedCount:  failedCount,
-				Cause:        bulkErr,
+				Cause:        *bulkErr,
 			}
 		}
 		return fmt.Errorf("failed to insert usage entries: %w", err)
