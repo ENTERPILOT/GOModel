@@ -50,6 +50,9 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 				requestID = uuid.NewString()
 			}
 
+			// Set request ID in response header for other components and clients
+			c.Response().Header().Set("X-Request-ID", requestID)
+
 			// Create initial log entry
 			entry := &LogEntry{
 				ID:        uuid.NewString(),
