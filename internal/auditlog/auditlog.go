@@ -45,13 +45,10 @@ type LogEntry struct {
 	// Extracted fields for efficient filtering (indexed in relational DBs)
 	RequestID        string `json:"request_id,omitempty" bson:"request_id,omitempty"`
 	ClientIP         string `json:"client_ip,omitempty" bson:"client_ip,omitempty"`
-	Method           string `json:"method,omitempty" bson:"method,omitempty"`
-	Path             string `json:"path,omitempty" bson:"path,omitempty"`
-	Stream           bool   `json:"stream,omitempty" bson:"stream,omitempty"`
-	PromptTokens     int    `json:"prompt_tokens,omitempty" bson:"prompt_tokens,omitempty"`
-	CompletionTokens int    `json:"completion_tokens,omitempty" bson:"completion_tokens,omitempty"`
-	TotalTokens      int    `json:"total_tokens,omitempty" bson:"total_tokens,omitempty"`
-	ErrorType        string `json:"error_type,omitempty" bson:"error_type,omitempty"`
+	Method    string `json:"method,omitempty" bson:"method,omitempty"`
+	Path      string `json:"path,omitempty" bson:"path,omitempty"`
+	Stream    bool   `json:"stream,omitempty" bson:"stream,omitempty"`
+	ErrorType string `json:"error_type,omitempty" bson:"error_type,omitempty"`
 
 	// Data contains flexible request/response information as JSON
 	Data *LogData `json:"data,omitempty" bson:"data,omitempty"`

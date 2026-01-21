@@ -11,12 +11,12 @@ import (
 )
 
 // SQLite has a default limit of 999 bindable parameters per query (SQLITE_MAX_VARIABLE_NUMBER).
-// With 16 columns per log entry, we can safely insert up to 62 entries per batch (62 * 16 = 992).
+// With 13 columns per log entry, we can safely insert up to 76 entries per batch (76 * 13 = 988).
 // We chunk larger batches to avoid hitting this limit.
 const (
 	maxSQLiteParams    = 999
-	columnsPerEntry    = 16
-	maxEntriesPerBatch = maxSQLiteParams / columnsPerEntry // 62 entries
+	columnsPerEntry    = 13
+	maxEntriesPerBatch = maxSQLiteParams / columnsPerEntry // 76 entries
 )
 
 // SQLiteStore implements LogStore for SQLite databases.
@@ -49,9 +49,6 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 			method TEXT,
 			path TEXT,
 			stream INTEGER DEFAULT 0,
-			prompt_tokens INTEGER DEFAULT 0,
-			completion_tokens INTEGER DEFAULT 0,
-			total_tokens INTEGER DEFAULT 0,
 			error_type TEXT,
 			data JSON
 		)
@@ -111,7 +108,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 		values := make([]interface{}, 0, len(chunk)*columnsPerEntry)
 
 		for j, e := range chunk {
-			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 			dataJSON := marshalLogData(e.Data, e.ID)
 
@@ -139,16 +136,13 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 				e.Method,
 				e.Path,
 				streamInt,
-				e.PromptTokens,
-				e.CompletionTokens,
-				e.TotalTokens,
 				e.ErrorType,
 				dataValue,
 			)
 		}
 
 		query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
-			request_id, client_ip, method, path, stream, prompt_tokens, completion_tokens, total_tokens, error_type, data) VALUES ` +
+			request_id, client_ip, method, path, stream, error_type, data) VALUES ` +
 			strings.Join(placeholders, ",")
 
 		_, err := s.db.ExecContext(ctx, query, values...)

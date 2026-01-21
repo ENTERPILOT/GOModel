@@ -43,9 +43,6 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 			method TEXT,
 			path TEXT,
 			stream BOOLEAN DEFAULT FALSE,
-			prompt_tokens INTEGER DEFAULT 0,
-			completion_tokens INTEGER DEFAULT 0,
-			total_tokens INTEGER DEFAULT 0,
 			error_type TEXT,
 			data JSONB
 		)
@@ -110,13 +107,11 @@ func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEnt
 
 		_, err := s.pool.Exec(ctx, `
 			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
-				request_id, client_ip, method, path, stream,
-				prompt_tokens, completion_tokens, total_tokens, error_type, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+				request_id, client_ip, method, path, stream, error_type, data)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT (id) DO NOTHING
 		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.Provider, e.StatusCode,
-			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream,
-			e.PromptTokens, e.CompletionTokens, e.TotalTokens, e.ErrorType, dataJSON)
+			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream, e.ErrorType, dataJSON)
 
 		if err != nil {
 			slog.Warn("failed to insert audit log", "error", err, "id", e.ID)
@@ -146,13 +141,11 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEnt
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO audit_logs (id, timestamp, duration_ns, model, provider, status_code,
-				request_id, client_ip, method, path, stream,
-				prompt_tokens, completion_tokens, total_tokens, error_type, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+				request_id, client_ip, method, path, stream, error_type, data)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			ON CONFLICT (id) DO NOTHING
 		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.Provider, e.StatusCode,
-			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream,
-			e.PromptTokens, e.CompletionTokens, e.TotalTokens, e.ErrorType, dataJSON)
+			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream, e.ErrorType, dataJSON)
 
 		if err != nil {
 			slog.Warn("failed to insert audit log in batch", "error", err, "id", e.ID)

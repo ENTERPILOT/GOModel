@@ -114,20 +114,17 @@ func TestRedactHeaders(t *testing.T) {
 
 func TestLogEntryJSON(t *testing.T) {
 	entry := &LogEntry{
-		ID:               "test-id-123",
-		Timestamp:        time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
-		DurationNs:       1500000,
-		Model:            "gpt-4",
-		Provider:         "openai",
-		StatusCode:       200,
-		RequestID:        "req-123",
-		ClientIP:         "192.168.1.1",
-		Method:           "POST",
-		Path:             "/v1/chat/completions",
-		Stream:           false,
-		PromptTokens:     100,
-		CompletionTokens: 50,
-		TotalTokens:      150,
+		ID:         "test-id-123",
+		Timestamp:  time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
+		DurationNs: 1500000,
+		Model:      "gpt-4",
+		Provider:   "openai",
+		StatusCode: 200,
+		RequestID:  "req-123",
+		ClientIP:   "192.168.1.1",
+		Method:     "POST",
+		Path:       "/v1/chat/completions",
+		Stream:     false,
 		Data: &LogData{
 			UserAgent: "test-agent",
 		},
@@ -157,9 +154,6 @@ func TestLogEntryJSON(t *testing.T) {
 	}
 	if decoded.StatusCode != entry.StatusCode {
 		t.Errorf("StatusCode mismatch: expected %d, got %d", entry.StatusCode, decoded.StatusCode)
-	}
-	if decoded.PromptTokens != entry.PromptTokens {
-		t.Errorf("PromptTokens mismatch: expected %d, got %d", entry.PromptTokens, decoded.PromptTokens)
 	}
 	if decoded.RequestID != entry.RequestID {
 		t.Errorf("RequestID mismatch: expected %q, got %q", entry.RequestID, decoded.RequestID)
@@ -352,89 +346,12 @@ func TestIsModelInteractionPath(t *testing.T) {
 	}
 }
 
-func TestParseUsageFromSSE(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected *Usage
-	}{
-		{
-			name:     "empty input",
-			input:    "",
-			expected: nil,
-		},
-		{
-			name:     "no usage data",
-			input:    "data: {\"id\":\"chatcmpl-123\"}\n\ndata: [DONE]\n\n",
-			expected: nil,
-		},
-		{
-			name: "with usage data",
-			input: `data: {"id":"chatcmpl-123","choices":[]}
-
-data: {"id":"chatcmpl-123","usage":{"prompt_tokens":10,"completion_tokens":20,"total_tokens":30}}
-
-data: [DONE]
-
-`,
-			expected: &Usage{
-				PromptTokens:     10,
-				CompletionTokens: 20,
-				TotalTokens:      30,
-			},
-		},
-		{
-			name: "usage only in last non-DONE event",
-			input: `data: {"choices":[{"delta":{"content":"Hello"}}]}
-
-data: {"choices":[{"delta":{"content":" world"}}]}
-
-data: {"choices":[],"usage":{"prompt_tokens":5,"completion_tokens":10,"total_tokens":15}}
-
-data: [DONE]
-
-`,
-			expected: &Usage{
-				PromptTokens:     5,
-				CompletionTokens: 10,
-				TotalTokens:      15,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := parseUsageFromSSE([]byte(tt.input))
-
-			if tt.expected == nil {
-				if result != nil {
-					t.Errorf("expected nil, got %+v", result)
-				}
-				return
-			}
-
-			if result == nil {
-				t.Fatalf("expected usage data, got nil")
-			}
-
-			if result.PromptTokens != tt.expected.PromptTokens {
-				t.Errorf("PromptTokens: expected %d, got %d", tt.expected.PromptTokens, result.PromptTokens)
-			}
-			if result.CompletionTokens != tt.expected.CompletionTokens {
-				t.Errorf("CompletionTokens: expected %d, got %d", tt.expected.CompletionTokens, result.CompletionTokens)
-			}
-			if result.TotalTokens != tt.expected.TotalTokens {
-				t.Errorf("TotalTokens: expected %d, got %d", tt.expected.TotalTokens, result.TotalTokens)
-			}
-		})
-	}
-}
 
 func TestStreamLogWrapper(t *testing.T) {
-	// Create a mock stream with usage data
+	// Create a mock stream with content
 	streamContent := `data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"}}]}
 
-data: {"id":"chatcmpl-123","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}
+data: {"id":"chatcmpl-123","choices":[]}
 
 data: [DONE]
 
@@ -468,20 +385,9 @@ data: [DONE]
 		t.Fatalf("failed to read stream: %v", err)
 	}
 
-	// Close wrapper to trigger usage parsing and logging
+	// Close wrapper to trigger logging
 	if err := wrapper.Close(); err != nil {
 		t.Fatalf("failed to close wrapper: %v", err)
-	}
-
-	// Verify usage was captured (now on entry directly, not entry.Data)
-	if entry.PromptTokens != 10 {
-		t.Errorf("PromptTokens: expected 10, got %d", entry.PromptTokens)
-	}
-	if entry.CompletionTokens != 5 {
-		t.Errorf("CompletionTokens: expected 5, got %d", entry.CompletionTokens)
-	}
-	if entry.TotalTokens != 15 {
-		t.Errorf("TotalTokens: expected 15, got %d", entry.TotalTokens)
 	}
 
 	// Wait for async write

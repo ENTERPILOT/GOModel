@@ -226,8 +226,8 @@ func hashAPIKey(authHeader string) string {
 }
 
 // EnrichEntry retrieves the log entry from context for enrichment by handlers.
-// This allows handlers to add model, provider, and token information.
-func EnrichEntry(c echo.Context, model, provider string, usage *Usage) {
+// This allows handlers to add model and provider information.
+func EnrichEntry(c echo.Context, model, provider string) {
 	entryVal := c.Get(string(LogEntryKey))
 	if entryVal == nil {
 		return
@@ -240,12 +240,6 @@ func EnrichEntry(c echo.Context, model, provider string, usage *Usage) {
 
 	entry.Model = model
 	entry.Provider = provider
-
-	if usage != nil {
-		entry.PromptTokens = usage.PromptTokens
-		entry.CompletionTokens = usage.CompletionTokens
-		entry.TotalTokens = usage.TotalTokens
-	}
 }
 
 // EnrichEntryWithError adds error information to the log entry.
@@ -337,11 +331,4 @@ func decompressBody(body []byte, contentEncoding string) ([]byte, bool) {
 	}
 
 	return decompressed, true
-}
-
-// Usage contains token usage information
-type Usage struct {
-	PromptTokens     int
-	CompletionTokens int
-	TotalTokens      int
 }
