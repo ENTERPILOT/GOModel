@@ -76,7 +76,7 @@ type LogConfig struct {
 // UsageConfig holds token usage tracking configuration
 type UsageConfig struct {
 	// Enabled controls whether usage tracking is active
-	// Default: false
+	// Default: true
 	Enabled bool
 
 	// BufferSize is the number of usage entries to buffer before flushing
@@ -230,7 +230,7 @@ func Load() (*Config, error) {
 	viper.SetDefault("logging.only_model_interactions", true)
 
 	// Usage tracking defaults
-	viper.SetDefault("usage.enabled", false)
+	viper.SetDefault("usage.enabled", true)
 	viper.SetDefault("usage.buffer_size", 1000)
 	viper.SetDefault("usage.flush_interval", 5)
 	viper.SetDefault("usage.retention_days", 90)
@@ -288,7 +288,7 @@ func Load() (*Config, error) {
 				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
 			},
 			Usage: UsageConfig{
-				Enabled:       getEnvBool("USAGE_ENABLED"),
+				Enabled:       getEnvBoolOrDefault("USAGE_ENABLED", true),
 				BufferSize:    getEnvIntOrDefault("USAGE_BUFFER_SIZE", 1000),
 				FlushInterval: getEnvIntOrDefault("USAGE_FLUSH_INTERVAL", 5),
 				RetentionDays: getEnvIntOrDefault("USAGE_RETENTION_DAYS", 90),
