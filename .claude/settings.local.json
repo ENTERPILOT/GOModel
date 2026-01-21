@@ -14,8 +14,7 @@
       "Bash(grep:*)",
       "WebFetch(domain:docs.github.com)",
       "WebFetch(domain:docs.docker.com)",
-      "WebFetch(domain:docs.anthropic.com)",
-      "Bash(mongosh:*)"
+      "WebFetch(domain:docs.anthropic.com)"
     ],
     "deny": [],
     "ask": []
