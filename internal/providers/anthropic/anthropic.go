@@ -393,32 +393,47 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	now := time.Now().Unix()
 
 	models := []core.Model{
+		// Claude 4.5 models (latest)
 		{
-			ID:      "claude-3-5-sonnet-20241022",
+			ID:      "claude-sonnet-4-5-20250929",
 			Object:  "model",
 			OwnedBy: "anthropic",
 			Created: now,
 		},
 		{
-			ID:      "claude-3-5-sonnet-20240620",
+			ID:      "claude-haiku-4-5-20251001",
 			Object:  "model",
 			OwnedBy: "anthropic",
 			Created: now,
 		},
 		{
-			ID:      "claude-3-5-haiku-20241022",
+			ID:      "claude-opus-4-5-20251101",
+			Object:  "model",
+			OwnedBy: "anthropic",
+			Created: now,
+		},
+		// Claude 4.x models (legacy but available)
+		{
+			ID:      "claude-opus-4-1-20250805",
 			Object:  "model",
 			OwnedBy: "anthropic",
 			Created: now,
 		},
 		{
-			ID:      "claude-3-opus-20240229",
+			ID:      "claude-sonnet-4-20250514",
 			Object:  "model",
 			OwnedBy: "anthropic",
 			Created: now,
 		},
 		{
-			ID:      "claude-3-sonnet-20240229",
+			ID:      "claude-opus-4-20250514",
+			Object:  "model",
+			OwnedBy: "anthropic",
+			Created: now,
+		},
+		// Claude 3.x models (legacy but available)
+		{
+			ID:      "claude-3-7-sonnet-20250219",
 			Object:  "model",
 			OwnedBy: "anthropic",
 			Created: now,

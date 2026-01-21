@@ -384,8 +384,8 @@ func TestParseProviderError_Preserves4xxStatusCodes(t *testing.T) {
 			provider:         "openai",
 			statusCode:       http.StatusNotFound,
 			body:             []byte(`{"error": {"message": "Model not found"}}`),
-			expectedType:     ErrorTypeInvalidRequest,
-			expectedStatus:   http.StatusNotFound, // Should preserve 404
+			expectedType:     ErrorTypeNotFound,
+			expectedStatus:   http.StatusNotFound,
 			expectedProvider: "openai",
 		},
 		{
@@ -447,8 +447,8 @@ func TestParseProviderError_Preserves4xxStatusCodes(t *testing.T) {
 			provider:         "openai",
 			statusCode:       http.StatusNotFound,
 			body:             []byte("Not Found"),
-			expectedType:     ErrorTypeInvalidRequest,
-			expectedStatus:   http.StatusNotFound, // Should preserve 404 even for plain text
+			expectedType:     ErrorTypeNotFound,
+			expectedStatus:   http.StatusNotFound,
 			expectedProvider: "openai",
 		},
 	}

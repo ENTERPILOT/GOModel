@@ -50,7 +50,7 @@ func TestChatCompletion(t *testing.T) {
 				"id": "msg_123",
 				"type": "message",
 				"role": "assistant",
-				"model": "claude-3-5-sonnet-20241022",
+				"model": "claude-sonnet-4-5-20250929",
 				"content": [{
 					"type": "text",
 					"text": "Hello! How can I help you today?"
@@ -66,8 +66,8 @@ func TestChatCompletion(t *testing.T) {
 				if resp.ID != "msg_123" {
 					t.Errorf("ID = %q, want %q", resp.ID, "msg_123")
 				}
-				if resp.Model != "claude-3-5-sonnet-20241022" {
-					t.Errorf("Model = %q, want %q", resp.Model, "claude-3-5-sonnet-20241022")
+				if resp.Model != "claude-sonnet-4-5-20250929" {
+					t.Errorf("Model = %q, want %q", resp.Model, "claude-sonnet-4-5-20250929")
 				}
 				if len(resp.Choices) != 1 {
 					t.Fatalf("len(Choices) = %d, want 1", len(resp.Choices))
@@ -151,7 +151,7 @@ func TestChatCompletion(t *testing.T) {
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Messages: []core.Message{
 					{Role: "user", Content: "Hello"},
 				},
@@ -187,7 +187,7 @@ func TestStreamChatCompletion(t *testing.T) {
 			name:       "successful streaming request",
 			statusCode: http.StatusOK,
 			responseBody: `event: message_start
-data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -278,7 +278,7 @@ data: {"type":"message_stop"}
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ChatRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Messages: []core.Message{
 					{Role: "user", Content: "Hello"},
 				},
@@ -340,8 +340,8 @@ func TestListModels(t *testing.T) {
 
 	// Verify some expected models are present
 	expectedModels := map[string]bool{
-		"claude-3-5-sonnet-20241022": false,
-		"claude-3-opus-20240229":     false,
+		"claude-sonnet-4-5-20250929": false,
+		"claude-opus-4-5-20251101":   false,
 		"claude-3-haiku-20240307":    false,
 	}
 
@@ -373,7 +373,7 @@ func TestChatCompletionWithContext(t *testing.T) {
 	cancel() // Cancel immediately
 
 	req := &core.ChatRequest{
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-5-20250929",
 		Messages: []core.Message{
 			{Role: "user", Content: "Hello"},
 		},
@@ -397,14 +397,14 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 		{
 			name: "basic request",
 			input: &core.ChatRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Messages: []core.Message{
 					{Role: "user", Content: "Hello"},
 				},
 			},
 			checkFn: func(t *testing.T, req *anthropicRequest) {
-				if req.Model != "claude-3-5-sonnet-20241022" {
-					t.Errorf("Model = %q, want %q", req.Model, "claude-3-5-sonnet-20241022")
+				if req.Model != "claude-sonnet-4-5-20250929" {
+					t.Errorf("Model = %q, want %q", req.Model, "claude-sonnet-4-5-20250929")
 				}
 				if len(req.Messages) != 1 {
 					t.Errorf("len(Messages) = %d, want 1", len(req.Messages))
@@ -420,7 +420,7 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 		{
 			name: "request with system message",
 			input: &core.ChatRequest{
-				Model: "claude-3-opus-20240229",
+				Model: "claude-opus-4-5-20251101",
 				Messages: []core.Message{
 					{Role: "system", Content: "You are a helpful assistant"},
 					{Role: "user", Content: "Hello"},
@@ -438,7 +438,7 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 		{
 			name: "request with parameters",
 			input: &core.ChatRequest{
-				Model:       "claude-3-5-sonnet-20241022",
+				Model:       "claude-sonnet-4-5-20250929",
 				Temperature: &temp,
 				MaxTokens:   &maxTokens,
 				Messages: []core.Message{
@@ -469,7 +469,7 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 		ID:    "msg_123",
 		Type:  "message",
 		Role:  "assistant",
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-5-20250929",
 		Content: []anthropicContent{
 			{Type: "text", Text: "Hello! How can I help you today?"},
 		},
@@ -488,8 +488,8 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	if result.Object != "chat.completion" {
 		t.Errorf("Object = %q, want %q", result.Object, "chat.completion")
 	}
-	if result.Model != "claude-3-5-sonnet-20241022" {
-		t.Errorf("Model = %q, want %q", result.Model, "claude-3-5-sonnet-20241022")
+	if result.Model != "claude-sonnet-4-5-20250929" {
+		t.Errorf("Model = %q, want %q", result.Model, "claude-sonnet-4-5-20250929")
 	}
 	if len(result.Choices) != 1 {
 		t.Fatalf("len(Choices) = %d, want 1", len(result.Choices))
@@ -529,7 +529,7 @@ func TestResponses(t *testing.T) {
 				"id": "msg_123",
 				"type": "message",
 				"role": "assistant",
-				"model": "claude-3-5-sonnet-20241022",
+				"model": "claude-sonnet-4-5-20250929",
 				"content": [{
 					"type": "text",
 					"text": "Hello! How can I help you today?"
@@ -548,8 +548,8 @@ func TestResponses(t *testing.T) {
 				if resp.Object != "response" {
 					t.Errorf("Object = %q, want %q", resp.Object, "response")
 				}
-				if resp.Model != "claude-3-5-sonnet-20241022" {
-					t.Errorf("Model = %q, want %q", resp.Model, "claude-3-5-sonnet-20241022")
+				if resp.Model != "claude-sonnet-4-5-20250929" {
+					t.Errorf("Model = %q, want %q", resp.Model, "claude-sonnet-4-5-20250929")
 				}
 				if resp.Status != "completed" {
 					t.Errorf("Status = %q, want %q", resp.Status, "completed")
@@ -636,7 +636,7 @@ func TestResponses(t *testing.T) {
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ResponsesRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Input: "Hello",
 			}
 
@@ -687,7 +687,7 @@ func TestResponsesWithArrayInput(t *testing.T) {
 			"id": "msg_123",
 			"type": "message",
 			"role": "assistant",
-			"model": "claude-3-5-sonnet-20241022",
+			"model": "claude-sonnet-4-5-20250929",
 			"content": [{
 				"type": "text",
 				"text": "Hello!"
@@ -705,7 +705,7 @@ func TestResponsesWithArrayInput(t *testing.T) {
 	provider.SetBaseURL(server.URL)
 
 	req := &core.ResponsesRequest{
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-5-20250929",
 		Input: []interface{}{
 			map[string]interface{}{
 				"role":    "user",
@@ -751,7 +751,7 @@ func TestResponsesWithInstructions(t *testing.T) {
 			"id": "msg_123",
 			"type": "message",
 			"role": "assistant",
-			"model": "claude-3-5-sonnet-20241022",
+			"model": "claude-sonnet-4-5-20250929",
 			"content": [{
 				"type": "text",
 				"text": "Hello!"
@@ -769,7 +769,7 @@ func TestResponsesWithInstructions(t *testing.T) {
 	provider.SetBaseURL(server.URL)
 
 	req := &core.ResponsesRequest{
-		Model:        "claude-3-5-sonnet-20241022",
+		Model:        "claude-sonnet-4-5-20250929",
 		Input:        "Hello",
 		Instructions: "You are a helpful assistant",
 	}
@@ -792,7 +792,7 @@ func TestStreamResponses(t *testing.T) {
 			name:       "successful streaming request",
 			statusCode: http.StatusOK,
 			responseBody: `event: message_start
-data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
 
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
@@ -886,7 +886,7 @@ data: {"type":"message_stop"}
 			provider.SetBaseURL(server.URL)
 
 			req := &core.ResponsesRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Input: "Hello",
 			}
 
@@ -923,7 +923,7 @@ func TestResponsesWithContext(t *testing.T) {
 	cancel() // Cancel immediately
 
 	req := &core.ResponsesRequest{
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-5-20250929",
 		Input: "Hello",
 	}
 
@@ -945,12 +945,12 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 		{
 			name: "string input",
 			input: &core.ResponsesRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Input: "Hello",
 			},
 			checkFn: func(t *testing.T, req *anthropicRequest) {
-				if req.Model != "claude-3-5-sonnet-20241022" {
-					t.Errorf("Model = %q, want %q", req.Model, "claude-3-5-sonnet-20241022")
+				if req.Model != "claude-sonnet-4-5-20250929" {
+					t.Errorf("Model = %q, want %q", req.Model, "claude-sonnet-4-5-20250929")
 				}
 				if len(req.Messages) != 1 {
 					t.Errorf("len(Messages) = %d, want 1", len(req.Messages))
@@ -966,7 +966,7 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 		{
 			name: "with instructions",
 			input: &core.ResponsesRequest{
-				Model:        "claude-3-5-sonnet-20241022",
+				Model:        "claude-sonnet-4-5-20250929",
 				Input:        "Hello",
 				Instructions: "Be helpful",
 			},
@@ -979,7 +979,7 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 		{
 			name: "with parameters",
 			input: &core.ResponsesRequest{
-				Model:           "claude-3-5-sonnet-20241022",
+				Model:           "claude-sonnet-4-5-20250929",
 				Input:           "Hello",
 				Temperature:     &temp,
 				MaxOutputTokens: &maxTokens,
@@ -996,7 +996,7 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 		{
 			name: "array input with content parts",
 			input: &core.ResponsesRequest{
-				Model: "claude-3-5-sonnet-20241022",
+				Model: "claude-sonnet-4-5-20250929",
 				Input: []interface{}{
 					map[string]interface{}{
 						"role": "user",
@@ -1037,7 +1037,7 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 		ID:    "msg_123",
 		Type:  "message",
 		Role:  "assistant",
-		Model: "claude-3-5-sonnet-20241022",
+		Model: "claude-sonnet-4-5-20250929",
 		Content: []anthropicContent{
 			{Type: "text", Text: "Hello! How can I help you today?"},
 		},
@@ -1048,7 +1048,7 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 		},
 	}
 
-	result := convertAnthropicResponseToResponses(resp, "claude-3-5-sonnet-20241022")
+	result := convertAnthropicResponseToResponses(resp, "claude-sonnet-4-5-20250929")
 
 	if result.ID != "msg_123" {
 		t.Errorf("ID = %q, want %q", result.ID, "msg_123")
@@ -1056,8 +1056,8 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	if result.Object != "response" {
 		t.Errorf("Object = %q, want %q", result.Object, "response")
 	}
-	if result.Model != "claude-3-5-sonnet-20241022" {
-		t.Errorf("Model = %q, want %q", result.Model, "claude-3-5-sonnet-20241022")
+	if result.Model != "claude-sonnet-4-5-20250929" {
+		t.Errorf("Model = %q, want %q", result.Model, "claude-sonnet-4-5-20250929")
 	}
 	if result.Status != "completed" {
 		t.Errorf("Status = %q, want %q", result.Status, "completed")
