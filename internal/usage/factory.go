@@ -111,10 +111,9 @@ func NewWithSharedStorage(ctx context.Context, cfg *config.Config, store storage
 }
 
 // buildStorageConfig creates a storage.Config from the application config.
-// Uses the same storage type as logging for shared database access.
 func buildStorageConfig(cfg *config.Config) storage.Config {
 	storageCfg := storage.Config{
-		Type: cfg.Logging.StorageType, // Reuse logging storage type
+		Type: cfg.Storage.Type,
 		SQLite: storage.SQLiteConfig{
 			Path: cfg.Storage.SQLite.Path,
 		},

@@ -40,10 +40,6 @@ type LogConfig struct {
 	// Default: false
 	Enabled bool
 
-	// StorageType specifies the storage backend for audit logs: "sqlite" (default), "postgresql", or "mongodb"
-	// This selects which of the storage backends (configured separately) to use for audit logs
-	StorageType string
-
 	// LogBodies enables logging of full request/response bodies
 	// WARNING: May contain sensitive data (PII, API keys in prompts)
 	// Default: true
@@ -97,8 +93,11 @@ type UsageConfig struct {
 	RetentionDays int
 }
 
-// StorageConfig holds database storage configuration (used by audit logging, future IAM, etc.)
+// StorageConfig holds database storage configuration (used by audit logging, usage tracking, future IAM, etc.)
 type StorageConfig struct {
+	// Type specifies the storage backend: "sqlite" (default), "postgresql", or "mongodb"
+	Type string
+
 	// SQLite configuration
 	SQLite SQLiteStorageConfig
 
@@ -220,13 +219,13 @@ func Load() (*Config, error) {
 	viper.SetDefault("metrics.endpoint", "/metrics")
 
 	// Storage defaults
+	viper.SetDefault("storage.type", "sqlite")
 	viper.SetDefault("storage.sqlite.path", ".cache/gomodel.db")
 	viper.SetDefault("storage.postgresql.max_conns", 10)
 	viper.SetDefault("storage.mongodb.database", "gomodel")
 
 	// Logging defaults
 	viper.SetDefault("logging.enabled", false)
-	viper.SetDefault("logging.storage_type", "sqlite")
 	viper.SetDefault("logging.log_bodies", true)
 	viper.SetDefault("logging.log_headers", true)
 	viper.SetDefault("logging.buffer_size", 1000)
@@ -271,6 +270,7 @@ func Load() (*Config, error) {
 				BodySizeLimit: viper.GetString("BODY_SIZE_LIMIT"),
 			},
 			Storage: StorageConfig{
+			Type: getEnvOrDefault("STORAGE_TYPE", "sqlite"),
 				SQLite: SQLiteStorageConfig{
 					Path: getEnvOrDefault("SQLITE_PATH", ".cache/gomodel.db"),
 				},
@@ -285,7 +285,6 @@ func Load() (*Config, error) {
 			},
 			Logging: LogConfig{
 				Enabled:               getEnvBool("LOGGING_ENABLED"),
-				StorageType:           getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
 				LogBodies:             getEnvBoolOrDefault("LOGGING_LOG_BODIES", true),
 				LogHeaders:            getEnvBoolOrDefault("LOGGING_LOG_HEADERS", true),
 				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
@@ -371,6 +370,7 @@ func expandEnvVars(cfg Config) Config {
 	cfg.Cache.Redis.Key = expandString(cfg.Cache.Redis.Key)
 
 	// Expand storage configuration
+	cfg.Storage.Type = expandString(cfg.Storage.Type)
 	cfg.Storage.SQLite.Path = expandString(cfg.Storage.SQLite.Path)
 	cfg.Storage.PostgreSQL.URL = expandString(cfg.Storage.PostgreSQL.URL)
 	cfg.Storage.MongoDB.URL = expandString(cfg.Storage.MongoDB.URL)
@@ -378,6 +378,9 @@ func expandEnvVars(cfg Config) Config {
 
 	// Override storage configuration from environment variables
 	// This allows env vars to take precedence over config file values
+	if storageType := os.Getenv("STORAGE_TYPE"); storageType != "" {
+		cfg.Storage.Type = storageType
+	}
 	if sqlitePath := os.Getenv("SQLITE_PATH"); sqlitePath != "" {
 		cfg.Storage.SQLite.Path = sqlitePath
 	}
@@ -399,9 +402,6 @@ func expandEnvVars(cfg Config) Config {
 	// Override logging configuration from environment variables
 	if loggingEnabled := os.Getenv("LOGGING_ENABLED"); loggingEnabled != "" {
 		cfg.Logging.Enabled = strings.EqualFold(loggingEnabled, "true") || loggingEnabled == "1"
-	}
-	if storageType := os.Getenv("LOGGING_STORAGE_TYPE"); storageType != "" {
-		cfg.Logging.StorageType = storageType
 	}
 	if logBodies := os.Getenv("LOGGING_LOG_BODIES"); logBodies != "" {
 		cfg.Logging.LogBodies = strings.EqualFold(logBodies, "true") || logBodies == "1"

@@ -242,10 +242,12 @@ func (a *App) logStartupInfo() {
 		slog.Info("prometheus metrics disabled")
 	}
 
+	// Storage configuration (shared by audit logging and usage tracking)
+	slog.Info("storage configured", "type", cfg.Storage.Type)
+
 	// Audit logging configuration
 	if cfg.Logging.Enabled {
 		slog.Info("audit logging enabled",
-			"storage_type", cfg.Logging.StorageType,
 			"log_bodies", cfg.Logging.LogBodies,
 			"log_headers", cfg.Logging.LogHeaders,
 			"retention_days", cfg.Logging.RetentionDays,

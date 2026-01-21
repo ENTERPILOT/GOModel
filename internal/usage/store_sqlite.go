@@ -164,7 +164,7 @@ func (s *SQLiteStore) cleanup() {
 		return
 	}
 
-	cutoff := time.Now().AddDate(0, 0, -s.retentionDays).UTC().Format(time.RFC3339)
+	cutoff := time.Now().AddDate(0, 0, -s.retentionDays).UTC().Format(time.RFC3339Nano)
 
 	result, err := s.db.Exec("DELETE FROM usage WHERE timestamp < ?", cutoff)
 	if err != nil {
