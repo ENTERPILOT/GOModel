@@ -57,6 +57,26 @@ func (p *Provider) SetBaseURL(url string) {
 // setHeaders sets the required headers for OpenAI API requests
 func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	// Forward request ID if present in context using OpenAI's X-Client-Request-Id header.
+	// OpenAI requires ASCII-only characters and max 512 bytes, otherwise returns 400.
+	if requestID := core.GetRequestID(req.Context()); requestID != "" && isValidClientRequestID(requestID) {
+		req.Header.Set("X-Client-Request-Id", requestID)
+	}
+}
+
+// isValidClientRequestID checks if the request ID is valid for OpenAI's X-Client-Request-Id header.
+// OpenAI requires: ASCII characters only, max 512 characters.
+func isValidClientRequestID(id string) bool {
+	if len(id) > 512 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		if id[i] > 127 {
+			return false
+		}
+	}
+	return true
 }
 
 // ChatCompletion sends a chat completion request to OpenAI

@@ -136,7 +136,7 @@ curl http://localhost:8080/v1/chat/completions \
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-2.0-flash",
+    "model": "gemini-3-flash-preview",
     "messages": [
       {"role": "user", "content": "What is the capital of France?"}
     ]
@@ -439,7 +439,6 @@ for await (const chunk of stream) {
 ## Tips
 
 1. **Model Selection**: The gateway automatically routes requests to the correct provider based on the model name prefix:
-
    - `gpt-` or `o1` → OpenAI
    - `claude-` → Anthropic
    - `gemini-` → Google Gemini
@@ -450,17 +449,14 @@ for await (const chunk of stream) {
 3. **Streaming**: All providers support streaming responses. The gateway automatically converts provider-specific streaming formats to match OpenAI's SSE format.
 
 4. **System Messages**:
-
    - Anthropic handles system messages differently. The gateway automatically extracts system messages and sends them in Anthropic's required format.
    - Gemini uses Google's OpenAI-compatible endpoint which handles system messages natively.
 
 5. **Max Tokens**:
-
    - Anthropic requires `max_tokens` to be set. If not provided, the gateway uses a default of 4096 tokens.
    - Gemini and OpenAI have optional `max_tokens` parameters.
 
 6. **Context Windows**:
-
    - Gemini 1.5 Pro offers an exceptionally large context window (up to 1M tokens), making it ideal for long-form content analysis.
    - OpenAI GPT-4 models typically support 8K-128K tokens depending on the variant.
    - Anthropic Claude models support up to 200K tokens.

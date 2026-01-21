@@ -20,6 +20,19 @@ cache:
     key: "${REDIS_KEY:-gomodel:models}"
     ttl: 86400 # 24 hours in seconds
 
+# Storage configuration (used by audit logging, usage tracking, future IAM, etc.)
+# type: "sqlite" (default), "postgresql", or "mongodb"
+storage:
+  type: "${STORAGE_TYPE:-sqlite}"
+  sqlite:
+    path: "${SQLITE_PATH:-.cache/gomodel.db}"
+  postgresql:
+    url: "${POSTGRES_URL:-}"
+    max_conns: 10
+  mongodb:
+    url: "${MONGODB_URL:-}"
+    database: "${MONGODB_DATABASE:-gomodel}"
+
 metrics:
   # Enable or disable Prometheus metrics collection
   # When disabled, no metrics are collected and the /metrics endpoint returns 404

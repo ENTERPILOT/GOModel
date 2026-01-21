@@ -1,23 +1,33 @@
 package core
 
+// StreamOptions controls streaming behavior options.
+// This is used to request usage data in streaming responses.
+type StreamOptions struct {
+	// IncludeUsage requests token usage information in streaming responses.
+	// When true, the final streaming chunk will include usage statistics.
+	IncludeUsage bool `json:"include_usage,omitempty"`
+}
+
 // ChatRequest represents the incoming chat completion request
 type ChatRequest struct {
-	Temperature *float64  `json:"temperature,omitempty"`
-	MaxTokens   *int      `json:"max_tokens,omitempty"`
-	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
-	Stream      bool      `json:"stream,omitempty"`
+	Temperature   *float64       `json:"temperature,omitempty"`
+	MaxTokens     *int           `json:"max_tokens,omitempty"`
+	Model         string         `json:"model"`
+	Messages      []Message      `json:"messages"`
+	Stream        bool           `json:"stream,omitempty"`
+	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
 }
 
 // WithStreaming returns a shallow copy of the request with Stream set to true.
 // This avoids mutating the caller's request object.
 func (r *ChatRequest) WithStreaming() *ChatRequest {
 	return &ChatRequest{
-		Temperature: r.Temperature,
-		MaxTokens:   r.MaxTokens,
-		Model:       r.Model,
-		Messages:    r.Messages,
-		Stream:      true,
+		Temperature:   r.Temperature,
+		MaxTokens:     r.MaxTokens,
+		Model:         r.Model,
+		Messages:      r.Messages,
+		Stream:        true,
+		StreamOptions: r.StreamOptions,
 	}
 }
 
@@ -47,9 +57,10 @@ type Choice struct {
 
 // Usage represents token usage information
 type Usage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	PromptTokens     int            `json:"prompt_tokens"`
+	CompletionTokens int            `json:"completion_tokens"`
+	TotalTokens      int            `json:"total_tokens"`
+	RawUsage         map[string]any `json:"raw_usage,omitempty"`
 }
 
 // Model represents a single model in the models list

@@ -1,4 +1,4 @@
-package auditlog
+package usage
 
 import (
 	"context"
@@ -27,7 +27,7 @@ type PartialWriteError struct {
 }
 
 func (e *PartialWriteError) Error() string {
-	return fmt.Sprintf("partial audit log insert: %d of %d entries failed: %v",
+	return fmt.Sprintf("partial usage insert: %d of %d entries failed: %v",
 		e.FailedCount, e.TotalEntries, e.Cause.Error())
 }
 
@@ -35,21 +35,21 @@ func (e *PartialWriteError) Unwrap() error {
 	return ErrPartialWrite
 }
 
-// Prometheus metric for audit log partial write failures
-var auditLogPartialWriteFailures = promauto.NewCounter(
+// Prometheus metric for usage partial write failures
+var usagePartialWriteFailures = promauto.NewCounter(
 	prometheus.CounterOpts{
-		Name: "gomodel_audit_log_partial_write_failures_total",
-		Help: "Total number of partial write failures when inserting audit logs to MongoDB",
+		Name: "gomodel_usage_partial_write_failures_total",
+		Help: "Total number of partial write failures when inserting usage entries to MongoDB",
 	},
 )
 
-// MongoDBStore implements LogStore for MongoDB.
+// MongoDBStore implements UsageStore for MongoDB.
 type MongoDBStore struct {
 	collection    *mongo.Collection
 	retentionDays int
 }
 
-// NewMongoDBStore creates a new MongoDB audit log store.
+// NewMongoDBStore creates a new MongoDB usage store.
 // It creates the collection and indexes if they don't exist.
 // MongoDB handles TTL-based cleanup automatically via TTL indexes.
 func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore, error) {
@@ -57,7 +57,7 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 		return nil, fmt.Errorf("database is required")
 	}
 
-	collection := database.Collection("audit_logs")
+	collection := database.Collection("usage")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -65,25 +65,19 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 	// Create indexes for common queries
 	indexes := []mongo.IndexModel{
 		{
-			Keys: bson.D{{Key: "model", Value: 1}},
+			Keys: bson.D{{Key: "request_id", Value: 1}},
 		},
 		{
-			Keys: bson.D{{Key: "status_code", Value: 1}},
+			Keys: bson.D{{Key: "provider_id", Value: 1}},
+		},
+		{
+			Keys: bson.D{{Key: "model", Value: 1}},
 		},
 		{
 			Keys: bson.D{{Key: "provider", Value: 1}},
 		},
 		{
-			Keys: bson.D{{Key: "request_id", Value: 1}},
-		},
-		{
-			Keys: bson.D{{Key: "client_ip", Value: 1}},
-		},
-		{
-			Keys: bson.D{{Key: "path", Value: 1}},
-		},
-		{
-			Keys: bson.D{{Key: "error_type", Value: 1}},
+			Keys: bson.D{{Key: "endpoint", Value: 1}},
 		},
 	}
 
@@ -105,7 +99,7 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 	_, err := collection.Indexes().CreateMany(ctx, indexes)
 	if err != nil {
 		// Log warning but don't fail - indexes may already exist
-		slog.Warn("failed to create some MongoDB indexes", "error", err)
+		slog.Warn("failed to create some MongoDB indexes for usage", "error", err)
 	}
 
 	return &MongoDBStore{
@@ -114,8 +108,8 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 	}, nil
 }
 
-// WriteBatch writes multiple log entries to MongoDB using InsertMany.
-func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*LogEntry) error {
+// WriteBatch writes multiple usage entries to MongoDB using InsertMany.
+func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*UsageEntry) error {
 	if len(entries) == 0 {
 		return nil
 	}
@@ -135,13 +129,13 @@ func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*LogEntry) erro
 		if errors.As(err, &bulkErr) {
 			failedCount := len(bulkErr.WriteErrors)
 			// Log for visibility
-			slog.Warn("partial audit log insert failure",
+			slog.Warn("partial usage insert failure",
 				"total", len(entries),
 				"failed", failedCount,
 				"succeeded", len(entries)-failedCount,
 			)
 			// Increment metric for operators to detect data loss
-			auditLogPartialWriteFailures.Inc()
+			usagePartialWriteFailures.Inc()
 			// Return distinguishable error so callers know insert was partial
 			return &PartialWriteError{
 				TotalEntries: len(entries),
@@ -149,7 +143,7 @@ func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*LogEntry) erro
 				Cause:        *bulkErr,
 			}
 		}
-		return fmt.Errorf("failed to insert audit logs: %w", err)
+		return fmt.Errorf("failed to insert usage entries: %w", err)
 	}
 
 	return nil

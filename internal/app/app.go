@@ -16,6 +16,7 @@ import (
 	"gomodel/internal/core"
 	"gomodel/internal/providers"
 	"gomodel/internal/server"
+	"gomodel/internal/usage"
 )
 
 // App represents the main application with all its dependencies.
@@ -24,6 +25,7 @@ type App struct {
 	config    *config.Config
 	providers *providers.InitResult
 	audit     *auditlog.Result
+	usage     *usage.Result
 	server    *server.Server
 
 	shutdownMu sync.Mutex
@@ -82,6 +84,25 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.audit = auditResult
 
+	// Initialize usage tracking
+	// Use shared storage if both audit logging and usage tracking use the same backend
+	var usageResult *usage.Result
+	if auditResult.Storage != nil && cfg.AppConfig.Usage.Enabled {
+		// Share storage connection with audit logging
+		usageResult, err = usage.NewWithSharedStorage(ctx, cfg.AppConfig, auditResult.Storage)
+	} else {
+		// Create separate storage or return noop logger
+		usageResult, err = usage.New(ctx, cfg.AppConfig)
+	}
+	if err != nil {
+		closeErr := errors.Join(app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to initialize usage tracking: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to initialize usage tracking: %w", err)
+	}
+	app.usage = usageResult
+
 	// Log configuration status
 	app.logStartupInfo()
 
@@ -92,6 +113,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		MetricsEndpoint:          cfg.AppConfig.Metrics.Endpoint,
 		BodySizeLimit:            cfg.AppConfig.Server.BodySizeLimit,
 		AuditLogger:              auditResult.Logger,
+		UsageLogger:              usageResult.Logger,
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
 	}
 	app.server = server.New(app.providers.Router, serverCfg)
@@ -113,6 +135,14 @@ func (a *App) AuditLogger() auditlog.LoggerInterface {
 		return nil
 	}
 	return a.audit.Logger
+}
+
+// UsageLogger returns the usage logger interface.
+func (a *App) UsageLogger() usage.LoggerInterface {
+	if a.usage == nil {
+		return nil
+	}
+	return a.usage.Logger
 }
 
 // Start starts the HTTP server on the given address.
@@ -168,7 +198,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 3. Close audit logging (flushes pending logs)
+	// 3. Close usage tracking (flushes pending entries)
+	if a.usage != nil {
+		if err := a.usage.Close(); err != nil {
+			slog.Error("usage logger close error", "error", err)
+			errs = append(errs, fmt.Errorf("usage close: %w", err))
+		}
+	}
+
+	// 4. Close audit logging (flushes pending logs)
 	if a.audit != nil {
 		if err := a.audit.Close(); err != nil {
 			slog.Error("audit logger close error", "error", err)
@@ -204,15 +242,28 @@ func (a *App) logStartupInfo() {
 		slog.Info("prometheus metrics disabled")
 	}
 
+	// Storage configuration (shared by audit logging and usage tracking)
+	slog.Info("storage configured", "type", cfg.Storage.Type)
+
 	// Audit logging configuration
 	if cfg.Logging.Enabled {
 		slog.Info("audit logging enabled",
-			"storage_type", cfg.Logging.StorageType,
 			"log_bodies", cfg.Logging.LogBodies,
 			"log_headers", cfg.Logging.LogHeaders,
 			"retention_days", cfg.Logging.RetentionDays,
 		)
 	} else {
 		slog.Info("audit logging disabled")
+	}
+
+	// Usage tracking configuration
+	if cfg.Usage.Enabled {
+		slog.Info("usage tracking enabled",
+			"buffer_size", cfg.Usage.BufferSize,
+			"flush_interval", cfg.Usage.FlushInterval,
+			"retention_days", cfg.Usage.RetentionDays,
+		)
+	} else {
+		slog.Info("usage tracking disabled")
 	}
 }

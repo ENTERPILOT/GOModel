@@ -10,25 +10,28 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/usage"
 )
 
 // Handler holds the HTTP handlers
 type Handler struct {
-	provider core.RoutableProvider
-	logger   auditlog.LoggerInterface
+	provider    core.RoutableProvider
+	logger      auditlog.LoggerInterface
+	usageLogger usage.LoggerInterface
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
-func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface) *Handler {
+func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface) *Handler {
 	return &Handler{
-		provider: provider,
-		logger:   logger,
+		provider:    provider,
+		logger:      logger,
+		usageLogger: usageLogger,
 	}
 }
 
 // handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
-// It wraps the stream with audit logging and sets appropriate SSE headers.
-func (h *Handler) handleStreamingResponse(c echo.Context, streamFn func() (io.ReadCloser, error)) error {
+// It wraps the stream with audit logging and usage tracking, and sets appropriate SSE headers.
+func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string, streamFn func() (io.ReadCloser, error)) error {
 	// Call streamFn first - only mark as streaming after success
 	// This ensures failed streams are logged normally by handleError/middleware
 	stream, err := streamFn()
@@ -47,6 +50,12 @@ func (h *Handler) handleStreamingResponse(c echo.Context, streamFn func() (io.Re
 		streamEntry.StatusCode = http.StatusOK // Streaming always starts with 200 OK
 	}
 	wrappedStream := auditlog.WrapStreamForLogging(stream, h.logger, streamEntry, c.Request().URL.Path)
+
+	// Wrap with usage tracking if enabled
+	requestID := c.Request().Header.Get("X-Request-ID")
+	endpoint := c.Request().URL.Path
+	wrappedStream = usage.WrapStreamForUsage(wrappedStream, h.usageLogger, model, provider, requestID, endpoint)
+
 	defer func() {
 		_ = wrappedStream.Close() //nolint:errcheck
 	}()
@@ -81,19 +90,39 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	}
 
 	// Enrich audit log entry with model and provider
-	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model))
+	providerType := h.provider.GetProviderType(req.Model)
+	auditlog.EnrichEntry(c, req.Model, providerType)
+
+	// Create context with request ID for provider
+	requestID := c.Request().Header.Get("X-Request-ID")
+	ctx := core.WithRequestID(c.Request().Context(), requestID)
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
-		return h.handleStreamingResponse(c, func() (io.ReadCloser, error) {
-			return h.provider.StreamChatCompletion(c.Request().Context(), &req)
+		// Enforce returning usage data in streaming responses if configured
+		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
+			if req.StreamOptions == nil {
+				req.StreamOptions = &core.StreamOptions{}
+			}
+			req.StreamOptions.IncludeUsage = true
+		}
+		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
+			return h.provider.StreamChatCompletion(ctx, &req)
 		})
 	}
 
 	// Non-streaming
-	resp, err := h.provider.ChatCompletion(c.Request().Context(), &req)
+	resp, err := h.provider.ChatCompletion(ctx, &req)
 	if err != nil {
 		return handleError(c, err)
+	}
+
+	// Track usage if enabled (reuses requestID from context enrichment above)
+	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
+		usageEntry := usage.ExtractFromChatResponse(resp, requestID, "/v1/chat/completions")
+		if usageEntry != nil {
+			h.usageLogger.Write(usageEntry)
+		}
 	}
 
 	return c.JSON(http.StatusOK, resp)
@@ -106,7 +135,11 @@ func (h *Handler) Health(c echo.Context) error {
 
 // ListModels handles GET /v1/models
 func (h *Handler) ListModels(c echo.Context) error {
-	resp, err := h.provider.ListModels(c.Request().Context())
+	// Create context with request ID for provider
+	requestID := c.Request().Header.Get("X-Request-ID")
+	ctx := core.WithRequestID(c.Request().Context(), requestID)
+
+	resp, err := h.provider.ListModels(ctx)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -130,19 +163,39 @@ func (h *Handler) Responses(c echo.Context) error {
 	}
 
 	// Enrich audit log entry with model and provider
-	auditlog.EnrichEntry(c, req.Model, h.provider.GetProviderType(req.Model))
+	providerType := h.provider.GetProviderType(req.Model)
+	auditlog.EnrichEntry(c, req.Model, providerType)
+
+	// Create context with request ID for provider
+	requestID := c.Request().Header.Get("X-Request-ID")
+	ctx := core.WithRequestID(c.Request().Context(), requestID)
 
 	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
-		return h.handleStreamingResponse(c, func() (io.ReadCloser, error) {
-			return h.provider.StreamResponses(c.Request().Context(), &req)
+		// Enforce returning usage data in streaming responses if configured
+		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
+			if req.StreamOptions == nil {
+				req.StreamOptions = &core.StreamOptions{}
+			}
+			req.StreamOptions.IncludeUsage = true
+		}
+		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
+			return h.provider.StreamResponses(ctx, &req)
 		})
 	}
 
 	// Non-streaming
-	resp, err := h.provider.Responses(c.Request().Context(), &req)
+	resp, err := h.provider.Responses(ctx, &req)
 	if err != nil {
 		return handleError(c, err)
+	}
+
+	// Track usage if enabled (reuses requestID from context enrichment above)
+	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
+		usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, "/v1/responses")
+		if usageEntry != nil {
+			h.usageLogger.Write(usageEntry)
+		}
 	}
 
 	return c.JSON(http.StatusOK, resp)

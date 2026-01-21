@@ -29,6 +29,7 @@ type Config struct {
 	Cache     CacheConfig
 	Storage   StorageConfig
 	Logging   LogConfig
+	Usage     UsageConfig
 	Metrics   MetricsConfig
 	Providers map[string]ProviderConfig
 }
@@ -38,10 +39,6 @@ type LogConfig struct {
 	// Enabled controls whether audit logging is active
 	// Default: false
 	Enabled bool
-
-	// StorageType specifies the storage backend for audit logs: "sqlite" (default), "postgresql", or "mongodb"
-	// This selects which of the storage backends (configured separately) to use for audit logs
-	StorageType string
 
 	// LogBodies enables logging of full request/response bodies
 	// WARNING: May contain sensitive data (PII, API keys in prompts)
@@ -72,8 +69,35 @@ type LogConfig struct {
 	OnlyModelInteractions bool
 }
 
-// StorageConfig holds database storage configuration (used by audit logging, future IAM, etc.)
+// UsageConfig holds token usage tracking configuration
+type UsageConfig struct {
+	// Enabled controls whether usage tracking is active
+	// Default: true
+	Enabled bool
+
+	// EnforceReturningUsageData controls whether to enforce returning usage data in streaming responses.
+	// When true, stream_options: {"include_usage": true} is automatically added to streaming requests.
+	// Default: true
+	EnforceReturningUsageData bool
+
+	// BufferSize is the number of usage entries to buffer before flushing
+	// Default: 1000
+	BufferSize int
+
+	// FlushInterval is how often to flush buffered usage entries (in seconds)
+	// Default: 5
+	FlushInterval int
+
+	// RetentionDays is how long to keep usage data (0 = forever)
+	// Default: 90
+	RetentionDays int
+}
+
+// StorageConfig holds database storage configuration (used by audit logging, usage tracking, future IAM, etc.)
 type StorageConfig struct {
+	// Type specifies the storage backend: "sqlite" (default), "postgresql", or "mongodb"
+	Type string
+
 	// SQLite configuration
 	SQLite SQLiteStorageConfig
 
@@ -195,19 +219,26 @@ func Load() (*Config, error) {
 	viper.SetDefault("metrics.endpoint", "/metrics")
 
 	// Storage defaults
+	viper.SetDefault("storage.type", "sqlite")
 	viper.SetDefault("storage.sqlite.path", ".cache/gomodel.db")
 	viper.SetDefault("storage.postgresql.max_conns", 10)
 	viper.SetDefault("storage.mongodb.database", "gomodel")
 
 	// Logging defaults
 	viper.SetDefault("logging.enabled", false)
-	viper.SetDefault("logging.storage_type", "sqlite")
 	viper.SetDefault("logging.log_bodies", true)
 	viper.SetDefault("logging.log_headers", true)
 	viper.SetDefault("logging.buffer_size", 1000)
 	viper.SetDefault("logging.flush_interval", 5)
 	viper.SetDefault("logging.retention_days", 30)
 	viper.SetDefault("logging.only_model_interactions", true)
+
+	// Usage tracking defaults
+	viper.SetDefault("usage.enabled", true)
+	viper.SetDefault("usage.enforce_returning_usage_data", true)
+	viper.SetDefault("usage.buffer_size", 1000)
+	viper.SetDefault("usage.flush_interval", 5)
+	viper.SetDefault("usage.retention_days", 90)
 
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
@@ -239,6 +270,7 @@ func Load() (*Config, error) {
 				BodySizeLimit: viper.GetString("BODY_SIZE_LIMIT"),
 			},
 			Storage: StorageConfig{
+			Type: getEnvOrDefault("STORAGE_TYPE", "sqlite"),
 				SQLite: SQLiteStorageConfig{
 					Path: getEnvOrDefault("SQLITE_PATH", ".cache/gomodel.db"),
 				},
@@ -253,13 +285,19 @@ func Load() (*Config, error) {
 			},
 			Logging: LogConfig{
 				Enabled:               getEnvBool("LOGGING_ENABLED"),
-				StorageType:           getEnvOrDefault("LOGGING_STORAGE_TYPE", "sqlite"),
 				LogBodies:             getEnvBoolOrDefault("LOGGING_LOG_BODIES", true),
 				LogHeaders:            getEnvBoolOrDefault("LOGGING_LOG_HEADERS", true),
 				BufferSize:            getEnvIntOrDefault("LOGGING_BUFFER_SIZE", 1000),
 				FlushInterval:         getEnvIntOrDefault("LOGGING_FLUSH_INTERVAL", 5),
 				RetentionDays:         getEnvIntOrDefault("LOGGING_RETENTION_DAYS", 30),
 				OnlyModelInteractions: getEnvBoolOrDefault("LOGGING_ONLY_MODEL_INTERACTIONS", true),
+			},
+			Usage: UsageConfig{
+				Enabled:                   getEnvBoolOrDefault("USAGE_ENABLED", true),
+				EnforceReturningUsageData: getEnvBoolOrDefault("ENFORCE_RETURNING_USAGE_DATA", true),
+				BufferSize:                getEnvIntOrDefault("USAGE_BUFFER_SIZE", 1000),
+				FlushInterval:             getEnvIntOrDefault("USAGE_FLUSH_INTERVAL", 5),
+				RetentionDays:             getEnvIntOrDefault("USAGE_RETENTION_DAYS", 90),
 			},
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
@@ -332,6 +370,7 @@ func expandEnvVars(cfg Config) Config {
 	cfg.Cache.Redis.Key = expandString(cfg.Cache.Redis.Key)
 
 	// Expand storage configuration
+	cfg.Storage.Type = expandString(cfg.Storage.Type)
 	cfg.Storage.SQLite.Path = expandString(cfg.Storage.SQLite.Path)
 	cfg.Storage.PostgreSQL.URL = expandString(cfg.Storage.PostgreSQL.URL)
 	cfg.Storage.MongoDB.URL = expandString(cfg.Storage.MongoDB.URL)
@@ -339,6 +378,9 @@ func expandEnvVars(cfg Config) Config {
 
 	// Override storage configuration from environment variables
 	// This allows env vars to take precedence over config file values
+	if storageType := os.Getenv("STORAGE_TYPE"); storageType != "" {
+		cfg.Storage.Type = storageType
+	}
 	if sqlitePath := os.Getenv("SQLITE_PATH"); sqlitePath != "" {
 		cfg.Storage.SQLite.Path = sqlitePath
 	}
@@ -361,9 +403,6 @@ func expandEnvVars(cfg Config) Config {
 	if loggingEnabled := os.Getenv("LOGGING_ENABLED"); loggingEnabled != "" {
 		cfg.Logging.Enabled = strings.EqualFold(loggingEnabled, "true") || loggingEnabled == "1"
 	}
-	if storageType := os.Getenv("LOGGING_STORAGE_TYPE"); storageType != "" {
-		cfg.Logging.StorageType = storageType
-	}
 	if logBodies := os.Getenv("LOGGING_LOG_BODIES"); logBodies != "" {
 		cfg.Logging.LogBodies = strings.EqualFold(logBodies, "true") || logBodies == "1"
 	}
@@ -372,6 +411,29 @@ func expandEnvVars(cfg Config) Config {
 	}
 	if onlyModel := os.Getenv("LOGGING_ONLY_MODEL_INTERACTIONS"); onlyModel != "" {
 		cfg.Logging.OnlyModelInteractions = strings.EqualFold(onlyModel, "true") || onlyModel == "1"
+	}
+
+	// Override usage tracking configuration from environment variables
+	if usageEnabled := os.Getenv("USAGE_ENABLED"); usageEnabled != "" {
+		cfg.Usage.Enabled = strings.EqualFold(usageEnabled, "true") || usageEnabled == "1"
+	}
+	if enforceUsage := os.Getenv("ENFORCE_RETURNING_USAGE_DATA"); enforceUsage != "" {
+		cfg.Usage.EnforceReturningUsageData = strings.EqualFold(enforceUsage, "true") || enforceUsage == "1"
+	}
+	if usageBufferSize := os.Getenv("USAGE_BUFFER_SIZE"); usageBufferSize != "" {
+		if bufferSize, err := strconv.Atoi(usageBufferSize); err == nil {
+			cfg.Usage.BufferSize = bufferSize
+		}
+	}
+	if usageFlushInterval := os.Getenv("USAGE_FLUSH_INTERVAL"); usageFlushInterval != "" {
+		if flushInterval, err := strconv.Atoi(usageFlushInterval); err == nil {
+			cfg.Usage.FlushInterval = flushInterval
+		}
+	}
+	if usageRetentionDays := os.Getenv("USAGE_RETENTION_DAYS"); usageRetentionDays != "" {
+		if retentionDays, err := strconv.Atoi(usageRetentionDays); err == nil {
+			cfg.Usage.RetentionDays = retentionDays
+		}
 	}
 
 	// Expand provider configurations

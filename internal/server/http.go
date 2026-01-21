@@ -13,6 +13,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/usage"
 )
 
 // Server wraps the Echo server
@@ -23,12 +24,13 @@ type Server struct {
 
 // Config holds server configuration options
 type Config struct {
-	MasterKey                 string                   // Optional: Master key for authentication
-	MetricsEnabled            bool                     // Whether to expose Prometheus metrics endpoint
-	MetricsEndpoint           string                   // HTTP path for metrics endpoint (default: /metrics)
-	BodySizeLimit             string                   // Max request body size (e.g., "10M", "1024K")
-	AuditLogger               auditlog.LoggerInterface // Optional: Audit logger for request/response logging
-	LogOnlyModelInteractions  bool                     // Only log AI model endpoints (default: true)
+	MasterKey                string                   // Optional: Master key for authentication
+	MetricsEnabled           bool                     // Whether to expose Prometheus metrics endpoint
+	MetricsEndpoint          string                   // HTTP path for metrics endpoint (default: /metrics)
+	BodySizeLimit            string                   // Max request body size (e.g., "10M", "1024K")
+	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
+	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
+	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
 }
 
 // New creates a new HTTP server
@@ -36,13 +38,15 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
-	// Get logger from config (may be nil)
-	var logger auditlog.LoggerInterface
+	// Get loggers from config (may be nil)
+	var auditLogger auditlog.LoggerInterface
+	var usageLogger usage.LoggerInterface
 	if cfg != nil {
-		logger = cfg.AuditLogger
+		auditLogger = cfg.AuditLogger
+		usageLogger = cfg.UsageLogger
 	}
 
-	handler := NewHandler(provider, logger)
+	handler := NewHandler(provider, auditLogger, usageLogger)
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}

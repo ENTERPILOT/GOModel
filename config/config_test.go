@@ -400,14 +400,16 @@ func TestSnakeCaseMatchNameWithViper(t *testing.T) {
 			"body_size_limit": "50M",
 		},
 		"logging": map[string]any{
-			"enabled":                  true,
-			"storage_type":             "postgresql",
-			"log_bodies":               false,
-			"log_headers":              true,
-			"buffer_size":              500,
-			"flush_interval":           10,
-			"retention_days":           60,
-			"only_model_interactions":  false,
+			"enabled":                 true,
+			"log_bodies":              false,
+			"log_headers":             true,
+			"buffer_size":             500,
+			"flush_interval":          10,
+			"retention_days":          60,
+			"only_model_interactions": false,
+		},
+		"storage": map[string]any{
+			"type": "postgresql",
 		},
 		"cache": map[string]any{
 			"type": "redis",
@@ -441,12 +443,14 @@ func TestSnakeCaseMatchNameWithViper(t *testing.T) {
 		t.Errorf("expected Server.BodySizeLimit=50M, got %s", cfg.Server.BodySizeLimit)
 	}
 
+	// Verify storage config
+	if cfg.Storage.Type != "postgresql" {
+		t.Errorf("expected Storage.Type=postgresql, got %s", cfg.Storage.Type)
+	}
+
 	// Verify logging config
 	if !cfg.Logging.Enabled {
 		t.Error("expected Logging.Enabled=true")
-	}
-	if cfg.Logging.StorageType != "postgresql" {
-		t.Errorf("expected Logging.StorageType=postgresql, got %s", cfg.Logging.StorageType)
 	}
 	if cfg.Logging.LogBodies {
 		t.Error("expected Logging.LogBodies=false")

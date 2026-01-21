@@ -68,6 +68,11 @@ func (p *Provider) SetBaseURL(url string) {
 func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	// Forward request ID if present in context
+	if requestID := core.GetRequestID(req.Context()); requestID != "" {
+		req.Header.Set("X-Request-Id", requestID)
+	}
 }
 
 // anthropicRequest represents the Anthropic API request format
@@ -124,6 +129,22 @@ type anthropicDelta struct {
 	Type       string `json:"type"`
 	Text       string `json:"text,omitempty"`
 	StopReason string `json:"stop_reason,omitempty"`
+}
+
+// anthropicModelInfo represents a model in Anthropic's models API response
+type anthropicModelInfo struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	CreatedAt   string `json:"created_at"`
+	DisplayName string `json:"display_name"`
+}
+
+// anthropicModelsResponse represents the Anthropic models API response
+type anthropicModelsResponse struct {
+	Data    []anthropicModelInfo `json:"data"`
+	FirstID string               `json:"first_id"`
+	HasMore bool                 `json:"has_more"`
+	LastID  string               `json:"last_id"`
 }
 
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
@@ -356,7 +377,12 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		return ""
 
 	case "message_delta":
-		if event.Delta != nil && event.Delta.StopReason != "" {
+		// Emit chunk if we have stop_reason or usage data
+		if (event.Delta != nil && event.Delta.StopReason != "") || event.Usage != nil {
+			var finishReason interface{}
+			if event.Delta != nil && event.Delta.StopReason != "" {
+				finishReason = event.Delta.StopReason
+			}
 			chunk := map[string]interface{}{
 				"id":       sc.msgID,
 				"object":   "chat.completion.chunk",
@@ -367,9 +393,17 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 					{
 						"index":         0,
 						"delta":         map[string]interface{}{},
-						"finish_reason": event.Delta.StopReason,
+						"finish_reason": finishReason,
 					},
 				},
+			}
+			// Include usage data if present (OpenAI format)
+			if event.Usage != nil {
+				chunk["usage"] = map[string]interface{}{
+					"prompt_tokens":     event.Usage.InputTokens,
+					"completion_tokens": event.Usage.OutputTokens,
+					"total_tokens":      event.Usage.InputTokens + event.Usage.OutputTokens,
+				}
 			}
 			jsonData, err := json.Marshal(chunk)
 			if err != nil {
@@ -386,55 +420,42 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 	return ""
 }
 
-// ListModels retrieves the list of available models from Anthropic
+// ListModels retrieves the list of available models from Anthropic's /v1/models endpoint
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
-	// Anthropic doesn't have a models endpoint, so we return a static list
-	// of commonly available models
-	now := time.Now().Unix()
+	var anthropicResp anthropicModelsResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/models?limit=1000",
+	}, &anthropicResp)
+	if err != nil {
+		return nil, err
+	}
 
-	models := []core.Model{
-		{
-			ID:      "claude-3-5-sonnet-20241022",
+	// Convert to core.Model format
+	models := make([]core.Model, 0, len(anthropicResp.Data))
+	for _, m := range anthropicResp.Data {
+		created := parseCreatedAt(m.CreatedAt)
+		models = append(models, core.Model{
+			ID:      m.ID,
 			Object:  "model",
 			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-3-5-sonnet-20240620",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-3-5-haiku-20241022",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-3-opus-20240229",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-3-sonnet-20240229",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
-		{
-			ID:      "claude-3-haiku-20240307",
-			Object:  "model",
-			OwnedBy: "anthropic",
-			Created: now,
-		},
+			Created: created,
+		})
 	}
 
 	return &core.ModelsResponse{
 		Object: "list",
 		Data:   models,
 	}, nil
+}
+
+// parseCreatedAt parses an RFC3339 timestamp string to Unix timestamp
+func parseCreatedAt(createdAt string) int64 {
+	t, err := time.Parse(time.RFC3339, createdAt)
+	if err != nil {
+		return time.Now().Unix()
+	}
+	return t.Unix()
 }
 
 // convertResponsesRequestToAnthropic converts a ResponsesRequest to Anthropic format
@@ -575,13 +596,14 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 
 // responsesStreamConverter wraps an Anthropic stream and converts it to Responses API format
 type responsesStreamConverter struct {
-	reader     *bufio.Reader
-	body       io.ReadCloser
-	model      string
-	responseID string
-	buffer     []byte
-	closed     bool
-	sentDone   bool
+	reader      *bufio.Reader
+	body        io.ReadCloser
+	model       string
+	responseID  string
+	buffer      []byte
+	closed      bool
+	sentDone    bool
+	cachedUsage *anthropicUsage // Stores usage from message_delta for inclusion in response.done
 }
 
 func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
@@ -614,16 +636,25 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 				// Send final done event and [DONE] message
 				if !sc.sentDone {
 					sc.sentDone = true
+					responseData := map[string]interface{}{
+						"id":         sc.responseID,
+						"object":     "response",
+						"status":     "completed",
+						"model":      sc.model,
+						"provider":   "anthropic",
+						"created_at": time.Now().Unix(),
+					}
+					// Include usage data if captured from message_delta
+					if sc.cachedUsage != nil {
+						responseData["usage"] = map[string]interface{}{
+							"input_tokens":  sc.cachedUsage.InputTokens,
+							"output_tokens": sc.cachedUsage.OutputTokens,
+							"total_tokens":  sc.cachedUsage.InputTokens + sc.cachedUsage.OutputTokens,
+						}
+					}
 					doneEvent := map[string]interface{}{
-						"type": "response.done",
-						"response": map[string]interface{}{
-							"id":         sc.responseID,
-							"object":     "response",
-							"status":     "completed",
-							"model":      sc.model,
-							"provider":   "anthropic",
-							"created_at": time.Now().Unix(),
-						},
+						"type":     "response.done",
+						"response": responseData,
 					}
 					jsonData, marshalErr := json.Marshal(doneEvent)
 					if marshalErr != nil {
@@ -721,6 +752,13 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 			}
 			return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
 		}
+
+	case "message_delta":
+		// Capture usage data for inclusion in response.done
+		if event.Usage != nil {
+			sc.cachedUsage = event.Usage
+		}
+		return ""
 
 	case "message_stop":
 		// Will be handled in Read() when we get EOF

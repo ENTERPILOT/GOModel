@@ -10,6 +10,7 @@ type ResponsesRequest struct {
 	Temperature     *float64          `json:"temperature,omitempty"`
 	MaxOutputTokens *int              `json:"max_output_tokens,omitempty"`
 	Stream          bool              `json:"stream,omitempty"`
+	StreamOptions   *StreamOptions    `json:"stream_options,omitempty"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
 }
 
@@ -24,6 +25,7 @@ func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
 		Temperature:     r.Temperature,
 		MaxOutputTokens: r.MaxOutputTokens,
 		Stream:          true,
+		StreamOptions:   r.StreamOptions,
 		Metadata:        r.Metadata,
 	}
 }
@@ -72,9 +74,10 @@ type ResponsesContentItem struct {
 
 // ResponsesUsage represents token usage for the Responses API.
 type ResponsesUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens  int            `json:"input_tokens"`
+	OutputTokens int            `json:"output_tokens"`
+	TotalTokens  int            `json:"total_tokens"`
+	RawUsage     map[string]any `json:"raw_usage,omitempty"`
 }
 
 // ResponsesError represents an error in the response.
