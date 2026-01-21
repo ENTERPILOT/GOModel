@@ -124,6 +124,41 @@ func TestLoggerClose(t *testing.T) {
 	}
 }
 
+func TestLoggerCloseIdempotent(t *testing.T) {
+	store := &mockStore{}
+	cfg := Config{
+		Enabled:       true,
+		BufferSize:    100,
+		FlushInterval: 1 * time.Hour,
+	}
+
+	logger := NewLogger(store, cfg)
+
+	// Write an entry
+	logger.Write(&UsageEntry{ID: "test-1", RequestID: "req-1"})
+
+	// First close should succeed
+	if err := logger.Close(); err != nil {
+		t.Errorf("first close error: %v", err)
+	}
+
+	// Second close should not panic and should return nil
+	if err := logger.Close(); err != nil {
+		t.Errorf("second close error: %v", err)
+	}
+
+	// Third close for good measure
+	if err := logger.Close(); err != nil {
+		t.Errorf("third close error: %v", err)
+	}
+
+	// Verify entry was flushed only once
+	entries := store.getEntries()
+	if len(entries) != 1 {
+		t.Errorf("expected 1 entry, got %d", len(entries))
+	}
+}
+
 func TestNoopLogger(t *testing.T) {
 	logger := &NoopLogger{}
 
