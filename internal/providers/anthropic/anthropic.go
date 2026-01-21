@@ -68,6 +68,11 @@ func (p *Provider) SetBaseURL(url string) {
 func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("x-api-key", p.apiKey)
 	req.Header.Set("anthropic-version", anthropicAPIVersion)
+
+	// Forward request ID if present in context
+	if requestID := core.GetRequestID(req.Context()); requestID != "" {
+		req.Header.Set("X-Request-Id", requestID)
+	}
 }
 
 // anthropicRequest represents the Anthropic API request format

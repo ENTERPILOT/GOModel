@@ -74,6 +74,11 @@ func (p *Provider) SetBaseURL(url string) {
 // setHeaders sets the required headers for Gemini API requests
 func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	// Forward request ID if present in context (Gemini uses X-Goog-Request-Id)
+	if requestID := core.GetRequestID(req.Context()); requestID != "" {
+		req.Header.Set("X-Goog-Request-Id", requestID)
+	}
 }
 
 // ChatCompletion sends a chat completion request to Gemini

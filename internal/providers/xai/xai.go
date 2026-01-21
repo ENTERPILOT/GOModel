@@ -57,6 +57,11 @@ func (p *Provider) SetBaseURL(url string) {
 // setHeaders sets the required headers for xAI API requests
 func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+p.apiKey)
+
+	// Forward request ID if present in context
+	if requestID := core.GetRequestID(req.Context()); requestID != "" {
+		req.Header.Set("X-Request-ID", requestID)
+	}
 }
 
 // ChatCompletion sends a chat completion request to xAI
