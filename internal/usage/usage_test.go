@@ -64,14 +64,24 @@ func TestLogger(t *testing.T) {
 		})
 	}
 
-	// Wait for flush interval
-	time.Sleep(200 * time.Millisecond)
+	// Poll for entries with timeout
+	timeout := time.After(2 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
 
-	// Check entries were written
-	entries := store.getEntries()
-	if len(entries) != 5 {
-		t.Errorf("expected 5 entries, got %d", len(entries))
+	var entries []*UsageEntry
+	for {
+		select {
+		case <-timeout:
+			t.Fatalf("timeout waiting for entries: expected 5, got %d", len(entries))
+		case <-ticker.C:
+			entries = store.getEntries()
+			if len(entries) == 5 {
+				goto entriesReady
+			}
+		}
 	}
+entriesReady:
 
 	// Close logger
 	if err := logger.Close(); err != nil {
