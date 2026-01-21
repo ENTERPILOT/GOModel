@@ -28,12 +28,25 @@ func ExtractFromChatResponse(resp *core.ChatResponse, requestID, endpoint string
 		TotalTokens:  resp.Usage.TotalTokens,
 	}
 
-	// Preserve raw extended usage data if available
+	// Preserve raw extended usage data if available (defensive copy to avoid races)
 	if len(resp.Usage.RawUsage) > 0 {
-		entry.RawData = resp.Usage.RawUsage
+		entry.RawData = cloneRawData(resp.Usage.RawUsage)
 	}
 
 	return entry
+}
+
+// cloneRawData creates a shallow copy of the raw data map to prevent races
+// when the original map might be mutated after the entry is enqueued.
+func cloneRawData(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
 
 // ExtractFromResponsesResponse extracts usage data from a ResponsesResponse.
@@ -59,9 +72,9 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, endpo
 		entry.OutputTokens = resp.Usage.OutputTokens
 		entry.TotalTokens = resp.Usage.TotalTokens
 
-		// Preserve raw extended usage data if available
+		// Preserve raw extended usage data if available (defensive copy to avoid races)
 		if len(resp.Usage.RawUsage) > 0 {
-			entry.RawData = resp.Usage.RawUsage
+			entry.RawData = cloneRawData(resp.Usage.RawUsage)
 		}
 	}
 
@@ -89,8 +102,9 @@ func ExtractFromSSEUsage(
 		TotalTokens:  totalTokens,
 	}
 
+	// Defensive copy to avoid races when original map might be mutated
 	if len(rawData) > 0 {
-		entry.RawData = rawData
+		entry.RawData = cloneRawData(rawData)
 	}
 
 	return entry
