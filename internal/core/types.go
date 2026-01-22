@@ -8,6 +8,14 @@ type StreamOptions struct {
 	IncludeUsage bool `json:"include_usage,omitempty"`
 }
 
+// Reasoning configures reasoning behavior for models that support extended thinking.
+// This is used with OpenAI's o-series models and other reasoning-capable models.
+type Reasoning struct {
+	// Effort controls how much reasoning effort the model should use.
+	// Valid values are "low", "medium", and "high".
+	Effort string `json:"effort,omitempty"`
+}
+
 // ChatRequest represents the incoming chat completion request
 type ChatRequest struct {
 	Temperature   *float64       `json:"temperature,omitempty"`
@@ -16,6 +24,7 @@ type ChatRequest struct {
 	Messages      []Message      `json:"messages"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
+	Reasoning     *Reasoning     `json:"reasoning,omitempty"`
 }
 
 // WithStreaming returns a shallow copy of the request with Stream set to true.
@@ -28,6 +37,7 @@ func (r *ChatRequest) WithStreaming() *ChatRequest {
 		Messages:      r.Messages,
 		Stream:        true,
 		StreamOptions: r.StreamOptions,
+		Reasoning:     r.Reasoning,
 	}
 }
 
