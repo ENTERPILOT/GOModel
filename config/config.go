@@ -338,6 +338,14 @@ func Load() (*Config, error) {
 				APIKey: apiKey,
 			}
 		}
+		// Ollama (no API key required, enabled via base URL)
+		if baseURL := viper.GetString("OLLAMA_BASE_URL"); baseURL != "" {
+			cfg.Providers["ollama"] = ProviderConfig{
+				Type:    "ollama",
+				APIKey:  "", // Not required
+				BaseURL: baseURL,
+			}
+		}
 	}
 
 	// Validate body size limit if provided
