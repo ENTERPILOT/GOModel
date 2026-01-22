@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy test test-unit test-e2e lint lint-fix
+.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api
 
 # Get version info
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -32,13 +32,34 @@ test:
 test-e2e:
 	go test -v -tags=e2e ./tests/e2e/...
 
-# Run all tests including e2e
-test-all: test test-e2e
+# Run integration tests (requires Docker for testcontainers)
+test-integration:
+	go test -v -tags=integration -timeout=10m ./tests/integration/...
+
+# Run contract tests (validates API response structures against golden files)
+test-contract:
+	go test -v -tags=contract -timeout=5m ./tests/contract/...
+
+# Run all tests including e2e, integration, and contract tests
+test-all: test test-e2e test-integration test-contract
+
+# Record API responses for contract tests
+# Usage: OPENAI_API_KEY=sk-xxx make record-api
+record-api:
+	@echo "Recording OpenAI chat completion..."
+	go run ./cmd/recordapi -provider=openai -endpoint=chat \
+		-output=tests/contract/testdata/openai/chat_completion.json
+	@echo "Recording OpenAI models..."
+	go run ./cmd/recordapi -provider=openai -endpoint=models \
+		-output=tests/contract/testdata/openai/models.json
+	@echo "Done! Golden files saved to tests/contract/testdata/"
 
 # Run linter
 lint:
 	golangci-lint run ./...
 	golangci-lint run --build-tags=e2e ./tests/e2e/...
+	golangci-lint run --build-tags=integration ./tests/integration/...
+	golangci-lint run --build-tags=contract ./tests/contract/...
 
 # Run linter with auto-fix
 lint-fix:

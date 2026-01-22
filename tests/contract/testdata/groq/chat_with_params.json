@@ -1,0 +1,33 @@
+{
+  "id": "chatcmpl-3139ccda-4286-4f93-ad82-179db1171d29",
+  "object": "chat.completion",
+  "created": 1769093869,
+  "model": "llama-3.3-70b-versatile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "1. Earth\n2. Mars\n3. Jupiter"
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "queue_time": 0.04773597,
+    "prompt_tokens": 43,
+    "prompt_time": 0.002208827,
+    "completion_tokens": 12,
+    "completion_time": 0.023626468,
+    "total_tokens": 55,
+    "total_time": 0.025835295
+  },
+  "usage_breakdown": null,
+  "system_fingerprint": "fp_f8b414701e",
+  "x_groq": {
+    "id": "req_01kfk3cbj5epjvc8r2j89nb12x",
+    "seed": 975050826
+  },
+  "service_tier": "on_demand"
+}

@@ -1,0 +1,18 @@
+{
+    "model": "claude-sonnet-4-20250514",
+    "id": "msg_013LBDy1nvGiRgxiRAWseYRS",
+    "type": "message",
+    "role": "assistant",
+    "content": [
+        {
+            "type": "text",
+            "text": "Hello World"
+        }
+    ],
+    "stop_reason": "end_turn",
+    "stop_sequence": null,
+    "usage": {
+        "input_tokens": 14,
+        "output_tokens": 5
+    }
+}

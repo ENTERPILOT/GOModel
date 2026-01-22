@@ -1,0 +1,25 @@
+{
+  "model": "claude-sonnet-4-20250514",
+  "id": "msg_01J9EE5VSWbER7SNDLc82bwt",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "1, 2, "
+    }
+  ],
+  "stop_reason": "stop_sequence",
+  "stop_sequence": "3",
+  "usage": {
+    "input_tokens": 25,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cache_creation": {
+      "ephemeral_5m_input_tokens": 0,
+      "ephemeral_1h_input_tokens": 0
+    },
+    "output_tokens": 8,
+    "service_tier": "standard"
+  }
+}

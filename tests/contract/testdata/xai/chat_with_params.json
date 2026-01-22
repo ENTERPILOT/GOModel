@@ -1,0 +1,38 @@
+{
+  "id": "f3401ad9-5c67-4aed-e412-b0b130412352",
+  "object": "chat.completion",
+  "created": 1769093909,
+  "model": "grok-3-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Mercury, Venus, Earth.",
+        "reasoning_content": "First, the user asked: \"Name 3 planets.\" I need to be concise, as per my system prompt.\n\nPlanets in our solar system include: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune. Pluto is no longer considered a planet.\n\nI should name three planets. To keep it simple, I'll pick the first three: Mercury, Venus, Earth.\n\nMy response should be straightforward and not verbose. So, just list them out.\n\nPossible response: \"1. Mercury, 2. Venus, 3. Earth.\"\n\nOr simply: \"Mercury, Venus, Earth.\"\n\nThat seems concise enough.\n\nIs there any context or specification? The user didn't specify which planets or from which solar system, so assuming our solar system is fine.\n\nEnsure the response is accurate and helpful.\n\nFinal response: Keep it to just the names.",
+        "refusal": null
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 19,
+    "completion_tokens": 6,
+    "total_tokens": 198,
+    "prompt_tokens_details": {
+      "text_tokens": 19,
+      "audio_tokens": 0,
+      "image_tokens": 0,
+      "cached_tokens": 4
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 173,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    },
+    "num_sources_used": 0,
+    "cost_in_usd_ticks": 943000
+  },
+  "system_fingerprint": "fp_2a885414fb"
+}

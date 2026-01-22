@@ -1,0 +1,33 @@
+{
+  "id": "chatcmpl-704f97d8-0ee9-4fa6-b74f-777917cc07d7",
+  "object": "chat.completion",
+  "created": 1769093741,
+  "model": "llama-3.3-70b-versatile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hello World!"
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "queue_time": 0.089910694,
+    "prompt_tokens": 38,
+    "prompt_time": 0.001689387,
+    "completion_tokens": 4,
+    "completion_time": 0.030590271,
+    "total_tokens": 42,
+    "total_time": 0.032279658
+  },
+  "usage_breakdown": null,
+  "system_fingerprint": "fp_c06d5113ec",
+  "x_groq": {
+    "id": "req_01kfk38f6bebmb6c6xstpckt0x",
+    "seed": 874043000
+  },
+  "service_tier": "on_demand"
+}
