@@ -12,6 +12,7 @@ type ResponsesRequest struct {
 	Stream          bool              `json:"stream,omitempty"`
 	StreamOptions   *StreamOptions    `json:"stream_options,omitempty"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
+	Reasoning       *Reasoning        `json:"reasoning,omitempty"`
 }
 
 // WithStreaming returns a shallow copy of the request with Stream set to true.
@@ -27,6 +28,7 @@ func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
 		Stream:          true,
 		StreamOptions:   r.StreamOptions,
 		Metadata:        r.Metadata,
+		Reasoning:       r.Reasoning,
 	}
 }
 
