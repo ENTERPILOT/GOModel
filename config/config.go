@@ -490,6 +490,11 @@ func expandString(s string) string {
 func removeEmptyProviders(cfg Config) Config {
 	filteredProviders := make(map[string]ProviderConfig)
 	for name, pCfg := range cfg.Providers {
+		// Preserve Ollama providers with a non-empty BaseURL (no API key required)
+		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
+			filteredProviders[name] = pCfg
+			continue
+		}
 		// Keep provider only if API key doesn't contain unexpanded placeholders
 		if pCfg.APIKey != "" && !strings.Contains(pCfg.APIKey, "${") {
 			filteredProviders[name] = pCfg
