@@ -11,6 +11,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/cache"
+	"gomodel/internal/core"
 )
 
 // InitResult holds the initialized provider infrastructure and cleanup functions.
@@ -198,6 +199,21 @@ func registerProviders(cfg *config.Config, factory *ProviderFactory, registry *M
 				"error", err)
 			continue
 		}
+
+		// Check availability for providers that support it
+		if checker, ok := p.(core.AvailabilityChecker); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := checker.CheckAvailability(ctx); err != nil {
+				slog.Info("provider not available, skipping",
+					"name", name,
+					"type", pCfg.Type,
+					"reason", err.Error())
+				cancel()
+				continue
+			}
+			cancel()
+		}
+
 		registry.RegisterProviderWithType(p, pCfg.Type)
 		initializedCount++
 		slog.Info("provider initialized", "name", name, "type", pCfg.Type)

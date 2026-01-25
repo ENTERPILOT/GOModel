@@ -18,6 +18,7 @@ import (
 	"gomodel/internal/providers/anthropic"
 	"gomodel/internal/providers/gemini"
 	"gomodel/internal/providers/groq"
+	"gomodel/internal/providers/ollama"
 	"gomodel/internal/providers/openai"
 	"gomodel/internal/providers/xai"
 	"gomodel/internal/version"
@@ -70,6 +71,7 @@ func main() {
 	factory.Register(anthropic.Registration)
 	factory.Register(gemini.Registration)
 	factory.Register(groq.Registration)
+	factory.Register(ollama.Registration)
 	factory.Register(xai.Registration)
 
 	// Create the application

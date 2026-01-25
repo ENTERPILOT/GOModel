@@ -338,6 +338,14 @@ func Load() (*Config, error) {
 				APIKey: apiKey,
 			}
 		}
+		// Ollama (no API key required, enabled via base URL)
+		if baseURL := viper.GetString("OLLAMA_BASE_URL"); baseURL != "" {
+			cfg.Providers["ollama"] = ProviderConfig{
+				Type:    "ollama",
+				APIKey:  "", // Not required
+				BaseURL: baseURL,
+			}
+		}
 	}
 
 	// Validate body size limit if provided
@@ -482,6 +490,11 @@ func expandString(s string) string {
 func removeEmptyProviders(cfg Config) Config {
 	filteredProviders := make(map[string]ProviderConfig)
 	for name, pCfg := range cfg.Providers {
+		// Preserve Ollama providers with a non-empty BaseURL (no API key required)
+		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
+			filteredProviders[name] = pCfg
+			continue
+		}
 		// Keep provider only if API key doesn't contain unexpanded placeholders
 		if pCfg.APIKey != "" && !strings.Contains(pCfg.APIKey, "${") {
 			filteredProviders[name] = pCfg
