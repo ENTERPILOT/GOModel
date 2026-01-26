@@ -170,6 +170,8 @@ func bsonToUsageEntry(t *testing.T, doc bson.M) UsageEntry {
 	}
 	if v, ok := doc["timestamp"].(time.Time); ok {
 		entry.Timestamp = v
+	} else if v, ok := doc["timestamp"].(bson.DateTime); ok {
+		entry.Timestamp = v.Time()
 	}
 	if v, ok := doc["model"].(string); ok {
 		entry.Model = v

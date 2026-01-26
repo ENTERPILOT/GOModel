@@ -122,6 +122,8 @@ func bsonToAuditLogEntry(t *testing.T, doc bson.M) AuditLogEntry {
 	}
 	if v, ok := doc["timestamp"].(time.Time); ok {
 		entry.Timestamp = v
+	} else if v, ok := doc["timestamp"].(bson.DateTime); ok {
+		entry.Timestamp = v.Time()
 	}
 	if v, ok := doc["duration_ns"].(int64); ok {
 		entry.DurationNs = v

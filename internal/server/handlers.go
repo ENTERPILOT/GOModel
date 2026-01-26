@@ -119,7 +119,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 
 	// Track usage if enabled (reuses requestID from context enrichment above)
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
-		usageEntry := usage.ExtractFromChatResponse(resp, requestID, "/v1/chat/completions")
+		usageEntry := usage.ExtractFromChatResponse(resp, requestID, providerType, "/v1/chat/completions")
 		if usageEntry != nil {
 			h.usageLogger.Write(usageEntry)
 		}
@@ -192,7 +192,7 @@ func (h *Handler) Responses(c echo.Context) error {
 
 	// Track usage if enabled (reuses requestID from context enrichment above)
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
-		usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, "/v1/responses")
+		usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, providerType, "/v1/responses")
 		if usageEntry != nil {
 			h.usageLogger.Write(usageEntry)
 		}

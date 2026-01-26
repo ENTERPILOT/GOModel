@@ -47,7 +47,7 @@ func TestUsage_CapturesAllFields_PostgreSQL(t *testing.T) {
 	dbassert.AssertUsageMatches(t, dbassert.ExpectedUsage{
 		Model:     "gpt-4",
 		Provider:  "test",
-		Endpoint:  "chat",
+		Endpoint:  "/v1/chat/completions",
 		RequestID: requestID,
 	}, entry)
 
@@ -91,7 +91,7 @@ func TestUsage_CapturesAllFields_MongoDB(t *testing.T) {
 	dbassert.AssertUsageMatches(t, dbassert.ExpectedUsage{
 		Model:     "gpt-4",
 		Provider:  "test",
-		Endpoint:  "chat",
+		Endpoint:  "/v1/chat/completions",
 		RequestID: requestID,
 	}, entry)
 }
@@ -120,7 +120,8 @@ func TestUsage_ResponsesEndpoint_PostgreSQL(t *testing.T) {
 
 	dbassert.AssertUsageMatches(t, dbassert.ExpectedUsage{
 		Model:     "gpt-4",
-		Endpoint:  "responses",
+		Provider:  "test",
+		Endpoint:  "/v1/responses",
 		RequestID: requestID,
 	}, entries[0])
 }

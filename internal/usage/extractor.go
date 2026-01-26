@@ -10,7 +10,7 @@ import (
 
 // ExtractFromChatResponse extracts usage data from a ChatResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
-func ExtractFromChatResponse(resp *core.ChatResponse, requestID, endpoint string) *UsageEntry {
+func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpoint string) *UsageEntry {
 	if resp == nil {
 		return nil
 	}
@@ -21,7 +21,7 @@ func ExtractFromChatResponse(resp *core.ChatResponse, requestID, endpoint string
 		ProviderID:   resp.ID,
 		Timestamp:    time.Now().UTC(),
 		Model:        resp.Model,
-		Provider:     resp.Provider,
+		Provider:     provider,
 		Endpoint:     endpoint,
 		InputTokens:  resp.Usage.PromptTokens,
 		OutputTokens: resp.Usage.CompletionTokens,
@@ -51,7 +51,7 @@ func cloneRawData(src map[string]any) map[string]any {
 
 // ExtractFromResponsesResponse extracts usage data from a ResponsesResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
-func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, endpoint string) *UsageEntry {
+func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provider, endpoint string) *UsageEntry {
 	if resp == nil {
 		return nil
 	}
@@ -62,7 +62,7 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, endpo
 		ProviderID: resp.ID,
 		Timestamp:  time.Now().UTC(),
 		Model:      resp.Model,
-		Provider:   resp.Provider,
+		Provider:   provider,
 		Endpoint:   endpoint,
 	}
 
