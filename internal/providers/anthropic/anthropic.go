@@ -75,6 +75,12 @@ func (p *Provider) setHeaders(req *http.Request) {
 	}
 }
 
+// anthropicThinking represents the thinking configuration for Anthropic's extended thinking
+type anthropicThinking struct {
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
+}
+
 // anthropicRequest represents the Anthropic API request format
 type anthropicRequest struct {
 	Model       string             `json:"model"`
@@ -83,6 +89,7 @@ type anthropicRequest struct {
 	Temperature *float64           `json:"temperature,omitempty"`
 	System      string             `json:"system,omitempty"`
 	Stream      bool               `json:"stream,omitempty"`
+	Thinking    *anthropicThinking `json:"thinking,omitempty"`
 }
 
 // anthropicMessage represents a message in Anthropic format
@@ -147,6 +154,21 @@ type anthropicModelsResponse struct {
 	LastID  string               `json:"last_id"`
 }
 
+// reasoningEffortToBudgetTokens maps OpenAI reasoning effort levels to Anthropic budget tokens
+func reasoningEffortToBudgetTokens(effort string) int {
+	switch effort {
+	case "low":
+		return 5000
+	case "medium":
+		return 10000
+	case "high":
+		return 20000
+	default:
+		slog.Warn("inappropriate reasoning effort, defaulting to 'low'", "effort", effort)
+		return 5000
+	}
+}
+
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
 func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 	anthropicReq := &anthropicRequest{
@@ -159,6 +181,19 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 
 	if req.MaxTokens != nil {
 		anthropicReq.MaxTokens = *req.MaxTokens
+	}
+
+	// Map reasoning effort to Anthropic extended thinking
+	if req.Reasoning != nil && req.Reasoning.Effort != "" {
+		anthropicReq.Thinking = &anthropicThinking{
+			Type:         "enabled",
+			BudgetTokens: reasoningEffortToBudgetTokens(req.Reasoning.Effort),
+		}
+		// Extended thinking requires temperature to be unset (defaults to 1)
+		if anthropicReq.Temperature != nil {
+			slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
+			anthropicReq.Temperature = nil
+		}
 	}
 
 	// Extract system message if present and convert messages
@@ -470,6 +505,19 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 
 	if req.MaxOutputTokens != nil {
 		anthropicReq.MaxTokens = *req.MaxOutputTokens
+	}
+
+	// Map reasoning effort to Anthropic extended thinking
+	if req.Reasoning != nil && req.Reasoning.Effort != "" {
+		anthropicReq.Thinking = &anthropicThinking{
+			Type:         "enabled",
+			BudgetTokens: reasoningEffortToBudgetTokens(req.Reasoning.Effort),
+		}
+		// Extended thinking requires temperature to be unset (defaults to 1)
+		if anthropicReq.Temperature != nil {
+			slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
+			anthropicReq.Temperature = nil
+		}
 	}
 
 	// Set system instruction if provided

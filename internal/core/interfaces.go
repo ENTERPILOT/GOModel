@@ -38,6 +38,14 @@ type RoutableProvider interface {
 	GetProviderType(model string) string
 }
 
+// AvailabilityChecker is an optional interface for providers that need
+// to verify service availability before registration.
+type AvailabilityChecker interface {
+	// CheckAvailability verifies the provider's backend service is reachable.
+	// Returns nil if available, error otherwise.
+	CheckAvailability(ctx context.Context) error
+}
+
 // ModelLookup defines the interface for looking up models and their providers.
 // This abstraction allows the Router to be decoupled from the concrete ModelRegistry implementation.
 type ModelLookup interface {

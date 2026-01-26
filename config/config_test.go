@@ -86,19 +86,26 @@ func TestLoad_EmptyAPIKey(t *testing.T) {
 	// Reset viper state before test
 	viper.Reset()
 
-	// Clear all API key environment variables
+	// Clear all API key environment variables and Ollama base URL
 	_ = os.Unsetenv("OPENAI_API_KEY")
 	_ = os.Unsetenv("ANTHROPIC_API_KEY")
 	_ = os.Unsetenv("GEMINI_API_KEY")
+	_ = os.Unsetenv("XAI_API_KEY")
+	_ = os.Unsetenv("GROQ_API_KEY")
+	_ = os.Unsetenv("OLLAMA_BASE_URL")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() failed: %v", err)
 	}
 
-	// When no API keys are set, providers map should be empty (no config.yaml)
-	if len(cfg.Providers) != 0 {
-		t.Errorf("expected no providers when no API keys set, got %d providers", len(cfg.Providers))
+	// When no API keys are set, only keyless providers like ollama (with default base_url) should remain
+	// Ollama is preserved because it has a non-empty BaseURL from config.yaml default
+	for name, pCfg := range cfg.Providers {
+		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
+			continue // Ollama with base_url is expected
+		}
+		t.Errorf("unexpected provider %q with empty API key should have been filtered out", name)
 	}
 }
 

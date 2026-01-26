@@ -66,6 +66,12 @@ providers:
     type: "groq"
     api_key: "${GROQ_API_KEY}"
 
+  ollama:
+    type: "ollama"
+    base_url: "${OLLAMA_BASE_URL:-http://localhost:11434/v1}"
+    api_key: "${OLLAMA_API_KEY:-}" # Optional, not required by Ollama
+
+
   # Example: Groq (OpenAI-compatible)
   # groq:
   #   type: "openai"
