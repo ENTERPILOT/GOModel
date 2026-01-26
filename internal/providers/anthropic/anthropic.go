@@ -169,6 +169,14 @@ func reasoningEffortToBudgetTokens(effort string) int {
 	}
 }
 
+// logMaxTokensAdjustment logs when MaxTokens is adjusted to meet Anthropic requirements
+func logMaxTokensAdjustment(original, adjusted int, reason string) {
+	slog.Info("MaxTokens adjusted to meet Anthropic extended thinking requirements",
+		"original", original,
+		"adjusted", adjusted,
+		"reason", reason)
+}
+
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
 func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 	anthropicReq := &anthropicRequest{
@@ -185,9 +193,16 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 
 	// Map reasoning effort to Anthropic extended thinking
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
+		budget := reasoningEffortToBudgetTokens(req.Reasoning.Effort)
 		anthropicReq.Thinking = &anthropicThinking{
 			Type:         "enabled",
-			BudgetTokens: reasoningEffortToBudgetTokens(req.Reasoning.Effort),
+			BudgetTokens: budget,
+		}
+		// Ensure MaxTokens is at least the budget tokens
+		if anthropicReq.MaxTokens < budget {
+			logMaxTokensAdjustment(anthropicReq.MaxTokens, budget,
+				"extended thinking budget_tokens must be <= max_tokens")
+			anthropicReq.MaxTokens = budget
 		}
 		// Extended thinking requires temperature to be unset (defaults to 1)
 		if anthropicReq.Temperature != nil {
@@ -509,9 +524,16 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 
 	// Map reasoning effort to Anthropic extended thinking
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
+		budget := reasoningEffortToBudgetTokens(req.Reasoning.Effort)
 		anthropicReq.Thinking = &anthropicThinking{
 			Type:         "enabled",
-			BudgetTokens: reasoningEffortToBudgetTokens(req.Reasoning.Effort),
+			BudgetTokens: budget,
+		}
+		// Ensure MaxTokens is at least the budget tokens
+		if anthropicReq.MaxTokens < budget {
+			logMaxTokensAdjustment(anthropicReq.MaxTokens, budget,
+				"extended thinking budget_tokens must be <= max_tokens")
+			anthropicReq.MaxTokens = budget
 		}
 		// Extended thinking requires temperature to be unset (defaults to 1)
 		if anthropicReq.Temperature != nil {
