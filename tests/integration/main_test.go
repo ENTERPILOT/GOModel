@@ -42,7 +42,6 @@ var (
 // TestMain sets up and tears down the test containers.
 func TestMain(m *testing.M) {
 	testCtx, cancelFunc = context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancelFunc()
 
 	// Start containers in parallel
 	errCh := make(chan error, 2)
@@ -60,6 +59,7 @@ func TestMain(m *testing.M) {
 		if err := <-errCh; err != nil {
 			log.Printf("Container setup failed: %v", err)
 			cleanup()
+			cancelFunc()
 			os.Exit(1)
 		}
 	}
@@ -71,6 +71,7 @@ func TestMain(m *testing.M) {
 
 	// Cleanup
 	cleanup()
+	cancelFunc()
 	os.Exit(code)
 }
 
