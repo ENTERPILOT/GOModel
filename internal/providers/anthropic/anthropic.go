@@ -169,6 +169,14 @@ func reasoningEffortToBudgetTokens(effort string) int {
 	}
 }
 
+// logMaxTokensAdjustment logs when MaxTokens is adjusted to meet Anthropic requirements
+func logMaxTokensAdjustment(original, adjusted int, reason string) {
+	slog.Info("MaxTokens adjusted to meet Anthropic extended thinking requirements",
+		"original", original,
+		"adjusted", adjusted,
+		"reason", reason)
+}
+
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
 func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 	anthropicReq := &anthropicRequest{
@@ -192,6 +200,8 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 		}
 		// Ensure MaxTokens is at least the budget tokens
 		if anthropicReq.MaxTokens < budget {
+			logMaxTokensAdjustment(anthropicReq.MaxTokens, budget,
+				"extended thinking budget_tokens must be <= max_tokens")
 			anthropicReq.MaxTokens = budget
 		}
 		// Extended thinking requires temperature to be unset (defaults to 1)
@@ -521,6 +531,8 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 		}
 		// Ensure MaxTokens is at least the budget tokens
 		if anthropicReq.MaxTokens < budget {
+			logMaxTokensAdjustment(anthropicReq.MaxTokens, budget,
+				"extended thinking budget_tokens must be <= max_tokens")
 			anthropicReq.MaxTokens = budget
 		}
 		// Extended thinking requires temperature to be unset (defaults to 1)
