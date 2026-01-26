@@ -1192,7 +1192,7 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 
 // TestConvertToAnthropicRequest_ReasoningEffort tests handling of reasoning effort parameter
 func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
-tests := []struct {
+	tests := []struct {
 name                string
 reasoning           *core.Reasoning
 maxTokens           *int
@@ -1319,6 +1319,8 @@ if result.Temperature == nil && tt.expectedTemperature != nil {
 t.Errorf("Temperature should be %v but is nil", *tt.expectedTemperature)
 } else if result.Temperature != nil && tt.expectedTemperature == nil {
 t.Errorf("Temperature should be nil but is %v", *result.Temperature)
+} else if result.Temperature != nil && tt.expectedTemperature != nil && *result.Temperature != *tt.expectedTemperature {
+t.Errorf("Temperature = %v, want %v", *result.Temperature, *tt.expectedTemperature)
 }
 }
 })
@@ -1327,7 +1329,7 @@ t.Errorf("Temperature should be nil but is %v", *result.Temperature)
 
 // TestConvertResponsesRequestToAnthropic_ReasoningEffort tests reasoning in Responses API
 func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
-tests := []struct {
+	tests := []struct {
 name              string
 reasoning         *core.Reasoning
 maxOutputTokens   *int
