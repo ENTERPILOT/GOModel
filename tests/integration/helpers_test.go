@@ -159,3 +159,90 @@ func forwardResponsesRequest(ctx context.Context, client *http.Client, baseURL, 
 
 	return &responsesResp, nil
 }
+
+// forwardStreamingChatRequest forwards a streaming chat request to the upstream server.
+func forwardStreamingChatRequest(ctx context.Context, client *http.Client, baseURL, apiKey string, req *core.ChatRequest) (io.ReadCloser, error) {
+	// Ensure stream is set
+	req.Stream = true
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+chatCompletionsPath, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return resp.Body, nil
+}
+
+// forwardStreamingResponsesRequest forwards a streaming responses request to the upstream server.
+func forwardStreamingResponsesRequest(ctx context.Context, client *http.Client, baseURL, apiKey string, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	// Ensure stream is set
+	req.Stream = true
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+responsesPath, bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status %d: %s", resp.StatusCode, string(respBody))
+	}
+
+	return resp.Body, nil
+}
+
+// newStreamingChatRequest creates a streaming chat request for testing.
+func newStreamingChatRequest(model, content string) core.ChatRequest {
+	return core.ChatRequest{
+		Model:  model,
+		Stream: true,
+		Messages: []core.Message{
+			{
+				Role:    "user",
+				Content: content,
+			},
+		},
+	}
+}
+
+// newStreamingResponsesRequest creates a streaming responses request for testing.
+func newStreamingResponsesRequest(model, content string) core.ResponsesRequest {
+	return core.ResponsesRequest{
+		Model:  model,
+		Stream: true,
+		Input:  content,
+	}
+}

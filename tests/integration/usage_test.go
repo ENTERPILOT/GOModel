@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"io"
 	"testing"
 
 	"github.com/google/uuid"
@@ -247,6 +248,166 @@ func TestUsage_BothAuditAndUsage_PostgreSQL(t *testing.T) {
 
 	usageEntries := dbassert.QueryUsageByRequestID(t, fixture.PgPool, requestID)
 	require.Len(t, usageEntries, 1, "expected usage entry")
+
+	// They should share the same request ID
+	assert.Equal(t, requestID, auditEntries[0].RequestID)
+	assert.Equal(t, requestID, usageEntries[0].RequestID)
+}
+
+func TestUsage_StreamingChatCompletion_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		AuditLogEnabled:       false,
+		UsageEnabled:          true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming request
+	payload := newStreamingChatRequest("gpt-4", "Hello, world!")
+	resp := sendChatRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	// Read and close the stream to ensure it completes
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	// CRITICAL: Flush before querying DB
+	fixture.FlushAndClose(t)
+
+	// Query and assert DB state
+	entries := dbassert.QueryUsageByRequestID(t, fixture.PgPool, requestID)
+	require.Len(t, entries, 1, "expected exactly one usage entry for streaming request")
+
+	entry := entries[0]
+
+	// Assert field completeness
+	dbassert.AssertUsageFieldCompleteness(t, entry)
+
+	// Assert specific values
+	dbassert.AssertUsageMatches(t, dbassert.ExpectedUsage{
+		Model:     "gpt-4",
+		Provider:  "test",
+		Endpoint:  "/v1/chat/completions",
+		RequestID: requestID,
+	}, entry)
+
+	// Assert token counts are populated from streaming response
+	dbassert.AssertUsageHasTokens(t, entry)
+
+	// Verify token values from mock streaming response
+	assert.Equal(t, 10, entry.InputTokens, "input tokens mismatch")
+	assert.Equal(t, 8, entry.OutputTokens, "output tokens mismatch")
+	assert.Equal(t, 18, entry.TotalTokens, "total tokens mismatch")
+}
+
+func TestUsage_StreamingChatCompletion_MongoDB(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "mongodb",
+		AuditLogEnabled:       false,
+		UsageEnabled:          true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming request
+	payload := newStreamingChatRequest("gpt-4", "Hello, world!")
+	resp := sendChatRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	// Read and close the stream
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	fixture.FlushAndClose(t)
+
+	entries := dbassert.QueryUsageByRequestIDMongo(t, fixture.MongoDb, requestID)
+	require.Len(t, entries, 1, "expected exactly one usage entry for streaming request")
+
+	entry := entries[0]
+
+	dbassert.AssertUsageFieldCompleteness(t, entry)
+	dbassert.AssertUsageMatches(t, dbassert.ExpectedUsage{
+		Model:     "gpt-4",
+		Provider:  "test",
+		Endpoint:  "/v1/chat/completions",
+		RequestID: requestID,
+	}, entry)
+}
+
+func TestUsage_StreamingResponses_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		AuditLogEnabled:       false,
+		UsageEnabled:          true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming responses request
+	payload := newStreamingResponsesRequest("gpt-4", "Hello!")
+	resp := sendResponsesRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	// Read and close the stream
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	fixture.FlushAndClose(t)
+
+	entries := dbassert.QueryUsageByRequestID(t, fixture.PgPool, requestID)
+	require.Len(t, entries, 1)
+
+	dbassert.AssertUsageMatches(t, dbassert.ExpectedUsage{
+		Model:     "gpt-4",
+		Provider:  "test",
+		Endpoint:  "/v1/responses",
+		RequestID: requestID,
+	}, entries[0])
+}
+
+func TestUsage_StreamingBothAuditAndUsage_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		AuditLogEnabled:       true,
+		UsageEnabled:          true,
+		LogBodies:             true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming request
+	payload := newStreamingChatRequest("gpt-4", "Hello!")
+	resp := sendChatRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+
+	// Read and close the stream
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	fixture.FlushAndClose(t)
+
+	// Both tables should have entries for streaming request
+	auditEntries := dbassert.QueryAuditLogsByRequestID(t, fixture.PgPool, requestID)
+	require.Len(t, auditEntries, 1, "expected audit log entry for streaming")
+
+	usageEntries := dbassert.QueryUsageByRequestID(t, fixture.PgPool, requestID)
+	require.Len(t, usageEntries, 1, "expected usage entry for streaming")
 
 	// They should share the same request ID
 	assert.Equal(t, requestID, auditEntries[0].RequestID)

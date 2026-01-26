@@ -3,7 +3,9 @@
 package integration
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -263,11 +265,15 @@ type MockLLMServer struct {
 // NewMockLLMServer creates a new mock LLM server.
 func NewMockLLMServer() *MockLLMServer {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Read body for stream detection
+		body, _ := io.ReadAll(r.Body)
+		r.Body = io.NopCloser(bytes.NewReader(body))
+
 		switch r.URL.Path {
 		case "/v1/chat/completions":
-			handleChatCompletion(w, r)
+			handleChatCompletion(w, r, body)
 		case "/v1/responses":
-			handleResponses(w, r)
+			handleResponses(w, r, body)
 		case "/v1/models":
 			handleModels(w)
 		default:
@@ -289,7 +295,17 @@ func (m *MockLLMServer) Close() {
 	m.server.Close()
 }
 
-func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
+func handleChatCompletion(w http.ResponseWriter, _ *http.Request, body []byte) {
+	// Check if streaming is requested
+	var req struct {
+		Stream bool   `json:"stream"`
+		Model  string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err == nil && req.Stream {
+		handleChatCompletionStream(w, req.Model)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
@@ -315,7 +331,71 @@ func handleChatCompletion(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(response))
 }
 
-func handleResponses(w http.ResponseWriter, r *http.Request) {
+func handleChatCompletionStream(w http.ResponseWriter, model string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+
+	if model == "" {
+		model = "gpt-4"
+	}
+
+	// Send content chunks
+	chunks := []string{"Hello", "!", " How", " can", " I", " help", " you", " today", "?"}
+	for i, chunk := range chunks {
+		delta := map[string]interface{}{
+			"id":      "chatcmpl-test-stream",
+			"object":  "chat.completion.chunk",
+			"model":   model,
+			"created": 1700000000,
+			"choices": []map[string]interface{}{
+				{
+					"index": 0,
+					"delta": map[string]interface{}{
+						"content": chunk,
+					},
+					"finish_reason": nil,
+				},
+			},
+		}
+
+		// Last chunk has finish_reason and usage
+		if i == len(chunks)-1 {
+			delta["choices"].([]map[string]interface{})[0]["finish_reason"] = "stop"
+			delta["usage"] = map[string]interface{}{
+				"prompt_tokens":     10,
+				"completion_tokens": 8,
+				"total_tokens":      18,
+			}
+		}
+
+		data, _ := json.Marshal(delta)
+		_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	// Send done marker
+	_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+	flusher.Flush()
+}
+
+func handleResponses(w http.ResponseWriter, _ *http.Request, body []byte) {
+	// Check if streaming is requested
+	var req struct {
+		Stream bool   `json:"stream"`
+		Model  string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &req); err == nil && req.Stream {
+		handleResponsesStream(w, req.Model)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
@@ -340,6 +420,69 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 	}`
 	_, _ = w.Write([]byte(response))
+}
+
+func handleResponsesStream(w http.ResponseWriter, model string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+
+	if model == "" {
+		model = "gpt-4"
+	}
+
+	// Send response.created event
+	createdEvent := map[string]interface{}{
+		"type": "response.created",
+		"response": map[string]interface{}{
+			"id":         "resp-test-stream",
+			"object":     "response",
+			"created_at": 1700000000,
+			"model":      model,
+			"status":     "in_progress",
+		},
+	}
+	data, _ := json.Marshal(createdEvent)
+	_, _ = fmt.Fprintf(w, "event: response.created\ndata: %s\n\n", data)
+	flusher.Flush()
+
+	// Send content delta events
+	chunks := []string{"Hello", "!", " How", " can", " I", " help", " you", "?"}
+	for _, chunk := range chunks {
+		deltaEvent := map[string]interface{}{
+			"type":  "response.output_text.delta",
+			"delta": chunk,
+		}
+		data, _ = json.Marshal(deltaEvent)
+		_, _ = fmt.Fprintf(w, "event: response.output_text.delta\ndata: %s\n\n", data)
+		flusher.Flush()
+	}
+
+	// Send response.done event with usage
+	doneEvent := map[string]interface{}{
+		"type": "response.done",
+		"response": map[string]interface{}{
+			"id":         "resp-test-stream",
+			"object":     "response",
+			"created_at": 1700000000,
+			"model":      model,
+			"status":     "completed",
+			"usage": map[string]interface{}{
+				"input_tokens":  10,
+				"output_tokens": 8,
+				"total_tokens":  18,
+			},
+		},
+	}
+	data, _ = json.Marshal(doneEvent)
+	_, _ = fmt.Fprintf(w, "event: response.done\ndata: %s\n\n", data)
+	flusher.Flush()
 }
 
 func handleModels(w http.ResponseWriter) {
@@ -380,13 +523,7 @@ func (p *TestProvider) ChatCompletion(ctx context.Context, req *core.ChatRequest
 
 // StreamChatCompletion forwards the streaming request to the mock server.
 func (p *TestProvider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	// For simplicity, return non-streaming response wrapped in ReadCloser
-	resp, err := p.ChatCompletion(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	_ = resp // Would need to convert to SSE format for real streaming tests
-	return nil, fmt.Errorf("streaming not implemented in test provider")
+	return forwardStreamingChatRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req)
 }
 
 // ListModels returns a mock list of models.
@@ -408,5 +545,5 @@ func (p *TestProvider) Responses(ctx context.Context, req *core.ResponsesRequest
 
 // StreamResponses forwards the streaming responses API request to the mock server.
 func (p *TestProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
-	return nil, fmt.Errorf("streaming not implemented in test provider")
+	return forwardStreamingResponsesRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req)
 }

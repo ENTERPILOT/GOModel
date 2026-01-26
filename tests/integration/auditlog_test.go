@@ -3,6 +3,7 @@
 package integration
 
 import (
+	"io"
 	"testing"
 
 	"github.com/google/uuid"
@@ -272,4 +273,130 @@ func TestAuditLog_DifferentModels_PostgreSQL(t *testing.T) {
 		require.Len(t, entries, 1, "expected one entry for model %s", model)
 		assert.Equal(t, model, entries[0].Model, "model mismatch for request %s", reqID)
 	}
+}
+
+func TestAuditLog_StreamingChatCompletion_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		AuditLogEnabled:       true,
+		UsageEnabled:          false,
+		LogBodies:             true,
+		LogHeaders:            true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming request
+	payload := newStreamingChatRequest("gpt-4", "Hello, world!")
+	resp := sendChatRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	// Read and close the stream
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	// CRITICAL: Flush before querying DB
+	fixture.FlushAndClose(t)
+
+	// Query and assert DB state
+	entries := dbassert.QueryAuditLogsByRequestID(t, fixture.PgPool, requestID)
+	require.Len(t, entries, 1, "expected exactly one audit log entry for streaming request")
+
+	entry := entries[0]
+
+	// Assert specific values
+	dbassert.AssertAuditLogMatches(t, dbassert.ExpectedAuditLog{
+		Model:      "gpt-4",
+		StatusCode: 200,
+		Method:     "POST",
+		Path:       "/v1/chat/completions",
+		RequestID:  requestID,
+	}, entry)
+
+	// Assert duration is positive
+	dbassert.AssertAuditLogDurationPositive(t, entry)
+}
+
+func TestAuditLog_StreamingChatCompletion_MongoDB(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "mongodb",
+		AuditLogEnabled:       true,
+		UsageEnabled:          false,
+		LogBodies:             true,
+		LogHeaders:            true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming request
+	payload := newStreamingChatRequest("gpt-4", "Hello, world!")
+	resp := sendChatRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	// Read and close the stream
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	// CRITICAL: Flush before querying DB
+	fixture.FlushAndClose(t)
+
+	// Query and assert DB state
+	entries := dbassert.QueryAuditLogsByRequestIDMongo(t, fixture.MongoDb, requestID)
+	require.Len(t, entries, 1, "expected exactly one audit log entry for streaming request")
+
+	entry := entries[0]
+
+	// Assert specific values
+	dbassert.AssertAuditLogMatches(t, dbassert.ExpectedAuditLog{
+		Model:      "gpt-4",
+		StatusCode: 200,
+		Method:     "POST",
+		Path:       "/v1/chat/completions",
+		RequestID:  requestID,
+	}, entry)
+}
+
+func TestAuditLog_StreamingResponses_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		AuditLogEnabled:       true,
+		UsageEnabled:          false,
+		LogBodies:             true,
+		OnlyModelInteractions: false,
+	})
+
+	requestID := uuid.New().String()
+
+	// Make streaming responses request
+	payload := newStreamingResponsesRequest("gpt-4", "Hello!")
+	resp := sendResponsesRequestWithHeaders(t, fixture.ServerURL, payload, map[string]string{
+		"X-Request-ID": requestID,
+	})
+	require.Equal(t, 200, resp.StatusCode)
+	assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+	// Read and close the stream
+	_, _ = io.ReadAll(resp.Body)
+	closeBody(resp)
+
+	fixture.FlushAndClose(t)
+
+	entries := dbassert.QueryAuditLogsByRequestID(t, fixture.PgPool, requestID)
+	require.Len(t, entries, 1)
+
+	dbassert.AssertAuditLogMatches(t, dbassert.ExpectedAuditLog{
+		Model:      "gpt-4",
+		StatusCode: 200,
+		Method:     "POST",
+		Path:       "/v1/responses",
+		RequestID:  requestID,
+	}, entries[0])
 }
