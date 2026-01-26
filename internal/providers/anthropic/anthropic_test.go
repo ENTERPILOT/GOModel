@@ -1189,3 +1189,219 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
 	}
 }
+
+// TestConvertToAnthropicRequest_ReasoningEffort tests handling of reasoning effort parameter
+func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
+	tests := []struct {
+name                string
+reasoning           *core.Reasoning
+maxTokens           *int
+expectedThinking    bool
+expectedBudget      int
+expectedMaxTokens   int
+expectedTemperature *float64
+}{
+{
+name:                "reasoning nil - no thinking enabled",
+reasoning:           nil,
+maxTokens:           intPtr(1000),
+expectedThinking:    false,
+expectedMaxTokens:   1000,
+expectedTemperature: nil,
+},
+{
+name:                "reasoning with empty effort - no thinking enabled",
+reasoning:           &core.Reasoning{Effort: ""},
+maxTokens:           intPtr(1000),
+expectedThinking:    false,
+expectedMaxTokens:   1000,
+expectedTemperature: nil,
+},
+{
+name:                "reasoning with low effort",
+reasoning:           &core.Reasoning{Effort: "low"},
+maxTokens:           intPtr(10000),
+expectedThinking:    true,
+expectedBudget:      5000,
+expectedMaxTokens:   10000,
+expectedTemperature: nil, // Should be unset for reasoning
+},
+{
+name:                "reasoning with medium effort",
+reasoning:           &core.Reasoning{Effort: "medium"},
+maxTokens:           intPtr(15000),
+expectedThinking:    true,
+expectedBudget:      10000,
+expectedMaxTokens:   15000,
+expectedTemperature: nil,
+},
+{
+name:                "reasoning with high effort",
+reasoning:           &core.Reasoning{Effort: "high"},
+maxTokens:           intPtr(25000),
+expectedThinking:    true,
+expectedBudget:      20000,
+expectedMaxTokens:   25000,
+expectedTemperature: nil,
+},
+{
+name:                "reasoning with invalid effort - defaults to low",
+reasoning:           &core.Reasoning{Effort: "invalid"},
+maxTokens:           intPtr(10000),
+expectedThinking:    true,
+expectedBudget:      5000, // Defaults to low
+expectedMaxTokens:   10000,
+expectedTemperature: nil,
+},
+{
+name:                "reasoning bumps up max_tokens when too low",
+reasoning:           &core.Reasoning{Effort: "high"},
+maxTokens:           intPtr(1000), // Lower than budget
+expectedThinking:    true,
+expectedBudget:      20000,
+expectedMaxTokens:   20000, // Should be bumped to budget
+expectedTemperature: nil,
+},
+{
+name:                "reasoning removes temperature when set",
+reasoning:           &core.Reasoning{Effort: "medium"},
+maxTokens:           intPtr(15000),
+expectedThinking:    true,
+expectedBudget:      10000,
+expectedMaxTokens:   15000,
+expectedTemperature: nil, // Should be removed even if originally set
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+req := &core.ChatRequest{
+Model:     "claude-3-5-sonnet-20241022",
+Messages:  []core.Message{{Role: "user", Content: "test"}},
+MaxTokens: tt.maxTokens,
+Reasoning: tt.reasoning,
+}
+
+// Set temperature for the test case about temperature removal
+if tt.name == "reasoning removes temperature when set" {
+temp := 0.7
+req.Temperature = &temp
+}
+
+result := convertToAnthropicRequest(req)
+
+// Check thinking field
+if tt.expectedThinking {
+if result.Thinking == nil {
+t.Error("Thinking should be enabled but is nil")
+} else {
+if result.Thinking.Type != "enabled" {
+t.Errorf("Thinking.Type = %q, want %q", result.Thinking.Type, "enabled")
+}
+if result.Thinking.BudgetTokens != tt.expectedBudget {
+t.Errorf("Thinking.BudgetTokens = %d, want %d", result.Thinking.BudgetTokens, tt.expectedBudget)
+}
+}
+} else {
+if result.Thinking != nil {
+t.Errorf("Thinking should be nil but got %+v", result.Thinking)
+}
+}
+
+// Check max_tokens
+if result.MaxTokens != tt.expectedMaxTokens {
+t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
+}
+
+// Check temperature
+if result.Temperature != tt.expectedTemperature {
+if result.Temperature == nil && tt.expectedTemperature != nil {
+t.Errorf("Temperature should be %v but is nil", *tt.expectedTemperature)
+} else if result.Temperature != nil && tt.expectedTemperature == nil {
+t.Errorf("Temperature should be nil but is %v", *result.Temperature)
+} else if result.Temperature != nil && tt.expectedTemperature != nil && *result.Temperature != *tt.expectedTemperature {
+t.Errorf("Temperature = %v, want %v", *result.Temperature, *tt.expectedTemperature)
+}
+}
+})
+}
+}
+
+// TestConvertResponsesRequestToAnthropic_ReasoningEffort tests reasoning in Responses API
+func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
+	tests := []struct {
+name              string
+reasoning         *core.Reasoning
+maxOutputTokens   *int
+expectedThinking  bool
+expectedBudget    int
+expectedMaxTokens int
+}{
+{
+name:              "no reasoning",
+reasoning:         nil,
+maxOutputTokens:   intPtr(1000),
+expectedThinking:  false,
+expectedMaxTokens: 1000,
+},
+{
+name:              "empty effort",
+reasoning:         &core.Reasoning{Effort: ""},
+maxOutputTokens:   intPtr(1000),
+expectedThinking:  false,
+expectedMaxTokens: 1000,
+},
+{
+name:              "low effort bumps max tokens",
+reasoning:         &core.Reasoning{Effort: "low"},
+maxOutputTokens:   intPtr(1000),
+expectedThinking:  true,
+expectedBudget:    5000,
+expectedMaxTokens: 5000, // Bumped from 1000
+},
+{
+name:              "high effort with sufficient tokens",
+reasoning:         &core.Reasoning{Effort: "high"},
+maxOutputTokens:   intPtr(25000),
+expectedThinking:  true,
+expectedBudget:    20000,
+expectedMaxTokens: 25000,
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+req := &core.ResponsesRequest{
+Model:            "claude-3-5-sonnet-20241022",
+Input:            "test input",
+MaxOutputTokens:  tt.maxOutputTokens,
+Reasoning:        tt.reasoning,
+}
+
+result := convertResponsesRequestToAnthropic(req)
+
+if tt.expectedThinking {
+if result.Thinking == nil {
+t.Error("Thinking should be enabled but is nil")
+} else {
+if result.Thinking.BudgetTokens != tt.expectedBudget {
+t.Errorf("Thinking.BudgetTokens = %d, want %d", result.Thinking.BudgetTokens, tt.expectedBudget)
+}
+}
+} else {
+if result.Thinking != nil {
+t.Errorf("Thinking should be nil but got %+v", result.Thinking)
+}
+}
+
+if result.MaxTokens != tt.expectedMaxTokens {
+t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
+}
+})
+}
+}
+
+// Helper function to create int pointer
+func intPtr(i int) *int {
+return &i
+}
