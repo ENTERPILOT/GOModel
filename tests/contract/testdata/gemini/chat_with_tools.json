@@ -1,0 +1,30 @@
+{
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"location\":\"Tokyo\"}",
+              "name": "get_weather"
+            },
+            "id": "function-call-21392045118397310",
+            "type": "function"
+          }
+        ]
+      }
+    }
+  ],
+  "created": 1769093859,
+  "id": "4zpyaaPLGYXlxN8Pq7jUkQs",
+  "model": "gemini-2.5-flash-preview-09-2025",
+  "object": "chat.completion",
+  "usage": {
+    "completion_tokens": 19,
+    "prompt_tokens": 44,
+    "total_tokens": 63
+  }
+}

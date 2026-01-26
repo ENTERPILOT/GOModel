@@ -26,8 +26,6 @@ import (
 type mockLogStore struct {
 	mu      sync.Mutex
 	entries []*auditlog.LogEntry
-	flushed bool
-	closed  bool
 }
 
 func newMockLogStore() *mockLogStore {
@@ -44,16 +42,10 @@ func (m *mockLogStore) WriteBatch(_ context.Context, entries []*auditlog.LogEntr
 }
 
 func (m *mockLogStore) Flush(_ context.Context) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.flushed = true
 	return nil
 }
 
 func (m *mockLogStore) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.closed = true
 	return nil
 }
 

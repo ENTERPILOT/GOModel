@@ -22,92 +22,17 @@ import (
 
 const testMasterKey = "test-secret-key-12345"
 
-// mockProviderForAuth is a simple mock provider for authentication tests
-type mockProviderForAuth struct {
-	models []core.Model
-}
-
-func (m *mockProviderForAuth) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	return &core.ChatResponse{
-		ID:      "mock-chat-id",
-		Object:  "chat.completion",
-		Created: 1234567890,
-		Model:   req.Model,
-		Choices: []core.Choice{
-			{
-				Index: 0,
-				Message: core.Message{
-					Role:    "assistant",
-					Content: "Mock response",
-				},
-				FinishReason: "stop",
-			},
-		},
-	}, nil
-}
-
-func (m *mockProviderForAuth) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	// Return a simple SSE stream
-	data := `data: {"id":"mock-stream","object":"chat.completion.chunk","created":1234567890,"model":"` + req.Model + `","choices":[{"index":0,"delta":{"content":"test"},"finish_reason":null}]}
-
-data: [DONE]
-`
-	return io.NopCloser(bytes.NewBufferString(data)), nil
-}
-
-func (m *mockProviderForAuth) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
-	return &core.ModelsResponse{
-		Object: "list",
-		Data:   m.models,
-	}, nil
-}
-
-func (m *mockProviderForAuth) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
-	return &core.ResponsesResponse{
-		ID:        "mock-responses-id",
-		Object:    "response",
-		CreatedAt: 1234567890,
-		Model:     req.Model,
-		Status:    "completed",
-		Output: []core.ResponsesOutputItem{
-			{
-				ID:   "msg-1",
-				Type: "message",
-				Role: "assistant",
-				Content: []core.ResponsesContentItem{
-					{
-						Type: "text",
-						Text: "Mock response",
-					},
-				},
-			},
-		},
-	}, nil
-}
-
-func (m *mockProviderForAuth) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
-	// Return a simple SSE stream
-	data := `data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"test"}}
-
-data: [DONE]
-`
-	return io.NopCloser(bytes.NewBufferString(data)), nil
-}
-
-// setupAuthServer creates a new server instance with authentication enabled
+// setupAuthServer creates a new server instance with authentication enabled.
+// Uses TestProvider from main_test.go for model support.
 func setupAuthServer(t *testing.T, masterKey string) *server.Server {
 	t.Helper()
 
-	// Create a mock provider
-	mockProvider := &mockProviderForAuth{
-		models: []core.Model{
-			{ID: "mock-model-1", Object: "model", OwnedBy: "mock"},
-		},
-	}
+	// Create test provider using the shared TestProvider
+	testProvider := NewTestProvider(mockLLMURL, "sk-test-key-12345")
 
 	// Create registry and register mock provider
 	registry := providers.NewModelRegistry()
-	registry.RegisterProvider(mockProvider)
+	registry.RegisterProvider(testProvider)
 
 	// Initialize registry synchronously for tests
 	if err := registry.Initialize(context.Background()); err != nil {
@@ -225,7 +150,7 @@ func TestAuthenticationE2E(t *testing.T) {
 			method:     http.MethodPost,
 			authHeader: "Bearer " + testMasterKey,
 			body: map[string]interface{}{
-				"model": "mock-model-1",
+				"model": "gpt-4",
 				"messages": []map[string]string{
 					{"role": "user", "content": "Hello"},
 				},
@@ -244,7 +169,7 @@ func TestAuthenticationE2E(t *testing.T) {
 			method:     http.MethodPost,
 			authHeader: "",
 			body: map[string]interface{}{
-				"model": "mock-model-1",
+				"model": "gpt-4",
 				"messages": []map[string]string{
 					{"role": "user", "content": "Hello"},
 				},
@@ -263,7 +188,7 @@ func TestAuthenticationE2E(t *testing.T) {
 			method:     http.MethodPost,
 			authHeader: "Bearer " + testMasterKey,
 			body: map[string]interface{}{
-				"model": "mock-model-1",
+				"model": "gpt-4",
 				"input": "Hello",
 			},
 			expectedStatus: http.StatusOK,
@@ -279,7 +204,7 @@ func TestAuthenticationE2E(t *testing.T) {
 			method:     http.MethodPost,
 			authHeader: "",
 			body: map[string]interface{}{
-				"model": "mock-model-1",
+				"model": "gpt-4",
 				"input": "Hello",
 			},
 			expectedStatus: http.StatusUnauthorized,
@@ -314,7 +239,7 @@ func TestAuthenticationE2E(t *testing.T) {
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer closeBody(resp)
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 
@@ -375,7 +300,7 @@ func TestAuthenticationDisabled(t *testing.T) {
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer closeBody(resp)
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 		})
@@ -389,7 +314,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 	t.Run("streaming chat completion with valid auth", func(t *testing.T) {
 		reqBody := map[string]interface{}{
-			"model":  "mock-model-1",
+			"model":  "gpt-4",
 			"stream": true,
 			"messages": []map[string]string{
 				{"role": "user", "content": "Hello"},
@@ -406,7 +331,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer closeBody(resp)
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
@@ -414,7 +339,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 	t.Run("streaming chat completion without auth", func(t *testing.T) {
 		reqBody := map[string]interface{}{
-			"model":  "mock-model-1",
+			"model":  "gpt-4",
 			"stream": true,
 			"messages": []map[string]string{
 				{"role": "user", "content": "Hello"},
@@ -430,7 +355,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer closeBody(resp)
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
@@ -444,7 +369,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 	t.Run("streaming responses with valid auth", func(t *testing.T) {
 		reqBody := map[string]interface{}{
-			"model":  "mock-model-1",
+			"model":  "gpt-4",
 			"stream": true,
 			"input":  "Hello",
 		}
@@ -459,7 +384,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer closeBody(resp)
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
@@ -467,7 +392,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 	t.Run("streaming responses without auth", func(t *testing.T) {
 		reqBody := map[string]interface{}{
-			"model":  "mock-model-1",
+			"model":  "gpt-4",
 			"stream": true,
 			"input":  "Hello",
 		}
@@ -481,7 +406,7 @@ func TestAuthenticationStreamingEndpoints(t *testing.T) {
 
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer closeBody(resp)
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 
@@ -536,7 +461,7 @@ func TestAuthenticationCaseSensitivity(t *testing.T) {
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer closeBody(resp)
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 		})
@@ -574,7 +499,7 @@ func TestAuthenticationWithSpecialCharacters(t *testing.T) {
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer closeBody(resp)
 
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -585,7 +510,7 @@ func TestAuthenticationWithSpecialCharacters(t *testing.T) {
 
 			resp, err = http.DefaultClient.Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer closeBody(resp)
 
 			assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 		})
@@ -649,7 +574,7 @@ func TestAuthenticationBearerPrefixVariations(t *testing.T) {
 
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer closeBody(resp)
 
 			assert.Equal(t, tt.expectedStatus, resp.StatusCode)
 		})

@@ -1,0 +1,42 @@
+{
+  "id": "chatcmpl-090b9776-6a9d-4ed8-8f75-8bf03dd0e90d",
+  "object": "chat.completion",
+  "created": 1769093871,
+  "model": "llama-3.3-70b-versatile",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "id": "2zvvry1t5",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"location\":\"London\"}"
+            }
+          }
+        ]
+      },
+      "logprobs": null,
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "queue_time": 0.092826763,
+    "prompt_tokens": 203,
+    "prompt_time": 0.019662953,
+    "completion_tokens": 14,
+    "completion_time": 0.055257456,
+    "total_tokens": 217,
+    "total_time": 0.074920409
+  },
+  "usage_breakdown": null,
+  "system_fingerprint": "fp_dae98b5ecb",
+  "x_groq": {
+    "id": "req_01kfk3cdtxfns85rqz3a5afpk9",
+    "seed": 1450173236
+  },
+  "service_tier": "on_demand"
+}

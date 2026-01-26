@@ -1,0 +1,36 @@
+{
+  "id": "chatcmpl-D0qUlBEghKIASKSVRE4fnjs5QUDGF",
+  "object": "chat.completion",
+  "created": 1769094163,
+  "model": "gpt-4o-mini-2024-07-18",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The image includes the following colors:\n\n- Blue\n- Red\n- Yellow\n- Green\n\nThese colors are combined in the logo design.",
+        "refusal": null,
+        "annotations": []
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 14183,
+    "completion_tokens": 28,
+    "total_tokens": 14211,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "service_tier": "default",
+  "system_fingerprint": "fp_8bbc38b4db"
+}

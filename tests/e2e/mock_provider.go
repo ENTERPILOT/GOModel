@@ -414,60 +414,6 @@ func (m *MockLLMServer) Close() {
 	m.server.Close()
 }
 
-// SetResponseDelay sets a delay before responding.
-func (m *MockLLMServer) SetResponseDelay(d time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.responseDelay = d
-}
-
-// SetCustomHandler sets a custom handler for specific test cases.
-func (m *MockLLMServer) SetCustomHandler(handler func(w http.ResponseWriter, r *http.Request) bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.customHandler = handler
-}
-
-// ClearCustomHandler removes the custom handler.
-func (m *MockLLMServer) ClearCustomHandler() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.customHandler = nil
-}
-
-// FailNextRequest causes the next request to fail with the given status code.
-func (m *MockLLMServer) FailNextRequest(statusCode int, message string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.failNext = true
-	m.failWithCode = statusCode
-	m.failMessage = message
-}
-
-// GetRequests returns all recorded requests.
-func (m *MockLLMServer) GetRequests() []RecordedRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return append([]RecordedRequest{}, m.requests...)
-}
-
-// ClearRequests clears all recorded requests.
-func (m *MockLLMServer) ClearRequests() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.requests = make([]RecordedRequest, 0)
-}
-
-// LastRequest returns the most recent recorded request.
-func (m *MockLLMServer) LastRequest() *RecordedRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if len(m.requests) == 0 {
-		return nil
-	}
-	return &m.requests[len(m.requests)-1]
-}
-
 // forwardChatRequest forwards a chat request to the mock server.
 func forwardChatRequest(ctx context.Context, client *http.Client, baseURL, apiKey string, req *core.ChatRequest, stream bool) (*core.ChatResponse, error) {
 	req.Stream = stream

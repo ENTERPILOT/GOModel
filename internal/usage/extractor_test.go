@@ -11,6 +11,7 @@ func TestExtractFromChatResponse(t *testing.T) {
 		name         string
 		resp         *core.ChatResponse
 		requestID    string
+		provider     string
 		endpoint     string
 		wantNil      bool
 		wantInput    int
@@ -21,16 +22,16 @@ func TestExtractFromChatResponse(t *testing.T) {
 		wantModel    string
 	}{
 		{
-			name:    "nil response",
-			resp:    nil,
-			wantNil: true,
+			name:     "nil response",
+			resp:     nil,
+			provider: "openai",
+			wantNil:  true,
 		},
 		{
 			name: "basic response",
 			resp: &core.ChatResponse{
-				ID:       "chatcmpl-123",
-				Model:    "gpt-4",
-				Provider: "openai",
+				ID:    "chatcmpl-123",
+				Model: "gpt-4",
 				Usage: core.Usage{
 					PromptTokens:     100,
 					CompletionTokens: 50,
@@ -38,6 +39,7 @@ func TestExtractFromChatResponse(t *testing.T) {
 				},
 			},
 			requestID:    "req-123",
+			provider:     "openai",
 			endpoint:     "/v1/chat/completions",
 			wantInput:    100,
 			wantOutput:   50,
@@ -48,9 +50,8 @@ func TestExtractFromChatResponse(t *testing.T) {
 		{
 			name: "response with raw usage",
 			resp: &core.ChatResponse{
-				ID:       "chatcmpl-456",
-				Model:    "gpt-4o",
-				Provider: "openai",
+				ID:    "chatcmpl-456",
+				Model: "gpt-4o",
 				Usage: core.Usage{
 					PromptTokens:     200,
 					CompletionTokens: 100,
@@ -62,6 +63,7 @@ func TestExtractFromChatResponse(t *testing.T) {
 				},
 			},
 			requestID:    "req-456",
+			provider:     "openai",
 			endpoint:     "/v1/chat/completions",
 			wantInput:    200,
 			wantOutput:   100,
@@ -74,7 +76,7 @@ func TestExtractFromChatResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			entry := ExtractFromChatResponse(tt.resp, tt.requestID, tt.endpoint)
+			entry := ExtractFromChatResponse(tt.resp, tt.requestID, tt.provider, tt.endpoint)
 
 			if tt.wantNil {
 				if entry != nil {
@@ -123,6 +125,7 @@ func TestExtractFromResponsesResponse(t *testing.T) {
 		name       string
 		resp       *core.ResponsesResponse
 		requestID  string
+		provider   string
 		endpoint   string
 		wantNil    bool
 		wantInput  int
@@ -130,19 +133,20 @@ func TestExtractFromResponsesResponse(t *testing.T) {
 		wantTotal  int
 	}{
 		{
-			name:    "nil response",
-			resp:    nil,
-			wantNil: true,
+			name:     "nil response",
+			resp:     nil,
+			provider: "openai",
+			wantNil:  true,
 		},
 		{
 			name: "response with nil usage",
 			resp: &core.ResponsesResponse{
-				ID:       "resp-123",
-				Model:    "gpt-4",
-				Provider: "openai",
-				Usage:    nil,
+				ID:    "resp-123",
+				Model: "gpt-4",
+				Usage: nil,
 			},
 			requestID:  "req-123",
+			provider:   "openai",
 			endpoint:   "/v1/responses",
 			wantInput:  0,
 			wantOutput: 0,
@@ -151,9 +155,8 @@ func TestExtractFromResponsesResponse(t *testing.T) {
 		{
 			name: "response with usage",
 			resp: &core.ResponsesResponse{
-				ID:       "resp-456",
-				Model:    "gpt-4",
-				Provider: "openai",
+				ID:    "resp-456",
+				Model: "gpt-4",
 				Usage: &core.ResponsesUsage{
 					InputTokens:  100,
 					OutputTokens: 50,
@@ -161,6 +164,7 @@ func TestExtractFromResponsesResponse(t *testing.T) {
 				},
 			},
 			requestID:  "req-456",
+			provider:   "openai",
 			endpoint:   "/v1/responses",
 			wantInput:  100,
 			wantOutput: 50,
@@ -170,7 +174,7 @@ func TestExtractFromResponsesResponse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			entry := ExtractFromResponsesResponse(tt.resp, tt.requestID, tt.endpoint)
+			entry := ExtractFromResponsesResponse(tt.resp, tt.requestID, tt.provider, tt.endpoint)
 
 			if tt.wantNil {
 				if entry != nil {

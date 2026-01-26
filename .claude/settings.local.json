@@ -14,7 +14,10 @@
       "Bash(grep:*)",
       "WebFetch(domain:docs.github.com)",
       "WebFetch(domain:docs.docker.com)",
-      "WebFetch(domain:docs.anthropic.com)"
+      "WebFetch(domain:docs.anthropic.com)",
+      "mcp__linear-server__list_projects",
+      "mcp__linear-server__list_issues",
+      "mcp__linear-server__get_issue"
     ],
     "deny": [],
     "ask": []
