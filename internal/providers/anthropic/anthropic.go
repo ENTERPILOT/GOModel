@@ -77,8 +77,8 @@ func (p *Provider) setHeaders(req *http.Request) {
 
 // anthropicThinking represents the thinking configuration for Anthropic's extended thinking
 type anthropicThinking struct {
-	Type        string `json:"type"`
-	BudgetTokens int   `json:"budget_tokens"`
+	Type         string `json:"type"`
+	BudgetTokens int    `json:"budget_tokens"`
 }
 
 // anthropicRequest represents the Anthropic API request format
@@ -164,7 +164,8 @@ func reasoningEffortToBudgetTokens(effort string) int {
 	case "high":
 		return 20000
 	default:
-		return 10000 // Default to medium
+		slog.Warn("inappropriate reasoning effort, defaulting to 'low'", "effort", effort)
+		return 5000
 	}
 }
 
@@ -189,7 +190,10 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 			BudgetTokens: reasoningEffortToBudgetTokens(req.Reasoning.Effort),
 		}
 		// Extended thinking requires temperature to be unset (defaults to 1)
-		anthropicReq.Temperature = nil
+		if anthropicReq.Temperature != nil {
+			slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
+			anthropicReq.Temperature = nil
+		}
 	}
 
 	// Extract system message if present and convert messages
@@ -510,7 +514,10 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 			BudgetTokens: reasoningEffortToBudgetTokens(req.Reasoning.Effort),
 		}
 		// Extended thinking requires temperature to be unset (defaults to 1)
-		anthropicReq.Temperature = nil
+		if anthropicReq.Temperature != nil {
+			slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
+			anthropicReq.Temperature = nil
+		}
 	}
 
 	// Set system instruction if provided
