@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -78,7 +79,7 @@ func TestGemini_ModelsResponse_Contract(t *testing.T) {
 	// At least one Gemini model should exist
 	hasGemini := false
 	for id := range modelIDs {
-		if containsIgnorePrefix(id, "gemini") {
+		if hasPrefixIgnoreModels(id, "gemini") {
 			hasGemini = true
 			break
 		}
@@ -139,11 +140,8 @@ func TestGemini_ChatWithTools(t *testing.T) {
 	})
 }
 
-// containsIgnorePrefix checks if a string contains a substring, ignoring "models/" prefix
-func containsIgnorePrefix(s, substr string) bool {
-	// Strip common prefixes
-	if len(s) > 7 && s[:7] == "models/" {
-		s = s[7:]
-	}
-	return len(s) >= len(substr) && s[:len(substr)] == substr
+// hasPrefixIgnoreModels checks if a string has a given prefix, after stripping "models/" prefix
+func hasPrefixIgnoreModels(s, prefix string) bool {
+	s = strings.TrimPrefix(s, "models/")
+	return strings.HasPrefix(s, prefix)
 }
