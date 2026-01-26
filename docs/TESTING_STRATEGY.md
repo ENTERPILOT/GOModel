@@ -2,7 +2,7 @@
 
 A 3-layer testing strategy with **DB state verification** as the highest priority:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 3: Contract Tests (Provider API Compatibility)       │
 │  - Golden files with real API responses                     │
@@ -72,6 +72,7 @@ go test -v -tags=e2e ./tests/e2e/... -run TestName
 ```
 
 **Key characteristics:**
+
 - Tests full request flow through the gateway
 - Uses mock providers (no real API calls)
 - Validates routing, transformation, and response handling
@@ -87,12 +88,14 @@ go test -v -tags=integration ./tests/integration/...
 ```
 
 **Key characteristics:**
+
 - Real PostgreSQL/MongoDB via testcontainers
 - Verify DB state after each request
 - Field completeness assertions
 - Validates audit logging, usage tracking
 
 **Focus areas:**
+
 - Audit log entries are complete and accurate
 - Usage metrics are properly recorded
 - Request/response pairs are correctly stored
@@ -111,6 +114,7 @@ go test -v -tags=contract ./tests/contract/... -run TestOpenAI
 ```
 
 **Key characteristics:**
+
 - Golden files contain real API responses (recorded manually)
 - Tests validate response structure, not content
 - No network calls during test execution
@@ -118,13 +122,13 @@ go test -v -tags=contract ./tests/contract/... -run TestOpenAI
 
 ### Supported Providers
 
-| Provider | Endpoint | Features Tested |
-|----------|----------|-----------------|
-| OpenAI | api.openai.com | Chat, streaming, models, tools, JSON mode, multimodal, reasoning |
-| Anthropic | api.anthropic.com | Messages, streaming, tools, extended thinking, multimodal |
-| Gemini | generativelanguage.googleapis.com | Chat, streaming, models, tools (OpenAI-compatible) |
-| xAI | api.x.ai | Chat, streaming, models (OpenAI-compatible) |
-| Groq | api.groq.com | Chat, streaming, models, tools (OpenAI-compatible) |
+| Provider  | Endpoint                          | Features Tested                                                  |
+| --------- | --------------------------------- | ---------------------------------------------------------------- |
+| OpenAI    | api.openai.com                    | Chat, streaming, models, tools, JSON mode, multimodal, reasoning |
+| Anthropic | api.anthropic.com                 | Messages, streaming, tools, extended thinking, multimodal        |
+| Gemini    | generativelanguage.googleapis.com | Chat, streaming, models, tools (OpenAI-compatible)               |
+| xAI       | api.x.ai                          | Chat, streaming, models (OpenAI-compatible)                      |
+| Groq      | api.groq.com                      | Chat, streaming, models, tools (OpenAI-compatible)               |
 
 ### Golden File Structure
 
@@ -187,14 +191,14 @@ make lint && make test-all
 
 ## Test Commands Reference
 
-| Command | Description |
-|---------|-------------|
-| `make test` | Unit tests only |
-| `make test-e2e` | E2E tests with mock providers |
-| `make test-all` | Unit + E2E tests |
-| `go test -tags=contract ./tests/contract/...` | Contract tests |
-| `go test -tags=integration ./tests/integration/...` | Integration tests |
-| `make lint` | Run golangci-lint |
+| Command                                             | Description                   |
+| --------------------------------------------------- | ----------------------------- |
+| `make test`                                         | Unit tests only               |
+| `make test-e2e`                                     | E2E tests with mock providers |
+| `make test-all`                                     | Unit + E2E tests              |
+| `go test -tags=contract ./tests/contract/...`       | Contract tests                |
+| `go test -tags=integration ./tests/integration/...` | Integration tests             |
+| `make lint`                                         | Run golangci-lint             |
 
 ## CI/CD Integration
 
@@ -207,7 +211,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: "1.24"
 
       # Unit + E2E (no external dependencies)
       - run: make test-all

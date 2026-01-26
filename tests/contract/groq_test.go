@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -79,7 +80,7 @@ func TestGroq_ModelsResponse_Contract(t *testing.T) {
 	// At least one Llama model should exist
 	hasLlama := false
 	for id := range modelIDs {
-		if len(id) >= 5 && id[:5] == "llama" {
+		if strings.HasPrefix(id, "llama") {
 			hasLlama = true
 			break
 		}

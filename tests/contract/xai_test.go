@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,7 +75,7 @@ func TestXAI_ModelsResponse_Contract(t *testing.T) {
 	// At least one Grok model should exist
 	hasGrok := false
 	for id := range modelIDs {
-		if len(id) >= 4 && id[:4] == "grok" {
+		if strings.HasPrefix(id, "grok") {
 			hasGrok = true
 			break
 		}

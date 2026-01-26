@@ -4,7 +4,7 @@ Contract tests validate API response structures against recorded golden files. T
 
 ## Golden Files Structure
 
-```
+```text
 testdata/
 ├── openai/
 │   ├── chat_completion.json           # Basic chat completion
@@ -393,27 +393,27 @@ curl https://api.groq.com/openai/v1/chat/completions \
 
 ## Models Used
 
-| Provider | Model | Notes |
-|----------|-------|-------|
-| OpenAI | gpt-4o-mini | Standard chat model |
-| OpenAI | o3-mini | Reasoning model with thinking tokens |
-| Anthropic | claude-sonnet-4-20250514 | Latest Claude model |
-| Gemini | gemini-2.5-flash-preview-09-2025 | Preview flash model |
-| xAI | grok-3-mini | Latest Grok model |
-| Groq | llama-3.3-70b-versatile | Fast inference Llama model |
+| Provider  | Model                            | Notes                                |
+| --------- | -------------------------------- | ------------------------------------ |
+| OpenAI    | gpt-4o-mini                      | Standard chat model                  |
+| OpenAI    | o3-mini                          | Reasoning model with thinking tokens |
+| Anthropic | claude-sonnet-4-20250514         | Latest Claude model                  |
+| Gemini    | gemini-2.5-flash-preview-09-2025 | Preview flash model                  |
+| xAI       | grok-3-mini                      | Latest Grok model                    |
+| Groq      | llama-3.3-70b-versatile          | Fast inference Llama model           |
 
 ## Test Coverage
 
-| Feature | OpenAI | Anthropic | Gemini | xAI | Groq |
-|---------|--------|-----------|--------|-----|------|
-| Basic chat | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Streaming | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Models list | ✅ | - | ✅ | ✅ | ✅ |
-| Tool calling | ✅ | ✅ | ✅ | - | ✅ |
-| System prompt | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Temperature | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Stop sequences | ✅ | ✅ | - | - | - |
-| Multi-turn | ✅ | ✅ | - | - | - |
-| Multimodal | ✅ | ✅ | - | - | - |
-| JSON mode | ✅ | - | - | - | - |
-| Reasoning | ✅ | ✅ | - | - | - |
+| Feature        | OpenAI | Anthropic | Gemini | xAI | Groq |
+| -------------- | ------ | --------- | ------ | --- | ---- |
+| Basic chat     | ✅     | ✅        | ✅     | ✅  | ✅   |
+| Streaming      | ✅     | ✅        | ✅     | ✅  | ✅   |
+| Models list    | ✅     | -         | ✅     | ✅  | ✅   |
+| Tool calling   | ✅     | ✅        | ✅     | -   | ✅   |
+| System prompt  | ✅     | ✅        | ✅     | ✅  | ✅   |
+| Temperature    | ✅     | ✅        | ✅     | ✅  | ✅   |
+| Stop sequences | ✅     | ✅        | -      | -   | -    |
+| Multi-turn     | ✅     | ✅        | -      | -   | -    |
+| Multimodal     | ✅     | ✅        | -      | -   | -    |
+| JSON mode      | ✅     | -         | -      | -   | -    |
+| Reasoning      | ✅     | ✅        | -      | -   | -    |
