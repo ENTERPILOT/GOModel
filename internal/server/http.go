@@ -13,6 +13,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/guardrails"
 	"gomodel/internal/usage"
 )
 
@@ -31,6 +32,7 @@ type Config struct {
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
+	Guardrails               *guardrails.Processor    // Optional: Guardrails processor for request preprocessing
 }
 
 // New creates a new HTTP server
@@ -38,15 +40,17 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
 
-	// Get loggers from config (may be nil)
+	// Get loggers and guardrails from config (may be nil)
 	var auditLogger auditlog.LoggerInterface
 	var usageLogger usage.LoggerInterface
+	var guardrailsProcessor *guardrails.Processor
 	if cfg != nil {
 		auditLogger = cfg.AuditLogger
 		usageLogger = cfg.UsageLogger
+		guardrailsProcessor = cfg.Guardrails
 	}
 
-	handler := NewHandler(provider, auditLogger, usageLogger)
+	handler := NewHandler(provider, auditLogger, usageLogger, guardrailsProcessor)
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}

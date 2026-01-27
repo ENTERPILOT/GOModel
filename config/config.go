@@ -25,13 +25,74 @@ var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration
 type Config struct {
-	Server    ServerConfig
-	Cache     CacheConfig
-	Storage   StorageConfig
-	Logging   LogConfig
-	Usage     UsageConfig
-	Metrics   MetricsConfig
-	Providers map[string]ProviderConfig
+	Server     ServerConfig
+	Cache      CacheConfig
+	Storage    StorageConfig
+	Logging    LogConfig
+	Usage      UsageConfig
+	Metrics    MetricsConfig
+	Guardrails GuardrailsConfig
+	Providers  map[string]ProviderConfig
+}
+
+// GuardrailsConfig holds guardrails configuration for request preprocessing.
+type GuardrailsConfig struct {
+	SystemPrompt  SystemPromptConfig  `mapstructure:"system_prompt"`
+	Anonymization AnonymizationConfig `mapstructure:"anonymization"`
+}
+
+// SystemPromptConfig configures system prompt injection behavior.
+type SystemPromptConfig struct {
+	// Enabled controls whether system prompt injection is active.
+	Enabled bool `mapstructure:"enabled"`
+
+	// Global defines the default system prompt applied to all requests.
+	Global *SystemPromptRule `mapstructure:"global"`
+
+	// Models defines model-specific system prompt rules (highest precedence).
+	Models map[string]SystemPromptRule `mapstructure:"models"`
+
+	// Providers defines provider-specific system prompt rules.
+	Providers map[string]SystemPromptRule `mapstructure:"providers"`
+}
+
+// SystemPromptRule defines how to inject a system prompt.
+type SystemPromptRule struct {
+	// Prompt is the system prompt text to inject.
+	Prompt string `mapstructure:"prompt"`
+
+	// Position specifies where to inject the prompt: "prepend", "append", or "replace".
+	Position string `mapstructure:"position"`
+
+	// PreserveUserSystem controls whether to keep the user's existing system message.
+	PreserveUserSystem bool `mapstructure:"preserve_user_system"`
+}
+
+// AnonymizationConfig configures PII detection and anonymization.
+type AnonymizationConfig struct {
+	// Enabled controls whether anonymization is active.
+	Enabled bool `mapstructure:"enabled"`
+
+	// Models is a whitelist of model names that require anonymization.
+	Models []string `mapstructure:"models"`
+
+	// Detectors controls which PII types to detect.
+	Detectors DetectorConfig `mapstructure:"detectors"`
+
+	// Strategy defines how to anonymize detected PII: "token", "hash", or "mask".
+	Strategy string `mapstructure:"strategy"`
+
+	// DeanonymizeResponses controls whether to restore original values in responses.
+	DeanonymizeResponses bool `mapstructure:"deanonymize_responses"`
+}
+
+// DetectorConfig controls which PII detectors are enabled.
+type DetectorConfig struct {
+	Email      bool `mapstructure:"email"`
+	Phone      bool `mapstructure:"phone"`
+	SSN        bool `mapstructure:"ssn"`
+	CreditCard bool `mapstructure:"credit_card"`
+	IPAddress  bool `mapstructure:"ip_address"`
 }
 
 // LogConfig holds audit logging configuration
@@ -240,6 +301,17 @@ func Load() (*Config, error) {
 	viper.SetDefault("usage.flush_interval", 5)
 	viper.SetDefault("usage.retention_days", 90)
 
+	// Guardrails defaults
+	viper.SetDefault("guardrails.system_prompt.enabled", false)
+	viper.SetDefault("guardrails.anonymization.enabled", false)
+	viper.SetDefault("guardrails.anonymization.strategy", "token")
+	viper.SetDefault("guardrails.anonymization.deanonymize_responses", true)
+	viper.SetDefault("guardrails.anonymization.detectors.email", true)
+	viper.SetDefault("guardrails.anonymization.detectors.phone", true)
+	viper.SetDefault("guardrails.anonymization.detectors.ssn", true)
+	viper.SetDefault("guardrails.anonymization.detectors.credit_card", true)
+	viper.SetDefault("guardrails.anonymization.detectors.ip_address", true)
+
 	// Enable automatic environment variable reading
 	viper.AutomaticEnv()
 
@@ -302,6 +374,25 @@ func Load() (*Config, error) {
 			Metrics: MetricsConfig{
 				Enabled:  viper.GetBool("METRICS_ENABLED"),
 				Endpoint: viper.GetString("METRICS_ENDPOINT"),
+			},
+			Guardrails: GuardrailsConfig{
+				SystemPrompt: SystemPromptConfig{
+					Enabled:   false,
+					Models:    make(map[string]SystemPromptRule),
+					Providers: make(map[string]SystemPromptRule),
+				},
+				Anonymization: AnonymizationConfig{
+					Enabled:              false,
+					Strategy:             "token",
+					DeanonymizeResponses: true,
+					Detectors: DetectorConfig{
+						Email:      true,
+						Phone:      true,
+						SSN:        true,
+						CreditCard: true,
+						IPAddress:  true,
+					},
+				},
 			},
 			Providers: make(map[string]ProviderConfig),
 		}
