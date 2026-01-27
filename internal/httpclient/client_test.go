@@ -2,6 +2,7 @@ package httpclient
 
 import (
 	"net/http"
+	"os"
 	"testing"
 	"time"
 )
@@ -21,8 +22,9 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected IdleConnTimeout to be 90s, got %v", config.IdleConnTimeout)
 	}
 
-	if config.Timeout != 30*time.Second {
-		t.Errorf("Expected Timeout to be 30s, got %v", config.Timeout)
+	// Default timeout is 600s (10 minutes) to match OpenAI/Anthropic SDKs
+	if config.Timeout != 600*time.Second {
+		t.Errorf("Expected Timeout to be 600s, got %v", config.Timeout)
 	}
 
 	if config.DialTimeout != 30*time.Second {
@@ -37,8 +39,47 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected TLSHandshakeTimeout to be 10s, got %v", config.TLSHandshakeTimeout)
 	}
 
-	if config.ResponseHeaderTimeout != 10*time.Second {
-		t.Errorf("Expected ResponseHeaderTimeout to be 10s, got %v", config.ResponseHeaderTimeout)
+	// Default ResponseHeaderTimeout is 600s (10 minutes) to match OpenAI/Anthropic SDKs
+	if config.ResponseHeaderTimeout != 600*time.Second {
+		t.Errorf("Expected ResponseHeaderTimeout to be 600s, got %v", config.ResponseHeaderTimeout)
+	}
+}
+
+func TestDefaultConfigWithEnvOverrides(t *testing.T) {
+	// Set environment variables
+	os.Setenv("HTTP_TIMEOUT", "120s")
+	os.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "90s")
+	defer func() {
+		os.Unsetenv("HTTP_TIMEOUT")
+		os.Unsetenv("HTTP_RESPONSE_HEADER_TIMEOUT")
+	}()
+
+	config := DefaultConfig()
+
+	if config.Timeout != 120*time.Second {
+		t.Errorf("Expected Timeout to be 120s from env, got %v", config.Timeout)
+	}
+
+	if config.ResponseHeaderTimeout != 90*time.Second {
+		t.Errorf("Expected ResponseHeaderTimeout to be 90s from env, got %v", config.ResponseHeaderTimeout)
+	}
+
+	// Other values should remain unchanged
+	if config.DialTimeout != 30*time.Second {
+		t.Errorf("Expected DialTimeout to be 30s, got %v", config.DialTimeout)
+	}
+}
+
+func TestDefaultConfigWithInvalidEnv(t *testing.T) {
+	// Set invalid environment variable
+	os.Setenv("HTTP_TIMEOUT", "invalid")
+	defer os.Unsetenv("HTTP_TIMEOUT")
+
+	config := DefaultConfig()
+
+	// Should fall back to default value
+	if config.Timeout != 600*time.Second {
+		t.Errorf("Expected Timeout to fall back to 600s for invalid env, got %v", config.Timeout)
 	}
 }
 

@@ -4,6 +4,7 @@ package httpclient
 import (
 	"net"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -34,17 +35,31 @@ type ClientConfig struct {
 	ResponseHeaderTimeout time.Duration
 }
 
-// DefaultConfig returns a ClientConfig with sensible defaults for API clients
+// getEnvDuration reads a duration from an environment variable, returning the default if not set or invalid.
+func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
+	if val := os.Getenv(key); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			return d
+		}
+	}
+	return defaultVal
+}
+
+// DefaultConfig returns a ClientConfig with sensible defaults for API clients.
+// Timeout values match OpenAI/Anthropic SDK defaults (10 minutes).
+// Can be overridden via environment variables:
+//   - HTTP_TIMEOUT: overall request timeout (default: 600s)
+//   - HTTP_RESPONSE_HEADER_TIMEOUT: time to wait for response headers (default: 600s)
 func DefaultConfig() ClientConfig {
 	return ClientConfig{
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   100,
 		IdleConnTimeout:       90 * time.Second,
-		Timeout:               30 * time.Second,
+		Timeout:               getEnvDuration("HTTP_TIMEOUT", 600*time.Second),
 		DialTimeout:           30 * time.Second,
 		KeepAlive:             30 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 10 * time.Second,
+		ResponseHeaderTimeout: getEnvDuration("HTTP_RESPONSE_HEADER_TIMEOUT", 600*time.Second),
 	}
 }
 
