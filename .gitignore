@@ -16,3 +16,6 @@
 
 # Helm chart dependencies
 **/charts/*.tgz
+
+# OpenCode config - ignore because it might contain private servers URLs
+/opencode.json
