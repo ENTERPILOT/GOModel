@@ -46,9 +46,9 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestDefaultConfigWithEnvOverrides(t *testing.T) {
-	// Set environment variables
-	os.Setenv("HTTP_TIMEOUT", "120s")
-	os.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "90s")
+	// Set environment variables using plain integers (seconds)
+	os.Setenv("HTTP_TIMEOUT", "120")
+	os.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "90")
 	defer func() {
 		os.Unsetenv("HTTP_TIMEOUT")
 		os.Unsetenv("HTTP_RESPONSE_HEADER_TIMEOUT")
@@ -67,6 +67,18 @@ func TestDefaultConfigWithEnvOverrides(t *testing.T) {
 	// Other values should remain unchanged
 	if config.DialTimeout != 30*time.Second {
 		t.Errorf("Expected DialTimeout to be 30s, got %v", config.DialTimeout)
+	}
+}
+
+func TestDefaultConfigWithDurationFormat(t *testing.T) {
+	// Test Go duration format still works
+	os.Setenv("HTTP_TIMEOUT", "2m")
+	defer os.Unsetenv("HTTP_TIMEOUT")
+
+	config := DefaultConfig()
+
+	if config.Timeout != 2*time.Minute {
+		t.Errorf("Expected Timeout to be 2m from env, got %v", config.Timeout)
 	}
 }
 

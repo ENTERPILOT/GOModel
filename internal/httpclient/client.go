@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -36,30 +37,38 @@ type ClientConfig struct {
 }
 
 // getEnvDuration reads a duration from an environment variable, returning the default if not set or invalid.
+// Accepts either plain integers (interpreted as seconds) or Go duration strings (e.g., "10m", "1h30m").
 func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
-	if val := os.Getenv(key); val != "" {
-		if d, err := time.ParseDuration(val); err == nil {
-			return d
-		}
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
+	}
+	// Try parsing as integer seconds first (simpler for env config)
+	if secs, err := strconv.Atoi(val); err == nil {
+		return time.Duration(secs) * time.Second
+	}
+	// Fall back to Go duration format (e.g., "10m", "1h30m")
+	if d, err := time.ParseDuration(val); err == nil {
+		return d
 	}
 	return defaultVal
 }
 
 // DefaultConfig returns a ClientConfig with sensible defaults for API clients.
 // Timeout values match OpenAI/Anthropic SDK defaults (10 minutes).
-// Can be overridden via environment variables:
-//   - HTTP_TIMEOUT: overall request timeout (default: 600s)
-//   - HTTP_RESPONSE_HEADER_TIMEOUT: time to wait for response headers (default: 600s)
+// Can be overridden via environment variables (values in seconds, or Go duration format):
+//   - HTTP_TIMEOUT: overall request timeout (default: 600)
+//   - HTTP_RESPONSE_HEADER_TIMEOUT: time to wait for response headers (default: 600)
 func DefaultConfig() ClientConfig {
 	return ClientConfig{
 		MaxIdleConns:          100,
 		MaxIdleConnsPerHost:   100,
 		IdleConnTimeout:       90 * time.Second,
-		Timeout:               getEnvDuration("HTTP_TIMEOUT", 600*time.Second),
+		Timeout:               getEnvDuration("HTTP_TIMEOUT", 600 * time.Second),
 		DialTimeout:           30 * time.Second,
 		KeepAlive:             30 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: getEnvDuration("HTTP_RESPONSE_HEADER_TIMEOUT", 600*time.Second),
+		ResponseHeaderTimeout: getEnvDuration("HTTP_RESPONSE_HEADER_TIMEOUT", 600 * time.Second),
 	}
 }
 
