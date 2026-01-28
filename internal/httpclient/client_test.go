@@ -2,7 +2,6 @@ package httpclient
 
 import (
 	"net/http"
-	"os"
 	"testing"
 	"time"
 )
@@ -47,12 +46,8 @@ func TestDefaultConfig(t *testing.T) {
 
 func TestDefaultConfigWithEnvOverrides(t *testing.T) {
 	// Set environment variables using plain integers (seconds)
-	os.Setenv("HTTP_TIMEOUT", "120")
-	os.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "90")
-	defer func() {
-		os.Unsetenv("HTTP_TIMEOUT")
-		os.Unsetenv("HTTP_RESPONSE_HEADER_TIMEOUT")
-	}()
+	t.Setenv("HTTP_TIMEOUT", "120")
+	t.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "90")
 
 	config := DefaultConfig()
 
@@ -72,8 +67,7 @@ func TestDefaultConfigWithEnvOverrides(t *testing.T) {
 
 func TestDefaultConfigWithDurationFormat(t *testing.T) {
 	// Test Go duration format still works
-	os.Setenv("HTTP_TIMEOUT", "2m")
-	defer os.Unsetenv("HTTP_TIMEOUT")
+	t.Setenv("HTTP_TIMEOUT", "2m")
 
 	config := DefaultConfig()
 
@@ -84,8 +78,7 @@ func TestDefaultConfigWithDurationFormat(t *testing.T) {
 
 func TestDefaultConfigWithInvalidEnv(t *testing.T) {
 	// Set invalid environment variable
-	os.Setenv("HTTP_TIMEOUT", "invalid")
-	defer os.Unsetenv("HTTP_TIMEOUT")
+	t.Setenv("HTTP_TIMEOUT", "invalid")
 
 	config := DefaultConfig()
 
