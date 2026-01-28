@@ -21,8 +21,9 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected IdleConnTimeout to be 90s, got %v", config.IdleConnTimeout)
 	}
 
-	if config.Timeout != 30*time.Second {
-		t.Errorf("Expected Timeout to be 30s, got %v", config.Timeout)
+	// Default timeout is 600s (10 minutes) to match OpenAI/Anthropic SDKs
+	if config.Timeout != 600*time.Second {
+		t.Errorf("Expected Timeout to be 600s, got %v", config.Timeout)
 	}
 
 	if config.DialTimeout != 30*time.Second {
@@ -37,8 +38,53 @@ func TestDefaultConfig(t *testing.T) {
 		t.Errorf("Expected TLSHandshakeTimeout to be 10s, got %v", config.TLSHandshakeTimeout)
 	}
 
-	if config.ResponseHeaderTimeout != 10*time.Second {
-		t.Errorf("Expected ResponseHeaderTimeout to be 10s, got %v", config.ResponseHeaderTimeout)
+	// Default ResponseHeaderTimeout is 600s (10 minutes) to match OpenAI/Anthropic SDKs
+	if config.ResponseHeaderTimeout != 600*time.Second {
+		t.Errorf("Expected ResponseHeaderTimeout to be 600s, got %v", config.ResponseHeaderTimeout)
+	}
+}
+
+func TestDefaultConfigWithEnvOverrides(t *testing.T) {
+	// Set environment variables using plain integers (seconds)
+	t.Setenv("HTTP_TIMEOUT", "120")
+	t.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "90")
+
+	config := DefaultConfig()
+
+	if config.Timeout != 120*time.Second {
+		t.Errorf("Expected Timeout to be 120s from env, got %v", config.Timeout)
+	}
+
+	if config.ResponseHeaderTimeout != 90*time.Second {
+		t.Errorf("Expected ResponseHeaderTimeout to be 90s from env, got %v", config.ResponseHeaderTimeout)
+	}
+
+	// Other values should remain unchanged
+	if config.DialTimeout != 30*time.Second {
+		t.Errorf("Expected DialTimeout to be 30s, got %v", config.DialTimeout)
+	}
+}
+
+func TestDefaultConfigWithDurationFormat(t *testing.T) {
+	// Test Go duration format still works
+	t.Setenv("HTTP_TIMEOUT", "2m")
+
+	config := DefaultConfig()
+
+	if config.Timeout != 2*time.Minute {
+		t.Errorf("Expected Timeout to be 2m from env, got %v", config.Timeout)
+	}
+}
+
+func TestDefaultConfigWithInvalidEnv(t *testing.T) {
+	// Set invalid environment variable
+	t.Setenv("HTTP_TIMEOUT", "invalid")
+
+	config := DefaultConfig()
+
+	// Should fall back to default value
+	if config.Timeout != 600*time.Second {
+		t.Errorf("Expected Timeout to fall back to 600s for invalid env, got %v", config.Timeout)
 	}
 }
 
