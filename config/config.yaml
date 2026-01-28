@@ -45,6 +45,58 @@ metrics:
   # Default: /metrics
   endpoint: "${METRICS_ENDPOINT:-/metrics}"
 
+# Guardrails configuration for request preprocessing
+# Includes system prompt injection and PII anonymization
+guardrails:
+  # System Prompt Injection
+  # Automatically injects system prompts into requests before they reach providers
+  system_prompt:
+    enabled: false
+    # Global default applied to all requests (lowest precedence)
+    # global:
+    #   prompt: "You are a helpful AI assistant."
+    #   position: "prepend"  # prepend | append | replace
+    #   preserve_user_system: true
+
+    # Model-specific rules (highest precedence)
+    # models:
+    #   "gpt-4":
+    #     prompt: "Custom prompt for GPT-4"
+    #     position: "prepend"
+    #     preserve_user_system: true
+
+    # Provider-specific rules (medium precedence)
+    # providers:
+    #   anthropic:
+    #     prompt: "Provider-level default for Anthropic"
+    #     position: "prepend"
+
+  # PII Anonymization
+  # Detects and anonymizes sensitive data before sending to AI models
+  anonymization:
+    enabled: false
+    # Whitelist of models requiring anonymization (empty = all models when enabled)
+    # models:
+    #   - "gpt-3.5-turbo"
+    #   - "gpt-4"
+
+    # Which PII types to detect (all enabled by default)
+    detectors:
+      email: true
+      phone: true
+      ssn: true
+      credit_card: true
+      ip_address: true
+
+    # Anonymization strategy: "token" | "hash" | "mask"
+    # - token: Replace with [TYPE_id] tokens (e.g., [EMAIL_1])
+    # - hash: Replace with [TYPE_hash] (first 8 chars of SHA256)
+    # - mask: Replace with [TYPE_x***y] (first/last char visible)
+    strategy: "token"
+
+    # Whether to restore original values in responses
+    deanonymize_responses: true
+
 providers:
   openai:
     type: "openai"

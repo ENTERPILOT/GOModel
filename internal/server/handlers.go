@@ -10,6 +10,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/guardrails"
 	"gomodel/internal/usage"
 )
 
@@ -18,20 +19,22 @@ type Handler struct {
 	provider    core.RoutableProvider
 	logger      auditlog.LoggerInterface
 	usageLogger usage.LoggerInterface
+	guardrails  *guardrails.Processor
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
-func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface) *Handler {
+func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface, guardrails *guardrails.Processor) *Handler {
 	return &Handler{
 		provider:    provider,
 		logger:      logger,
 		usageLogger: usageLogger,
+		guardrails:  guardrails,
 	}
 }
 
-// handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
-// It wraps the stream with audit logging and usage tracking, and sets appropriate SSE headers.
-func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string, streamFn func() (io.ReadCloser, error)) error {
+// handleStreamingResponseWithGuardrails handles SSE streaming responses with optional guardrails de-anonymization.
+// It wraps the stream with audit logging, usage tracking, and optionally de-anonymization.
+func (h *Handler) handleStreamingResponseWithGuardrails(c echo.Context, model, provider string, guardrailsCtx *guardrails.RequestContext, streamFn func() (io.ReadCloser, error)) error {
 	// Call streamFn first - only mark as streaming after success
 	// This ensures failed streams are logged normally by handleError/middleware
 	stream, err := streamFn()
@@ -42,6 +45,11 @@ func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string
 	// Mark as streaming so middleware doesn't log (StreamLogWrapper handles it)
 	auditlog.MarkEntryAsStreaming(c, true)
 	auditlog.EnrichEntryWithStream(c, true)
+
+	// Wrap with guardrails de-anonymization if needed (must be first to see original tokens)
+	if h.guardrails != nil {
+		stream = h.guardrails.WrapStreamForDeanonymization(stream, guardrailsCtx)
+	}
 
 	// Get entry from context and wrap stream for logging
 	entry := auditlog.GetStreamEntryFromContext(c)
@@ -93,6 +101,14 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	providerType := h.provider.GetProviderType(req.Model)
 	auditlog.EnrichEntry(c, req.Model, providerType)
 
+	// Apply guardrails (system prompt injection, anonymization)
+	var guardrailsCtx *guardrails.RequestContext
+	if h.guardrails != nil {
+		processedReq, ctx := h.guardrails.ProcessChatRequest(&req, providerType)
+		req = *processedReq
+		guardrailsCtx = ctx
+	}
+
 	// Create context with request ID for provider
 	requestID := c.Request().Header.Get("X-Request-ID")
 	ctx := core.WithRequestID(c.Request().Context(), requestID)
@@ -106,7 +122,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 			}
 			req.StreamOptions.IncludeUsage = true
 		}
-		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
+		return h.handleStreamingResponseWithGuardrails(c, req.Model, providerType, guardrailsCtx, func() (io.ReadCloser, error) {
 			return h.provider.StreamChatCompletion(ctx, &req)
 		})
 	}
@@ -115,6 +131,11 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	resp, err := h.provider.ChatCompletion(ctx, &req)
 	if err != nil {
 		return handleError(c, err)
+	}
+
+	// De-anonymize response if needed
+	if h.guardrails != nil {
+		resp = h.guardrails.DeanonymizeChatResponse(resp, guardrailsCtx)
 	}
 
 	// Track usage if enabled (reuses requestID from context enrichment above)
@@ -166,6 +187,14 @@ func (h *Handler) Responses(c echo.Context) error {
 	providerType := h.provider.GetProviderType(req.Model)
 	auditlog.EnrichEntry(c, req.Model, providerType)
 
+	// Apply guardrails (system prompt injection, anonymization)
+	var guardrailsCtx *guardrails.RequestContext
+	if h.guardrails != nil {
+		processedReq, ctx := h.guardrails.ProcessResponsesRequest(&req, providerType)
+		req = *processedReq
+		guardrailsCtx = ctx
+	}
+
 	// Create context with request ID for provider
 	requestID := c.Request().Header.Get("X-Request-ID")
 	ctx := core.WithRequestID(c.Request().Context(), requestID)
@@ -179,7 +208,7 @@ func (h *Handler) Responses(c echo.Context) error {
 			}
 			req.StreamOptions.IncludeUsage = true
 		}
-		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
+		return h.handleStreamingResponseWithGuardrails(c, req.Model, providerType, guardrailsCtx, func() (io.ReadCloser, error) {
 			return h.provider.StreamResponses(ctx, &req)
 		})
 	}
@@ -188,6 +217,11 @@ func (h *Handler) Responses(c echo.Context) error {
 	resp, err := h.provider.Responses(ctx, &req)
 	if err != nil {
 		return handleError(c, err)
+	}
+
+	// De-anonymize response if needed
+	if h.guardrails != nil {
+		resp = h.guardrails.DeanonymizeResponsesResponse(resp, guardrailsCtx)
 	}
 
 	// Track usage if enabled (reuses requestID from context enrichment above)

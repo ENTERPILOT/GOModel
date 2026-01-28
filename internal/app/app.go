@@ -14,6 +14,7 @@ import (
 	"gomodel/config"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
 	"gomodel/internal/server"
 	"gomodel/internal/usage"
@@ -22,11 +23,12 @@ import (
 // App represents the main application with all its dependencies.
 // It provides centralized lifecycle management for all components.
 type App struct {
-	config    *config.Config
-	providers *providers.InitResult
-	audit     *auditlog.Result
-	usage     *usage.Result
-	server    *server.Server
+	config     *config.Config
+	providers  *providers.InitResult
+	audit      *auditlog.Result
+	usage      *usage.Result
+	guardrails *guardrails.Processor
+	server     *server.Server
 
 	shutdownMu sync.Mutex
 	shutdown   bool
@@ -103,6 +105,39 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.usage = usageResult
 
+	// Initialize guardrails processor
+	guardrailsCfg := guardrails.Config{
+		SystemPrompt: guardrails.SystemPromptConfig{
+			Enabled:   cfg.AppConfig.Guardrails.SystemPrompt.Enabled,
+			Models:    convertSystemPromptModels(cfg.AppConfig.Guardrails.SystemPrompt.Models),
+			Providers: convertSystemPromptModels(cfg.AppConfig.Guardrails.SystemPrompt.Providers),
+		},
+		Anonymization: guardrails.AnonymizationConfig{
+			Enabled:              cfg.AppConfig.Guardrails.Anonymization.Enabled,
+			Models:               cfg.AppConfig.Guardrails.Anonymization.Models,
+			Strategy:             cfg.AppConfig.Guardrails.Anonymization.Strategy,
+			DeanonymizeResponses: cfg.AppConfig.Guardrails.Anonymization.DeanonymizeResponses,
+			Detectors: guardrails.DetectorConfig{
+				Email:      cfg.AppConfig.Guardrails.Anonymization.Detectors.Email,
+				Phone:      cfg.AppConfig.Guardrails.Anonymization.Detectors.Phone,
+				SSN:        cfg.AppConfig.Guardrails.Anonymization.Detectors.SSN,
+				CreditCard: cfg.AppConfig.Guardrails.Anonymization.Detectors.CreditCard,
+				IPAddress:  cfg.AppConfig.Guardrails.Anonymization.Detectors.IPAddress,
+			},
+		},
+	}
+
+	// Convert global system prompt rule
+	if cfg.AppConfig.Guardrails.SystemPrompt.Global != nil {
+		guardrailsCfg.SystemPrompt.Global = &guardrails.SystemPromptRule{
+			Prompt:             cfg.AppConfig.Guardrails.SystemPrompt.Global.Prompt,
+			Position:           cfg.AppConfig.Guardrails.SystemPrompt.Global.Position,
+			PreserveUserSystem: cfg.AppConfig.Guardrails.SystemPrompt.Global.PreserveUserSystem,
+		}
+	}
+
+	app.guardrails = guardrails.New(guardrailsCfg)
+
 	// Log configuration status
 	app.logStartupInfo()
 
@@ -115,6 +150,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		AuditLogger:              auditResult.Logger,
 		UsageLogger:              usageResult.Logger,
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
+		Guardrails:               app.guardrails,
 	}
 	app.server = server.New(app.providers.Router, serverCfg)
 
@@ -266,4 +302,31 @@ func (a *App) logStartupInfo() {
 	} else {
 		slog.Info("usage tracking disabled")
 	}
+
+	// Guardrails configuration
+	if cfg.Guardrails.SystemPrompt.Enabled {
+		slog.Info("guardrails: system prompt injection enabled")
+	}
+	if cfg.Guardrails.Anonymization.Enabled {
+		slog.Info("guardrails: anonymization enabled",
+			"strategy", cfg.Guardrails.Anonymization.Strategy,
+			"deanonymize_responses", cfg.Guardrails.Anonymization.DeanonymizeResponses,
+		)
+	}
+}
+
+// convertSystemPromptModels converts config SystemPromptRule map to guardrails package type.
+func convertSystemPromptModels(rules map[string]config.SystemPromptRule) map[string]guardrails.SystemPromptRule {
+	if len(rules) == 0 {
+		return make(map[string]guardrails.SystemPromptRule)
+	}
+	result := make(map[string]guardrails.SystemPromptRule, len(rules))
+	for k, v := range rules {
+		result[k] = guardrails.SystemPromptRule{
+			Prompt:             v.Prompt,
+			Position:           v.Position,
+			PreserveUserSystem: v.PreserveUserSystem,
+		}
+	}
+	return result
 }

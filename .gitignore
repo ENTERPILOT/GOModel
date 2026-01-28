@@ -6,8 +6,8 @@
 # Environment variables
 /.env
 
-# Cache
-/.cache
+# Cache (at any depth)
+**/.cache/
 
 # Others
 /*.bck.yml
