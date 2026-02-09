@@ -1,151 +1,185 @@
-# GOModel - AI-model providers gateway written in Go
+# GOModel
 
-GoModel is a high-performance, easy-to-use AI gateway written in Go.
+A high-performance AI gateway written in Go. Unified OpenAI-compatible API for multiple LLM providers.
 
 ## Quick Start
 
-### Running Manually
+**Step 1:** Start GOModel
 
-1. Set environment variables (either via creating `.env` file based on `.env.template` or export):
+```bash
+docker run --rm -p 8080:8080 \
+  -e GEMINI_API_KEY="your-gemini-key" \
+  enterpilot/gomodel
+```
 
-   **Option A: Create a `.env` file based on `.env.template`:**
+Pass only the API keys you need (at least one required):
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e OPENAI_API_KEY="your-openai-key" \
+  -e ANTHROPIC_API_KEY="your-anthropic-key" \
+  -e GEMINI_API_KEY="your-gemini-key" \
+  -e GROQ_API_KEY="your-groq-key" \
+  enterpilot/gomodel
+```
+
+**Step 2:** Make your first API call
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemini-2.5-flash",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+**That's it!** GOModel automatically detects which providers are available based on the API keys you supply.
+
+### Supported Providers
+
+| Provider | Environment Variable | Example Model |
+|----------|---------------------|---------------|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-20241022` |
+| Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
+| xAI (Grok) | `XAI_API_KEY` | `grok-2` |
+| Ollama | `OLLAMA_BASE_URL` | `llama3.2` |
+
+---
+
+## Alternative Setup Methods
+
+### Running from Source
+
+**Prerequisites:** Go 1.22+
+
+1. Create a `.env` file:
 
    ```bash
-   $ cp .env.template .env
+   cp .env.template .env
    ```
 
-   **Option B: Export environment variables:**
+2. Add your API keys to `.env` (at least one required).
 
-   ```bash
-   export OPENAI_API_KEY="your-openai-key"
-   export ANTHROPIC_API_KEY="your-anthropic-key"
-   export GEMINI_API_KEY="your-gemini-key"
-   ```
-
-   Note: At least one API key (OpenAI, Anthropic, Gemini, etc.) is required.
-
-2. Run the server:
+3. Start the server:
 
    ```bash
    make run
    ```
 
-3. (optionally) Test it:
+### Docker Compose (Full Stack)
 
-   **OpenAI:**
-
-   ```bash
-   curl http://localhost:8080/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -d '{"model": "gpt-5-nano", "messages": [{"role": "user", "content": "Hello!"}]}'
-   ```
-
-   **Anthropic:**
-
-   ```bash
-   curl http://localhost:8080/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -d '{"model": "claude-3-5-sonnet-20241022", "messages": [{"role": "user", "content": "Hello!"}]}'
-   ```
-
-   **Google Gemini:**
-
-   ```bash
-   curl http://localhost:8080/v1/chat/completions \
-     -H "Content-Type: application/json" \
-     -d '{"model": "gemini-2.0-flash", "messages": [{"role": "user", "content": "Hello!"}]}'
-   ```
-
-### Running with Docker
-
-You can use the official `golang:1.24-alpine` image to run the project in a container:
+Includes GOModel + Redis + PostgreSQL + MongoDB + Adminer + Prometheus:
 
 ```bash
-docker run --rm -it \
-  -v $(pwd):/app \
-  -w /app \
-  -p 8080:8080 \
-  -e OPENAI_API_KEY="your-openai-key" \
-  -e ANTHROPIC_API_KEY="your-anthropic-key" \
-  -e GEMINI_API_KEY="your-gemini-key" \
-  golang:1.24-alpine \
-  go run ./cmd/gomodel
+cp .env.template .env
+# Add your API keys to .env
+docker compose up -d
 ```
 
-Note: You can omit any API keys if you only want to use specific providers (at least one required).
+| Service | URL |
+|---------|-----|
+| GOModel API | http://localhost:8080 |
+| Adminer (DB UI) | http://localhost:8081 |
+| Prometheus | http://localhost:9090 |
 
-### Running with Docker Compose
+### Building the Docker Image Locally
 
 ```bash
-$ cp .env.template .env
-# fill envs ...
-$ docker compose up -d
+docker build -t gomodel .
+docker run --rm -p 8080:8080 -e GEMINI_API_KEY="your-key" gomodel
 ```
+
+---
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/chat/completions` | POST | Chat completions (streaming supported) |
+| `/v1/responses` | POST | OpenAI Responses API |
+| `/v1/models` | GET | List available models |
+| `/health` | GET | Health check |
+| `/metrics` | GET | Prometheus metrics (when enabled) |
+
+---
+
+## Configuration
+
+GOModel is configured through environment variables. See [`.env.template`](.env.template) for all options.
+
+Key settings:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `8080` | Server port |
+| `GOMODEL_MASTER_KEY` | (none) | API key for authentication |
+| `CACHE_TYPE` | `local` | Cache backend (`local` or `redis`) |
+| `STORAGE_TYPE` | `sqlite` | Storage backend (`sqlite`, `postgresql`, `mongodb`) |
+| `METRICS_ENABLED` | `false` | Enable Prometheus metrics |
+| `LOGGING_ENABLED` | `false` | Enable audit logging |
+
+---
 
 ## Development
 
 ### Testing
 
 ```bash
-make test # Run unit tests
-make test-e2e # Run e2e tests
-make test-all # Run all tests (unit tests, e2e tests):
+make test          # Unit tests
+make test-e2e      # End-to-end tests
+make test-all      # All tests
 ```
 
 ### Linting
 
-This project uses [golangci-lint](https://golangci-lint.run/) for code quality checks.
-
-#### Linter installation
-
-See the [official golangci-lint documentation](https://golangci-lint.run/welcome/install/).
-
-#### Usage
+Requires [golangci-lint](https://golangci-lint.run/welcome/install/).
 
 ```bash
-make lint # check the code quality
-make lint-fix # try to fix the code automatically
+make lint          # Check code quality
+make lint-fix      # Auto-fix issues
 ```
 
 ### Pre-commit
-
-You can install predefined pre-commit checks with [pre-commit CLI tool](https://pre-commit.com/). To do so, use the following commands or [follow the official pre-commit documentation](https://pre-commit.com/#install):
 
 ```bash
 pip install pre-commit
 pre-commit install
 ```
 
-# Roadmap
+---
 
-## Supported Providers
+## Roadmap
 
-| Provider      | Basic support | Pass-through      | Voice models      | Image gen         | Video gen         | Full /responses API | Embedding         | Caching           |
-| ------------- | ------------- | ----------------- | ----------------- | ----------------- | ----------------- | ------------------- | ----------------- | ----------------- |
-| OpenAI        | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Anthropic     | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Google Gemini | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| OpenRouter    | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Groq          | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| xAI           | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
+### Supported Providers
 
-## Features
+| Provider | Basic support | Pass-through | Voice models | Image gen | Video gen | Full /responses API | Embedding | Caching |
+|----------|---------------|--------------|--------------|-----------|-----------|---------------------|-----------|---------|
+| OpenAI | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
+| Anthropic | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
+| Google Gemini | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
+| OpenRouter | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
+| Groq | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
+| xAI | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
 
-| Feature                    | Basic support     | Full support      |
-| -------------------------- | ----------------- | ----------------- |
-| Billing Management         | 🚧 Coming soon... | 🚧 Coming soon... |
-| Full-observability         | 🚧 Coming soon... | 🚧 Coming soon... |
-| Budget management          | 🚧 Coming soon... | 🚧 Coming soon... |
-| Many keys support          | 🚧 Coming soon... | 🚧 Coming soon... |
-| Administrative endpoints   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Guardrails                 | 🚧 Coming soon... | 🚧 Coming soon... |
-| SSO                        | 🚧 Coming soon... | 🚧 Coming soon... |
-| System Prompt (GuardRails) | 🚧 Coming soon... | 🚧 Coming soon... |
+### Features
 
-## Integrations
+| Feature | Status |
+|---------|--------|
+| Billing Management | 🚧 Coming soon |
+| Full Observability | 🚧 Coming soon |
+| Budget Management | 🚧 Coming soon |
+| Multiple Keys per Provider | 🚧 Coming soon |
+| Admin Endpoints | 🚧 Coming soon |
+| Guardrails | 🚧 Coming soon |
+| SSO | 🚧 Coming soon |
 
-| Integration   | Basic integration | Full support      |
-| ------------- | ----------------- | ----------------- |
-| Prometheus    | ✅                | 🚧 Coming soon... |
-| DataDog       | 🚧 Coming soon... | 🚧 Coming soon... |
-| OpenTelemetry | 🚧 Coming soon... | 🚧 Coming soon... |
+### Integrations
+
+| Integration | Status |
+|-------------|--------|
+| Prometheus | ✅ Basic |
+| Datadog | 🚧 Coming soon |
+| OpenTelemetry | 🚧 Coming soon |
