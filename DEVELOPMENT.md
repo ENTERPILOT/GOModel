@@ -4,7 +4,7 @@
 
 ```bash
 make test          # Unit tests
-make test-e2e      # End-to-end tests
+make test-e2e      # End-to-end tests (requires -tags=e2e; uses in-process mock servers, no Docker)
 make test-all      # All tests
 ```
 

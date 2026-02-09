@@ -42,6 +42,8 @@ curl http://localhost:8080/v1/chat/completions \
 
 ### Supported Providers
 
+Example model identifiers are illustrative and subject to change; consult provider catalogs for current models.
+
 <table>
   <tr>
     <th colspan="3">Provider</th>
@@ -69,7 +71,7 @@ curl http://localhost:8080/v1/chat/completions \
   <tr>
     <td>Anthropic</td>
     <td><code>ANTHROPIC_API_KEY</code></td>
-    <td><code>claude&#8209;3&#8209;5&#8209;sonnet&#8209;20241022</code></td>
+    <td><code>claude&#8209;sonnet&#8209;4&#8209;20250514</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
