@@ -122,7 +122,7 @@ type StorageConfig struct {
 
 // SQLiteStorageConfig holds SQLite-specific storage configuration
 type SQLiteStorageConfig struct {
-	// Path is the database file path (default: .cache/gomodel.db)
+	// Path is the database file path (default: data/gomodel.db)
 	Path string `yaml:"path" env:"SQLITE_PATH"`
 }
 
@@ -207,7 +207,7 @@ func defaultConfig() Config {
 		Storage: StorageConfig{
 			Type: "sqlite",
 			SQLite: SQLiteStorageConfig{
-				Path: ".cache/gomodel.db",
+				Path: "data/gomodel.db",
 			},
 			PostgreSQL: PostgreSQLStorageConfig{
 				MaxConns: 10,

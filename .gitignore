@@ -12,6 +12,9 @@
 # Cache
 /.cache
 
+# Data (runtime-created by SQLite storage)
+/data/
+
 # Others
 /*.bck.yml
 /repomix-output.*

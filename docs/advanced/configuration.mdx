@@ -62,7 +62,7 @@ Storage is shared by audit logging, usage tracking, and future features like IAM
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `STORAGE_TYPE` | Backend: `sqlite`, `postgresql`, or `mongodb` | `sqlite` |
-| `SQLITE_PATH` | SQLite database file path | `.cache/gomodel.db` |
+| `SQLITE_PATH` | SQLite database file path | `data/gomodel.db` |
 | `POSTGRES_URL` | PostgreSQL connection string | _(empty)_ |
 | `POSTGRES_MAX_CONNS` | PostgreSQL connection pool size | `10` |
 | `MONGODB_URL` | MongoDB connection string | _(empty)_ |
@@ -285,7 +285,7 @@ All settings have sensible defaults. GOModel starts with zero configuration usin
 | Cache type | `local` |
 | Cache directory | `.cache` |
 | Storage type | `sqlite` |
-| SQLite path | `.cache/gomodel.db` |
+| SQLite path | `data/gomodel.db` |
 | Audit logging | Disabled |
 | Usage tracking | Enabled |
 | Metrics | Disabled |
