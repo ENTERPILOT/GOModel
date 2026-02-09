@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestExpandString tests the expandString function with various scenarios
@@ -492,7 +494,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 			}
 
 			cfg := defaultConfig()
-			applyEnvOverrides(&cfg)
+			require.NoError(t, applyEnvOverrides(&cfg))
 			tt.check(t, &cfg)
 		})
 	}
