@@ -42,14 +42,63 @@ curl http://localhost:8080/v1/chat/completions \
 
 ### Supported Providers
 
-| Provider | Credential / Env Variable | Example Model |
-|----------|---------------------|---------------|
-| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-20241022` |
-| Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` |
-| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` |
-| xAI (Grok) | `XAI_API_KEY` | `grok-2` |
-| Ollama | `OLLAMA_BASE_URL` | `llama3.2` |
+<table>
+  <tr>
+    <th colspan="3">Provider</th>
+    <th colspan="8">Features</th>
+  </tr>
+  <tr>
+    <th style="white-space: nowrap">Name</th>
+    <th>Credential</th>
+    <th style="white-space: nowrap">Example Model</th>
+    <th>Chat</th>
+    <th>Passthru</th>
+    <th>Voice</th>
+    <th>Image</th>
+    <th>Video</th>
+    <th>/responses</th>
+    <th>Embed</th>
+    <th>Cache</th>
+  </tr>
+  <tr>
+    <td>OpenAI</td>
+    <td><code>OPENAI_API_KEY</code></td>
+    <td style="white-space: nowrap"><code>gpt-4o-mini</code></td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
+  </tr>
+  <tr>
+    <td>Anthropic</td>
+    <td><code>ANTHROPIC_API_KEY</code></td>
+    <td style="white-space: nowrap"><code>claude-3-5-sonnet-20241022</code></td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
+  </tr>
+  <tr>
+    <td style="white-space: nowrap">Google Gemini</td>
+    <td><code>GEMINI_API_KEY</code></td>
+    <td style="white-space: nowrap"><code>gemini-2.5-flash</code></td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
+  </tr>
+  <tr>
+    <td>Groq</td>
+    <td><code>GROQ_API_KEY</code></td>
+    <td style="white-space: nowrap"><code>llama-3.3-70b-versatile</code></td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
+  </tr>
+  <tr>
+    <td style="white-space: nowrap">xAI (Grok)</td>
+    <td><code>XAI_API_KEY</code></td>
+    <td style="white-space: nowrap"><code>grok-2</code></td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
+  </tr>
+  <tr>
+    <td>Ollama</td>
+    <td><code>OLLAMA_BASE_URL</code></td>
+    <td style="white-space: nowrap"><code>llama3.2</code></td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>—</td><td>—</td><td>🚧</td><td>🚧</td><td>🚧</td>
+  </tr>
+</table>
+
+✅ Supported  🚧 Coming soon  — Not applicable
 
 ---
 
@@ -158,16 +207,6 @@ pre-commit install
 ---
 
 # Roadmap
-
-## Supported Providers
-
-| Provider      | Basic support | Pass-through      | Voice models      | Image gen         | Video gen         | Full /responses API | Embedding         | Caching           |
-| ------------- | ------------- | ----------------- | ----------------- | ----------------- | ----------------- | ------------------- | ----------------- | ----------------- |
-| OpenAI        | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Anthropic     | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Google Gemini | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Groq          | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
-| xAI           | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
 
 ## Features
 
