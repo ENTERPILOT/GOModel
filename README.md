@@ -48,9 +48,9 @@ curl http://localhost:8080/v1/chat/completions \
     <th colspan="8">Features</th>
   </tr>
   <tr>
-    <th style="white-space: nowrap">Name</th>
+    <th>Name</th>
     <th>Credential</th>
-    <th style="white-space: nowrap">Example Model</th>
+    <th>Example&nbsp;Model</th>
     <th>Chat</th>
     <th>Passthru</th>
     <th>Voice</th>
@@ -63,37 +63,37 @@ curl http://localhost:8080/v1/chat/completions \
   <tr>
     <td>OpenAI</td>
     <td><code>OPENAI_API_KEY</code></td>
-    <td style="white-space: nowrap"><code>gpt-4o-mini</code></td>
+    <td><code>gpt-4o-mini</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>Anthropic</td>
     <td><code>ANTHROPIC_API_KEY</code></td>
-    <td style="white-space: nowrap"><code>claude-3-5-sonnet-20241022</code></td>
+    <td><code>claude-3-5-sonnet-20241022</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
-    <td style="white-space: nowrap">Google Gemini</td>
+    <td>Google&nbsp;Gemini</td>
     <td><code>GEMINI_API_KEY</code></td>
-    <td style="white-space: nowrap"><code>gemini-2.5-flash</code></td>
+    <td><code>gemini-2.5-flash</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>Groq</td>
     <td><code>GROQ_API_KEY</code></td>
-    <td style="white-space: nowrap"><code>llama-3.3-70b-versatile</code></td>
+    <td><code>llama-3.3-70b-versatile</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
-    <td style="white-space: nowrap">xAI (Grok)</td>
+    <td>xAI&nbsp;(Grok)</td>
     <td><code>XAI_API_KEY</code></td>
-    <td style="white-space: nowrap"><code>grok-2</code></td>
+    <td><code>grok-2</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>Ollama</td>
     <td><code>OLLAMA_BASE_URL</code></td>
-    <td style="white-space: nowrap"><code>llama3.2</code></td>
+    <td><code>llama3.2</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>—</td><td>—</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
 </table>
@@ -210,21 +210,23 @@ pre-commit install
 
 ## Features
 
-| Feature                    | Basic support     | Full support      |
-| -------------------------- | ----------------- | ----------------- |
-| Billing Management         | 🚧 Coming soon... | 🚧 Coming soon... |
-| Full-observability         | 🚧 Coming soon... | 🚧 Coming soon... |
-| Budget management          | 🚧 Coming soon... | 🚧 Coming soon... |
-| Many keys support          | 🚧 Coming soon... | 🚧 Coming soon... |
-| Administrative endpoints   | 🚧 Coming soon... | 🚧 Coming soon... |
-| Guardrails                 | 🚧 Coming soon... | 🚧 Coming soon... |
-| SSO                        | 🚧 Coming soon... | 🚧 Coming soon... |
-| System Prompt (GuardRails) | 🚧 Coming soon... | 🚧 Coming soon... |
+| Feature                    | Basic | Full |
+| -------------------------- |:-----:|:----:|
+| Billing Management         | 🚧   | 🚧   |
+| Full-observability         | 🚧   | 🚧   |
+| Budget management          | 🚧   | 🚧   |
+| Many keys support          | 🚧   | 🚧   |
+| Administrative endpoints   | 🚧   | 🚧   |
+| Guardrails                 | 🚧   | 🚧   |
+| SSO                        | 🚧   | 🚧   |
+| System Prompt (GuardRails) | 🚧   | 🚧   |
 
 ## Integrations
 
-| Integration   | Basic integration | Full support      |
-| ------------- | ----------------- | ----------------- |
-| Prometheus    | ✅                | 🚧 Coming soon... |
-| DataDog       | 🚧 Coming soon... | 🚧 Coming soon... |
-| OpenTelemetry | 🚧 Coming soon... | 🚧 Coming soon... |
+| Integration   | Basic | Full |
+| ------------- |:-----:|:----:|
+| Prometheus    | ✅    | 🚧   |
+| DataDog       | 🚧   | 🚧   |
+| OpenTelemetry | 🚧   | 🚧   |
+
+✅ Supported  🚧 Coming soon
