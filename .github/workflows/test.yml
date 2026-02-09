@@ -85,6 +85,21 @@ jobs:
       - name: Run integration tests
         run: go test -v -tags=integration -timeout=10m ./tests/integration/...
 
+  docs-validate:
+    name: Docs Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Validate docs.json
+        run: npx mint validate
+        working-directory: docs
+
   build:
     name: Build
     runs-on: ubuntu-latest
