@@ -3,7 +3,7 @@
     "theme": "maple",
     "name": "GoModel documentation",
     "colors": {
-        "primary": "rgb(51,52,54)"
+        "primary": "#755c3d"
     },
     "navigation": {}
 }
