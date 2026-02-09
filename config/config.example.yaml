@@ -87,8 +87,8 @@ providers:
   #   type: "openai"
   #   base_url: "https://api.groq.com/openai/v1"
   #   api_key: "${GROQ_API_KEY}"
-  # Example: Azure OpenAI
 
+  # Example: Azure OpenAI
   # azure-openai:
   #   type: "openai"
   #   base_url: "https://your-resource.openai.azure.com/openai/deployments/your-deployment"
