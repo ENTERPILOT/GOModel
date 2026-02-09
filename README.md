@@ -166,20 +166,21 @@ pre-commit install
 
 ### Features
 
-| Feature | Status |
-|---------|--------|
-| Billing Management | 🚧 Coming soon |
-| Full Observability | 🚧 Coming soon |
-| Budget Management | 🚧 Coming soon |
-| Multiple Keys per Provider | 🚧 Coming soon |
-| Admin Endpoints | 🚧 Coming soon |
-| Guardrails | 🚧 Coming soon |
-| SSO | 🚧 Coming soon |
+| Feature                    | Basic support      | Full support       |
+| -------------------------- | ------------------ | ------------------ |
+| Billing Management         | 🚧 Coming soon... | 🚧 Coming soon... |
+| Full-observability         | 🚧 Coming soon... | 🚧 Coming soon... |
+| Budget management          | 🚧 Coming soon... | 🚧 Coming soon... |
+| Many keys support          | 🚧 Coming soon... | 🚧 Coming soon... |
+| Administrative endpoints   | 🚧 Coming soon... | 🚧 Coming soon... |
+| Guardrails                 | 🚧 Coming soon... | 🚧 Coming soon... |
+| SSO                        | 🚧 Coming soon... | 🚧 Coming soon... |
+| System Prompt (GuardRails) | 🚧 Coming soon... | 🚧 Coming soon... |
 
 ### Integrations
 
-| Integration | Status |
-|-------------|--------|
-| Prometheus | ✅ Basic |
-| Datadog | 🚧 Coming soon |
-| OpenTelemetry | 🚧 Coming soon |
+| Integration   | Basic integration  | Full support       |
+| ------------- | ------------------ | ------------------ |
+| Prometheus    | ✅                 | 🚧 Coming soon... |
+| DataDog       | 🚧 Coming soon... | 🚧 Coming soon... |
+| OpenTelemetry | 🚧 Coming soon... | 🚧 Coming soon... |
