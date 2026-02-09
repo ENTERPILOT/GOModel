@@ -16,19 +16,17 @@ func TestLoad_FromEnvironment(t *testing.T) {
 		_ = os.Unsetenv("ANTHROPIC_API_KEY")
 	}()
 
-	// Note: This test assumes config.yaml exists and uses ${VAR} placeholders
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// When config.yaml exists with hardcoded port, it takes precedence
-	// In production, use ${PORT} in config.yaml to allow env var override
-	if cfg.Server.Port == "" {
-		t.Error("expected non-empty port")
+	// Env vars always win — port should be overridden
+	if cfg.Server.Port != "9090" {
+		t.Errorf("expected port 9090, got %s", cfg.Server.Port)
 	}
 
-	// Providers should be created from expanded env vars
+	// Providers should be created from env vars
 	if len(cfg.Providers) < 2 {
 		t.Errorf("expected at least 2 providers, got %d", len(cfg.Providers))
 	}

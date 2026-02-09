@@ -6,6 +6,9 @@
 # Environment variables
 /.env
 
+# User config (created from config/config.example.yaml)
+/config/config.yaml
+
 # Cache
 /.cache
 

@@ -162,482 +162,203 @@ func TestExpandString(t *testing.T) {
 	}
 }
 
-// TestExpandEnvVars tests the expandEnvVars function
-func TestExpandEnvVars(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    Config
-		envVars  map[string]string
-		expected Config
-	}{
-		{
-			name: "expand server port",
-			input: Config{
-				Server: ServerConfig{
-					Port: "${PORT}",
-				},
-				Providers: map[string]ProviderConfig{},
-			},
-			envVars: map[string]string{"PORT": "3000"},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "3000",
-				},
-				Providers: map[string]ProviderConfig{},
-			},
-		},
-		{
-			name: "expand provider API key",
-			input: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "${OPENAI_API_KEY}",
-					},
-				},
-			},
-			envVars: map[string]string{"OPENAI_API_KEY": "sk-test-123"},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-test-123",
-					},
-				},
-			},
-		},
-		{
-			name: "expand provider base URL",
-			input: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-test-123",
-						BaseURL: "${OPENAI_BASE_URL}",
-					},
-				},
-			},
-			envVars: map[string]string{"OPENAI_BASE_URL": "https://custom.api.com"},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-test-123",
-						BaseURL: "https://custom.api.com",
-					},
-				},
-			},
-		},
-		{
-			name: "multiple providers with mixed expansion",
-			input: Config{
-				Server: ServerConfig{
-					Port: "${PORT:-8080}",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "${OPENAI_API_KEY}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "${ANTHROPIC_API_KEY}",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "${GEMINI_API_KEY}",
-					},
-				},
-			},
-			envVars: map[string]string{
-				"OPENAI_API_KEY":    "sk-openai-123",
-				"ANTHROPIC_API_KEY": "sk-ant-456",
-				// GEMINI_API_KEY intentionally missing
-			},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-openai-123",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-456",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "${GEMINI_API_KEY}",
-					},
-				},
-			},
-		},
-		{
-			name: "unresolved variables remain as placeholders",
-			input: Config{
-				Server: ServerConfig{
-					Port: "${MISSING_PORT}",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "${MISSING_KEY}",
-						BaseURL: "${MISSING_URL}",
-					},
-				},
-			},
-			envVars: map[string]string{},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "${MISSING_PORT}",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "${MISSING_KEY}",
-						BaseURL: "${MISSING_URL}",
-					},
-				},
-			},
-		},
-		{
-			name: "empty config",
-			input: Config{
-				Server:    ServerConfig{},
-				Providers: map[string]ProviderConfig{},
-			},
-			envVars: map[string]string{},
-			expected: Config{
-				Server:    ServerConfig{},
-				Providers: map[string]ProviderConfig{},
-			},
-		},
-		{
-			name: "config with default values in placeholders",
-			input: Config{
-				Server: ServerConfig{
-					Port: "${PORT:-9000}",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "${OPENAI_API_KEY}",
-						BaseURL: "${OPENAI_BASE_URL:-https://api.openai.com}",
-					},
-				},
-			},
-			envVars: map[string]string{
-				"OPENAI_API_KEY": "sk-test-789",
-			},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "9000",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-test-789",
-						BaseURL: "https://api.openai.com",
-					},
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment variables
-			for k, v := range tt.envVars {
-				_ = os.Setenv(k, v)
-			}
-			// Cleanup after test
-			defer func() {
-				for k := range tt.envVars {
-					_ = os.Unsetenv(k)
-				}
-			}()
-
-			result := expandEnvVars(tt.input)
-
-			// Compare server config
-			if result.Server.Port != tt.expected.Server.Port {
-				t.Errorf("Server.Port = %q, want %q", result.Server.Port, tt.expected.Server.Port)
-			}
-
-			// Compare providers
-			if len(result.Providers) != len(tt.expected.Providers) {
-				t.Errorf("len(Providers) = %d, want %d", len(result.Providers), len(tt.expected.Providers))
-			}
-
-			for name, expectedProvider := range tt.expected.Providers {
-				resultProvider, exists := result.Providers[name]
-				if !exists {
-					t.Errorf("Provider %q not found in result", name)
-					continue
-				}
-
-				if resultProvider.Type != expectedProvider.Type {
-					t.Errorf("Provider %q: Type = %q, want %q", name, resultProvider.Type, expectedProvider.Type)
-				}
-				if resultProvider.APIKey != expectedProvider.APIKey {
-					t.Errorf("Provider %q: APIKey = %q, want %q", name, resultProvider.APIKey, expectedProvider.APIKey)
-				}
-				if resultProvider.BaseURL != expectedProvider.BaseURL {
-					t.Errorf("Provider %q: BaseURL = %q, want %q", name, resultProvider.BaseURL, expectedProvider.BaseURL)
-				}
-			}
-		})
-	}
-}
-
 // TestRemoveEmptyProviders tests the removeEmptyProviders function
 func TestRemoveEmptyProviders(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    Config
-		expected Config
+		name              string
+		providers         map[string]ProviderConfig
+		expectedProviders map[string]ProviderConfig
 	}{
 		{
 			name: "remove provider with empty API key",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-valid",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-valid",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-valid",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-valid",
 				},
 			},
 		},
 		{
 			name: "remove provider with unresolved placeholder",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "${OPENAI_API_KEY}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-valid",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "${OPENAI_API_KEY}",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-valid",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-valid",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-valid",
 				},
 			},
 		},
 		{
 			name: "remove provider with partially resolved placeholder",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "prefix-${UNRESOLVED}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-valid",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "prefix-${UNRESOLVED}",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-valid",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-valid",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-valid",
 				},
 			},
 		},
 		{
 			name: "keep all providers with valid API keys",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-openai-123",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-456",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "sk-gem-789",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "sk-openai-123",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-456",
+				},
+				"gemini": {
+					Type:   "gemini",
+					APIKey: "sk-gem-789",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-openai-123",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "sk-ant-456",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "sk-gem-789",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "sk-openai-123",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "sk-ant-456",
+				},
+				"gemini": {
+					Type:   "gemini",
+					APIKey: "sk-gem-789",
 				},
 			},
 		},
 		{
 			name: "remove all providers when all have invalid keys",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "${OPENAI_API_KEY}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "${GEMINI_API_KEY}",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "${OPENAI_API_KEY}",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "",
+				},
+				"gemini": {
+					Type:   "gemini",
+					APIKey: "${GEMINI_API_KEY}",
 				},
 			},
-			expected: Config{
-				Server:    ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{},
-			},
+			expectedProviders: map[string]ProviderConfig{},
 		},
 		{
 			name: "mixed valid and invalid providers",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-openai-valid",
-					},
-					"openai-fallback": {
-						Type:   "openai",
-						APIKey: "${OPENAI_FALLBACK_KEY}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "sk-gemini-valid",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "sk-openai-valid",
+				},
+				"openai-fallback": {
+					Type:   "openai",
+					APIKey: "${OPENAI_FALLBACK_KEY}",
+				},
+				"anthropic": {
+					Type:   "anthropic",
+					APIKey: "",
+				},
+				"gemini": {
+					Type:   "gemini",
+					APIKey: "sk-gemini-valid",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-openai-valid",
-					},
-					"gemini": {
-						Type:   "gemini",
-						APIKey: "sk-gemini-valid",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"openai": {
+					Type:   "openai",
+					APIKey: "sk-openai-valid",
+				},
+				"gemini": {
+					Type:   "gemini",
+					APIKey: "sk-gemini-valid",
 				},
 			},
 		},
 		{
-			name: "empty providers map",
-			input: Config{
-				Server:    ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{},
-			},
-			expected: Config{
-				Server:    ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{},
-			},
+			name:              "empty providers map",
+			providers:         map[string]ProviderConfig{},
+			expectedProviders: map[string]ProviderConfig{},
 		},
 		{
 			name: "provider with valid API key but empty BaseURL should be kept",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-openai-123",
-						BaseURL: "",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:    "openai",
+					APIKey:  "sk-openai-123",
+					BaseURL: "",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-openai-123",
-						BaseURL: "",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"openai": {
+					Type:    "openai",
+					APIKey:  "sk-openai-123",
+					BaseURL: "",
 				},
 			},
 		},
 		{
 			name: "provider with valid API key but unresolved BaseURL should be kept",
-			input: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-openai-123",
-						BaseURL: "${CUSTOM_URL}",
-					},
+			providers: map[string]ProviderConfig{
+				"openai": {
+					Type:    "openai",
+					APIKey:  "sk-openai-123",
+					BaseURL: "${CUSTOM_URL}",
 				},
 			},
-			expected: Config{
-				Server: ServerConfig{Port: "8080"},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:    "openai",
-						APIKey:  "sk-openai-123",
-						BaseURL: "${CUSTOM_URL}",
-					},
+			expectedProviders: map[string]ProviderConfig{
+				"openai": {
+					Type:    "openai",
+					APIKey:  "sk-openai-123",
+					BaseURL: "${CUSTOM_URL}",
+				},
+			},
+		},
+		{
+			name: "ollama with base URL preserved (no API key needed)",
+			providers: map[string]ProviderConfig{
+				"ollama": {
+					Type:    "ollama",
+					APIKey:  "",
+					BaseURL: "http://localhost:11434/v1",
+				},
+			},
+			expectedProviders: map[string]ProviderConfig{
+				"ollama": {
+					Type:    "ollama",
+					APIKey:  "",
+					BaseURL: "http://localhost:11434/v1",
 				},
 			},
 		},
@@ -645,21 +366,18 @@ func TestRemoveEmptyProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := removeEmptyProviders(tt.input)
+			cfg := &Config{
+				Server:    ServerConfig{Port: "8080"},
+				Providers: tt.providers,
+			}
+			removeEmptyProviders(cfg)
 
-			// Compare server config (should remain unchanged)
-			if result.Server.Port != tt.expected.Server.Port {
-				t.Errorf("Server.Port = %q, want %q", result.Server.Port, tt.expected.Server.Port)
+			if len(cfg.Providers) != len(tt.expectedProviders) {
+				t.Errorf("len(Providers) = %d, want %d", len(cfg.Providers), len(tt.expectedProviders))
 			}
 
-			// Compare number of providers
-			if len(result.Providers) != len(tt.expected.Providers) {
-				t.Errorf("len(Providers) = %d, want %d", len(result.Providers), len(tt.expected.Providers))
-			}
-
-			// Check each expected provider exists with correct values
-			for name, expectedProvider := range tt.expected.Providers {
-				resultProvider, exists := result.Providers[name]
+			for name, expectedProvider := range tt.expectedProviders {
+				resultProvider, exists := cfg.Providers[name]
 				if !exists {
 					t.Errorf("Provider %q not found in result", name)
 					continue
@@ -676,9 +394,8 @@ func TestRemoveEmptyProviders(t *testing.T) {
 				}
 			}
 
-			// Check that no unexpected providers exist in result
-			for name := range result.Providers {
-				if _, exists := tt.expected.Providers[name]; !exists {
+			for name := range cfg.Providers {
+				if _, exists := tt.expectedProviders[name]; !exists {
 					t.Errorf("Unexpected provider %q found in result", name)
 				}
 			}
@@ -686,253 +403,187 @@ func TestRemoveEmptyProviders(t *testing.T) {
 	}
 }
 
-// TestExpandEnvVars_MasterKey specifically tests master key expansion to prevent auth bypass bugs
-func TestExpandEnvVars_MasterKey(t *testing.T) {
+// TestApplyEnvVars tests the applyEnvVars function
+func TestApplyEnvVars(t *testing.T) {
 	tests := []struct {
-		name              string
-		input             Config
-		envVars           map[string]string
-		expectedMasterKey string
+		name     string
+		envVars  map[string]string
+		check    func(t *testing.T, cfg *Config)
 	}{
 		{
-			name: "master key not set with empty default should be empty string",
-			input: Config{
-				Server: ServerConfig{
-					Port:      "8080",
-					MasterKey: "${GOMODEL_MASTER_KEY:-}",
-				},
-				Providers: map[string]ProviderConfig{},
+			name:    "PORT override",
+			envVars: map[string]string{"PORT": "3000"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Server.Port != "3000" {
+					t.Errorf("Server.Port = %q, want %q", cfg.Server.Port, "3000")
+				}
 			},
-			envVars:           map[string]string{},
-			expectedMasterKey: "",
 		},
 		{
-			name: "master key set should use the value",
-			input: Config{
-				Server: ServerConfig{
-					Port:      "8080",
-					MasterKey: "${GOMODEL_MASTER_KEY:-}",
-				},
-				Providers: map[string]ProviderConfig{},
+			name:    "GOMODEL_MASTER_KEY override",
+			envVars: map[string]string{"GOMODEL_MASTER_KEY": "my-secret"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Server.MasterKey != "my-secret" {
+					t.Errorf("Server.MasterKey = %q, want %q", cfg.Server.MasterKey, "my-secret")
+				}
 			},
-			envVars:           map[string]string{"GOMODEL_MASTER_KEY": "my-secret-key"},
-			expectedMasterKey: "my-secret-key",
 		},
 		{
-			name: "master key with non-empty default - not set should use default",
-			input: Config{
-				Server: ServerConfig{
-					Port:      "8080",
-					MasterKey: "${GOMODEL_MASTER_KEY:-default-secret}",
-				},
-				Providers: map[string]ProviderConfig{},
+			name:    "storage overrides",
+			envVars: map[string]string{"STORAGE_TYPE": "postgresql", "POSTGRES_URL": "postgres://localhost/test", "POSTGRES_MAX_CONNS": "20"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Storage.Type != "postgresql" {
+					t.Errorf("Storage.Type = %q, want %q", cfg.Storage.Type, "postgresql")
+				}
+				if cfg.Storage.PostgreSQL.URL != "postgres://localhost/test" {
+					t.Errorf("Storage.PostgreSQL.URL = %q, want %q", cfg.Storage.PostgreSQL.URL, "postgres://localhost/test")
+				}
+				if cfg.Storage.PostgreSQL.MaxConns != 20 {
+					t.Errorf("Storage.PostgreSQL.MaxConns = %d, want %d", cfg.Storage.PostgreSQL.MaxConns, 20)
+				}
 			},
-			envVars:           map[string]string{},
-			expectedMasterKey: "default-secret",
 		},
 		{
-			name: "master key without default syntax - not set should keep placeholder",
-			input: Config{
-				Server: ServerConfig{
-					Port:      "8080",
-					MasterKey: "${GOMODEL_MASTER_KEY}",
-				},
-				Providers: map[string]ProviderConfig{},
+			name:    "bool overrides",
+			envVars: map[string]string{"METRICS_ENABLED": "true", "LOGGING_ENABLED": "1", "LOGGING_LOG_BODIES": "false"},
+			check: func(t *testing.T, cfg *Config) {
+				if !cfg.Metrics.Enabled {
+					t.Error("Metrics.Enabled should be true")
+				}
+				if !cfg.Logging.Enabled {
+					t.Error("Logging.Enabled should be true")
+				}
+				if cfg.Logging.LogBodies {
+					t.Error("Logging.LogBodies should be false")
+				}
 			},
-			envVars:           map[string]string{},
-			expectedMasterKey: "${GOMODEL_MASTER_KEY}",
+		},
+		{
+			name:    "HTTP timeout overrides",
+			envVars: map[string]string{"HTTP_TIMEOUT": "30", "HTTP_RESPONSE_HEADER_TIMEOUT": "60"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.HTTP.Timeout != 30 {
+					t.Errorf("HTTP.Timeout = %d, want 30", cfg.HTTP.Timeout)
+				}
+				if cfg.HTTP.ResponseHeaderTimeout != 60 {
+					t.Errorf("HTTP.ResponseHeaderTimeout = %d, want 60", cfg.HTTP.ResponseHeaderTimeout)
+				}
+			},
+		},
+		{
+			name:    "no env vars set preserves defaults",
+			envVars: map[string]string{},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Server.Port != "8080" {
+					t.Errorf("Server.Port = %q, want %q", cfg.Server.Port, "8080")
+				}
+				if cfg.HTTP.Timeout != 600 {
+					t.Errorf("HTTP.Timeout = %d, want 600", cfg.HTTP.Timeout)
+				}
+			},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Clean up any existing env var first
-			_ = os.Unsetenv("GOMODEL_MASTER_KEY")
-
 			// Setup environment variables
 			for k, v := range tt.envVars {
-				_ = os.Setenv(k, v)
+				t.Setenv(k, v)
 			}
-			// Cleanup after test
-			defer func() {
-				_ = os.Unsetenv("GOMODEL_MASTER_KEY")
-				for k := range tt.envVars {
-					_ = os.Unsetenv(k)
-				}
-			}()
 
-			result := expandEnvVars(tt.input)
-
-			if result.Server.MasterKey != tt.expectedMasterKey {
-				t.Errorf("Server.MasterKey = %q, want %q", result.Server.MasterKey, tt.expectedMasterKey)
-			}
+			cfg := defaultConfig()
+			applyEnvVars(&cfg)
+			tt.check(t, &cfg)
 		})
 	}
 }
 
-// TestIntegration_ExpandAndFilter tests the combination of expandEnvVars and removeEmptyProviders
+// TestApplyProviderEnvVars tests the applyProviderEnvVars function
+func TestApplyProviderEnvVars(t *testing.T) {
+	t.Run("discovers provider from API key", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "sk-test-123")
+		cfg := defaultConfig()
+		applyProviderEnvVars(&cfg)
+
+		p, ok := cfg.Providers["openai"]
+		if !ok {
+			t.Fatal("expected openai provider")
+		}
+		if p.APIKey != "sk-test-123" {
+			t.Errorf("APIKey = %q, want %q", p.APIKey, "sk-test-123")
+		}
+		if p.Type != "openai" {
+			t.Errorf("Type = %q, want %q", p.Type, "openai")
+		}
+	})
+
+	t.Run("overrides existing YAML provider", func(t *testing.T) {
+		t.Setenv("OPENAI_API_KEY", "sk-env-key")
+		cfg := defaultConfig()
+		cfg.Providers["openai"] = ProviderConfig{Type: "openai", APIKey: "sk-yaml-key", BaseURL: "https://custom.api.com"}
+		applyProviderEnvVars(&cfg)
+
+		p := cfg.Providers["openai"]
+		if p.APIKey != "sk-env-key" {
+			t.Errorf("APIKey = %q, want %q (env should override yaml)", p.APIKey, "sk-env-key")
+		}
+		if p.BaseURL != "https://custom.api.com" {
+			t.Errorf("BaseURL = %q should be preserved from YAML", p.BaseURL)
+		}
+	})
+
+	t.Run("ollama enabled via base URL only", func(t *testing.T) {
+		t.Setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+		cfg := defaultConfig()
+		applyProviderEnvVars(&cfg)
+
+		p, ok := cfg.Providers["ollama"]
+		if !ok {
+			t.Fatal("expected ollama provider")
+		}
+		if p.BaseURL != "http://localhost:11434/v1" {
+			t.Errorf("BaseURL = %q", p.BaseURL)
+		}
+	})
+
+	t.Run("skips when no env vars set", func(t *testing.T) {
+		cfg := defaultConfig()
+		applyProviderEnvVars(&cfg)
+
+		if len(cfg.Providers) != 0 {
+			t.Errorf("expected no providers, got %d", len(cfg.Providers))
+		}
+	})
+}
+
+// TestIntegration_ExpandAndFilter tests env var expansion in YAML + provider filtering
 func TestIntegration_ExpandAndFilter(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    Config
-		envVars  map[string]string
-		expected Config
-	}{
-		{
-			name: "expand and filter mixed providers",
-			input: Config{
-				Server: ServerConfig{
-					Port: "${PORT:-8080}",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "${OPENAI_API_KEY}",
-					},
-					"openai-fallback": {
-						Type:   "openai",
-						APIKey: "${OPENAI_FALLBACK_KEY}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "${ANTHROPIC_API_KEY}",
-					},
-				},
-			},
-			envVars: map[string]string{
-				"OPENAI_API_KEY": "sk-openai-123",
-				// OPENAI_FALLBACK_KEY and ANTHROPIC_API_KEY intentionally missing
-			},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "sk-openai-123",
-					},
-				},
-			},
-		},
-		{
-			name: "all providers filtered when none have valid keys",
-			input: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{
-					"openai": {
-						Type:   "openai",
-						APIKey: "${OPENAI_API_KEY}",
-					},
-					"anthropic": {
-						Type:   "anthropic",
-						APIKey: "${ANTHROPIC_API_KEY}",
-					},
-				},
-			},
-			envVars: map[string]string{},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "8080",
-				},
-				Providers: map[string]ProviderConfig{},
-			},
-		},
-		{
-			name: "complex scenario with defaults and partial resolution",
-			input: Config{
-				Server: ServerConfig{
-					Port: "${PORT:-9000}",
-				},
-				Providers: map[string]ProviderConfig{
-					"provider1": {
-						Type:    "openai",
-						APIKey:  "${API_KEY_1}",
-						BaseURL: "${BASE_URL_1:-https://api.default1.com}",
-					},
-					"provider2": {
-						Type:    "openai",
-						APIKey:  "${API_KEY_2:-default-key}",
-						BaseURL: "${BASE_URL_2}",
-					},
-					"provider3": {
-						Type:    "anthropic",
-						APIKey:  "${API_KEY_3}",
-						BaseURL: "",
-					},
-				},
-			},
-			envVars: map[string]string{
-				"API_KEY_1": "sk-valid-1",
-				// API_KEY_2 will use default
-				// API_KEY_3 is missing (no default)
-			},
-			expected: Config{
-				Server: ServerConfig{
-					Port: "9000",
-				},
-				Providers: map[string]ProviderConfig{
-					"provider1": {
-						Type:    "openai",
-						APIKey:  "sk-valid-1",
-						BaseURL: "https://api.default1.com",
-					},
-					"provider2": {
-						Type:    "openai",
-						APIKey:  "default-key",
-						BaseURL: "${BASE_URL_2}",
-					},
-				},
-			},
-		},
-	}
+	t.Run("expand and filter mixed providers", func(t *testing.T) {
+		_ = os.Setenv("OPENAI_API_KEY", "sk-openai-123")
+		defer os.Unsetenv("OPENAI_API_KEY")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment variables
-			for k, v := range tt.envVars {
-				_ = os.Setenv(k, v)
-			}
-			// Cleanup after test
-			defer func() {
-				for k := range tt.envVars {
-					_ = os.Unsetenv(k)
-				}
-			}()
+		cfg := defaultConfig()
+		cfg.Providers = map[string]ProviderConfig{
+			"openai": {
+				Type:   "openai",
+				APIKey: "sk-openai-123", // already expanded
+			},
+			"openai-fallback": {
+				Type:   "openai",
+				APIKey: "${OPENAI_FALLBACK_KEY}", // unresolved
+			},
+			"anthropic": {
+				Type:   "anthropic",
+				APIKey: "${ANTHROPIC_API_KEY}", // unresolved
+			},
+		}
+		removeEmptyProviders(&cfg)
 
-			// Apply both functions in sequence (as done in Load())
-			result := expandEnvVars(tt.input)
-			result = removeEmptyProviders(result)
-
-			// Compare server config
-			if result.Server.Port != tt.expected.Server.Port {
-				t.Errorf("Server.Port = %q, want %q", result.Server.Port, tt.expected.Server.Port)
-			}
-
-			// Compare providers
-			if len(result.Providers) != len(tt.expected.Providers) {
-				t.Errorf("len(Providers) = %d, want %d", len(result.Providers), len(tt.expected.Providers))
-			}
-
-			for name, expectedProvider := range tt.expected.Providers {
-				resultProvider, exists := result.Providers[name]
-				if !exists {
-					t.Errorf("Provider %q not found in result", name)
-					continue
-				}
-
-				if resultProvider.Type != expectedProvider.Type {
-					t.Errorf("Provider %q: Type = %q, want %q", name, resultProvider.Type, expectedProvider.Type)
-				}
-				if resultProvider.APIKey != expectedProvider.APIKey {
-					t.Errorf("Provider %q: APIKey = %q, want %q", name, resultProvider.APIKey, expectedProvider.APIKey)
-				}
-				if resultProvider.BaseURL != expectedProvider.BaseURL {
-					t.Errorf("Provider %q: BaseURL = %q, want %q", name, resultProvider.BaseURL, expectedProvider.BaseURL)
-				}
-			}
-		})
-	}
+		if len(cfg.Providers) != 1 {
+			t.Errorf("expected 1 provider, got %d: %v", len(cfg.Providers), cfg.Providers)
+		}
+		if _, ok := cfg.Providers["openai"]; !ok {
+			t.Error("expected openai to survive filtering")
+		}
+	})
 }
