@@ -101,7 +101,7 @@ func buildStorageConfig(cfg *config.Config) storage.Config {
 		storageCfg.Type = storage.TypeSQLite
 	}
 	if storageCfg.SQLite.Path == "" {
-		storageCfg.SQLite.Path = ".cache/gomodel.db"
+		storageCfg.SQLite.Path = storage.DefaultSQLitePath
 	}
 	if storageCfg.MongoDB.Database == "" {
 		storageCfg.MongoDB.Database = "gomodel"

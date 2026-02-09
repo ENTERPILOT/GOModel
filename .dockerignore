@@ -65,6 +65,7 @@ prometheus.yml
 # Miscellaneous
 # ===================
 .cache/
+data/
 *.bck.yml
 repomix-output.*
 session-*.md

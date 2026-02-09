@@ -81,8 +81,8 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Storage.Type != "sqlite" {
 		t.Errorf("expected Storage.Type=sqlite, got %s", cfg.Storage.Type)
 	}
-	if cfg.Storage.SQLite.Path != ".cache/gomodel.db" {
-		t.Errorf("expected Storage.SQLite.Path=.cache/gomodel.db, got %s", cfg.Storage.SQLite.Path)
+	if cfg.Storage.SQLite.Path != "data/gomodel.db" {
+		t.Errorf("expected Storage.SQLite.Path=data/gomodel.db, got %s", cfg.Storage.SQLite.Path)
 	}
 	if cfg.Storage.PostgreSQL.MaxConns != 10 {
 		t.Errorf("expected Storage.PostgreSQL.MaxConns=10, got %d", cfg.Storage.PostgreSQL.MaxConns)

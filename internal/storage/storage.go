@@ -16,6 +16,9 @@ const (
 	TypeMongoDB    = "mongodb"
 )
 
+// DefaultSQLitePath is the default file path for the SQLite database.
+const DefaultSQLitePath = "data/gomodel.db"
+
 // Config holds storage configuration
 type Config struct {
 	// Type specifies the storage backend: "sqlite", "postgresql", or "mongodb"
@@ -33,7 +36,7 @@ type Config struct {
 
 // SQLiteConfig holds SQLite-specific configuration
 type SQLiteConfig struct {
-	// Path is the database file path (default: .cache/gomodel.db)
+	// Path is the database file path (default: data/gomodel.db)
 	Path string
 }
 
@@ -97,7 +100,7 @@ func DefaultConfig() Config {
 	return Config{
 		Type: TypeSQLite,
 		SQLite: SQLiteConfig{
-			Path: ".cache/gomodel.db",
+			Path: DefaultSQLitePath,
 		},
 		PostgreSQL: PostgreSQLConfig{
 			MaxConns: 10,

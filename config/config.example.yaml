@@ -19,7 +19,7 @@ cache:
 storage:
   type: "sqlite" # "sqlite", "postgresql", or "mongodb"
   sqlite:
-    path: ".cache/gomodel.db"
+    path: "data/gomodel.db"
   postgresql:
     url: "postgres://user:pass@localhost/gomodel"
     max_conns: 10

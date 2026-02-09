@@ -3,33 +3,27 @@ title: "Configuration"
 description: "How to configure GOModel using environment variables, .env files, and YAML."
 ---
 
-## Overview
+## Good defaults
 
-GOModel uses a three-layer configuration pipeline. Every setting has a sensible default, so you can start the server with zero configuration.
+GOModel uses a good defaults philosophy. This means that the default settings should be enough to use it.
+
+## How to override the default settings?
+
+We use a three-layer configuration pipeline. Every setting has a sensible default, so you can start the server with zero configuration.
 
 ```
-Code Defaults  →  config.yaml (optional)  →  Environment Variables (always win)
+Environment Variables (always win)  →  config.yaml (optional structured config)  →  Code Defaults
 ```
-
-Each layer overrides the previous one. Environment variables always take the highest priority.
 
 <Tip>
-  GOModel works out of the box with no configuration files. Just set your provider API keys as environment variables and start the server.
+  As GOModel works out of the box with no configuration files, you can try it in
+  a minute.
+
+TODO: the link to the quick start should be provided here!
+
 </Tip>
 
-## Quick Start
-
-The fastest way to get running:
-
-```bash
-# Set at least one provider API key
-export OPENAI_API_KEY="sk-..."
-
-# Start the server (uses default port 8080)
-./gomodel
-```
-
-GOModel automatically discovers providers from well-known environment variables. No config file needed.
+GOModel automatically discovers providers from well-known environment variables.
 
 ## Configuration Methods
 
@@ -39,89 +33,91 @@ The most common way to configure GOModel. Set any of the variables below to over
 
 #### Server
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | HTTP server port | `8080` |
-| `GOMODEL_MASTER_KEY` | Authentication key for securing the gateway | _(empty, unsafe mode)_ |
-| `BODY_SIZE_LIMIT` | Max request body size (e.g., `10M`, `1024K`, `500KB`) | _(no limit)_ |
+| Variable             | Description                                           | Default                |
+| -------------------- | ----------------------------------------------------- | ---------------------- |
+| `PORT`               | HTTP server port                                      | `8080`                 |
+| `GOMODEL_MASTER_KEY` | Authentication key for securing the gateway           | _(empty, unsafe mode)_ |
+| `BODY_SIZE_LIMIT`    | Max request body size (e.g., `10M`, `1024K`, `500KB`) | _(no limit)_           |
 
 #### Cache
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `CACHE_TYPE` | Cache backend: `local` or `redis` | `local` |
-| `GOMODEL_CACHE_DIR` | Directory for local cache files | `.cache` |
-| `REDIS_URL` | Redis connection URL | _(empty)_ |
-| `REDIS_KEY` | Redis key for model cache | `gomodel:models` |
-| `REDIS_TTL` | Cache TTL in seconds | `86400` (24h) |
+| Variable            | Description                       | Default          |
+| ------------------- | --------------------------------- | ---------------- |
+| `CACHE_TYPE`        | Cache backend: `local` or `redis` | `local`          |
+| `GOMODEL_CACHE_DIR` | Directory for local cache files   | `.cache`         |
+| `REDIS_URL`         | Redis connection URL              | _(empty)_        |
+| `REDIS_KEY`         | Redis key for model cache         | `gomodel:models` |
+| `REDIS_TTL`         | Cache TTL in seconds              | `86400` (24h)    |
 
 #### Storage
 
 Storage is shared by audit logging, usage tracking, and future features like IAM.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `STORAGE_TYPE` | Backend: `sqlite`, `postgresql`, or `mongodb` | `sqlite` |
-| `SQLITE_PATH` | SQLite database file path | `.cache/gomodel.db` |
-| `POSTGRES_URL` | PostgreSQL connection string | _(empty)_ |
-| `POSTGRES_MAX_CONNS` | PostgreSQL connection pool size | `10` |
-| `MONGODB_URL` | MongoDB connection string | _(empty)_ |
-| `MONGODB_DATABASE` | MongoDB database name | `gomodel` |
+| Variable             | Description                                   | Default           |
+| -------------------- | --------------------------------------------- | ----------------- |
+| `STORAGE_TYPE`       | Backend: `sqlite`, `postgresql`, or `mongodb` | `sqlite`          |
+| `SQLITE_PATH`        | SQLite database file path                     | `data/gomodel.db` |
+| `POSTGRES_URL`       | PostgreSQL connection string                  | _(empty)_         |
+| `POSTGRES_MAX_CONNS` | PostgreSQL connection pool size               | `10`              |
+| `MONGODB_URL`        | MongoDB connection string                     | _(empty)_         |
+| `MONGODB_DATABASE`   | MongoDB database name                         | `gomodel`         |
 
 #### Audit Logging
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `LOGGING_ENABLED` | Enable audit logging | `false` |
-| `LOGGING_LOG_BODIES` | Log request/response bodies | `true` |
-| `LOGGING_LOG_HEADERS` | Log headers (sensitive ones auto-redacted) | `true` |
-| `LOGGING_ONLY_MODEL_INTERACTIONS` | Only log AI model endpoints | `true` |
-| `LOGGING_BUFFER_SIZE` | In-memory buffer before flush | `1000` |
-| `LOGGING_FLUSH_INTERVAL` | Flush interval in seconds | `5` |
-| `LOGGING_RETENTION_DAYS` | Auto-delete after N days (0 = forever) | `30` |
+| Variable                          | Description                                | Default |
+| --------------------------------- | ------------------------------------------ | ------- |
+| `LOGGING_ENABLED`                 | Enable audit logging                       | `false` |
+| `LOGGING_LOG_BODIES`              | Log request/response bodies                | `true`  |
+| `LOGGING_LOG_HEADERS`             | Log headers (sensitive ones auto-redacted) | `true`  |
+| `LOGGING_ONLY_MODEL_INTERACTIONS` | Only log AI model endpoints                | `true`  |
+| `LOGGING_BUFFER_SIZE`             | In-memory buffer before flush              | `1000`  |
+| `LOGGING_FLUSH_INTERVAL`          | Flush interval in seconds                  | `5`     |
+| `LOGGING_RETENTION_DAYS`          | Auto-delete after N days (0 = forever)     | `30`    |
 
 <Warning>
-  When `LOGGING_LOG_BODIES` is enabled, request and response bodies are stored in full. These may contain sensitive data such as PII or API keys embedded in prompts.
+  When `LOGGING_LOG_BODIES` is enabled, request and response bodies are stored
+  in full. These may contain sensitive data such as PII or API keys embedded in
+  prompts.
 </Warning>
 
 #### Token Usage Tracking
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `USAGE_ENABLED` | Enable token usage tracking | `true` |
-| `ENFORCE_RETURNING_USAGE_DATA` | Auto-add `include_usage` to streaming requests | `true` |
-| `USAGE_BUFFER_SIZE` | In-memory buffer before flush | `1000` |
-| `USAGE_FLUSH_INTERVAL` | Flush interval in seconds | `5` |
-| `USAGE_RETENTION_DAYS` | Auto-delete after N days (0 = forever) | `90` |
+| Variable                       | Description                                    | Default |
+| ------------------------------ | ---------------------------------------------- | ------- |
+| `USAGE_ENABLED`                | Enable token usage tracking                    | `true`  |
+| `ENFORCE_RETURNING_USAGE_DATA` | Auto-add `include_usage` to streaming requests | `true`  |
+| `USAGE_BUFFER_SIZE`            | In-memory buffer before flush                  | `1000`  |
+| `USAGE_FLUSH_INTERVAL`         | Flush interval in seconds                      | `5`     |
+| `USAGE_RETENTION_DAYS`         | Auto-delete after N days (0 = forever)         | `90`    |
 
 #### Metrics
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `METRICS_ENABLED` | Enable Prometheus metrics | `false` |
-| `METRICS_ENDPOINT` | HTTP path for metrics | `/metrics` |
+| Variable           | Description               | Default    |
+| ------------------ | ------------------------- | ---------- |
+| `METRICS_ENABLED`  | Enable Prometheus metrics | `false`    |
+| `METRICS_ENDPOINT` | HTTP path for metrics     | `/metrics` |
 
 #### HTTP Client
 
 These control timeouts for upstream API requests to LLM providers.
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `HTTP_TIMEOUT` | Overall request timeout in seconds | `600` (10 min) |
+| Variable                       | Description                                  | Default        |
+| ------------------------------ | -------------------------------------------- | -------------- |
+| `HTTP_TIMEOUT`                 | Overall request timeout in seconds           | `600` (10 min) |
 | `HTTP_RESPONSE_HEADER_TIMEOUT` | Time to wait for response headers in seconds | `600` (10 min) |
 
 #### Provider API Keys
 
 Set these to automatically register providers. No YAML configuration required.
 
-| Variable | Provider |
-|----------|----------|
-| `OPENAI_API_KEY` | OpenAI |
-| `ANTHROPIC_API_KEY` | Anthropic |
-| `GEMINI_API_KEY` | Google Gemini |
-| `XAI_API_KEY` | xAI (Grok) |
-| `GROQ_API_KEY` | Groq |
-| `OLLAMA_BASE_URL` | Ollama (no API key needed) |
+| Variable            | Provider                   |
+| ------------------- | -------------------------- |
+| `OPENAI_API_KEY`    | OpenAI                     |
+| `ANTHROPIC_API_KEY` | Anthropic                  |
+| `GEMINI_API_KEY`    | Google Gemini              |
+| `XAI_API_KEY`       | xAI (Grok)                 |
+| `GROQ_API_KEY`      | Groq                       |
+| `OLLAMA_BASE_URL`   | Ollama (no API key needed) |
 
 You can also set a custom base URL for any provider using `<PROVIDER>_BASE_URL` (e.g., `OPENAI_BASE_URL`).
 
@@ -143,7 +139,8 @@ cp .env.template .env
 ```
 
 <Note>
-  Real environment variables always override values from the `.env` file. The `.env` file is only loaded if it exists — missing it is not an error.
+  Real environment variables always override values from the `.env` file. The
+  `.env` file is only loaded if it exists — missing it is not an error.
 </Note>
 
 ### 3. Configuration File (YAML)
@@ -200,7 +197,9 @@ providers:
 ```
 
 <Tip>
-  The YAML file is entirely optional. Any setting you can put in YAML can also be set via environment variables. Use YAML when you need to configure custom providers or prefer a structured config file.
+  The YAML file is entirely optional. Any setting you can put in YAML can also
+  be set via environment variables. Use YAML when you need to configure custom
+  providers or prefer a structured config file.
 </Tip>
 
 ## Provider Configuration
@@ -260,34 +259,6 @@ providers:
 ```
 
 <Note>
-  Providers with missing or unresolved API keys are automatically filtered out at startup. Ollama is the only exception — it only requires a base URL.
+  Providers with missing or unresolved API keys are automatically filtered out
+  at startup. Ollama is the only exception — it only requires a base URL.
 </Note>
-
-## Precedence Rules
-
-When the same setting is defined in multiple places, the highest-priority source wins:
-
-```
-Environment Variable  >  YAML File  >  Code Default
-```
-
-**Example:** If `config.yaml` sets `port: "3000"` but the environment has `PORT=9090`, the server starts on port **9090**.
-
-For providers, environment variables override YAML values for the same provider name. If `OPENAI_API_KEY` is set in the environment and also defined in YAML, the environment value is used.
-
-## Default Values
-
-All settings have sensible defaults. GOModel starts with zero configuration using these values:
-
-| Setting | Default |
-|---------|---------|
-| Server port | `8080` |
-| Cache type | `local` |
-| Cache directory | `.cache` |
-| Storage type | `sqlite` |
-| SQLite path | `.cache/gomodel.db` |
-| Audit logging | Disabled |
-| Usage tracking | Enabled |
-| Metrics | Disabled |
-| HTTP timeout | 600s (10 minutes) |
-| Providers | None (auto-discovered from env) |
