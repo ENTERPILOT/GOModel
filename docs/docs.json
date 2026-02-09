@@ -1,7 +1,7 @@
 {
     "$schema": "https://mintlify.com/docs.json",
     "theme": "maple",
-    "name": "GoModel documentation",
+    "name": "GoModel",
     "colors": {
         "primary": "#755c3d"
     },
