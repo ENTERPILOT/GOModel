@@ -11,6 +11,8 @@ import (
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
+
+	"gomodel/internal/storage"
 )
 
 // Body size limit constants
@@ -207,7 +209,7 @@ func defaultConfig() Config {
 		Storage: StorageConfig{
 			Type: "sqlite",
 			SQLite: SQLiteStorageConfig{
-				Path: "data/gomodel.db",
+				Path: storage.DefaultSQLitePath,
 			},
 			PostgreSQL: PostgreSQLStorageConfig{
 				MaxConns: 10,
@@ -260,7 +262,9 @@ func Load() (*Config, error) {
 	}
 
 	// 4. Env vars always win
-	applyEnvOverrides(&cfg)
+	if err := applyEnvOverrides(&cfg); err != nil {
+		return nil, err
+	}
 
 	// 5. Discover providers from env
 	applyProviderEnvVars(&cfg)
@@ -318,11 +322,11 @@ func applyYAML(cfg *Config) error {
 
 // applyEnvOverrides walks cfg's struct fields and applies env var overrides
 // based on `env` struct tags. Maps are skipped (providers are handled separately).
-func applyEnvOverrides(cfg *Config) {
-	applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
+func applyEnvOverrides(cfg *Config) error {
+	return applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
 }
 
-func applyEnvOverridesValue(v reflect.Value) {
+func applyEnvOverridesValue(v reflect.Value) error {
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
@@ -334,7 +338,9 @@ func applyEnvOverridesValue(v reflect.Value) {
 		}
 		// Recurse into nested structs
 		if field.Type.Kind() == reflect.Struct {
-			applyEnvOverridesValue(fieldVal)
+			if err := applyEnvOverridesValue(fieldVal); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -353,11 +359,14 @@ func applyEnvOverridesValue(v reflect.Value) {
 		case reflect.Bool:
 			fieldVal.SetBool(parseBool(envVal))
 		case reflect.Int:
-			if n, err := strconv.Atoi(envVal); err == nil {
-				fieldVal.SetInt(int64(n))
+			n, err := strconv.Atoi(envVal)
+			if err != nil {
+				return fmt.Errorf("invalid value for %s (%s): %q is not a valid integer", field.Name, envKey, envVal)
 			}
+			fieldVal.SetInt(int64(n))
 		}
 	}
+	return nil
 }
 
 // knownProvider describes a provider that can be auto-discovered from environment variables.
