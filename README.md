@@ -12,7 +12,7 @@ docker run --rm -p 8080:8080 \
   enterpilot/gomodel
 ```
 
-Pass only the API keys you need (at least one required):
+Pass only the provider credentials or base URL you need (at least one required):
 
 ```bash
 docker run --rm -p 8080:8080 \
@@ -20,8 +20,12 @@ docker run --rm -p 8080:8080 \
   -e ANTHROPIC_API_KEY="your-anthropic-key" \
   -e GEMINI_API_KEY="your-gemini-key" \
   -e GROQ_API_KEY="your-groq-key" \
+  -e XAI_API_KEY="your-xai-key" \
+  -e OLLAMA_BASE_URL="http://host.docker.internal:11434/v1" \
   enterpilot/gomodel
 ```
+
+Avoid passing secrets via `-e` on the command line—they can leak via shell history and process lists. For production, use `docker run --env-file .env` to load API keys from a file instead.
 
 **Step 2:** Make your first API call
 
@@ -34,11 +38,11 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-**That's it!** GOModel automatically detects which providers are available based on the API keys you supply.
+**That's it!** GOModel automatically detects which providers are available based on the credentials you supply.
 
 ### Supported Providers
 
-| Provider | Environment Variable | Example Model |
+| Provider | Credential / Env Variable | Example Model |
 |----------|---------------------|---------------|
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet-20241022` |
@@ -89,7 +93,7 @@ docker compose up -d
 
 ```bash
 docker build -t gomodel .
-docker run --rm -p 8080:8080 -e GEMINI_API_KEY="your-key" gomodel
+docker run --rm -p 8080:8080 --env-file .env gomodel
 ```
 
 ---
@@ -120,6 +124,8 @@ Key settings:
 | `STORAGE_TYPE` | `sqlite` | Storage backend (`sqlite`, `postgresql`, `mongodb`) |
 | `METRICS_ENABLED` | `false` | Enable Prometheus metrics |
 | `LOGGING_ENABLED` | `false` | Enable audit logging |
+
+**Quick Start — Authentication:** By default `GOMODEL_MASTER_KEY` is unset. Without this key, API endpoints are unprotected and anyone can call them. This is insecure for production. **Strongly recommend** setting a strong secret before exposing the service. Add `GOMODEL_MASTER_KEY` to your `.env` or environment for production deployments.
 
 ---
 
