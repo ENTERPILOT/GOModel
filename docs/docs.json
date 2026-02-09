@@ -5,5 +5,7 @@
     "colors": {
         "primary": "#755c3d"
     },
-    "navigation": {}
+    "navigation": {
+        "pages": []
+    }
 }
