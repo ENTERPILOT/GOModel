@@ -25,7 +25,7 @@ docker run --rm -p 8080:8080 \
   enterpilot/gomodel
 ```
 
-Avoid passing secrets via `-e` on the command line—they can leak via shell history and process lists. For production, use `docker run --env-file .env` to load API keys from a file instead.
+⚠️ Avoid passing secrets via `-e` on the command line—they can leak via shell history and process lists. For production, use `docker run --env-file .env` to load API keys from a file instead.
 
 **Step 2:** Make your first API call
 
