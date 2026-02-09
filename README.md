@@ -8,7 +8,7 @@ A high-performance AI gateway written in Go, providing a unified OpenAI-compatib
 
 ```bash
 docker run --rm -p 8080:8080 \
-  -e GEMINI_API_KEY="your-gemini-key" \
+  -e OPENAI_API_KEY="your-openai-key" \
   enterpilot/gomodel
 ```
 
@@ -33,7 +33,7 @@ docker run --rm -p 8080:8080 \
 curl http://localhost:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gemini-2.5-flash",
+    "model": "gpt-5-chat-latest",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
@@ -178,31 +178,7 @@ Key settings:
 
 ---
 
-## Development
-
-### Testing
-
-```bash
-make test          # Unit tests
-make test-e2e      # End-to-end tests
-make test-all      # All tests
-```
-
-### Linting
-
-Requires [golangci-lint](https://golangci-lint.run/welcome/install/).
-
-```bash
-make lint          # Check code quality
-make lint-fix      # Auto-fix issues
-```
-
-### Pre-commit
-
-```bash
-pip install pre-commit
-pre-commit install
-```
+See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 ---
 
