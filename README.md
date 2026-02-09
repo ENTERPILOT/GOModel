@@ -151,23 +151,22 @@ pre-commit install
 
 ---
 
-## Roadmap
+# Roadmap
 
-### Supported Providers
+## Supported Providers
 
-| Provider | Basic support | Pass-through | Voice models | Image gen | Video gen | Full /responses API | Embedding | Caching |
-|----------|---------------|--------------|--------------|-----------|-----------|---------------------|-----------|---------|
-| OpenAI | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
-| Anthropic | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
-| Google Gemini | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
-| OpenRouter | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
-| Groq | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
-| xAI | ✅ | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 | 🚧 |
+| Provider      | Basic support | Pass-through      | Voice models      | Image gen         | Video gen         | Full /responses API | Embedding         | Caching           |
+| ------------- | ------------- | ----------------- | ----------------- | ----------------- | ----------------- | ------------------- | ----------------- | ----------------- |
+| OpenAI        | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
+| Anthropic     | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
+| Google Gemini | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
+| Groq          | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
+| xAI           | ✅            | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon... | 🚧 Coming soon...   | 🚧 Coming soon... | 🚧 Coming soon... |
 
-### Features
+## Features
 
-| Feature                    | Basic support      | Full support       |
-| -------------------------- | ------------------ | ------------------ |
+| Feature                    | Basic support     | Full support      |
+| -------------------------- | ----------------- | ----------------- |
 | Billing Management         | 🚧 Coming soon... | 🚧 Coming soon... |
 | Full-observability         | 🚧 Coming soon... | 🚧 Coming soon... |
 | Budget management          | 🚧 Coming soon... | 🚧 Coming soon... |
@@ -177,10 +176,10 @@ pre-commit install
 | SSO                        | 🚧 Coming soon... | 🚧 Coming soon... |
 | System Prompt (GuardRails) | 🚧 Coming soon... | 🚧 Coming soon... |
 
-### Integrations
+## Integrations
 
-| Integration   | Basic integration  | Full support       |
-| ------------- | ------------------ | ------------------ |
-| Prometheus    | ✅                 | 🚧 Coming soon... |
+| Integration   | Basic integration | Full support      |
+| ------------- | ----------------- | ----------------- |
+| Prometheus    | ✅                | 🚧 Coming soon... |
 | DataDog       | 🚧 Coming soon... | 🚧 Coming soon... |
 | OpenTelemetry | 🚧 Coming soon... | 🚧 Coming soon... |
