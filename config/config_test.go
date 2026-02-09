@@ -2,299 +2,529 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
-
-	"github.com/go-viper/mapstructure/v2"
-	"github.com/spf13/viper"
 )
 
-func TestLoad_DefaultPort(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Clear any existing environment variables
-	_ = os.Unsetenv("PORT")
-	_ = os.Unsetenv("OPENAI_API_KEY")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+// clearProviderEnvVars unsets all known provider-related environment variables.
+func clearProviderEnvVars(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"OPENAI_API_KEY", "OPENAI_BASE_URL",
+		"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL",
+		"GEMINI_API_KEY", "GEMINI_BASE_URL",
+		"XAI_API_KEY", "XAI_BASE_URL",
+		"GROQ_API_KEY", "GROQ_BASE_URL",
+		"OLLAMA_API_KEY", "OLLAMA_BASE_URL",
+	} {
+		t.Setenv(key, "")
+		os.Unsetenv(key)
 	}
+}
+
+// clearAllConfigEnvVars unsets all config-related environment variables.
+func clearAllConfigEnvVars(t *testing.T) {
+	t.Helper()
+	for _, key := range []string{
+		"PORT", "GOMODEL_MASTER_KEY", "BODY_SIZE_LIMIT",
+		"CACHE_TYPE", "GOMODEL_CACHE_DIR",
+		"REDIS_URL", "REDIS_KEY", "REDIS_TTL",
+		"STORAGE_TYPE", "SQLITE_PATH", "POSTGRES_URL", "POSTGRES_MAX_CONNS",
+		"MONGODB_URL", "MONGODB_DATABASE",
+		"METRICS_ENABLED", "METRICS_ENDPOINT",
+		"LOGGING_ENABLED", "LOGGING_LOG_BODIES", "LOGGING_LOG_HEADERS",
+		"LOGGING_ONLY_MODEL_INTERACTIONS", "LOGGING_BUFFER_SIZE",
+		"LOGGING_FLUSH_INTERVAL", "LOGGING_RETENTION_DAYS",
+		"USAGE_ENABLED", "ENFORCE_RETURNING_USAGE_DATA",
+		"USAGE_BUFFER_SIZE", "USAGE_FLUSH_INTERVAL", "USAGE_RETENTION_DAYS",
+		"HTTP_TIMEOUT", "HTTP_RESPONSE_HEADER_TIMEOUT",
+	} {
+		t.Setenv(key, "")
+		os.Unsetenv(key)
+	}
+	clearProviderEnvVars(t)
+}
+
+// withTempDir runs fn in a temporary directory, restoring the original working directory afterward.
+func withTempDir(t *testing.T, fn func(dir string)) {
+	t.Helper()
+	tempDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Failed to get current directory: %v", err)
+	}
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("Failed to change to temp directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+	fn(tempDir)
+}
+
+func TestDefaultConfig(t *testing.T) {
+	cfg := defaultConfig()
 
 	if cfg.Server.Port != "8080" {
-		t.Errorf("expected default port 8080, got %s", cfg.Server.Port)
+		t.Errorf("expected Server.Port=8080, got %s", cfg.Server.Port)
 	}
-}
-
-func TestLoad_PortFromEnv(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Set environment variable
-	_ = os.Setenv("PORT", "9090")
-	defer func() { _ = os.Unsetenv("PORT") }()
-
-	// Note: If config.yaml exists and has a hardcoded port,
-	// it will take precedence over PORT env var.
-	// This test might fail if config.yaml exists in the config/ directory.
-	// In production, use config.yaml with ${PORT} placeholder or
-	// rely on viper.AutomaticEnv() for dynamic overrides.
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+	if cfg.Cache.Type != "local" {
+		t.Errorf("expected Cache.Type=local, got %s", cfg.Cache.Type)
 	}
-
-	// When config.yaml is present with hardcoded port, it takes precedence
-	// This is expected behavior - config file has priority
-	// If you want env vars to override, use placeholders in YAML
-	if cfg.Server.Port == "" {
-		t.Error("expected non-empty port")
+	if cfg.Cache.CacheDir != ".cache" {
+		t.Errorf("expected Cache.CacheDir=.cache, got %s", cfg.Cache.CacheDir)
 	}
-}
-
-func TestLoad_OpenAIAPIKeyFromEnv(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Set environment variable
-	testAPIKey := "sk-test-key-12345"
-	_ = os.Setenv("OPENAI_API_KEY", testAPIKey)
-	defer func() { _ = os.Unsetenv("OPENAI_API_KEY") }()
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+	if cfg.Cache.Redis.Key != "gomodel:models" {
+		t.Errorf("expected Cache.Redis.Key=gomodel:models, got %s", cfg.Cache.Redis.Key)
 	}
-
-	// Check that OpenAI provider was created from environment variable
-	provider, exists := cfg.Providers["openai"]
-	if !exists {
-		t.Fatal("expected 'openai' provider to exist")
+	if cfg.Cache.Redis.TTL != 86400 {
+		t.Errorf("expected Cache.Redis.TTL=86400, got %d", cfg.Cache.Redis.TTL)
 	}
-
-	if provider.Type != "openai" {
-		t.Errorf("expected provider type 'openai', got %s", provider.Type)
+	if cfg.Storage.Type != "sqlite" {
+		t.Errorf("expected Storage.Type=sqlite, got %s", cfg.Storage.Type)
 	}
-
-	if provider.APIKey != testAPIKey {
-		t.Errorf("expected API key %s from env, got %s", testAPIKey, provider.APIKey)
+	if cfg.Storage.SQLite.Path != ".cache/gomodel.db" {
+		t.Errorf("expected Storage.SQLite.Path=.cache/gomodel.db, got %s", cfg.Storage.SQLite.Path)
 	}
-}
-
-func TestLoad_EmptyAPIKey(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Clear all API key environment variables and Ollama base URL
-	_ = os.Unsetenv("OPENAI_API_KEY")
-	_ = os.Unsetenv("ANTHROPIC_API_KEY")
-	_ = os.Unsetenv("GEMINI_API_KEY")
-	_ = os.Unsetenv("XAI_API_KEY")
-	_ = os.Unsetenv("GROQ_API_KEY")
-	_ = os.Unsetenv("OLLAMA_BASE_URL")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+	if cfg.Storage.PostgreSQL.MaxConns != 10 {
+		t.Errorf("expected Storage.PostgreSQL.MaxConns=10, got %d", cfg.Storage.PostgreSQL.MaxConns)
 	}
-
-	// When no API keys are set, only keyless providers like ollama (with default base_url) should remain
-	// Ollama is preserved because it has a non-empty BaseURL from config.yaml default
-	for name, pCfg := range cfg.Providers {
-		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
-			continue // Ollama with base_url is expected
-		}
-		t.Errorf("unexpected provider %q with empty API key should have been filtered out", name)
+	if cfg.Storage.MongoDB.Database != "gomodel" {
+		t.Errorf("expected Storage.MongoDB.Database=gomodel, got %s", cfg.Storage.MongoDB.Database)
 	}
-}
-
-func TestLoad_MultipleEnvVars(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Set multiple environment variables
-	testPort := "3000"
-	testAPIKey := "sk-test-multiple"
-	testAnthropicKey := "sk-ant-test"
-
-	_ = os.Setenv("PORT", testPort)
-	_ = os.Setenv("OPENAI_API_KEY", testAPIKey)
-	_ = os.Setenv("ANTHROPIC_API_KEY", testAnthropicKey)
-	defer func() {
-		_ = os.Unsetenv("PORT")
-		_ = os.Unsetenv("OPENAI_API_KEY")
-		_ = os.Unsetenv("ANTHROPIC_API_KEY")
-	}()
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
+	if !cfg.Logging.LogBodies {
+		t.Error("expected Logging.LogBodies=true")
 	}
-
-	// Note: Port from config.yaml takes precedence if it exists
-	// This is expected behavior
-	if cfg.Server.Port == "" {
-		t.Error("expected non-empty port")
+	if !cfg.Logging.LogHeaders {
+		t.Error("expected Logging.LogHeaders=true")
 	}
-
-	// Check OpenAI provider
-	openaiProvider, exists := cfg.Providers["openai"]
-	if !exists {
-		t.Error("expected 'openai' provider to exist")
-	} else if openaiProvider.APIKey != testAPIKey {
-		t.Errorf("expected OpenAI API key %s, got %s", testAPIKey, openaiProvider.APIKey)
+	if cfg.Logging.BufferSize != 1000 {
+		t.Errorf("expected Logging.BufferSize=1000, got %d", cfg.Logging.BufferSize)
 	}
-
-	// Check Anthropic provider
-	anthropicProvider, exists := cfg.Providers["anthropic"]
-	if !exists {
-		t.Error("expected 'anthropic' provider to exist")
-	} else if anthropicProvider.APIKey != testAnthropicKey {
-		t.Errorf("expected Anthropic API key %s, got %s", testAnthropicKey, anthropicProvider.APIKey)
+	if cfg.Logging.FlushInterval != 5 {
+		t.Errorf("expected Logging.FlushInterval=5, got %d", cfg.Logging.FlushInterval)
 	}
-}
-
-func TestLoad_DotEnvFile(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Clear environment variables to test .env file reading
-	_ = os.Unsetenv("PORT")
-	_ = os.Unsetenv("OPENAI_API_KEY")
-
-	// Create a temporary .env file
-	envContent := `PORT=7070
-OPENAI_API_KEY=sk-from-dotenv-file
-`
-	err := os.WriteFile(".env.test", []byte(envContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test .env file: %v", err)
+	if cfg.Logging.RetentionDays != 30 {
+		t.Errorf("expected Logging.RetentionDays=30, got %d", cfg.Logging.RetentionDays)
 	}
-	defer func() { _ = os.Remove(".env.test") }()
-
-	// Configure viper to read from test file
-	viper.SetConfigName(".env.test")
-	viper.SetConfigType("env")
-	viper.AddConfigPath(".")
-	_ = viper.ReadInConfig()
-
-	// Set defaults
-	viper.SetDefault("PORT", "8080")
-	viper.AutomaticEnv()
-
-	cfg := &Config{
-		Server: ServerConfig{
-			Port: viper.GetString("PORT"),
-		},
-		Providers: make(map[string]ProviderConfig),
-	}
-
-	// Add provider from environment variable
-	if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-		cfg.Providers["openai"] = ProviderConfig{
-			Type:   "openai",
-			APIKey: apiKey,
-		}
-	}
-
-	// Verify values from .env file
-	if cfg.Server.Port != "7070" {
-		t.Errorf("expected port 7070 from .env file, got %s", cfg.Server.Port)
-	}
-
-	openaiProvider, exists := cfg.Providers["openai"]
-	if !exists {
-		t.Fatal("expected 'openai' provider to exist")
-	}
-
-	if openaiProvider.APIKey != "sk-from-dotenv-file" {
-		t.Errorf("expected API key from .env file, got %s", openaiProvider.APIKey)
-	}
-}
-
-func TestLoad_EnvOverridesDotEnv(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Create a temporary .env file
-	envContent := `PORT=7070
-OPENAI_API_KEY=sk-from-dotenv-file
-`
-	err := os.WriteFile(".env.test2", []byte(envContent), 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test .env file: %v", err)
-	}
-	defer func() { _ = os.Remove(".env.test2") }()
-
-	// Set environment variables (should override .env file)
-	_ = os.Setenv("PORT", "9999")
-	_ = os.Setenv("OPENAI_API_KEY", "sk-from-real-env")
-	defer func() {
-		_ = os.Unsetenv("PORT")
-		_ = os.Unsetenv("OPENAI_API_KEY")
-	}()
-
-	// Configure viper to read from test file
-	viper.SetConfigName(".env.test2")
-	viper.SetConfigType("env")
-	viper.AddConfigPath(".")
-	_ = viper.ReadInConfig()
-
-	// Set defaults
-	viper.SetDefault("PORT", "8080")
-	viper.AutomaticEnv()
-
-	cfg := &Config{
-		Server: ServerConfig{
-			Port: viper.GetString("PORT"),
-		},
-		Providers: make(map[string]ProviderConfig),
-	}
-
-	// Add provider from environment variable
-	if apiKey := viper.GetString("OPENAI_API_KEY"); apiKey != "" {
-		cfg.Providers["openai"] = ProviderConfig{
-			Type:   "openai",
-			APIKey: apiKey,
-		}
-	}
-
-	// Environment variables should override .env file
-	if cfg.Server.Port != "9999" {
-		t.Errorf("expected port 9999 from environment variable (not .env file), got %s", cfg.Server.Port)
-	}
-
-	openaiProvider, exists := cfg.Providers["openai"]
-	if !exists {
-		t.Fatal("expected 'openai' provider to exist")
-	}
-
-	if openaiProvider.APIKey != "sk-from-real-env" {
-		t.Errorf("expected API key from environment variable (not .env file), got %s", openaiProvider.APIKey)
-	}
-}
-
-func TestLoggingOnlyModelInteractionsDefault(t *testing.T) {
-	// Reset viper state before test
-	viper.Reset()
-
-	// Clear all relevant environment variables
-	_ = os.Unsetenv("LOGGING_ONLY_MODEL_INTERACTIONS")
-	_ = os.Unsetenv("OPENAI_API_KEY")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() failed: %v", err)
-	}
-
-	// Default should be true
 	if !cfg.Logging.OnlyModelInteractions {
-		t.Error("expected OnlyModelInteractions to default to true")
+		t.Error("expected Logging.OnlyModelInteractions=true")
+	}
+	if cfg.Logging.Enabled {
+		t.Error("expected Logging.Enabled=false")
+	}
+	if !cfg.Usage.Enabled {
+		t.Error("expected Usage.Enabled=true")
+	}
+	if !cfg.Usage.EnforceReturningUsageData {
+		t.Error("expected Usage.EnforceReturningUsageData=true")
+	}
+	if cfg.Usage.BufferSize != 1000 {
+		t.Errorf("expected Usage.BufferSize=1000, got %d", cfg.Usage.BufferSize)
+	}
+	if cfg.Usage.FlushInterval != 5 {
+		t.Errorf("expected Usage.FlushInterval=5, got %d", cfg.Usage.FlushInterval)
+	}
+	if cfg.Usage.RetentionDays != 90 {
+		t.Errorf("expected Usage.RetentionDays=90, got %d", cfg.Usage.RetentionDays)
+	}
+	if cfg.Metrics.Endpoint != "/metrics" {
+		t.Errorf("expected Metrics.Endpoint=/metrics, got %s", cfg.Metrics.Endpoint)
+	}
+	if cfg.Metrics.Enabled {
+		t.Error("expected Metrics.Enabled=false")
+	}
+	if cfg.HTTP.Timeout != 600 {
+		t.Errorf("expected HTTP.Timeout=600, got %d", cfg.HTTP.Timeout)
+	}
+	if cfg.HTTP.ResponseHeaderTimeout != 600 {
+		t.Errorf("expected HTTP.ResponseHeaderTimeout=600, got %d", cfg.HTTP.ResponseHeaderTimeout)
+	}
+	if cfg.Providers == nil {
+		t.Error("expected Providers to be initialized (non-nil)")
 	}
 }
 
-func TestLoggingOnlyModelInteractionsFromEnv(t *testing.T) {
+func TestLoad_ZeroConfig(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Server.Port != "8080" {
+			t.Errorf("expected default port 8080, got %s", cfg.Server.Port)
+		}
+		if len(cfg.Providers) != 0 {
+			t.Errorf("expected no providers, got %d", len(cfg.Providers))
+		}
+	})
+}
+
+func TestLoad_YAMLOverridesDefaults(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+server:
+  port: "3000"
+cache:
+  type: "redis"
+  redis:
+    url: "redis://myhost:6379"
+    key: "custom:key"
+    ttl: 3600
+logging:
+  enabled: true
+  log_bodies: false
+  buffer_size: 500
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Server.Port != "3000" {
+			t.Errorf("expected port 3000, got %s", cfg.Server.Port)
+		}
+		if cfg.Cache.Type != "redis" {
+			t.Errorf("expected cache type redis, got %s", cfg.Cache.Type)
+		}
+		if cfg.Cache.Redis.URL != "redis://myhost:6379" {
+			t.Errorf("expected redis URL redis://myhost:6379, got %s", cfg.Cache.Redis.URL)
+		}
+		if cfg.Cache.Redis.Key != "custom:key" {
+			t.Errorf("expected redis key custom:key, got %s", cfg.Cache.Redis.Key)
+		}
+		if cfg.Cache.Redis.TTL != 3600 {
+			t.Errorf("expected redis TTL 3600, got %d", cfg.Cache.Redis.TTL)
+		}
+		if !cfg.Logging.Enabled {
+			t.Error("expected Logging.Enabled=true from YAML")
+		}
+		if cfg.Logging.LogBodies {
+			t.Error("expected Logging.LogBodies=false from YAML")
+		}
+		if cfg.Logging.BufferSize != 500 {
+			t.Errorf("expected Logging.BufferSize=500, got %d", cfg.Logging.BufferSize)
+		}
+		// Defaults preserved for unset YAML fields
+		if cfg.Logging.FlushInterval != 5 {
+			t.Errorf("expected Logging.FlushInterval=5 (default), got %d", cfg.Logging.FlushInterval)
+		}
+		if cfg.Storage.Type != "sqlite" {
+			t.Errorf("expected Storage.Type=sqlite (default), got %s", cfg.Storage.Type)
+		}
+	})
+}
+
+func TestLoad_EnvOverridesYAML(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+server:
+  port: "3000"
+cache:
+  type: "redis"
+logging:
+  enabled: true
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		t.Setenv("PORT", "9090")
+		t.Setenv("CACHE_TYPE", "local")
+		t.Setenv("LOGGING_ENABLED", "false")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Server.Port != "9090" {
+			t.Errorf("expected port 9090 (env override), got %s", cfg.Server.Port)
+		}
+		if cfg.Cache.Type != "local" {
+			t.Errorf("expected cache type local (env override), got %s", cfg.Cache.Type)
+		}
+		if cfg.Logging.Enabled {
+			t.Error("expected Logging.Enabled=false (env override)")
+		}
+	})
+}
+
+func TestLoad_EnvOverridesDefaults(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		t.Setenv("PORT", "5555")
+		t.Setenv("STORAGE_TYPE", "postgresql")
+		t.Setenv("POSTGRES_URL", "postgres://localhost/test")
+		t.Setenv("POSTGRES_MAX_CONNS", "20")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Server.Port != "5555" {
+			t.Errorf("expected port 5555, got %s", cfg.Server.Port)
+		}
+		if cfg.Storage.Type != "postgresql" {
+			t.Errorf("expected storage type postgresql, got %s", cfg.Storage.Type)
+		}
+		if cfg.Storage.PostgreSQL.URL != "postgres://localhost/test" {
+			t.Errorf("expected postgres URL, got %s", cfg.Storage.PostgreSQL.URL)
+		}
+		if cfg.Storage.PostgreSQL.MaxConns != 20 {
+			t.Errorf("expected max conns 20, got %d", cfg.Storage.PostgreSQL.MaxConns)
+		}
+	})
+}
+
+func TestLoad_ProviderFromEnv(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		t.Setenv("OPENAI_API_KEY", "sk-test-key")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		provider, exists := cfg.Providers["openai"]
+		if !exists {
+			t.Fatal("expected 'openai' provider to exist")
+		}
+		if provider.Type != "openai" {
+			t.Errorf("expected provider type 'openai', got %s", provider.Type)
+		}
+		if provider.APIKey != "sk-test-key" {
+			t.Errorf("expected API key sk-test-key, got %s", provider.APIKey)
+		}
+	})
+}
+
+func TestLoad_ProviderFromYAML(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+providers:
+  openai:
+    type: openai
+    api_key: "sk-yaml-key"
+    base_url: "https://custom.openai.com"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		provider, exists := cfg.Providers["openai"]
+		if !exists {
+			t.Fatal("expected 'openai' provider to exist")
+		}
+		if provider.APIKey != "sk-yaml-key" {
+			t.Errorf("expected API key sk-yaml-key, got %s", provider.APIKey)
+		}
+		if provider.BaseURL != "https://custom.openai.com" {
+			t.Errorf("expected base URL https://custom.openai.com, got %s", provider.BaseURL)
+		}
+	})
+}
+
+func TestLoad_EnvOverridesProviderYAML(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+providers:
+  openai:
+    type: openai
+    api_key: "sk-yaml-key"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		t.Setenv("OPENAI_API_KEY", "sk-env-key")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		provider, exists := cfg.Providers["openai"]
+		if !exists {
+			t.Fatal("expected 'openai' provider to exist")
+		}
+		if provider.APIKey != "sk-env-key" {
+			t.Errorf("expected API key sk-env-key (env override), got %s", provider.APIKey)
+		}
+	})
+}
+
+func TestLoad_OllamaNoAPIKey(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		t.Setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		provider, exists := cfg.Providers["ollama"]
+		if !exists {
+			t.Fatal("expected 'ollama' provider to exist")
+		}
+		if provider.Type != "ollama" {
+			t.Errorf("expected provider type 'ollama', got %s", provider.Type)
+		}
+		if provider.BaseURL != "http://localhost:11434/v1" {
+			t.Errorf("expected base URL, got %s", provider.BaseURL)
+		}
+	})
+}
+
+func TestLoad_EmptyProviderFiltered(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if len(cfg.Providers) != 0 {
+			t.Errorf("expected no providers, got %d: %v", len(cfg.Providers), cfg.Providers)
+		}
+	})
+}
+
+func TestLoad_HTTPConfig(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	// Test defaults
+	withTempDir(t, func(_ string) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.HTTP.Timeout != 600 {
+			t.Errorf("expected HTTP.Timeout=600, got %d", cfg.HTTP.Timeout)
+		}
+		if cfg.HTTP.ResponseHeaderTimeout != 600 {
+			t.Errorf("expected HTTP.ResponseHeaderTimeout=600, got %d", cfg.HTTP.ResponseHeaderTimeout)
+		}
+	})
+
+	// Test env override
+	withTempDir(t, func(_ string) {
+		t.Setenv("HTTP_TIMEOUT", "30")
+		t.Setenv("HTTP_RESPONSE_HEADER_TIMEOUT", "60")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.HTTP.Timeout != 30 {
+			t.Errorf("expected HTTP.Timeout=30, got %d", cfg.HTTP.Timeout)
+		}
+		if cfg.HTTP.ResponseHeaderTimeout != 60 {
+			t.Errorf("expected HTTP.ResponseHeaderTimeout=60, got %d", cfg.HTTP.ResponseHeaderTimeout)
+		}
+	})
+}
+
+func TestLoad_CacheDir(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	// Test default
+	withTempDir(t, func(_ string) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Cache.CacheDir != ".cache" {
+			t.Errorf("expected Cache.CacheDir=.cache, got %s", cfg.Cache.CacheDir)
+		}
+	})
+
+	// Test env override
+	withTempDir(t, func(_ string) {
+		t.Setenv("GOMODEL_CACHE_DIR", "/tmp/gomodel-cache")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Cache.CacheDir != "/tmp/gomodel-cache" {
+			t.Errorf("expected Cache.CacheDir=/tmp/gomodel-cache, got %s", cfg.Cache.CacheDir)
+		}
+	})
+}
+
+func TestLoad_MultipleProviders(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		t.Setenv("OPENAI_API_KEY", "sk-openai")
+		t.Setenv("ANTHROPIC_API_KEY", "sk-anthropic")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if _, ok := cfg.Providers["openai"]; !ok {
+			t.Error("expected 'openai' provider")
+		}
+		if _, ok := cfg.Providers["anthropic"]; !ok {
+			t.Error("expected 'anthropic' provider")
+		}
+		if cfg.Providers["openai"].APIKey != "sk-openai" {
+			t.Errorf("expected OpenAI key sk-openai, got %s", cfg.Providers["openai"].APIKey)
+		}
+		if cfg.Providers["anthropic"].APIKey != "sk-anthropic" {
+			t.Errorf("expected Anthropic key sk-anthropic, got %s", cfg.Providers["anthropic"].APIKey)
+		}
+	})
+}
+
+func TestLoad_LoggingOnlyModelInteractionsDefault(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(_ string) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if !cfg.Logging.OnlyModelInteractions {
+			t.Error("expected OnlyModelInteractions to default to true")
+		}
+	})
+}
+
+func TestLoad_LoggingOnlyModelInteractionsFromEnv(t *testing.T) {
 	tests := []struct {
 		name     string
 		envValue string
@@ -312,185 +542,142 @@ func TestLoggingOnlyModelInteractionsFromEnv(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Reset viper state before each subtest
-			viper.Reset()
+			clearAllConfigEnvVars(t)
 
-			// Clear and set environment variable
-			_ = os.Unsetenv("OPENAI_API_KEY")
-			_ = os.Setenv("LOGGING_ONLY_MODEL_INTERACTIONS", tt.envValue)
-			defer func() { _ = os.Unsetenv("LOGGING_ONLY_MODEL_INTERACTIONS") }()
+			withTempDir(t, func(_ string) {
+				t.Setenv("LOGGING_ONLY_MODEL_INTERACTIONS", tt.envValue)
 
-			cfg, err := Load()
-			if err != nil {
-				t.Fatalf("Load() failed: %v", err)
-			}
+				cfg, err := Load()
+				if err != nil {
+					t.Fatalf("Load() failed: %v", err)
+				}
 
-			if cfg.Logging.OnlyModelInteractions != tt.expected {
-				t.Errorf("expected OnlyModelInteractions=%v for env value %q, got %v",
-					tt.expected, tt.envValue, cfg.Logging.OnlyModelInteractions)
-			}
+				if cfg.Logging.OnlyModelInteractions != tt.expected {
+					t.Errorf("expected OnlyModelInteractions=%v for env value %q, got %v",
+						tt.expected, tt.envValue, cfg.Logging.OnlyModelInteractions)
+				}
+			})
 		})
 	}
 }
 
-func TestSnakeCaseMatchName(t *testing.T) {
-	tests := []struct {
-		name      string
-		mapKey    string
-		fieldName string
-		expected  bool
-	}{
-		// Snake case to PascalCase matches
-		{"body_size_limit matches BodySizeLimit", "body_size_limit", "BodySizeLimit", true},
-		{"api_key matches APIKey", "api_key", "APIKey", true},
-		{"base_url matches BaseURL", "base_url", "BaseURL", true},
-		{"storage_type matches StorageType", "storage_type", "StorageType", true},
-		{"log_bodies matches LogBodies", "log_bodies", "LogBodies", true},
-		{"only_model_interactions matches OnlyModelInteractions", "only_model_interactions", "OnlyModelInteractions", true},
-		{"max_conns matches MaxConns", "max_conns", "MaxConns", true},
-		{"flush_interval matches FlushInterval", "flush_interval", "FlushInterval", true},
-		{"retention_days matches RetentionDays", "retention_days", "RetentionDays", true},
+func TestLoad_YAMLWithEnvVarExpansion(t *testing.T) {
+	clearAllConfigEnvVars(t)
 
-		// Simple case-insensitive matches (no underscores)
-		{"port matches Port", "port", "Port", true},
-		{"enabled matches Enabled", "enabled", "Enabled", true},
-		{"type matches Type", "type", "Type", true},
-		{"url matches URL", "url", "URL", true},
-		{"ttl matches TTL", "ttl", "TTL", true},
-		{"redis matches Redis", "redis", "Redis", true},
-		{"sqlite matches SQLite", "sqlite", "SQLite", true},
-		{"postgresql matches PostgreSQL", "postgresql", "PostgreSQL", true},
-		{"mongodb matches MongoDB", "mongodb", "MongoDB", true},
+	withTempDir(t, func(dir string) {
+		yaml := `
+server:
+  port: "${TEST_PORT_CFG:-9999}"
+providers:
+  openai:
+    type: "openai"
+    api_key: "${TEST_KEY_CFG:-default-key}"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
 
-		// Case variations
-		{"PORT matches Port", "PORT", "Port", true},
-		{"Port matches Port", "Port", "Port", true},
-		{"BODY_SIZE_LIMIT matches BodySizeLimit", "BODY_SIZE_LIMIT", "BodySizeLimit", true},
+		// Test with defaults (env vars not set)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
 
-		// Non-matches
-		{"different names don't match", "foo", "Bar", false},
-		{"partial match fails", "body_size", "BodySizeLimit", false},
-
-		// Malformed keys are rejected
-		{"consecutive underscores rejected", "body__size_limit", "BodySizeLimit", false},
-		{"leading underscore rejected", "_port", "Port", false},
-		{"trailing underscore rejected", "port_", "Port", false},
-		{"leading and trailing underscore rejected", "_port_", "Port", false},
-	}
-
-	// Get the MatchName function from snakeCaseMatchName
-	var decoderConfig mapstructure.DecoderConfig
-	opt := snakeCaseMatchName()
-	opt(&decoderConfig)
-	matchName := decoderConfig.MatchName
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := matchName(tt.mapKey, tt.fieldName)
-			if result != tt.expected {
-				t.Errorf("matchName(%q, %q) = %v, expected %v",
-					tt.mapKey, tt.fieldName, result, tt.expected)
-			}
-		})
-	}
+		if cfg.Server.Port != "9999" {
+			t.Errorf("expected port 9999 (YAML default), got %s", cfg.Server.Port)
+		}
+		provider := cfg.Providers["openai"]
+		if provider.APIKey != "default-key" {
+			t.Errorf("expected API key 'default-key', got %s", provider.APIKey)
+		}
+	})
 }
 
-func TestSnakeCaseMatchNameWithViper(t *testing.T) {
-	// Reset viper state
-	viper.Reset()
+func TestLoad_YAMLWithEnvVarOverride(t *testing.T) {
+	clearAllConfigEnvVars(t)
 
-	// Create a map simulating YAML config with snake_case keys
-	configData := map[string]any{
-		"server": map[string]any{
-			"port":            "9090",
-			"master_key":      "test-master-key",
-			"body_size_limit": "50M",
-		},
-		"logging": map[string]any{
-			"enabled":                 true,
-			"log_bodies":              false,
-			"log_headers":             true,
-			"buffer_size":             500,
-			"flush_interval":          10,
-			"retention_days":          60,
-			"only_model_interactions": false,
-		},
-		"storage": map[string]any{
-			"type": "postgresql",
-		},
-		"cache": map[string]any{
-			"type": "redis",
-			"redis": map[string]any{
-				"url": "redis://localhost:6379",
-				"key": "test:models",
-				"ttl": 3600,
-			},
-		},
-	}
+	withTempDir(t, func(dir string) {
+		yaml := `
+server:
+  port: "${TEST_PORT_CFG:-9999}"
+providers:
+  openai:
+    type: "openai"
+    api_key: "${TEST_KEY_CFG:-default-key}"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
 
-	// Set the config data in viper
-	for k, v := range configData {
-		viper.Set(k, v)
-	}
+		t.Setenv("TEST_PORT_CFG", "1111")
+		t.Setenv("TEST_KEY_CFG", "real-key")
 
-	var cfg Config
-	err := viper.Unmarshal(&cfg, snakeCaseMatchName())
-	if err != nil {
-		t.Fatalf("Unmarshal failed: %v", err)
-	}
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
 
-	// Verify server config
-	if cfg.Server.Port != "9090" {
-		t.Errorf("expected Server.Port=9090, got %s", cfg.Server.Port)
-	}
-	if cfg.Server.MasterKey != "test-master-key" {
-		t.Errorf("expected Server.MasterKey=test-master-key, got %s", cfg.Server.MasterKey)
-	}
-	if cfg.Server.BodySizeLimit != "50M" {
-		t.Errorf("expected Server.BodySizeLimit=50M, got %s", cfg.Server.BodySizeLimit)
-	}
+		if cfg.Server.Port != "1111" {
+			t.Errorf("expected port 1111 (env override), got %s", cfg.Server.Port)
+		}
+		provider := cfg.Providers["openai"]
+		if provider.APIKey != "real-key" {
+			t.Errorf("expected API key 'real-key', got %s", provider.APIKey)
+		}
+	})
+}
 
-	// Verify storage config
-	if cfg.Storage.Type != "postgresql" {
-		t.Errorf("expected Storage.Type=postgresql, got %s", cfg.Storage.Type)
-	}
+func TestLoad_YAMLInConfigSubdir(t *testing.T) {
+	clearAllConfigEnvVars(t)
 
-	// Verify logging config
-	if !cfg.Logging.Enabled {
-		t.Error("expected Logging.Enabled=true")
-	}
-	if cfg.Logging.LogBodies {
-		t.Error("expected Logging.LogBodies=false")
-	}
-	if !cfg.Logging.LogHeaders {
-		t.Error("expected Logging.LogHeaders=true")
-	}
-	if cfg.Logging.BufferSize != 500 {
-		t.Errorf("expected Logging.BufferSize=500, got %d", cfg.Logging.BufferSize)
-	}
-	if cfg.Logging.FlushInterval != 10 {
-		t.Errorf("expected Logging.FlushInterval=10, got %d", cfg.Logging.FlushInterval)
-	}
-	if cfg.Logging.RetentionDays != 60 {
-		t.Errorf("expected Logging.RetentionDays=60, got %d", cfg.Logging.RetentionDays)
-	}
-	if cfg.Logging.OnlyModelInteractions {
-		t.Error("expected Logging.OnlyModelInteractions=false")
-	}
+	withTempDir(t, func(dir string) {
+		configDir := filepath.Join(dir, "config")
+		if err := os.MkdirAll(configDir, 0755); err != nil {
+			t.Fatalf("Failed to create config dir: %v", err)
+		}
 
-	// Verify cache config
-	if cfg.Cache.Type != "redis" {
-		t.Errorf("expected Cache.Type=redis, got %s", cfg.Cache.Type)
-	}
-	if cfg.Cache.Redis.URL != "redis://localhost:6379" {
-		t.Errorf("expected Cache.Redis.URL=redis://localhost:6379, got %s", cfg.Cache.Redis.URL)
-	}
-	if cfg.Cache.Redis.Key != "test:models" {
-		t.Errorf("expected Cache.Redis.Key=test:models, got %s", cfg.Cache.Redis.Key)
-	}
-	if cfg.Cache.Redis.TTL != 3600 {
-		t.Errorf("expected Cache.Redis.TTL=3600, got %d", cfg.Cache.Redis.TTL)
-	}
+		yaml := `
+server:
+  port: "4444"
+`
+		if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config/config.yaml: %v", err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Server.Port != "4444" {
+			t.Errorf("expected port 4444 from config/config.yaml, got %s", cfg.Server.Port)
+		}
+	})
+}
+
+func TestLoad_UnexpandedProviderFiltered(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+providers:
+  openai:
+    type: openai
+    api_key: "${OPENAI_API_KEY}"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if _, exists := cfg.Providers["openai"]; exists {
+			t.Error("expected openai provider with unexpanded ${OPENAI_API_KEY} to be filtered out")
+		}
+	})
 }
 
 func TestValidateBodySizeLimit(t *testing.T) {

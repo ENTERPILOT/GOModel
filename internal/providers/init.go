@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"path/filepath"
 	"sort"
 	"time"
@@ -134,14 +133,6 @@ func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig)
 	}, nil
 }
 
-// getCacheDir returns the directory for cache files.
-// Uses $GOMODEL_CACHE_DIR if set, otherwise ./.cache (working directory)
-func getCacheDir() string {
-	if cacheDir := os.Getenv("GOMODEL_CACHE_DIR"); cacheDir != "" {
-		return cacheDir
-	}
-	return ".cache"
-}
 
 // initCache initializes the appropriate cache backend based on configuration.
 func initCache(cfg *config.Config) (cache.Cache, error) {
@@ -172,7 +163,11 @@ func initCache(cfg *config.Config) (cache.Cache, error) {
 		return redisCache, nil
 
 	default: // "local" or any other value defaults to local
-		cacheFile := filepath.Join(getCacheDir(), "models.json")
+		cacheDir := cfg.Cache.CacheDir
+		if cacheDir == "" {
+			cacheDir = ".cache"
+		}
+		cacheFile := filepath.Join(cacheDir, "models.json")
 		slog.Info("using local file cache", "path", cacheFile)
 		return cache.NewLocalCache(cacheFile), nil
 	}

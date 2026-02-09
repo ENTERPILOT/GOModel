@@ -1,0 +1,101 @@
+# GOModel Configuration (optional)
+# Copy to config/config.yaml to customize.
+# Environment variables always override values in this file.
+# All settings have sensible defaults — no config file is required.
+
+server:
+  port: "8080"
+  master_key: "your-secret-key"
+  body_size_limit: "10M"
+
+cache:
+  type: "local" # "local" or "redis"
+  cache_dir: ".cache" # local cache directory
+  redis:
+    url: "redis://localhost:6379"
+    key: "gomodel:models"
+    ttl: 86400 # 24 hours in seconds
+
+storage:
+  type: "sqlite" # "sqlite", "postgresql", or "mongodb"
+  sqlite:
+    path: ".cache/gomodel.db"
+  postgresql:
+    url: "postgres://user:pass@localhost/gomodel"
+    max_conns: 10
+  mongodb:
+    url: "mongodb://localhost:27017"
+    database: "gomodel"
+
+logging:
+  enabled: false
+  log_bodies: true # WARNING: may contain sensitive data
+  log_headers: true
+  buffer_size: 1000
+  flush_interval: 5 # seconds
+  retention_days: 30 # 0 = keep forever
+  only_model_interactions: true
+
+usage:
+  enabled: true
+  enforce_returning_usage_data: true
+  buffer_size: 1000
+  flush_interval: 5
+  retention_days: 90
+
+metrics:
+  enabled: false
+  endpoint: "/metrics"
+
+http:
+  timeout: 600 # seconds (10 minutes)
+  response_header_timeout: 600
+
+providers:
+  openai:
+    type: openai
+    api_key: "sk-..."
+
+  anthropic:
+    type: anthropic
+    api_key: "sk-ant-..."
+
+  gemini:
+    type: gemini
+    api_key: "..."
+
+  xai:
+    type: xai
+    api_key: "..."
+
+  groq:
+    type: groq
+    api_key: "gsk_..."
+
+  ollama:
+    type: ollama
+    base_url: "http://localhost:11434/v1"
+
+  # Custom OpenAI-compatible provider
+  # my-provider:
+  #   type: openai
+  #   base_url: "https://api.example.com/v1"
+  #   api_key: "..."
+
+  # Example: Groq (OpenAI-compatible)
+  # groq:
+  #   type: "openai"
+  #   base_url: "https://api.groq.com/openai/v1"
+  #   api_key: "${GROQ_API_KEY}"
+
+  # Example: Azure OpenAI
+  # azure-openai:
+  #   type: "openai"
+  #   base_url: "https://your-resource.openai.azure.com/openai/deployments/your-deployment"
+  #   api_key: "${AZURE_OPENAI_API_KEY}"
+
+  # Example: DeepSeek (OpenAI-compatible)
+  # deepseek:
+  #   type: "openai"
+  #   base_url: "https://api.deepseek.com/v1"
+  #   api_key: "${DEEPSEEK_API_KEY}"

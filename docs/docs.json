@@ -6,6 +6,11 @@
         "primary": "#755c3d"
     },
     "navigation": {
-        "pages": []
+        "pages": [
+            {
+                "group": "Advanced",
+                "pages": ["advanced/configuration"]
+            }
+        ]
     }
 }
