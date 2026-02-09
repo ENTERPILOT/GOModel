@@ -63,31 +63,31 @@ curl http://localhost:8080/v1/chat/completions \
   <tr>
     <td>OpenAI</td>
     <td><code>OPENAI_API_KEY</code></td>
-    <td><code>gpt-4o-mini</code></td>
+    <td><code>gpt&#8209;4o&#8209;mini</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>Anthropic</td>
     <td><code>ANTHROPIC_API_KEY</code></td>
-    <td><code>claude-3-5-sonnet-20241022</code></td>
+    <td><code>claude&#8209;3&#8209;5&#8209;sonnet&#8209;20241022</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>Google&nbsp;Gemini</td>
     <td><code>GEMINI_API_KEY</code></td>
-    <td><code>gemini-2.5-flash</code></td>
+    <td><code>gemini&#8209;2.5&#8209;flash</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>Groq</td>
     <td><code>GROQ_API_KEY</code></td>
-    <td><code>llama-3.3-70b-versatile</code></td>
+    <td><code>llama&#8209;3.3&#8209;70b&#8209;versatile</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
     <td>xAI&nbsp;(Grok)</td>
     <td><code>XAI_API_KEY</code></td>
-    <td><code>grok-2</code></td>
+    <td><code>grok&#8209;2</code></td>
     <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td>
   </tr>
   <tr>
