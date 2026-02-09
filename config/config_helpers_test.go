@@ -403,8 +403,8 @@ func TestRemoveEmptyProviders(t *testing.T) {
 	}
 }
 
-// TestApplyEnvVars tests the applyEnvVars function
-func TestApplyEnvVars(t *testing.T) {
+// TestApplyEnvOverrides tests the applyEnvOverrides function
+func TestApplyEnvOverrides(t *testing.T) {
 	tests := []struct {
 		name     string
 		envVars  map[string]string
@@ -492,7 +492,7 @@ func TestApplyEnvVars(t *testing.T) {
 			}
 
 			cfg := defaultConfig()
-			applyEnvVars(&cfg)
+			applyEnvOverrides(&cfg)
 			tt.check(t, &cfg)
 		})
 	}

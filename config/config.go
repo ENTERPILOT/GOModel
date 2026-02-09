@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -39,75 +40,75 @@ type Config struct {
 // environment variables in internal/httpclient/client.go.
 type HTTPConfig struct {
 	// Timeout is the overall HTTP request timeout in seconds (default: 600)
-	Timeout int `yaml:"timeout"`
+	Timeout int `yaml:"timeout" env:"HTTP_TIMEOUT"`
 
 	// ResponseHeaderTimeout is the time to wait for response headers in seconds (default: 600)
-	ResponseHeaderTimeout int `yaml:"response_header_timeout"`
+	ResponseHeaderTimeout int `yaml:"response_header_timeout" env:"HTTP_RESPONSE_HEADER_TIMEOUT"`
 }
 
 // LogConfig holds audit logging configuration
 type LogConfig struct {
 	// Enabled controls whether audit logging is active
 	// Default: false
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" env:"LOGGING_ENABLED"`
 
 	// LogBodies enables logging of full request/response bodies
 	// WARNING: May contain sensitive data (PII, API keys in prompts)
 	// Default: true
-	LogBodies bool `yaml:"log_bodies"`
+	LogBodies bool `yaml:"log_bodies" env:"LOGGING_LOG_BODIES"`
 
 	// LogHeaders enables logging of request/response headers
 	// Sensitive headers (Authorization, Cookie, etc.) are auto-redacted
 	// Default: true
-	LogHeaders bool `yaml:"log_headers"`
+	LogHeaders bool `yaml:"log_headers" env:"LOGGING_LOG_HEADERS"`
 
 	// BufferSize is the number of log entries to buffer before flushing
 	// Default: 1000
-	BufferSize int `yaml:"buffer_size"`
+	BufferSize int `yaml:"buffer_size" env:"LOGGING_BUFFER_SIZE"`
 
 	// FlushInterval is how often to flush buffered logs (in seconds)
 	// Default: 5
-	FlushInterval int `yaml:"flush_interval"`
+	FlushInterval int `yaml:"flush_interval" env:"LOGGING_FLUSH_INTERVAL"`
 
 	// RetentionDays is how long to keep logs (0 = forever)
 	// Default: 30
-	RetentionDays int `yaml:"retention_days"`
+	RetentionDays int `yaml:"retention_days" env:"LOGGING_RETENTION_DAYS"`
 
 	// OnlyModelInteractions limits audit logging to AI model endpoints only
 	// When true, only /v1/chat/completions and /v1/responses are logged
 	// Endpoints like /health, /metrics, /admin, /v1/models are skipped
 	// Default: true
-	OnlyModelInteractions bool `yaml:"only_model_interactions"`
+	OnlyModelInteractions bool `yaml:"only_model_interactions" env:"LOGGING_ONLY_MODEL_INTERACTIONS"`
 }
 
 // UsageConfig holds token usage tracking configuration
 type UsageConfig struct {
 	// Enabled controls whether usage tracking is active
 	// Default: true
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" env:"USAGE_ENABLED"`
 
 	// EnforceReturningUsageData controls whether to enforce returning usage data in streaming responses.
 	// When true, stream_options: {"include_usage": true} is automatically added to streaming requests.
 	// Default: true
-	EnforceReturningUsageData bool `yaml:"enforce_returning_usage_data"`
+	EnforceReturningUsageData bool `yaml:"enforce_returning_usage_data" env:"ENFORCE_RETURNING_USAGE_DATA"`
 
 	// BufferSize is the number of usage entries to buffer before flushing
 	// Default: 1000
-	BufferSize int `yaml:"buffer_size"`
+	BufferSize int `yaml:"buffer_size" env:"USAGE_BUFFER_SIZE"`
 
 	// FlushInterval is how often to flush buffered usage entries (in seconds)
 	// Default: 5
-	FlushInterval int `yaml:"flush_interval"`
+	FlushInterval int `yaml:"flush_interval" env:"USAGE_FLUSH_INTERVAL"`
 
 	// RetentionDays is how long to keep usage data (0 = forever)
 	// Default: 90
-	RetentionDays int `yaml:"retention_days"`
+	RetentionDays int `yaml:"retention_days" env:"USAGE_RETENTION_DAYS"`
 }
 
 // StorageConfig holds database storage configuration (used by audit logging, usage tracking, future IAM, etc.)
 type StorageConfig struct {
 	// Type specifies the storage backend: "sqlite" (default), "postgresql", or "mongodb"
-	Type string `yaml:"type"`
+	Type string `yaml:"type" env:"STORAGE_TYPE"`
 
 	// SQLite configuration
 	SQLite SQLiteStorageConfig `yaml:"sqlite"`
@@ -122,32 +123,32 @@ type StorageConfig struct {
 // SQLiteStorageConfig holds SQLite-specific storage configuration
 type SQLiteStorageConfig struct {
 	// Path is the database file path (default: .cache/gomodel.db)
-	Path string `yaml:"path"`
+	Path string `yaml:"path" env:"SQLITE_PATH"`
 }
 
 // PostgreSQLStorageConfig holds PostgreSQL-specific storage configuration
 type PostgreSQLStorageConfig struct {
 	// URL is the connection string (e.g., postgres://user:pass@localhost/dbname)
-	URL string `yaml:"url"`
+	URL string `yaml:"url" env:"POSTGRES_URL"`
 	// MaxConns is the maximum connection pool size (default: 10)
-	MaxConns int `yaml:"max_conns"`
+	MaxConns int `yaml:"max_conns" env:"POSTGRES_MAX_CONNS"`
 }
 
 // MongoDBStorageConfig holds MongoDB-specific storage configuration
 type MongoDBStorageConfig struct {
 	// URL is the connection string (e.g., mongodb://localhost:27017)
-	URL string `yaml:"url"`
+	URL string `yaml:"url" env:"MONGODB_URL"`
 	// Database is the database name (default: gomodel)
-	Database string `yaml:"database"`
+	Database string `yaml:"database" env:"MONGODB_DATABASE"`
 }
 
 // CacheConfig holds cache configuration for model storage
 type CacheConfig struct {
 	// Type specifies the cache backend: "local" (default) or "redis"
-	Type string `yaml:"type"`
+	Type string `yaml:"type" env:"CACHE_TYPE"`
 
 	// CacheDir is the directory for local cache files (default: ".cache")
-	CacheDir string `yaml:"cache_dir"`
+	CacheDir string `yaml:"cache_dir" env:"GOMODEL_CACHE_DIR"`
 
 	// Redis configuration (only used when Type is "redis")
 	Redis RedisConfig `yaml:"redis"`
@@ -156,31 +157,31 @@ type CacheConfig struct {
 // RedisConfig holds Redis-specific configuration
 type RedisConfig struct {
 	// URL is the Redis connection URL (e.g., "redis://localhost:6379")
-	URL string `yaml:"url"`
+	URL string `yaml:"url" env:"REDIS_URL"`
 
 	// Key is the Redis key for storing the model cache (default: "gomodel:models")
-	Key string `yaml:"key"`
+	Key string `yaml:"key" env:"REDIS_KEY"`
 
 	// TTL is the time-to-live for cached data in seconds (default: 86400 = 24 hours)
-	TTL int `yaml:"ttl"`
+	TTL int `yaml:"ttl" env:"REDIS_TTL"`
 }
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port          string `yaml:"port"`
-	MasterKey     string `yaml:"master_key"`     // Optional: Master key for authentication
-	BodySizeLimit string `yaml:"body_size_limit"` // Max request body size (e.g., "10M", "1024K")
+	Port          string `yaml:"port" env:"PORT"`
+	MasterKey     string `yaml:"master_key" env:"GOMODEL_MASTER_KEY"`         // Optional: Master key for authentication
+	BodySizeLimit string `yaml:"body_size_limit" env:"BODY_SIZE_LIMIT"` // Max request body size (e.g., "10M", "1024K")
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
 type MetricsConfig struct {
 	// Enabled controls whether Prometheus metrics are collected and exposed
 	// Default: false
-	Enabled bool `yaml:"enabled"`
+	Enabled bool `yaml:"enabled" env:"METRICS_ENABLED"`
 
 	// Endpoint is the HTTP path where metrics are exposed
 	// Default: "/metrics"
-	Endpoint string `yaml:"endpoint"`
+	Endpoint string `yaml:"endpoint" env:"METRICS_ENDPOINT"`
 }
 
 // ProviderConfig holds generic provider configuration
@@ -259,7 +260,7 @@ func Load() (*Config, error) {
 	}
 
 	// 4. Env vars always win
-	applyEnvVars(&cfg)
+	applyEnvOverrides(&cfg)
 
 	// 5. Discover providers from env
 	applyProviderEnvVars(&cfg)
@@ -315,80 +316,45 @@ func applyYAML(cfg *Config) error {
 	return nil
 }
 
-// envStringMapping maps an environment variable to a Config string field setter.
-type envStringMapping struct {
-	key string
-	set func(*Config, string)
+// applyEnvOverrides walks cfg's struct fields and applies env var overrides
+// based on `env` struct tags. Maps are skipped (providers are handled separately).
+func applyEnvOverrides(cfg *Config) {
+	applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
 }
 
-// envBoolMapping maps an environment variable to a Config bool field setter.
-type envBoolMapping struct {
-	key string
-	set func(*Config, bool)
-}
+func applyEnvOverridesValue(v reflect.Value) {
+	t := v.Type()
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		fieldVal := v.Field(i)
 
-// envIntMapping maps an environment variable to a Config int field setter.
-type envIntMapping struct {
-	key string
-	set func(*Config, int)
-}
-
-var envStringMappings = []envStringMapping{
-	{"PORT", func(c *Config, v string) { c.Server.Port = v }},
-	{"GOMODEL_MASTER_KEY", func(c *Config, v string) { c.Server.MasterKey = v }},
-	{"BODY_SIZE_LIMIT", func(c *Config, v string) { c.Server.BodySizeLimit = v }},
-	{"CACHE_TYPE", func(c *Config, v string) { c.Cache.Type = v }},
-	{"GOMODEL_CACHE_DIR", func(c *Config, v string) { c.Cache.CacheDir = v }},
-	{"REDIS_URL", func(c *Config, v string) { c.Cache.Redis.URL = v }},
-	{"REDIS_KEY", func(c *Config, v string) { c.Cache.Redis.Key = v }},
-	{"STORAGE_TYPE", func(c *Config, v string) { c.Storage.Type = v }},
-	{"SQLITE_PATH", func(c *Config, v string) { c.Storage.SQLite.Path = v }},
-	{"POSTGRES_URL", func(c *Config, v string) { c.Storage.PostgreSQL.URL = v }},
-	{"MONGODB_URL", func(c *Config, v string) { c.Storage.MongoDB.URL = v }},
-	{"MONGODB_DATABASE", func(c *Config, v string) { c.Storage.MongoDB.Database = v }},
-	{"METRICS_ENDPOINT", func(c *Config, v string) { c.Metrics.Endpoint = v }},
-}
-
-var envBoolMappings = []envBoolMapping{
-	{"METRICS_ENABLED", func(c *Config, v bool) { c.Metrics.Enabled = v }},
-	{"LOGGING_ENABLED", func(c *Config, v bool) { c.Logging.Enabled = v }},
-	{"LOGGING_LOG_BODIES", func(c *Config, v bool) { c.Logging.LogBodies = v }},
-	{"LOGGING_LOG_HEADERS", func(c *Config, v bool) { c.Logging.LogHeaders = v }},
-	{"LOGGING_ONLY_MODEL_INTERACTIONS", func(c *Config, v bool) { c.Logging.OnlyModelInteractions = v }},
-	{"USAGE_ENABLED", func(c *Config, v bool) { c.Usage.Enabled = v }},
-	{"ENFORCE_RETURNING_USAGE_DATA", func(c *Config, v bool) { c.Usage.EnforceReturningUsageData = v }},
-}
-
-var envIntMappings = []envIntMapping{
-	{"REDIS_TTL", func(c *Config, v int) { c.Cache.Redis.TTL = v }},
-	{"POSTGRES_MAX_CONNS", func(c *Config, v int) { c.Storage.PostgreSQL.MaxConns = v }},
-	{"LOGGING_BUFFER_SIZE", func(c *Config, v int) { c.Logging.BufferSize = v }},
-	{"LOGGING_FLUSH_INTERVAL", func(c *Config, v int) { c.Logging.FlushInterval = v }},
-	{"LOGGING_RETENTION_DAYS", func(c *Config, v int) { c.Logging.RetentionDays = v }},
-	{"USAGE_BUFFER_SIZE", func(c *Config, v int) { c.Usage.BufferSize = v }},
-	{"USAGE_FLUSH_INTERVAL", func(c *Config, v int) { c.Usage.FlushInterval = v }},
-	{"USAGE_RETENTION_DAYS", func(c *Config, v int) { c.Usage.RetentionDays = v }},
-	{"HTTP_TIMEOUT", func(c *Config, v int) { c.HTTP.Timeout = v }},
-	{"HTTP_RESPONSE_HEADER_TIMEOUT", func(c *Config, v int) { c.HTTP.ResponseHeaderTimeout = v }},
-}
-
-// applyEnvVars applies environment variable overrides onto cfg.
-// Only set env vars override; unset env vars leave cfg untouched.
-func applyEnvVars(cfg *Config) {
-	for _, m := range envStringMappings {
-		if v := os.Getenv(m.key); v != "" {
-			m.set(cfg, v)
+		// Skip maps — providers are handled by applyProviderEnvVars
+		if field.Type.Kind() == reflect.Map {
+			continue
 		}
-	}
-	for _, m := range envBoolMappings {
-		if v := os.Getenv(m.key); v != "" {
-			m.set(cfg, parseBool(v))
+		// Recurse into nested structs
+		if field.Type.Kind() == reflect.Struct {
+			applyEnvOverridesValue(fieldVal)
+			continue
 		}
-	}
-	for _, m := range envIntMappings {
-		if v := os.Getenv(m.key); v != "" {
-			if n, err := strconv.Atoi(v); err == nil {
-				m.set(cfg, n)
+
+		envKey := field.Tag.Get("env")
+		if envKey == "" {
+			continue
+		}
+		envVal := os.Getenv(envKey)
+		if envVal == "" {
+			continue
+		}
+
+		switch field.Type.Kind() {
+		case reflect.String:
+			fieldVal.SetString(envVal)
+		case reflect.Bool:
+			fieldVal.SetBool(parseBool(envVal))
+		case reflect.Int:
+			if n, err := strconv.Atoi(envVal); err == nil {
+				fieldVal.SetInt(int64(n))
 			}
 		}
 	}
