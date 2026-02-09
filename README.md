@@ -1,6 +1,6 @@
 # GOModel
 
-A high-performance AI gateway written in Go. Unified OpenAI-compatible API for multiple LLM providers.
+A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
 
 ## Quick Start
 
