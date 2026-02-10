@@ -53,11 +53,24 @@ http:
 
 guardrails:
   enabled: false
-  system_prompt:
-    enabled: false
-    order: 0 # guardrails with the same order run in parallel; different orders run sequentially
-    mode: "inject" # "inject", "override", or "decorator"
-    content: "You are a helpful assistant."
+  rules:
+    # Each entry is a guardrail instance. Multiple instances of the same type are supported.
+    # Guardrails with the same "order" run in parallel; different orders run sequentially.
+
+    - name: "safety-prompt"
+      type: "system_prompt"
+      order: 0
+      system_prompt:
+        mode: "decorator" # "inject", "override", or "decorator"
+        content: "Always be safe and respectful."
+
+    # Example: a second system_prompt instance running at the same order (parallel)
+    # - name: "compliance-prompt"
+    #   type: "system_prompt"
+    #   order: 0
+    #   system_prompt:
+    #     mode: "inject"
+    #     content: "Follow all compliance rules."
 
 providers:
   openai:

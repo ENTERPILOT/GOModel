@@ -59,7 +59,7 @@ func TestGuardedProvider_ChatCompletion_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()
 
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "guardrail system")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
 	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
@@ -90,7 +90,7 @@ func TestGuardedProvider_StreamChatCompletion_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()
 
-	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "override system")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "override system")
 	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
@@ -118,7 +118,7 @@ func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()
 
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "guardrail instructions")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail instructions")
 	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
@@ -139,7 +139,7 @@ func TestGuardedProvider_StreamResponses_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()
 
-	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptDecorator, "prefix")
 	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)

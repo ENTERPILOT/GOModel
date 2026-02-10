@@ -24,14 +24,16 @@ const (
 
 // SystemPromptGuardrail injects, overrides, or decorates system messages in requests.
 type SystemPromptGuardrail struct {
+	name    string
 	mode    SystemPromptMode
 	content string
 }
 
-// NewSystemPromptGuardrail creates a new system prompt guardrail.
+// NewSystemPromptGuardrail creates a new system prompt guardrail instance.
+// name identifies this instance (e.g. "safety-prompt", "compliance-check").
 // mode must be "inject", "override", or "decorator".
 // content is the system prompt text to apply.
-func NewSystemPromptGuardrail(mode SystemPromptMode, content string) (*SystemPromptGuardrail, error) {
+func NewSystemPromptGuardrail(name string, mode SystemPromptMode, content string) (*SystemPromptGuardrail, error) {
 	switch mode {
 	case SystemPromptInject, SystemPromptOverride, SystemPromptDecorator:
 	default:
@@ -40,15 +42,19 @@ func NewSystemPromptGuardrail(mode SystemPromptMode, content string) (*SystemPro
 	if content == "" {
 		return nil, fmt.Errorf("system prompt content cannot be empty")
 	}
+	if name == "" {
+		name = "system_prompt"
+	}
 	return &SystemPromptGuardrail{
+		name:    name,
 		mode:    mode,
 		content: content,
 	}, nil
 }
 
-// Name returns the guardrail name.
+// Name returns this instance's name.
 func (g *SystemPromptGuardrail) Name() string {
-	return "system_prompt"
+	return g.name
 }
 
 // ProcessChat applies the system prompt guardrail to a chat completion request.

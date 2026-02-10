@@ -8,14 +8,14 @@ import (
 )
 
 func TestNewSystemPromptGuardrail_InvalidMode(t *testing.T) {
-	_, err := NewSystemPromptGuardrail("bad", "content")
+	_, err := NewSystemPromptGuardrail("test", "bad", "content")
 	if err == nil {
 		t.Fatal("expected error for invalid mode")
 	}
 }
 
 func TestNewSystemPromptGuardrail_EmptyContent(t *testing.T) {
-	_, err := NewSystemPromptGuardrail(SystemPromptInject, "")
+	_, err := NewSystemPromptGuardrail("test", SystemPromptInject, "")
 	if err == nil {
 		t.Fatal("expected error for empty content")
 	}
@@ -23,18 +23,28 @@ func TestNewSystemPromptGuardrail_EmptyContent(t *testing.T) {
 
 func TestNewSystemPromptGuardrail_ValidModes(t *testing.T) {
 	for _, mode := range []SystemPromptMode{SystemPromptInject, SystemPromptOverride, SystemPromptDecorator} {
-		g, err := NewSystemPromptGuardrail(mode, "test")
+		g, err := NewSystemPromptGuardrail("my-guardrail", mode, "test")
 		if err != nil {
 			t.Fatalf("unexpected error for mode %q: %v", mode, err)
 		}
-		if g.Name() != "system_prompt" {
-			t.Errorf("expected name 'system_prompt', got %q", g.Name())
+		if g.Name() != "my-guardrail" {
+			t.Errorf("expected name 'my-guardrail', got %q", g.Name())
 		}
 	}
 }
 
+func TestNewSystemPromptGuardrail_EmptyNameDefaults(t *testing.T) {
+	g, err := NewSystemPromptGuardrail("", SystemPromptInject, "content")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Name() != "system_prompt" {
+		t.Errorf("expected default name 'system_prompt', got %q", g.Name())
+	}
+}
+
 func TestSystemPrompt_Inject_NoExistingSystem(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "injected system prompt")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "injected system prompt")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -59,7 +69,7 @@ func TestSystemPrompt_Inject_NoExistingSystem(t *testing.T) {
 }
 
 func TestSystemPrompt_Inject_ExistingSystem(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "injected system prompt")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "injected system prompt")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -82,7 +92,7 @@ func TestSystemPrompt_Inject_ExistingSystem(t *testing.T) {
 }
 
 func TestSystemPrompt_Override_NoExistingSystem(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "override prompt")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "override prompt")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -104,7 +114,7 @@ func TestSystemPrompt_Override_NoExistingSystem(t *testing.T) {
 }
 
 func TestSystemPrompt_Override_ExistingSystem(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "override prompt")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "override prompt")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -132,7 +142,7 @@ func TestSystemPrompt_Override_ExistingSystem(t *testing.T) {
 }
 
 func TestSystemPrompt_Decorator_NoExistingSystem(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptDecorator, "prefix")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -154,7 +164,7 @@ func TestSystemPrompt_Decorator_NoExistingSystem(t *testing.T) {
 }
 
 func TestSystemPrompt_Decorator_ExistingSystem(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptDecorator, "prefix")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -178,7 +188,7 @@ func TestSystemPrompt_Decorator_ExistingSystem(t *testing.T) {
 }
 
 func TestSystemPrompt_Decorator_OnlyFirstSystemDecorated(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptDecorator, "prefix")
 	req := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -202,7 +212,7 @@ func TestSystemPrompt_Decorator_OnlyFirstSystemDecorated(t *testing.T) {
 }
 
 func TestSystemPrompt_DoesNotMutateOriginal(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "new")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "new")
 	original := &core.ChatRequest{
 		Model: "gpt-4",
 		Messages: []core.Message{
@@ -228,7 +238,7 @@ func TestSystemPrompt_DoesNotMutateOriginal(t *testing.T) {
 // --- Responses API tests ---
 
 func TestSystemPrompt_Responses_Inject_NoInstructions(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "injected")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "injected")
 	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello"}
 
 	result, err := g.ProcessResponses(context.Background(), req)
@@ -241,7 +251,7 @@ func TestSystemPrompt_Responses_Inject_NoInstructions(t *testing.T) {
 }
 
 func TestSystemPrompt_Responses_Inject_ExistingInstructions(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "injected")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "injected")
 	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello", Instructions: "existing"}
 
 	result, err := g.ProcessResponses(context.Background(), req)
@@ -254,7 +264,7 @@ func TestSystemPrompt_Responses_Inject_ExistingInstructions(t *testing.T) {
 }
 
 func TestSystemPrompt_Responses_Override(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "override")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "override")
 	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello", Instructions: "existing"}
 
 	result, err := g.ProcessResponses(context.Background(), req)
@@ -267,7 +277,7 @@ func TestSystemPrompt_Responses_Override(t *testing.T) {
 }
 
 func TestSystemPrompt_Responses_Decorator_ExistingInstructions(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptDecorator, "prefix")
 	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello", Instructions: "existing"}
 
 	result, err := g.ProcessResponses(context.Background(), req)
@@ -281,7 +291,7 @@ func TestSystemPrompt_Responses_Decorator_ExistingInstructions(t *testing.T) {
 }
 
 func TestSystemPrompt_Responses_Decorator_NoInstructions(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptDecorator, "prefix")
 	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello"}
 
 	result, err := g.ProcessResponses(context.Background(), req)
@@ -294,7 +304,7 @@ func TestSystemPrompt_Responses_Decorator_NoInstructions(t *testing.T) {
 }
 
 func TestSystemPrompt_Responses_DoesNotMutateOriginal(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "new")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "new")
 	original := &core.ResponsesRequest{Model: "gpt-4", Input: "hello", Instructions: "original"}
 
 	result, err := g.ProcessResponses(context.Background(), original)
@@ -310,7 +320,7 @@ func TestSystemPrompt_Responses_DoesNotMutateOriginal(t *testing.T) {
 }
 
 func TestSystemPrompt_PreservesOtherFields(t *testing.T) {
-	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "system")
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "system")
 	temp := 0.7
 	maxTok := 100
 	req := &core.ChatRequest{

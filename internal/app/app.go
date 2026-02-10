@@ -290,16 +290,33 @@ func (a *App) logStartupInfo() {
 func buildGuardrailsPipeline(cfg config.GuardrailsConfig) (*guardrails.Pipeline, error) {
 	pipeline := guardrails.NewPipeline()
 
-	// System prompt guardrail
-	if cfg.SystemPrompt.Enabled {
-		spMode := guardrails.SystemPromptMode(cfg.SystemPrompt.Mode)
-		g, err := guardrails.NewSystemPromptGuardrail(spMode, cfg.SystemPrompt.Content)
+	for i, rule := range cfg.Rules {
+		g, err := buildGuardrail(rule)
 		if err != nil {
-			return nil, fmt.Errorf("system_prompt guardrail: %w", err)
+			return nil, fmt.Errorf("guardrail rule #%d (%q): %w", i, rule.Name, err)
 		}
-		pipeline.Add(g, cfg.SystemPrompt.Order)
-		slog.Info("guardrail registered", "name", "system_prompt", "mode", cfg.SystemPrompt.Mode, "order", cfg.SystemPrompt.Order)
+		pipeline.Add(g, rule.Order)
+		slog.Info("guardrail registered", "name", rule.Name, "type", rule.Type, "order", rule.Order)
 	}
 
 	return pipeline, nil
+}
+
+// buildGuardrail creates a single Guardrail instance from a rule config.
+func buildGuardrail(rule config.GuardrailRuleConfig) (guardrails.Guardrail, error) {
+	if rule.Name == "" {
+		return nil, fmt.Errorf("name is required")
+	}
+
+	switch rule.Type {
+	case "system_prompt":
+		mode := guardrails.SystemPromptMode(rule.SystemPrompt.Mode)
+		if mode == "" {
+			mode = guardrails.SystemPromptInject
+		}
+		return guardrails.NewSystemPromptGuardrail(rule.Name, mode, rule.SystemPrompt.Content)
+
+	default:
+		return nil, fmt.Errorf("unknown guardrail type: %q", rule.Type)
+	}
 }

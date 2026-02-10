@@ -44,30 +44,41 @@ type GuardrailsConfig struct {
 	// Default: false
 	Enabled bool `yaml:"enabled" env:"GUARDRAILS_ENABLED"`
 
-	// SystemPrompt configures the system prompt guardrail
-	SystemPrompt SystemPromptGuardrailConfig `yaml:"system_prompt"`
+	// Rules is a list of guardrail instances. Each entry defines one guardrail
+	// with its own name, type, order, and type-specific settings. Multiple
+	// instances of the same type are allowed (e.g. two system_prompt guardrails
+	// with different content).
+	Rules []GuardrailRuleConfig `yaml:"rules"`
 }
 
-// SystemPromptGuardrailConfig holds configuration for the system prompt guardrail.
-type SystemPromptGuardrailConfig struct {
-	// Enabled controls whether the system prompt guardrail is active
-	// Default: false
-	Enabled bool `yaml:"enabled" env:"GUARDRAILS_SYSTEM_PROMPT_ENABLED"`
+// GuardrailRuleConfig defines a single guardrail instance.
+type GuardrailRuleConfig struct {
+	// Name is a unique identifier for this guardrail instance (used in logs and errors)
+	Name string `yaml:"name"`
+
+	// Type selects the guardrail implementation: "system_prompt"
+	Type string `yaml:"type"`
 
 	// Order controls execution ordering relative to other guardrails.
 	// Guardrails with the same order run in parallel; different orders run sequentially.
 	// Default: 0
-	Order int `yaml:"order" env:"GUARDRAILS_SYSTEM_PROMPT_ORDER"`
+	Order int `yaml:"order"`
 
+	// SystemPrompt holds settings when Type is "system_prompt"
+	SystemPrompt SystemPromptSettings `yaml:"system_prompt"`
+}
+
+// SystemPromptSettings holds the type-specific settings for a system_prompt guardrail.
+type SystemPromptSettings struct {
 	// Mode controls how the system prompt is applied: "inject", "override", or "decorator"
 	//   - inject: adds a system message only if none exists
 	//   - override: replaces all existing system messages
 	//   - decorator: prepends to the first existing system message
 	// Default: "inject"
-	Mode string `yaml:"mode" env:"GUARDRAILS_SYSTEM_PROMPT_MODE"`
+	Mode string `yaml:"mode"`
 
 	// Content is the system prompt text to apply
-	Content string `yaml:"content" env:"GUARDRAILS_SYSTEM_PROMPT_CONTENT"`
+	Content string `yaml:"content"`
 }
 
 // HTTPConfig holds HTTP client configuration for upstream API requests.
@@ -273,11 +284,7 @@ func defaultConfig() Config {
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
 		},
-		Guardrails: GuardrailsConfig{
-			SystemPrompt: SystemPromptGuardrailConfig{
-				Mode: "inject",
-			},
-		},
+		Guardrails: GuardrailsConfig{},
 		Providers: make(map[string]ProviderConfig),
 	}
 }
