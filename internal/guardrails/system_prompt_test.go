@@ -319,6 +319,29 @@ func TestSystemPrompt_Responses_DoesNotMutateOriginal(t *testing.T) {
 	}
 }
 
+func TestNewSystemPromptGuardrail_UnicodeNames(t *testing.T) {
+	tests := []struct {
+		name string
+	}{
+		{"safety prompt"},           // spaces
+		{"compliance check v2"},     // spaces and digits
+		{"проверка безопасности"},   // Cyrillic with space
+		{"安全検査"},                // CJK (Chinese + Japanese)
+		{"sécurité-modèle"},        // accented Latin
+		{"🛡️ guardrail"},           // emoji
+	}
+	for _, tc := range tests {
+		g, err := NewSystemPromptGuardrail(tc.name, SystemPromptInject, "content")
+		if err != nil {
+			t.Errorf("unexpected error for name %q: %v", tc.name, err)
+			continue
+		}
+		if g.Name() != tc.name {
+			t.Errorf("expected name %q, got %q", tc.name, g.Name())
+		}
+	}
+}
+
 func TestSystemPrompt_PreservesOtherFields(t *testing.T) {
 	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "system")
 	temp := 0.7

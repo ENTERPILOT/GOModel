@@ -72,6 +72,20 @@ guardrails:
     #     mode: "inject"
     #     content: "Follow all compliance rules."
 
+    # Names support spaces and unicode characters:
+    # - name: "проверка безопасности"
+    #   type: "system_prompt"
+    #   order: 0
+    #   system_prompt:
+    #     mode: "decorator"
+    #     content: "Соблюдайте все правила безопасности."
+    # - name: "安全検査"
+    #   type: "system_prompt"
+    #   order: 1
+    #   system_prompt:
+    #     mode: "inject"
+    #     content: "Follow safety guidelines."
+
 providers:
   openai:
     type: openai
