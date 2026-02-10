@@ -27,14 +27,46 @@ var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration
 type Config struct {
-	Server    ServerConfig            `yaml:"server"`
-	Cache     CacheConfig             `yaml:"cache"`
-	Storage   StorageConfig           `yaml:"storage"`
-	Logging   LogConfig               `yaml:"logging"`
-	Usage     UsageConfig             `yaml:"usage"`
-	Metrics   MetricsConfig           `yaml:"metrics"`
-	HTTP      HTTPConfig              `yaml:"http"`
-	Providers map[string]ProviderConfig `yaml:"providers"`
+	Server     ServerConfig              `yaml:"server"`
+	Cache      CacheConfig               `yaml:"cache"`
+	Storage    StorageConfig             `yaml:"storage"`
+	Logging    LogConfig                 `yaml:"logging"`
+	Usage      UsageConfig               `yaml:"usage"`
+	Metrics    MetricsConfig             `yaml:"metrics"`
+	HTTP       HTTPConfig                `yaml:"http"`
+	Guardrails GuardrailsConfig          `yaml:"guardrails"`
+	Providers  map[string]ProviderConfig `yaml:"providers"`
+}
+
+// GuardrailsConfig holds configuration for the request guardrails pipeline.
+type GuardrailsConfig struct {
+	// Enabled controls whether guardrails are active
+	// Default: false
+	Enabled bool `yaml:"enabled" env:"GUARDRAILS_ENABLED"`
+
+	// Execution controls how guardrails are executed: "sequential" or "parallel"
+	// Default: "sequential"
+	Execution string `yaml:"execution" env:"GUARDRAILS_EXECUTION"`
+
+	// SystemPrompt configures the system prompt guardrail
+	SystemPrompt SystemPromptGuardrailConfig `yaml:"system_prompt"`
+}
+
+// SystemPromptGuardrailConfig holds configuration for the system prompt guardrail.
+type SystemPromptGuardrailConfig struct {
+	// Enabled controls whether the system prompt guardrail is active
+	// Default: false
+	Enabled bool `yaml:"enabled" env:"GUARDRAILS_SYSTEM_PROMPT_ENABLED"`
+
+	// Mode controls how the system prompt is applied: "inject", "override", or "decorator"
+	//   - inject: adds a system message only if none exists
+	//   - override: replaces all existing system messages
+	//   - decorator: prepends to the first existing system message
+	// Default: "inject"
+	Mode string `yaml:"mode" env:"GUARDRAILS_SYSTEM_PROMPT_MODE"`
+
+	// Content is the system prompt text to apply
+	Content string `yaml:"content" env:"GUARDRAILS_SYSTEM_PROMPT_CONTENT"`
 }
 
 // HTTPConfig holds HTTP client configuration for upstream API requests.
@@ -239,6 +271,12 @@ func defaultConfig() Config {
 		HTTP: HTTPConfig{
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
+		},
+		Guardrails: GuardrailsConfig{
+			Execution: "sequential",
+			SystemPrompt: SystemPromptGuardrailConfig{
+				Mode: "inject",
+			},
 		},
 		Providers: make(map[string]ProviderConfig),
 	}

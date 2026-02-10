@@ -14,6 +14,7 @@ import (
 	"gomodel/config"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
 	"gomodel/internal/server"
 	"gomodel/internal/usage"
@@ -106,6 +107,23 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	// Log configuration status
 	app.logStartupInfo()
 
+	// Build the provider chain: router optionally wrapped with guardrails
+	var provider core.RoutableProvider = app.providers.Router
+	if cfg.AppConfig.Guardrails.Enabled {
+		pipeline, err := buildGuardrailsPipeline(cfg.AppConfig.Guardrails)
+		if err != nil {
+			closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
+			if closeErr != nil {
+				return nil, fmt.Errorf("failed to build guardrails: %w (also: close error: %v)", err, closeErr)
+			}
+			return nil, fmt.Errorf("failed to build guardrails: %w", err)
+		}
+		if pipeline.Len() > 0 {
+			provider = guardrails.NewGuardedProvider(provider, pipeline)
+			slog.Info("guardrails enabled", "count", pipeline.Len(), "execution", cfg.AppConfig.Guardrails.Execution)
+		}
+	}
+
 	// Create server
 	serverCfg := &server.Config{
 		MasterKey:                cfg.AppConfig.Server.MasterKey,
@@ -116,7 +134,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		UsageLogger:              usageResult.Logger,
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
 	}
-	app.server = server.New(app.providers.Router, serverCfg)
+	app.server = server.New(provider, serverCfg)
 
 	return app, nil
 }
@@ -266,4 +284,23 @@ func (a *App) logStartupInfo() {
 	} else {
 		slog.Info("usage tracking disabled")
 	}
+}
+
+// buildGuardrailsPipeline creates a guardrails pipeline from configuration.
+func buildGuardrailsPipeline(cfg config.GuardrailsConfig) (*guardrails.Pipeline, error) {
+	mode := guardrails.ExecutionMode(cfg.Execution)
+	pipeline := guardrails.NewPipeline(mode)
+
+	// System prompt guardrail
+	if cfg.SystemPrompt.Enabled {
+		spMode := guardrails.SystemPromptMode(cfg.SystemPrompt.Mode)
+		g, err := guardrails.NewSystemPromptGuardrail(spMode, cfg.SystemPrompt.Content)
+		if err != nil {
+			return nil, fmt.Errorf("system_prompt guardrail: %w", err)
+		}
+		pipeline.Add(g)
+		slog.Info("guardrail registered", "name", "system_prompt", "mode", cfg.SystemPrompt.Mode)
+	}
+
+	return pipeline, nil
 }
