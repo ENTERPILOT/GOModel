@@ -1,9 +1,17 @@
 // Package guardrails provides a pluggable pipeline for request-level guardrails.
 //
 // Guardrails intercept requests before they reach providers, allowing
-// validation, modification, or rejection. They can be executed sequentially
-// (each receives the previous guardrail's output) or in parallel (all run
-// concurrently on the original request, modifications applied in order).
+// validation, modification, or rejection.
+//
+// Execution is driven by a per-guardrail "order" value:
+//   - Guardrails with the same order run in parallel (concurrently).
+//   - Groups are executed sequentially in ascending order.
+//   - Each group receives the output of the previous group.
+//
+// Example with orders 0, 0, 1, 2, 2:
+//
+//	Group 0  ──┬── guardrail A ──┬──▶ Group 1 ── guardrail C ──▶ Group 2 ──┬── guardrail D ──┬──▶ done
+//	           └── guardrail B ──┘                                         └── guardrail E ──┘
 package guardrails
 
 import (
@@ -26,17 +34,3 @@ type Guardrail interface {
 	// Return the (possibly modified) request, or an error to reject it.
 	ProcessResponses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error)
 }
-
-// ExecutionMode defines how guardrails in a pipeline are executed.
-type ExecutionMode string
-
-const (
-	// Sequential runs guardrails one after another; each receives the output
-	// of the previous guardrail. Order matters.
-	Sequential ExecutionMode = "sequential"
-
-	// Parallel runs all guardrails concurrently on the original request.
-	// If any guardrail returns an error, the pipeline fails.
-	// Modifications are applied in registration order after all complete.
-	Parallel ExecutionMode = "parallel"
-)

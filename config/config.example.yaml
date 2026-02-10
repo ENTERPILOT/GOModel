@@ -53,9 +53,9 @@ http:
 
 guardrails:
   enabled: false
-  execution: "sequential" # "sequential" or "parallel"
   system_prompt:
     enabled: false
+    order: 0 # guardrails with the same order run in parallel; different orders run sequentially
     mode: "inject" # "inject", "override", or "decorator"
     content: "You are a helpful assistant."
 

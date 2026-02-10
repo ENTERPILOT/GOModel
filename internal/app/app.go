@@ -120,7 +120,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		}
 		if pipeline.Len() > 0 {
 			provider = guardrails.NewGuardedProvider(provider, pipeline)
-			slog.Info("guardrails enabled", "count", pipeline.Len(), "execution", cfg.AppConfig.Guardrails.Execution)
+			slog.Info("guardrails enabled", "count", pipeline.Len())
 		}
 	}
 
@@ -288,8 +288,7 @@ func (a *App) logStartupInfo() {
 
 // buildGuardrailsPipeline creates a guardrails pipeline from configuration.
 func buildGuardrailsPipeline(cfg config.GuardrailsConfig) (*guardrails.Pipeline, error) {
-	mode := guardrails.ExecutionMode(cfg.Execution)
-	pipeline := guardrails.NewPipeline(mode)
+	pipeline := guardrails.NewPipeline()
 
 	// System prompt guardrail
 	if cfg.SystemPrompt.Enabled {
@@ -298,8 +297,8 @@ func buildGuardrailsPipeline(cfg config.GuardrailsConfig) (*guardrails.Pipeline,
 		if err != nil {
 			return nil, fmt.Errorf("system_prompt guardrail: %w", err)
 		}
-		pipeline.Add(g)
-		slog.Info("guardrail registered", "name", "system_prompt", "mode", cfg.SystemPrompt.Mode)
+		pipeline.Add(g, cfg.SystemPrompt.Order)
+		slog.Info("guardrail registered", "name", "system_prompt", "mode", cfg.SystemPrompt.Mode, "order", cfg.SystemPrompt.Order)
 	}
 
 	return pipeline, nil

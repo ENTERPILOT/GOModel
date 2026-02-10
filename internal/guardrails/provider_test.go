@@ -57,10 +57,10 @@ func (m *mockRoutableProvider) StreamResponses(_ context.Context, req *core.Resp
 
 func TestGuardedProvider_ChatCompletion_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 
 	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "guardrail system")
-	pipeline.Add(g)
+	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
 
@@ -88,10 +88,10 @@ func TestGuardedProvider_ChatCompletion_AppliesGuardrails(t *testing.T) {
 
 func TestGuardedProvider_StreamChatCompletion_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 
 	g, _ := NewSystemPromptGuardrail(SystemPromptOverride, "override system")
-	pipeline.Add(g)
+	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
 
@@ -116,10 +116,10 @@ func TestGuardedProvider_StreamChatCompletion_AppliesGuardrails(t *testing.T) {
 
 func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 
 	g, _ := NewSystemPromptGuardrail(SystemPromptInject, "guardrail instructions")
-	pipeline.Add(g)
+	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
 
@@ -137,10 +137,10 @@ func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {
 
 func TestGuardedProvider_StreamResponses_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 
 	g, _ := NewSystemPromptGuardrail(SystemPromptDecorator, "prefix")
-	pipeline.Add(g)
+	pipeline.Add(g, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
 
@@ -163,7 +163,7 @@ func TestGuardedProvider_StreamResponses_AppliesGuardrails(t *testing.T) {
 
 func TestGuardedProvider_ListModels_NoGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 	guarded := NewGuardedProvider(inner, pipeline)
 
 	resp, err := guarded.ListModels(context.Background())
@@ -181,7 +181,7 @@ func TestGuardedProvider_DelegatesSupports(t *testing.T) {
 			return model == "gpt-4"
 		},
 	}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 	guarded := NewGuardedProvider(inner, pipeline)
 
 	if !guarded.Supports("gpt-4") {
@@ -198,7 +198,7 @@ func TestGuardedProvider_DelegatesGetProviderType(t *testing.T) {
 			return "openai"
 		},
 	}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 	guarded := NewGuardedProvider(inner, pipeline)
 
 	if guarded.GetProviderType("gpt-4") != "openai" {
@@ -208,13 +208,13 @@ func TestGuardedProvider_DelegatesGetProviderType(t *testing.T) {
 
 func TestGuardedProvider_GuardrailError_BlocksRequest(t *testing.T) {
 	inner := &mockRoutableProvider{}
-	pipeline := NewPipeline(Sequential)
+	pipeline := NewPipeline()
 	pipeline.Add(&mockGuardrail{
 		name: "blocker",
 		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatRequest, error) {
 			return nil, core.NewInvalidRequestError("guardrail violation", nil)
 		},
-	})
+	}, 0)
 
 	guarded := NewGuardedProvider(inner, pipeline)
 

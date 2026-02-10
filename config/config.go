@@ -44,10 +44,6 @@ type GuardrailsConfig struct {
 	// Default: false
 	Enabled bool `yaml:"enabled" env:"GUARDRAILS_ENABLED"`
 
-	// Execution controls how guardrails are executed: "sequential" or "parallel"
-	// Default: "sequential"
-	Execution string `yaml:"execution" env:"GUARDRAILS_EXECUTION"`
-
 	// SystemPrompt configures the system prompt guardrail
 	SystemPrompt SystemPromptGuardrailConfig `yaml:"system_prompt"`
 }
@@ -57,6 +53,11 @@ type SystemPromptGuardrailConfig struct {
 	// Enabled controls whether the system prompt guardrail is active
 	// Default: false
 	Enabled bool `yaml:"enabled" env:"GUARDRAILS_SYSTEM_PROMPT_ENABLED"`
+
+	// Order controls execution ordering relative to other guardrails.
+	// Guardrails with the same order run in parallel; different orders run sequentially.
+	// Default: 0
+	Order int `yaml:"order" env:"GUARDRAILS_SYSTEM_PROMPT_ORDER"`
 
 	// Mode controls how the system prompt is applied: "inject", "override", or "decorator"
 	//   - inject: adds a system message only if none exists
@@ -273,7 +274,6 @@ func defaultConfig() Config {
 			ResponseHeaderTimeout: 600,
 		},
 		Guardrails: GuardrailsConfig{
-			Execution: "sequential",
 			SystemPrompt: SystemPromptGuardrailConfig{
 				Mode: "inject",
 			},
