@@ -11,10 +11,10 @@ import (
 
 // mockRoutableProvider is a test double for core.RoutableProvider.
 type mockRoutableProvider struct {
-	supportsFn       func(model string) bool
+	supportsFn        func(model string) bool
 	getProviderTypeFn func(model string) string
-	chatReq          *core.ChatRequest
-	responsesReq     *core.ResponsesRequest
+	chatReq           *core.ChatRequest
+	responsesReq      *core.ResponsesRequest
 }
 
 func (m *mockRoutableProvider) Supports(model string) bool {
@@ -54,6 +54,8 @@ func (m *mockRoutableProvider) StreamResponses(_ context.Context, req *core.Resp
 	m.responsesReq = req
 	return io.NopCloser(strings.NewReader("data: test\n\n")), nil
 }
+
+// --- Chat adapter integration tests ---
 
 func TestGuardedProvider_ChatCompletion_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
@@ -114,6 +116,51 @@ func TestGuardedProvider_StreamChatCompletion_AppliesGuardrails(t *testing.T) {
 	}
 }
 
+func TestGuardedProvider_ChatPreservesFields(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "system")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	temp := 0.7
+	maxTok := 100
+	req := &core.ChatRequest{
+		Model:       "gpt-4",
+		Temperature: &temp,
+		MaxTokens:   &maxTok,
+		Messages:    []core.Message{{Role: "user", Content: "hello"}},
+		Stream:      true,
+		Reasoning:   &core.Reasoning{Effort: "high"},
+	}
+
+	_, err := guarded.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := inner.chatReq
+	if got.Model != "gpt-4" {
+		t.Errorf("model not preserved")
+	}
+	if got.Temperature == nil || *got.Temperature != 0.7 {
+		t.Errorf("temperature not preserved")
+	}
+	if got.MaxTokens == nil || *got.MaxTokens != 100 {
+		t.Errorf("max_tokens not preserved")
+	}
+	if !got.Stream {
+		t.Errorf("stream not preserved")
+	}
+	if got.Reasoning == nil || got.Reasoning.Effort != "high" {
+		t.Errorf("reasoning not preserved")
+	}
+}
+
+// --- Responses adapter integration tests ---
+
 func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()
@@ -160,6 +207,136 @@ func TestGuardedProvider_StreamResponses_AppliesGuardrails(t *testing.T) {
 		t.Errorf("expected decorated instructions, got %q", inner.responsesReq.Instructions)
 	}
 }
+
+func TestGuardedProvider_ResponsesPreservesFields(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "system")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	temp := 0.5
+	maxTok := 200
+	req := &core.ResponsesRequest{
+		Model:           "gpt-4",
+		Input:           "hello",
+		Temperature:     &temp,
+		MaxOutputTokens: &maxTok,
+		Tools:           []map[string]any{{"type": "function"}},
+		Metadata:        map[string]string{"key": "val"},
+		Reasoning:       &core.Reasoning{Effort: "medium"},
+	}
+
+	_, err := guarded.Responses(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := inner.responsesReq
+	if got.Model != "gpt-4" {
+		t.Errorf("model not preserved")
+	}
+	if got.Temperature == nil || *got.Temperature != 0.5 {
+		t.Errorf("temperature not preserved")
+	}
+	if got.MaxOutputTokens == nil || *got.MaxOutputTokens != 200 {
+		t.Errorf("max_output_tokens not preserved")
+	}
+	if got.Input != "hello" {
+		t.Errorf("input not preserved")
+	}
+	if len(got.Tools) != 1 {
+		t.Errorf("tools not preserved")
+	}
+	if got.Metadata["key"] != "val" {
+		t.Errorf("metadata not preserved")
+	}
+	if got.Reasoning == nil || got.Reasoning.Effort != "medium" {
+		t.Errorf("reasoning not preserved")
+	}
+}
+
+func TestGuardedProvider_Responses_OverrideClearsExisting(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "new instructions")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.ResponsesRequest{
+		Model:        "gpt-4",
+		Input:        "hello",
+		Instructions: "old instructions",
+	}
+
+	_, err := guarded.Responses(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inner.responsesReq.Instructions != "new instructions" {
+		t.Errorf("expected override, got %q", inner.responsesReq.Instructions)
+	}
+}
+
+func TestGuardedProvider_Responses_InjectSkipsExisting(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "injected")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.ResponsesRequest{
+		Model:        "gpt-4",
+		Input:        "hello",
+		Instructions: "existing",
+	}
+
+	_, err := guarded.Responses(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inner.responsesReq.Instructions != "existing" {
+		t.Errorf("inject should not change existing instructions, got %q", inner.responsesReq.Instructions)
+	}
+}
+
+func TestGuardedProvider_DoesNotMutateOriginalRequest(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "new")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{Role: "system", Content: "original"},
+			{Role: "user", Content: "hello"},
+		},
+	}
+
+	_, err := guarded.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Original request must be untouched
+	if req.Messages[0].Content != "original" {
+		t.Error("original request was mutated")
+	}
+}
+
+// --- Delegation tests ---
 
 func TestGuardedProvider_ListModels_NoGuardrails(t *testing.T) {
 	inner := &mockRoutableProvider{}
@@ -211,7 +388,7 @@ func TestGuardedProvider_GuardrailError_BlocksRequest(t *testing.T) {
 	pipeline := NewPipeline()
 	pipeline.Add(&mockGuardrail{
 		name: "blocker",
-		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, _ []Message) ([]Message, error) {
 			return nil, core.NewInvalidRequestError("guardrail violation", nil)
 		},
 	}, 0)
@@ -231,5 +408,78 @@ func TestGuardedProvider_GuardrailError_BlocksRequest(t *testing.T) {
 	// Inner provider should not have been called
 	if inner.chatReq != nil {
 		t.Error("inner provider should not have been called when guardrail blocks")
+	}
+}
+
+// --- Adapter unit tests ---
+
+func TestChatToMessages(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{Role: "system", Content: "sys"},
+			{Role: "user", Content: "hello"},
+		},
+	}
+	msgs := chatToMessages(req)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != "system" || msgs[0].Content != "sys" {
+		t.Errorf("unexpected first message: %+v", msgs[0])
+	}
+	if msgs[1].Role != "user" || msgs[1].Content != "hello" {
+		t.Errorf("unexpected second message: %+v", msgs[1])
+	}
+}
+
+func TestResponsesToMessages_WithInstructions(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model:        "gpt-4",
+		Input:        "hello",
+		Instructions: "be helpful",
+	}
+	msgs := responsesToMessages(req)
+	if len(msgs) != 1 {
+		t.Fatalf("expected 1 message, got %d", len(msgs))
+	}
+	if msgs[0].Role != "system" || msgs[0].Content != "be helpful" {
+		t.Errorf("unexpected message: %+v", msgs[0])
+	}
+}
+
+func TestResponsesToMessages_NoInstructions(t *testing.T) {
+	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello"}
+	msgs := responsesToMessages(req)
+	if len(msgs) != 0 {
+		t.Errorf("expected 0 messages, got %d", len(msgs))
+	}
+}
+
+func TestApplyMessagesToResponses_SystemToInstructions(t *testing.T) {
+	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello"}
+	msgs := []Message{
+		{Role: "system", Content: "new instructions"},
+	}
+	result := applyMessagesToResponses(req, msgs)
+	if result.Instructions != "new instructions" {
+		t.Errorf("expected 'new instructions', got %q", result.Instructions)
+	}
+	// Original untouched
+	if req.Instructions != "" {
+		t.Error("original request was mutated")
+	}
+}
+
+func TestApplyMessagesToResponses_NoSystem_ClearsInstructions(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model:        "gpt-4",
+		Input:        "hello",
+		Instructions: "old",
+	}
+	msgs := []Message{} // no system messages
+	result := applyMessagesToResponses(req, msgs)
+	if result.Instructions != "" {
+		t.Errorf("expected empty instructions, got %q", result.Instructions)
 	}
 }

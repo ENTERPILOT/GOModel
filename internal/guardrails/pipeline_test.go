@@ -6,43 +6,33 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"gomodel/internal/core"
 )
 
-// mockGuardrail is a test guardrail that can be configured to modify or reject requests.
+// mockGuardrail is a test guardrail that can be configured to modify or reject messages.
 type mockGuardrail struct {
-	name        string
-	chatFn      func(ctx context.Context, req *core.ChatRequest) (*core.ChatRequest, error)
-	responsesFn func(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error)
+	name      string
+	processFn func(ctx context.Context, msgs []Message) ([]Message, error)
 }
 
 func (m *mockGuardrail) Name() string { return m.name }
 
-func (m *mockGuardrail) ProcessChat(ctx context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-	if m.chatFn != nil {
-		return m.chatFn(ctx, req)
+func (m *mockGuardrail) Process(ctx context.Context, msgs []Message) ([]Message, error) {
+	if m.processFn != nil {
+		return m.processFn(ctx, msgs)
 	}
-	return req, nil
-}
-
-func (m *mockGuardrail) ProcessResponses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-	if m.responsesFn != nil {
-		return m.responsesFn(ctx, req)
-	}
-	return req, nil
+	return msgs, nil
 }
 
 func TestPipeline_EmptyPipeline(t *testing.T) {
 	p := NewPipeline()
-	req := &core.ChatRequest{Model: "gpt-4"}
+	msgs := []Message{{Role: "user", Content: "hello"}}
 
-	result, err := p.ProcessChat(context.Background(), req)
+	result, err := p.Process(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result != req {
-		t.Error("empty pipeline should return the same request")
+	if &result[0] != &msgs[0] {
+		t.Error("empty pipeline should return the same slice")
 	}
 }
 
@@ -62,47 +52,44 @@ func TestPipeline_Len(t *testing.T) {
 func TestPipeline_DifferentOrders_RunSequentially(t *testing.T) {
 	p := NewPipeline()
 
-	// Order 0: adds a system message
+	// Order 0: prepend a system message
 	p.Add(&mockGuardrail{
 		name: "add_system",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-			msgs := make([]core.Message, 0, len(req.Messages)+1)
-			msgs = append(msgs, core.Message{Role: "system", Content: "first"})
-			msgs = append(msgs, req.Messages...)
-			return &core.ChatRequest{Model: req.Model, Messages: msgs}, nil
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
+			result := make([]Message, 0, len(msgs)+1)
+			result = append(result, Message{Role: "system", Content: "first"})
+			result = append(result, msgs...)
+			return result, nil
 		},
 	}, 0)
 
 	// Order 1: sees output from order 0, appends a message
 	p.Add(&mockGuardrail{
 		name: "add_context",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-			msgs := make([]core.Message, len(req.Messages))
-			copy(msgs, req.Messages)
-			msgs = append(msgs, core.Message{Role: "system", Content: "second"})
-			return &core.ChatRequest{Model: req.Model, Messages: msgs}, nil
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
+			result := make([]Message, len(msgs))
+			copy(result, msgs)
+			result = append(result, Message{Role: "system", Content: "second"})
+			return result, nil
 		},
 	}, 1)
 
-	req := &core.ChatRequest{
-		Model:    "gpt-4",
-		Messages: []core.Message{{Role: "user", Content: "hello"}},
-	}
+	msgs := []Message{{Role: "user", Content: "hello"}}
 
-	result, err := p.ProcessChat(context.Background(), req)
+	result, err := p.Process(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Sequential: first adds system at start, second sees that and appends at end
-	if len(result.Messages) != 3 {
-		t.Fatalf("expected 3 messages, got %d", len(result.Messages))
+	// Sequential: first prepends system, second sees that and appends at end
+	if len(result) != 3 {
+		t.Fatalf("expected 3 messages, got %d", len(result))
 	}
-	if result.Messages[0].Content != "first" {
-		t.Errorf("expected first guardrail output, got %q", result.Messages[0].Content)
+	if result[0].Content != "first" {
+		t.Errorf("expected first guardrail output, got %q", result[0].Content)
 	}
-	if result.Messages[2].Content != "second" {
-		t.Errorf("expected second guardrail output, got %q", result.Messages[2].Content)
+	if result[2].Content != "second" {
+		t.Errorf("expected second guardrail output, got %q", result[2].Content)
 	}
 }
 
@@ -117,19 +104,19 @@ func TestPipeline_SameOrder_RunInParallel(t *testing.T) {
 		name := fmt.Sprintf("parallel_%d", i)
 		p.Add(&mockGuardrail{
 			name: name,
-			chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+			processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 				started.Add(1)
 				<-barrier // wait until both have started
-				return req, nil
+				return msgs, nil
 			},
 		}, 0)
 	}
 
-	req := &core.ChatRequest{Model: "gpt-4"}
+	msgs := []Message{{Role: "user", Content: "hello"}}
 
 	done := make(chan struct{})
 	go func() {
-		_, _ = p.ProcessChat(context.Background(), req)
+		_, _ = p.Process(context.Background(), msgs)
 		close(done)
 	}()
 
@@ -156,33 +143,33 @@ func TestPipeline_MixedOrders_GroupsExecuteCorrectly(t *testing.T) {
 	// Order 0, guardrail A
 	p.Add(&mockGuardrail{
 		name: "A",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 			trace = append(trace, "A")
-			return req, nil
+			return msgs, nil
 		},
 	}, 0)
 
 	// Order 1, guardrail B (runs after group 0 completes)
 	p.Add(&mockGuardrail{
 		name: "B",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 			trace = append(trace, "B")
-			return req, nil
+			return msgs, nil
 		},
 	}, 1)
 
 	// Order 0, guardrail C (parallel with A)
 	p.Add(&mockGuardrail{
 		name: "C",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 			// Note: this writes to trace inside a parallel group, so we can't assert
 			// exact ordering of A and C. But B must come after both.
-			return req, nil
+			return msgs, nil
 		},
 	}, 0)
 
-	req := &core.ChatRequest{Model: "gpt-4"}
-	_, err := p.ProcessChat(context.Background(), req)
+	msgs := []Message{{Role: "user", Content: "hello"}}
+	_, err := p.Process(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +189,7 @@ func TestPipeline_ErrorInGroup_StopsExecution(t *testing.T) {
 	// Order 0: error
 	p.Add(&mockGuardrail{
 		name: "blocker",
-		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, _ []Message) ([]Message, error) {
 			return nil, fmt.Errorf("blocked")
 		},
 	}, 0)
@@ -211,14 +198,14 @@ func TestPipeline_ErrorInGroup_StopsExecution(t *testing.T) {
 	called := false
 	p.Add(&mockGuardrail{
 		name: "after_blocker",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 			called = true
-			return req, nil
+			return msgs, nil
 		},
 	}, 1)
 
-	req := &core.ChatRequest{Model: "gpt-4"}
-	_, err := p.ProcessChat(context.Background(), req)
+	msgs := []Message{{Role: "user", Content: "hello"}}
+	_, err := p.Process(context.Background(), msgs)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -233,19 +220,19 @@ func TestPipeline_ParallelGroup_OneErrors(t *testing.T) {
 	// Both at order 0 — one fails
 	p.Add(&mockGuardrail{
 		name: "pass",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-			return req, nil
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
+			return msgs, nil
 		},
 	}, 0)
 	p.Add(&mockGuardrail{
 		name: "blocker",
-		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, _ []Message) ([]Message, error) {
 			return nil, fmt.Errorf("blocked")
 		},
 	}, 0)
 
-	req := &core.ChatRequest{Model: "gpt-4"}
-	_, err := p.ProcessChat(context.Background(), req)
+	msgs := []Message{{Role: "user", Content: "hello"}}
+	_, err := p.Process(context.Background(), msgs)
 	if err == nil {
 		t.Fatal("expected error from parallel group")
 	}
@@ -257,61 +244,61 @@ func TestPipeline_SingleEntryGroup_NoGoroutineOverhead(t *testing.T) {
 	// Single guardrail at order 0 — should run directly, not via goroutine
 	p.Add(&mockGuardrail{
 		name: "single",
-		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatRequest, error) {
-			return &core.ChatRequest{Model: "modified"}, nil
+		processFn: func(_ context.Context, _ []Message) ([]Message, error) {
+			return []Message{{Role: "system", Content: "modified"}}, nil
 		},
 	}, 0)
 
-	req := &core.ChatRequest{Model: "gpt-4"}
-	result, err := p.ProcessChat(context.Background(), req)
+	msgs := []Message{{Role: "user", Content: "hello"}}
+	result, err := p.Process(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Model != "modified" {
-		t.Errorf("expected 'modified', got %q", result.Model)
+	if len(result) != 1 || result[0].Content != "modified" {
+		t.Errorf("expected modified message, got %v", result)
 	}
 }
 
 func TestPipeline_GroupsReceivePreviousOutput(t *testing.T) {
 	p := NewPipeline()
 
-	// Order 0: set model to "step1"
+	// Order 0: add "step1" marker
 	p.Add(&mockGuardrail{
 		name: "step1",
-		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatRequest, error) {
-			return &core.ChatRequest{Model: "step1"}, nil
+		processFn: func(_ context.Context, _ []Message) ([]Message, error) {
+			return []Message{{Role: "system", Content: "step1"}}, nil
 		},
 	}, 0)
 
 	// Order 1: verify it received "step1", set to "step2"
 	p.Add(&mockGuardrail{
 		name: "step2",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-			if req.Model != "step1" {
-				return nil, fmt.Errorf("expected model 'step1' from previous group, got %q", req.Model)
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
+			if len(msgs) != 1 || msgs[0].Content != "step1" {
+				return nil, fmt.Errorf("expected 'step1' from previous group, got %v", msgs)
 			}
-			return &core.ChatRequest{Model: "step2"}, nil
+			return []Message{{Role: "system", Content: "step2"}}, nil
 		},
 	}, 1)
 
 	// Order 2: verify it received "step2"
 	p.Add(&mockGuardrail{
 		name: "step3",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-			if req.Model != "step2" {
-				return nil, fmt.Errorf("expected model 'step2' from previous group, got %q", req.Model)
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
+			if len(msgs) != 1 || msgs[0].Content != "step2" {
+				return nil, fmt.Errorf("expected 'step2' from previous group, got %v", msgs)
 			}
-			return &core.ChatRequest{Model: "step3"}, nil
+			return []Message{{Role: "system", Content: "step3"}}, nil
 		},
 	}, 2)
 
-	req := &core.ChatRequest{Model: "original"}
-	result, err := p.ProcessChat(context.Background(), req)
+	msgs := []Message{{Role: "user", Content: "original"}}
+	result, err := p.Process(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Model != "step3" {
-		t.Errorf("expected 'step3', got %q", result.Model)
+	if len(result) != 1 || result[0].Content != "step3" {
+		t.Errorf("expected 'step3', got %v", result)
 	}
 }
 
@@ -323,85 +310,28 @@ func TestPipeline_NegativeOrders(t *testing.T) {
 	// Negative orders run before 0
 	p.Add(&mockGuardrail{
 		name: "first",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 			trace = append(trace, "first")
-			return req, nil
+			return msgs, nil
 		},
 	}, -1)
 
 	p.Add(&mockGuardrail{
 		name: "second",
-		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+		processFn: func(_ context.Context, msgs []Message) ([]Message, error) {
 			trace = append(trace, "second")
-			return req, nil
+			return msgs, nil
 		},
 	}, 0)
 
-	req := &core.ChatRequest{Model: "gpt-4"}
-	_, err := p.ProcessChat(context.Background(), req)
+	msgs := []Message{{Role: "user", Content: "hello"}}
+	_, err := p.Process(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if len(trace) != 2 || trace[0] != "first" || trace[1] != "second" {
 		t.Errorf("expected [first, second], got %v", trace)
-	}
-}
-
-func TestPipeline_Responses_DifferentOrders(t *testing.T) {
-	p := NewPipeline()
-
-	p.Add(&mockGuardrail{
-		name: "set_instructions",
-		responsesFn: func(_ context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-			return &core.ResponsesRequest{
-				Model:        req.Model,
-				Input:        req.Input,
-				Instructions: "from guardrail",
-			}, nil
-		},
-	}, 0)
-
-	p.Add(&mockGuardrail{
-		name: "verify",
-		responsesFn: func(_ context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-			if req.Instructions != "from guardrail" {
-				return nil, fmt.Errorf("expected instructions from previous group")
-			}
-			return req, nil
-		},
-	}, 1)
-
-	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello"}
-	result, err := p.ProcessResponses(context.Background(), req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Instructions != "from guardrail" {
-		t.Errorf("expected instructions from guardrail, got %q", result.Instructions)
-	}
-}
-
-func TestPipeline_Responses_ParallelGroup_OneErrors(t *testing.T) {
-	p := NewPipeline()
-
-	p.Add(&mockGuardrail{
-		name: "pass",
-		responsesFn: func(_ context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-			return req, nil
-		},
-	}, 0)
-	p.Add(&mockGuardrail{
-		name: "blocker",
-		responsesFn: func(_ context.Context, _ *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-			return nil, fmt.Errorf("blocked")
-		},
-	}, 0)
-
-	req := &core.ResponsesRequest{Model: "gpt-4", Input: "hello"}
-	_, err := p.ProcessResponses(context.Background(), req)
-	if err == nil {
-		t.Fatal("expected error from parallel pipeline")
 	}
 }
 

@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-
-	"gomodel/internal/core"
 )
 
 // entry pairs a guardrail with its execution order.
@@ -71,23 +69,23 @@ func (p *Pipeline) groups() [][]entry {
 	return result
 }
 
-// ProcessChat runs all guardrails on a ChatRequest.
-func (p *Pipeline) ProcessChat(ctx context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+// Process runs all guardrails on a normalized message list.
+func (p *Pipeline) Process(ctx context.Context, msgs []Message) ([]Message, error) {
 	groups := p.groups()
 	if len(groups) == 0 {
-		return req, nil
+		return msgs, nil
 	}
 
-	current := req
+	current := msgs
 	for _, group := range groups {
 		var err error
 		if len(group) == 1 {
-			current, err = group[0].guardrail.ProcessChat(ctx, current)
+			current, err = group[0].guardrail.Process(ctx, current)
 			if err != nil {
 				return nil, fmt.Errorf("guardrail %q: %w", group[0].guardrail.Name(), err)
 			}
 		} else {
-			current, err = runChatGroupParallel(ctx, group, current)
+			current, err = runGroupParallel(ctx, group, current)
 			if err != nil {
 				return nil, err
 			}
@@ -96,94 +94,37 @@ func (p *Pipeline) ProcessChat(ctx context.Context, req *core.ChatRequest) (*cor
 	return current, nil
 }
 
-// ProcessResponses runs all guardrails on a ResponsesRequest.
-func (p *Pipeline) ProcessResponses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-	groups := p.groups()
-	if len(groups) == 0 {
-		return req, nil
-	}
-
-	current := req
-	for _, group := range groups {
-		var err error
-		if len(group) == 1 {
-			current, err = group[0].guardrail.ProcessResponses(ctx, current)
-			if err != nil {
-				return nil, fmt.Errorf("guardrail %q: %w", group[0].guardrail.Name(), err)
-			}
-		} else {
-			current, err = runResponsesGroupParallel(ctx, group, current)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	return current, nil
+// result holds the result of a parallel guardrail execution.
+type result struct {
+	msgs []Message
+	err  error
 }
 
-// chatResult holds the result of a parallel guardrail execution for chat.
-type chatResult struct {
-	req *core.ChatRequest
-	err error
-}
-
-// runChatGroupParallel runs all guardrails in a group concurrently on the same input.
+// runGroupParallel runs all guardrails in a group concurrently on the same input.
 // If any returns an error, the group fails. Modifications are applied
 // in registration order (slice order) after all complete.
-func runChatGroupParallel(ctx context.Context, group []entry, req *core.ChatRequest) (*core.ChatRequest, error) {
-	results := make([]chatResult, len(group))
+func runGroupParallel(ctx context.Context, group []entry, msgs []Message) ([]Message, error) {
+	results := make([]result, len(group))
 	var wg sync.WaitGroup
 
 	for i, e := range group {
 		wg.Add(1)
 		go func(idx int, g Guardrail) {
 			defer wg.Done()
-			modified, err := g.ProcessChat(ctx, req)
-			results[idx] = chatResult{req: modified, err: err}
+			modified, err := g.Process(ctx, msgs)
+			results[idx] = result{msgs: modified, err: err}
 		}(i, e.guardrail)
 	}
 
 	wg.Wait()
 
 	// Check for errors and take last successful modification (registration order)
-	current := req
+	current := msgs
 	for i, r := range results {
 		if r.err != nil {
 			return nil, fmt.Errorf("guardrail %q: %w", group[i].guardrail.Name(), r.err)
 		}
-		current = r.req
-	}
-	return current, nil
-}
-
-// responsesResult holds the result of a parallel guardrail execution for responses.
-type responsesResult struct {
-	req *core.ResponsesRequest
-	err error
-}
-
-// runResponsesGroupParallel runs all guardrails in a group concurrently on the same input.
-func runResponsesGroupParallel(ctx context.Context, group []entry, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-	results := make([]responsesResult, len(group))
-	var wg sync.WaitGroup
-
-	for i, e := range group {
-		wg.Add(1)
-		go func(idx int, g Guardrail) {
-			defer wg.Done()
-			modified, err := g.ProcessResponses(ctx, req)
-			results[idx] = responsesResult{req: modified, err: err}
-		}(i, e.guardrail)
-	}
-
-	wg.Wait()
-
-	current := req
-	for i, r := range results {
-		if r.err != nil {
-			return nil, fmt.Errorf("guardrail %q: %w", group[i].guardrail.Name(), r.err)
-		}
-		current = r.req
+		current = r.msgs
 	}
 	return current, nil
 }
