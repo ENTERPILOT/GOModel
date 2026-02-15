@@ -37,17 +37,14 @@ That's it. Every request now gets the safety prompt prepended to its system inst
 
 ## How It Works
 
-```
-Client Request
-      │
-      ▼
-┌─────────────┐     ┌───────────────────────────────┐     ┌──────────┐
-│  Extract     │────▶│  Guardrails Pipeline           │────▶│  Apply   │
-│  messages    │     │  (order 0 → order 1 → ...)     │     │  back    │
-└─────────────┘     └───────────────────────────────┘     └──────────┘
-                                                                │
-                                                                ▼
-                                                          LLM Provider
+{/* Client Request → Extract messages → Guardrails Pipeline (order 0 → order 1 → ...) → Apply back → LLM Provider */}
+
+```mermaid
+flowchart LR
+    A[Client Request] --> B[Extract messages]
+    B --> C[Guardrails Pipeline]
+    C --> D[Apply back]
+    D --> E[LLM Provider]
 ```
 
 1. Messages are **extracted** from the incoming request into a normalized format
@@ -64,9 +61,22 @@ Each guardrail has an `order` value that controls when it runs:
 - **Same order** → run **in parallel** (concurrently)
 - **Different order** → run **sequentially** (ascending)
 
-```
-Order 0 ──┬── safety-prompt    ──┬──▶ Order 1 ── compliance-check ──▶ Order 2 ──┬── final-filter ──┬──▶ done
-           └── content-policy   ──┘                                              └── audit-tag     ──┘
+{/* Order 0 (parallel: safety-prompt, content-policy) → Order 1 (compliance-check) → Order 2 (parallel: final-filter, audit-tag) → done */}
+
+```mermaid
+flowchart LR
+    subgraph Order 0
+        A[safety-prompt]
+        B[content-policy]
+    end
+    subgraph Order 1
+        C[compliance-check]
+    end
+    subgraph Order 2
+        D[final-filter]
+        E[audit-tag]
+    end
+    Order 0 --> Order 1 --> Order 2
 ```
 
 Each sequential group receives the output of the previous group. If any guardrail returns an error, the request is **rejected** and never reaches the provider.
