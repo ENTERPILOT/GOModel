@@ -9,7 +9,7 @@
         "pages": [
             {
                 "group": "Advanced",
-                "pages": ["advanced/configuration"]
+                "pages": ["advanced/configuration", "advanced/guardrails"]
             }
         ]
     }

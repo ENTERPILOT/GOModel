@@ -11,8 +11,12 @@ GOModel uses a good defaults philosophy. This means that the default settings sh
 
 We use a three-layer configuration pipeline. Every setting has a sensible default, so you can start the server with zero configuration.
 
-```
-Environment Variables (always win)  →  config.yaml (optional structured config)  →  Code Defaults
+{/* Environment Variables (always win) → config.yaml (optional) → Code Defaults */}
+
+```mermaid
+flowchart LR
+    A[Environment Variables] -->|always win| B[config.yaml]
+    B -->|optional| C[Code Defaults]
 ```
 
 <Tip>
