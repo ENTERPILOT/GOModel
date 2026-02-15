@@ -51,6 +51,41 @@ http:
   timeout: 600 # seconds (10 minutes)
   response_header_timeout: 600
 
+guardrails:
+  enabled: false
+  rules:
+    # Each entry is a guardrail instance. Multiple instances of the same type are supported.
+    # Guardrails with the same "order" run in parallel; different orders run sequentially.
+
+    - name: "safety-prompt"
+      type: "system_prompt"
+      order: 0
+      system_prompt:
+        mode: "decorator" # "inject", "override", or "decorator"
+        content: "Always be safe and respectful."
+
+    # Example: a second system_prompt instance running at the same order (parallel)
+    # - name: "compliance-prompt"
+    #   type: "system_prompt"
+    #   order: 0
+    #   system_prompt:
+    #     mode: "inject"
+    #     content: "Follow all compliance rules."
+
+    # Names support spaces and unicode characters:
+    # - name: "проверка безопасности"
+    #   type: "system_prompt"
+    #   order: 0
+    #   system_prompt:
+    #     mode: "decorator"
+    #     content: "Соблюдайте все правила безопасности."
+    # - name: "安全検査"
+    #   type: "system_prompt"
+    #   order: 1
+    #   system_prompt:
+    #     mode: "inject"
+    #     content: "Follow safety guidelines."
+
 providers:
   openai:
     type: openai

@@ -27,14 +27,58 @@ var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration
 type Config struct {
-	Server    ServerConfig            `yaml:"server"`
-	Cache     CacheConfig             `yaml:"cache"`
-	Storage   StorageConfig           `yaml:"storage"`
-	Logging   LogConfig               `yaml:"logging"`
-	Usage     UsageConfig             `yaml:"usage"`
-	Metrics   MetricsConfig           `yaml:"metrics"`
-	HTTP      HTTPConfig              `yaml:"http"`
-	Providers map[string]ProviderConfig `yaml:"providers"`
+	Server     ServerConfig              `yaml:"server"`
+	Cache      CacheConfig               `yaml:"cache"`
+	Storage    StorageConfig             `yaml:"storage"`
+	Logging    LogConfig                 `yaml:"logging"`
+	Usage      UsageConfig               `yaml:"usage"`
+	Metrics    MetricsConfig             `yaml:"metrics"`
+	HTTP       HTTPConfig                `yaml:"http"`
+	Guardrails GuardrailsConfig          `yaml:"guardrails"`
+	Providers  map[string]ProviderConfig `yaml:"providers"`
+}
+
+// GuardrailsConfig holds configuration for the request guardrails pipeline.
+type GuardrailsConfig struct {
+	// Enabled controls whether guardrails are active
+	// Default: false
+	Enabled bool `yaml:"enabled" env:"GUARDRAILS_ENABLED"`
+
+	// Rules is a list of guardrail instances. Each entry defines one guardrail
+	// with its own name, type, order, and type-specific settings. Multiple
+	// instances of the same type are allowed (e.g. two system_prompt guardrails
+	// with different content).
+	Rules []GuardrailRuleConfig `yaml:"rules"`
+}
+
+// GuardrailRuleConfig defines a single guardrail instance.
+type GuardrailRuleConfig struct {
+	// Name is a unique identifier for this guardrail instance (used in logs and errors)
+	Name string `yaml:"name"`
+
+	// Type selects the guardrail implementation: "system_prompt"
+	Type string `yaml:"type"`
+
+	// Order controls execution ordering relative to other guardrails.
+	// Guardrails with the same order run in parallel; different orders run sequentially.
+	// Default: 0
+	Order int `yaml:"order"`
+
+	// SystemPrompt holds settings when Type is "system_prompt"
+	SystemPrompt SystemPromptSettings `yaml:"system_prompt"`
+}
+
+// SystemPromptSettings holds the type-specific settings for a system_prompt guardrail.
+type SystemPromptSettings struct {
+	// Mode controls how the system prompt is applied: "inject", "override", or "decorator"
+	//   - inject: adds a system message only if none exists
+	//   - override: replaces all existing system messages
+	//   - decorator: prepends to the first existing system message
+	// Default: "inject"
+	Mode string `yaml:"mode"`
+
+	// Content is the system prompt text to apply
+	Content string `yaml:"content"`
 }
 
 // HTTPConfig holds HTTP client configuration for upstream API requests.
@@ -240,6 +284,7 @@ func defaultConfig() Config {
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
 		},
+		Guardrails: GuardrailsConfig{},
 		Providers: make(map[string]ProviderConfig),
 	}
 }
