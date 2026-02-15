@@ -49,7 +49,7 @@ jobs:
         run: go test -v -race -coverprofile=coverage.out ./internal/... ./config/...
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage.out
           fail_ci_if_error: false
