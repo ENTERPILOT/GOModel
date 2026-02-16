@@ -416,7 +416,11 @@ body {
 /* Responsive */
 @media (max-width: 768px) {
     .sidebar { width: 60px; }
-    .sidebar-header h1, .sidebar-nav .nav-item span, .sidebar-footer { display: none; }
+    .sidebar-header { justify-content: center; padding: 16px; }
+    .sidebar-header h1, .badge { display: none; }
+    .sidebar-nav .nav-item { justify-content: center; padding: 10px; }
+    .sidebar-nav .nav-item span { display: none; }
+    .sidebar-footer { display: none; }
     .content { margin-left: 60px; padding: 20px; }
     .cards { grid-template-columns: repeat(2, 1fr); }
 }
