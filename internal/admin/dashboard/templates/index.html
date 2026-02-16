@@ -51,7 +51,7 @@
     <div class="page-header">
         <h2>Registered Models</h2>
         <div class="model-count" x-show="models.length > 0">
-            <span x-text="models.length"></span> models
+            <span x-text="modelFilter ? filteredModels.length + ' / ' + models.length : models.length"></span> models
         </div>
     </div>
 
@@ -62,13 +62,7 @@
 
     <!-- Filter -->
     <div class="table-toolbar" x-show="models.length > 0">
-        <input type="text" placeholder="Filter models..." x-model="modelFilter" class="filter-input">
-        <select x-model="providerFilter" class="filter-select">
-            <option value="">All providers</option>
-            <template x-for="p in providerList" :key="p">
-                <option :value="p" x-text="p"></option>
-            </template>
-        </select>
+        <input type="text" placeholder="Filter by model, provider, or owner..." x-model="modelFilter" class="filter-input">
     </div>
 
     <!-- Models Table -->

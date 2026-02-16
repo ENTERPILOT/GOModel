@@ -9,6 +9,7 @@ function dashboard() {
         authError: false,
         needsAuth: false,
         apiKey: '',
+        theme: 'system', // 'system', 'light', 'dark'
 
         // Data
         summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0 },
@@ -17,14 +18,56 @@ function dashboard() {
 
         // Filters
         modelFilter: '',
-        providerFilter: '',
 
         // Chart
         chart: null,
 
         init() {
             this.apiKey = localStorage.getItem('gomodel_api_key') || '';
+            this.theme = localStorage.getItem('gomodel_theme') || 'system';
+            this.applyTheme();
+
+            // Re-render chart when system theme changes (only matters in 'system' mode)
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+                if (this.theme === 'system') {
+                    this.renderChart();
+                }
+            });
+
             this.fetchAll();
+        },
+
+        setTheme(t) {
+            this.theme = t;
+            localStorage.setItem('gomodel_theme', t);
+            this.applyTheme();
+            this.renderChart();
+        },
+
+        applyTheme() {
+            const root = document.documentElement;
+            if (this.theme === 'system') {
+                root.removeAttribute('data-theme');
+            } else {
+                root.setAttribute('data-theme', this.theme);
+            }
+        },
+
+        isDark() {
+            if (this.theme === 'dark') return true;
+            if (this.theme === 'light') return false;
+            return window.matchMedia('(prefers-color-scheme: dark)').matches;
+        },
+
+        chartColors() {
+            const dark = this.isDark();
+            return {
+                grid: dark ? '#2a2d3e' : '#e5e7eb',
+                text: dark ? '#8b8fa3' : '#6b7085',
+                tooltipBg: dark ? '#161923' : '#ffffff',
+                tooltipBorder: dark ? '#2a2d3e' : '#d8dbe3',
+                tooltipText: dark ? '#e4e6f0' : '#1a1d2b',
+            };
         },
 
         saveApiKey() {
@@ -95,6 +138,7 @@ function dashboard() {
 
             if (this.daily.length === 0) return;
 
+            const colors = this.chartColors();
             const labels = this.daily.map(d => d.date);
             const inputData = this.daily.map(d => d.input_tokens);
             const outputData = this.daily.map(d => d.output_tokens);
@@ -132,14 +176,14 @@ function dashboard() {
                     interaction: { mode: 'index', intersect: false },
                     plugins: {
                         legend: {
-                            labels: { color: '#8b8fa3', font: { size: 12 } }
+                            labels: { color: colors.text, font: { size: 12 } }
                         },
                         tooltip: {
-                            backgroundColor: '#161923',
-                            borderColor: '#2a2d3e',
+                            backgroundColor: colors.tooltipBg,
+                            borderColor: colors.tooltipBorder,
                             borderWidth: 1,
-                            titleColor: '#e4e6f0',
-                            bodyColor: '#e4e6f0',
+                            titleColor: colors.tooltipText,
+                            bodyColor: colors.tooltipText,
                             callbacks: {
                                 label: function(ctx) {
                                     return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString();
@@ -149,13 +193,13 @@ function dashboard() {
                     },
                     scales: {
                         x: {
-                            grid: { color: '#2a2d3e' },
-                            ticks: { color: '#8b8fa3', font: { size: 11 }, maxTicksLimit: 10 }
+                            grid: { color: colors.grid },
+                            ticks: { color: colors.text, font: { size: 11 }, maxTicksLimit: 10 }
                         },
                         y: {
-                            grid: { color: '#2a2d3e' },
+                            grid: { color: colors.grid },
                             ticks: {
-                                color: '#8b8fa3',
+                                color: colors.text,
                                 font: { size: 11 },
                                 callback: function(value) {
                                     if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
@@ -170,20 +214,13 @@ function dashboard() {
         },
 
         get filteredModels() {
-            let result = this.models;
-            if (this.modelFilter) {
-                const f = this.modelFilter.toLowerCase();
-                result = result.filter(m => m.model.id.toLowerCase().includes(f));
-            }
-            if (this.providerFilter) {
-                result = result.filter(m => m.provider_type === this.providerFilter);
-            }
-            return result;
-        },
-
-        get providerList() {
-            const providers = new Set(this.models.map(m => m.provider_type));
-            return [...providers].sort();
+            if (!this.modelFilter) return this.models;
+            const f = this.modelFilter.toLowerCase();
+            return this.models.filter(m =>
+                m.model.id.toLowerCase().includes(f) ||
+                m.provider_type.toLowerCase().includes(f) ||
+                (m.model.owned_by && m.model.owned_by.toLowerCase().includes(f))
+            );
         },
 
         formatNumber(n) {

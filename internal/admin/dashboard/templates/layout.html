@@ -27,6 +27,11 @@
                 </a>
             </nav>
             <div class="sidebar-footer">
+                <div class="theme-toggle">
+                    <button class="theme-btn" :class="{ active: theme === 'light' }" @click="setTheme('light')">Light</button>
+                    <button class="theme-btn" :class="{ active: theme === 'system' }" @click="setTheme('system')">Auto</button>
+                    <button class="theme-btn" :class="{ active: theme === 'dark' }" @click="setTheme('dark')">Dark</button>
+                </div>
                 <div class="api-key-section" x-show="needsAuth">
                     <label for="apiKey">API Key</label>
                     <input id="apiKey" type="password" placeholder="Bearer token" x-model="apiKey" @change="saveApiKey(); fetchAll()">
