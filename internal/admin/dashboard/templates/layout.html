@@ -28,11 +28,11 @@
                 <span class="badge">Admin</span>
             </div>
             <nav class="sidebar-nav">
-                <a href="#overview" class="nav-item active" title="Overview" @click.prevent="page='overview'; renderChart(); $el.closest('.sidebar-nav').querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); $el.classList.add('active')">
+                <a href="/admin/dashboard/overview" class="nav-item" :class="{ active: page === 'overview' }" title="Overview" @click.prevent="navigate('overview')">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                     <span>Overview</span>
                 </a>
-                <a href="#models" class="nav-item" title="Models" @click.prevent="page='models'; $el.closest('.sidebar-nav').querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); $el.classList.add('active')">
+                <a href="/admin/dashboard/models" class="nav-item" :class="{ active: page === 'models' }" title="Models" @click.prevent="navigate('models')">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
                     <span>Models</span>
                 </a>

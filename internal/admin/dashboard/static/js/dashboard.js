@@ -27,6 +27,19 @@ function dashboard() {
             this.theme = localStorage.getItem('gomodel_theme') || 'system';
             this.applyTheme();
 
+            // Parse initial page from URL path
+            const path = window.location.pathname.replace(/\/$/, '');
+            const slug = path.split('/').pop();
+            this.page = (slug === 'models') ? 'models' : 'overview';
+
+            // Handle browser back/forward
+            window.addEventListener('popstate', () => {
+                const p = window.location.pathname.replace(/\/$/, '');
+                const s = p.split('/').pop();
+                this.page = (s === 'models') ? 'models' : 'overview';
+                if (this.page === 'overview') this.renderChart();
+            });
+
             // Re-render chart when system theme changes (only matters in 'system' mode)
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
                 if (this.theme === 'system') {
@@ -35,6 +48,12 @@ function dashboard() {
             });
 
             this.fetchAll();
+        },
+
+        navigate(page) {
+            this.page = page;
+            history.pushState(null, '', '/admin/dashboard/' + page);
+            if (page === 'overview') this.renderChart();
         },
 
         setTheme(t) {

@@ -76,7 +76,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 
 	// Admin dashboard pages and static assets skip auth (/* enables prefix matching)
 	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
-		authSkipPaths = append(authSkipPaths, "/admin/dashboard", "/admin/static/*")
+		authSkipPaths = append(authSkipPaths, "/admin/dashboard", "/admin/dashboard/*", "/admin/static/*")
 	}
 
 	// Global middleware stack (order matters)
@@ -155,6 +155,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// Admin dashboard UI routes (behind ADMIN_UI_ENABLED flag)
 	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
 		e.GET("/admin/dashboard", cfg.DashboardHandler.Index)
+		e.GET("/admin/dashboard/*", cfg.DashboardHandler.Index)
 		e.GET("/admin/static/*", cfg.DashboardHandler.Static)
 	}
 
