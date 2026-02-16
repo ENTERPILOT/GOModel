@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GOModel Dashboard</title>
+    <link rel="icon" type="image/svg+xml" href="/admin/static/favicon.svg">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,7 +28,7 @@
                 <span class="badge">Admin</span>
             </div>
             <nav class="sidebar-nav">
-                <a href="#overview" class="nav-item active" title="Overview" @click.prevent="page='overview'; $el.closest('.sidebar-nav').querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); $el.classList.add('active')">
+                <a href="#overview" class="nav-item active" title="Overview" @click.prevent="page='overview'; renderChart(); $el.closest('.sidebar-nav').querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); $el.classList.add('active')">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
                     <span>Overview</span>
                 </a>

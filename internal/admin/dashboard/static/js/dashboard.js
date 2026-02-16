@@ -134,104 +134,108 @@ function dashboard() {
         },
 
         fillMissingDays(daily) {
-            if (daily.length === 0) return daily;
             const byDate = {};
             daily.forEach(d => { byDate[d.date] = d; });
-            const dates = daily.map(d => d.date).sort();
-            const start = new Date(dates[0] + 'T00:00:00');
-            const end = new Date(dates[dates.length - 1] + 'T00:00:00');
+            const end = new Date();
+            end.setHours(0, 0, 0, 0);
+            const start = new Date(end);
+            start.setDate(start.getDate() - (parseInt(this.days, 10) - 1));
             const result = [];
             for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                const key = d.toISOString().slice(0, 10);
+                const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
                 result.push(byDate[key] || { date: key, input_tokens: 0, output_tokens: 0, total_tokens: 0, requests: 0 });
             }
             return result;
         },
 
         renderChart() {
-            const ctx = document.getElementById('usageChart');
-            if (!ctx) return;
+            this.$nextTick(() => {
+                if (this.chart) {
+                    this.chart.destroy();
+                    this.chart = null;
+                }
 
-            if (this.chart) {
-                this.chart.destroy();
-            }
+                if (this.daily.length === 0) return;
 
-            if (this.daily.length === 0) return;
+                const canvas = document.getElementById('usageChart');
+                if (!canvas || canvas.offsetWidth === 0) return;
 
-            const colors = this.chartColors();
-            const filled = this.fillMissingDays(this.daily);
-            const labels = filled.map(d => d.date);
-            const inputData = filled.map(d => d.input_tokens);
-            const outputData = filled.map(d => d.output_tokens);
+                const colors = this.chartColors();
+                const filled = this.fillMissingDays(this.daily);
+                const labels = filled.map(d => d.date);
+                const inputData = filled.map(d => d.input_tokens);
+                const outputData = filled.map(d => d.output_tokens);
 
-            this.chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        {
-                            label: 'Input Tokens',
-                            data: inputData,
-                            borderColor: '#b8956e',
-                            backgroundColor: 'rgba(184, 149, 110, 0.1)',
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 3,
-                            pointHoverRadius: 5
-                        },
-                        {
-                            label: 'Output Tokens',
-                            data: outputData,
-                            borderColor: '#34d399',
-                            backgroundColor: 'rgba(52, 211, 153, 0.1)',
-                            fill: true,
-                            tension: 0.3,
-                            pointRadius: 3,
-                            pointHoverRadius: 5
-                        }
-                    ]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: { mode: 'index', intersect: false },
-                    plugins: {
-                        legend: {
-                            labels: { color: colors.text, font: { size: 12 } }
-                        },
-                        tooltip: {
-                            backgroundColor: colors.tooltipBg,
-                            borderColor: colors.tooltipBorder,
-                            borderWidth: 1,
-                            titleColor: colors.tooltipText,
-                            bodyColor: colors.tooltipText,
-                            callbacks: {
-                                label: function(ctx) {
-                                    return ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString();
+                this.chart = new Chart(canvas, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            {
+                                label: 'Input Tokens',
+                                data: inputData,
+                                borderColor: '#b8956e',
+                                backgroundColor: 'rgba(184, 149, 110, 0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 3,
+                                pointHoverRadius: 5
+                            },
+                            {
+                                label: 'Output Tokens',
+                                data: outputData,
+                                borderColor: '#34d399',
+                                backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                pointRadius: 3,
+                                pointHoverRadius: 5
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 0 },
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: {
+                                labels: { color: colors.text, font: { size: 12 } }
+                            },
+                            tooltip: {
+                                backgroundColor: colors.tooltipBg,
+                                borderColor: colors.tooltipBorder,
+                                borderWidth: 1,
+                                titleColor: colors.tooltipText,
+                                bodyColor: colors.tooltipText,
+                                callbacks: {
+                                    label: function(c) {
+                                        return c.dataset.label + ': ' + c.parsed.y.toLocaleString();
+                                    }
                                 }
                             }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            grid: { color: colors.grid },
-                            ticks: { color: colors.text, font: { size: 11 }, maxTicksLimit: 10 }
                         },
-                        y: {
-                            beginAtZero: true,
-                            grid: { color: colors.grid },
-                            ticks: {
-                                color: colors.text,
-                                font: { size: 11 },
-                                callback: function(value) {
-                                    if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
-                                    if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
-                                    return value;
+                        scales: {
+                            x: {
+                                grid: { color: colors.grid },
+                                ticks: { color: colors.text, font: { size: 11 }, maxTicksLimit: 10 }
+                            },
+                            y: {
+                                beginAtZero: true,
+                                grid: { color: colors.grid },
+                                ticks: {
+                                    color: colors.text,
+                                    font: { size: 11 },
+                                    callback: function(value) {
+                                        if (value >= 1000000) return (value / 1000000).toFixed(1) + 'M';
+                                        if (value >= 1000) return (value / 1000).toFixed(1) + 'K';
+                                        return value;
+                                    }
                                 }
                             }
                         }
                     }
-                }
+                });
             });
         },
 

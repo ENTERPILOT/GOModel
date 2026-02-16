@@ -134,6 +134,9 @@ body {
 }
 
 .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     padding: 12px;
     flex: 1;
 }

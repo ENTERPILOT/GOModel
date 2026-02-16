@@ -10,7 +10,7 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-//go:embed templates/*.html static/css/*.css static/js/*.js
+//go:embed templates/*.html static/css/*.css static/js/*.js static/*.svg
 var content embed.FS
 
 // Handler serves the admin dashboard UI.
