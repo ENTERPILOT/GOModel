@@ -128,6 +128,21 @@ function dashboard() {
             }
         },
 
+        fillMissingDays(daily) {
+            if (daily.length === 0) return daily;
+            const byDate = {};
+            daily.forEach(d => { byDate[d.date] = d; });
+            const dates = daily.map(d => d.date).sort();
+            const start = new Date(dates[0] + 'T00:00:00');
+            const end = new Date(dates[dates.length - 1] + 'T00:00:00');
+            const result = [];
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                const key = d.toISOString().slice(0, 10);
+                result.push(byDate[key] || { date: key, input_tokens: 0, output_tokens: 0, total_tokens: 0, requests: 0 });
+            }
+            return result;
+        },
+
         renderChart() {
             const ctx = document.getElementById('usageChart');
             if (!ctx) return;
@@ -139,9 +154,10 @@ function dashboard() {
             if (this.daily.length === 0) return;
 
             const colors = this.chartColors();
-            const labels = this.daily.map(d => d.date);
-            const inputData = this.daily.map(d => d.input_tokens);
-            const outputData = this.daily.map(d => d.output_tokens);
+            const filled = this.fillMissingDays(this.daily);
+            const labels = filled.map(d => d.date);
+            const inputData = filled.map(d => d.input_tokens);
+            const outputData = filled.map(d => d.output_tokens);
 
             this.chart = new Chart(ctx, {
                 type: 'line',
