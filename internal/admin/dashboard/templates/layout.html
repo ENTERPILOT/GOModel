@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GOModel Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js"></script>
     <script src="https://unpkg.com/htmx.org@2.0.8/dist/htmx.min.js"></script>
@@ -13,6 +16,13 @@
     <div class="app">
         <aside class="sidebar">
             <div class="sidebar-header">
+                <div class="sidebar-logo">
+                    <svg viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M15 3L25.39 9L25.39 21L15 27L4.61 21L4.61 9Z" stroke="currentColor" stroke-width="2" fill="none"/>
+                        <circle cx="15" cy="15" r="4" fill="currentColor" opacity="0.3"/>
+                        <path d="M15 9.5L15 6M15 20.5L15 24M19.76 12.25L22.79 10.5M10.24 17.75L7.21 19.5M19.76 17.75L22.79 19.5M10.24 12.25L7.21 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </div>
                 <h1>GOModel</h1>
                 <span class="badge">Admin</span>
             </div>
@@ -28,9 +38,15 @@
             </nav>
             <div class="sidebar-footer">
                 <div class="theme-toggle">
-                    <button class="theme-btn" :class="{ active: theme === 'light' }" @click="setTheme('light')">Light</button>
-                    <button class="theme-btn" :class="{ active: theme === 'system' }" @click="setTheme('system')">Auto</button>
-                    <button class="theme-btn" :class="{ active: theme === 'dark' }" @click="setTheme('dark')">Dark</button>
+                    <button class="theme-btn" :class="{ active: theme === 'light' }" @click="setTheme('light')" title="Light">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                    </button>
+                    <button class="theme-btn" :class="{ active: theme === 'system' }" @click="setTheme('system')" title="System">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+                    </button>
+                    <button class="theme-btn" :class="{ active: theme === 'dark' }" @click="setTheme('dark')" title="Dark">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+                    </button>
                 </div>
                 <div class="api-key-section" x-show="needsAuth">
                     <label for="apiKey">API Key</label>

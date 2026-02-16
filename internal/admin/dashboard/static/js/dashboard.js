@@ -62,11 +62,11 @@ function dashboard() {
         chartColors() {
             const dark = this.isDark();
             return {
-                grid: dark ? '#2a2d3e' : '#e5e7eb',
-                text: dark ? '#8b8fa3' : '#6b7085',
-                tooltipBg: dark ? '#161923' : '#ffffff',
-                tooltipBorder: dark ? '#2a2d3e' : '#d8dbe3',
-                tooltipText: dark ? '#e4e6f0' : '#1a1d2b',
+                grid: dark ? '#2a2826' : '#e8e0d6',
+                text: dark ? '#9a918a' : '#7a7068',
+                tooltipBg: dark ? '#1e1d1c' : '#ffffff',
+                tooltipBorder: dark ? '#2a2826' : '#e8e0d6',
+                tooltipText: dark ? '#e8e0d6' : '#2d2519',
             };
         },
 
@@ -167,8 +167,8 @@ function dashboard() {
                         {
                             label: 'Input Tokens',
                             data: inputData,
-                            borderColor: '#6366f1',
-                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            borderColor: '#b8956e',
+                            backgroundColor: 'rgba(184, 149, 110, 0.1)',
                             fill: true,
                             tension: 0.3,
                             pointRadius: 3,
@@ -177,8 +177,8 @@ function dashboard() {
                         {
                             label: 'Output Tokens',
                             data: outputData,
-                            borderColor: '#22c55e',
-                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            borderColor: '#34d399',
+                            backgroundColor: 'rgba(52, 211, 153, 0.1)',
                             fill: true,
                             tension: 0.3,
                             pointRadius: 3,

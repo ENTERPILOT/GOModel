@@ -1,68 +1,68 @@
 /* GOModel Dashboard Styles */
 
-/* Dark mode (default) */
+/* Dark mode (default) — matches gomodel.enterpilot.io */
 :root {
-    --bg: #0f1117;
-    --bg-surface: #161923;
-    --bg-surface-hover: #1e2132;
-    --border: #2a2d3e;
-    --text: #e4e6f0;
-    --text-muted: #8b8fa3;
-    --accent: #6366f1;
-    --accent-hover: #818cf8;
-    --success: #22c55e;
+    --bg: #111110;
+    --bg-surface: #1e1d1c;
+    --bg-surface-hover: #2a2420;
+    --border: #2a2826;
+    --text: #e8e0d6;
+    --text-muted: #9a918a;
+    --accent: #b8956e;
+    --accent-hover: #d4b896;
+    --success: #34d399;
     --warning: #f59e0b;
     --danger: #ef4444;
     --sidebar-width: 240px;
     --radius: 8px;
-    --chart-grid: #2a2d3e;
-    --chart-text: #8b8fa3;
-    --chart-tooltip-bg: #161923;
-    --chart-tooltip-border: #2a2d3e;
-    --chart-tooltip-text: #e4e6f0;
+    --chart-grid: #2a2826;
+    --chart-text: #9a918a;
+    --chart-tooltip-bg: #1e1d1c;
+    --chart-tooltip-border: #2a2826;
+    --chart-tooltip-text: #e8e0d6;
     color-scheme: dark;
 }
 
-/* Light mode */
+/* Light mode — matches gomodel.enterpilot.io */
 [data-theme="light"] {
-    --bg: #f4f5f7;
+    --bg: #f5f0ea;
     --bg-surface: #ffffff;
-    --bg-surface-hover: #f0f1f3;
-    --border: #d8dbe3;
-    --text: #1a1d2b;
-    --text-muted: #6b7085;
-    --accent: #4f46e5;
-    --accent-hover: #6366f1;
-    --success: #16a34a;
+    --bg-surface-hover: #ece5dc;
+    --border: #e8e0d6;
+    --text: #2d2519;
+    --text-muted: #7a7068;
+    --accent: #755c3d;
+    --accent-hover: #9a7d5a;
+    --success: #34d399;
     --warning: #d97706;
     --danger: #dc2626;
-    --chart-grid: #e5e7eb;
-    --chart-text: #6b7085;
+    --chart-grid: #e8e0d6;
+    --chart-text: #7a7068;
     --chart-tooltip-bg: #ffffff;
-    --chart-tooltip-border: #d8dbe3;
-    --chart-tooltip-text: #1a1d2b;
+    --chart-tooltip-border: #e8e0d6;
+    --chart-tooltip-text: #2d2519;
     color-scheme: light;
 }
 
 /* System preference: light */
 @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-        --bg: #f4f5f7;
+        --bg: #f5f0ea;
         --bg-surface: #ffffff;
-        --bg-surface-hover: #f0f1f3;
-        --border: #d8dbe3;
-        --text: #1a1d2b;
-        --text-muted: #6b7085;
-        --accent: #4f46e5;
-        --accent-hover: #6366f1;
-        --success: #16a34a;
+        --bg-surface-hover: #ece5dc;
+        --border: #e8e0d6;
+        --text: #2d2519;
+        --text-muted: #7a7068;
+        --accent: #755c3d;
+        --accent-hover: #9a7d5a;
+        --success: #34d399;
         --warning: #d97706;
         --danger: #dc2626;
-        --chart-grid: #e5e7eb;
-        --chart-text: #6b7085;
+        --chart-grid: #e8e0d6;
+        --chart-text: #7a7068;
         --chart-tooltip-bg: #ffffff;
-        --chart-tooltip-border: #d8dbe3;
-        --chart-tooltip-text: #1a1d2b;
+        --chart-tooltip-border: #e8e0d6;
+        --chart-tooltip-text: #2d2519;
         color-scheme: light;
     }
 }
@@ -70,7 +70,7 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg);
     color: var(--text);
     line-height: 1.5;
@@ -101,6 +101,17 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+}
+
+.sidebar-logo {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+}
+
+.sidebar-logo svg {
+    width: 100%;
+    height: 100%;
 }
 
 .sidebar-header h1 {
@@ -178,42 +189,43 @@ body {
     border-color: var(--accent);
 }
 
-/* Theme toggle */
+/* Theme toggle — compact pill */
 .theme-toggle {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 0;
-    margin-bottom: 8px;
-}
-
-.theme-toggle label {
-    margin-bottom: 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+    margin-bottom: 10px;
 }
 
 .theme-btn {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
     color: var(--text-muted);
-    padding: 6px 10px;
     cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
     transition: all 0.15s;
-    flex: 1;
-    text-align: center;
+}
+
+.theme-btn svg {
+    width: 14px;
+    height: 14px;
 }
 
 .theme-btn:hover {
     color: var(--text);
-    border-color: var(--accent);
 }
 
 .theme-btn.active {
     background: var(--accent);
     color: #fff;
-    border-color: var(--accent);
 }
 
 /* Content */
