@@ -230,6 +230,30 @@ body {
     color: #fff;
 }
 
+/* Theme toggle — single button for mobile */
+.theme-toggle-mobile {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.theme-toggle-mobile:hover {
+    color: var(--text);
+}
+
+.theme-toggle-mobile svg {
+    width: 16px;
+    height: 16px;
+}
+
 /* Content */
 .content {
     flex: 1;
@@ -420,7 +444,10 @@ body {
     .sidebar-header h1, .badge { display: none; }
     .sidebar-nav .nav-item { justify-content: center; padding: 10px; }
     .sidebar-nav .nav-item span { display: none; }
-    .sidebar-footer { display: none; }
+    .sidebar-footer { padding: 8px; }
+    .sidebar-footer .api-key-section { display: none; }
+    .sidebar-footer .theme-toggle { display: none; }
+    .sidebar-footer .theme-toggle-mobile { display: flex; margin: 0 auto; }
     .content { margin-left: 60px; padding: 20px; }
     .cards { grid-template-columns: repeat(2, 1fr); }
 }

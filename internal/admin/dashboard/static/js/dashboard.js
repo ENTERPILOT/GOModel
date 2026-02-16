@@ -44,6 +44,11 @@ function dashboard() {
             this.renderChart();
         },
 
+        toggleTheme() {
+            const order = ['light', 'system', 'dark'];
+            this.setTheme(order[(order.indexOf(this.theme) + 1) % order.length]);
+        },
+
         applyTheme() {
             const root = document.documentElement;
             if (this.theme === 'system') {
