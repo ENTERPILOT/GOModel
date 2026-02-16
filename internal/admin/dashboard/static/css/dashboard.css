@@ -297,6 +297,11 @@ body {
     margin-bottom: 16px;
 }
 
+.chart-wrapper {
+    position: relative;
+    height: 300px;
+}
+
 /* Alert */
 .alert {
     padding: 12px 16px;

@@ -41,7 +41,9 @@
     <!-- Usage Chart -->
     <div class="chart-container">
         <h3>Daily Token Usage</h3>
-        <canvas id="usageChart" height="300"></canvas>
+        <div class="chart-wrapper">
+            <canvas id="usageChart"></canvas>
+        </div>
         <p class="empty-state" x-show="daily.length === 0 && !loading && !authError">No usage data yet.</p>
     </div>
 </div>
