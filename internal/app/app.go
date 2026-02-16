@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"gomodel/config"
+	"gomodel/internal/admin"
+	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
 	"gomodel/internal/server"
+	"gomodel/internal/storage"
 	"gomodel/internal/usage"
 )
 
@@ -134,6 +137,19 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		UsageLogger:              usageResult.Logger,
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
 	}
+
+	// Initialize admin API and dashboard (behind feature flag)
+	if cfg.AppConfig.Admin.Enabled {
+		adminHandler, dashHandler, adminErr := initAdmin(auditResult.Storage, usageResult.Storage, providerResult.Registry)
+		if adminErr != nil {
+			slog.Warn("failed to initialize admin dashboard", "error", adminErr)
+		} else {
+			serverCfg.AdminEnabled = true
+			serverCfg.AdminHandler = adminHandler
+			serverCfg.DashboardHandler = dashHandler
+		}
+	}
+
 	app.server = server.New(provider, serverCfg)
 
 	return app, nil
@@ -284,6 +300,44 @@ func (a *App) logStartupInfo() {
 	} else {
 		slog.Info("usage tracking disabled")
 	}
+
+	// Admin dashboard configuration
+	if cfg.Admin.Enabled {
+		slog.Info("admin dashboard enabled", "url", "/admin/dashboard", "api", "/admin/api/v1")
+	} else {
+		slog.Info("admin dashboard disabled")
+	}
+}
+
+// initAdmin creates the admin API handler and dashboard handler.
+// Returns nil handlers if admin cannot be initialized.
+func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.ModelRegistry) (*admin.Handler, *dashboard.Handler, error) {
+	// Find a storage connection for reading usage data
+	var store storage.Storage
+	if auditStorage != nil {
+		store = auditStorage
+	} else if usageStorage != nil {
+		store = usageStorage
+	}
+
+	// Create usage reader (may be nil if no storage)
+	var reader usage.UsageReader
+	if store != nil {
+		var err error
+		reader, err = usage.NewReader(store)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create usage reader: %w", err)
+		}
+	}
+
+	adminHandler := admin.NewHandler(reader, registry)
+
+	dashHandler, err := dashboard.New()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize dashboard: %w", err)
+	}
+
+	return adminHandler, dashHandler, nil
 }
 
 // buildGuardrailsPipeline creates a guardrails pipeline from configuration.

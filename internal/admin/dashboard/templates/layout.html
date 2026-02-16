@@ -1,0 +1,42 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOModel Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.8/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js"></script>
+    <link rel="stylesheet" href="/admin/static/css/dashboard.css">
+</head>
+<body x-data="dashboard()" x-init="init()">
+    <div class="app">
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h1>GOModel</h1>
+                <span class="badge">Admin</span>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#overview" class="nav-item active" @click.prevent="page='overview'; $el.closest('.sidebar-nav').querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); $el.classList.add('active')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                    Overview
+                </a>
+                <a href="#models" class="nav-item" @click.prevent="page='models'; $el.closest('.sidebar-nav').querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active')); $el.classList.add('active')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+                    Models
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="api-key-section" x-show="needsAuth">
+                    <label for="apiKey">API Key</label>
+                    <input id="apiKey" type="password" placeholder="Bearer token" x-model="apiKey" @change="saveApiKey(); fetchAll()">
+                </div>
+            </div>
+        </aside>
+        <main class="content">
+            {{template "index" .}}
+        </main>
+    </div>
+    <script src="/admin/static/js/dashboard.js"></script>
+</body>
+</html>{{end}}

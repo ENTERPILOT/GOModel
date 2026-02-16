@@ -11,6 +11,8 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"gomodel/internal/admin"
+	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
@@ -31,6 +33,9 @@ type Config struct {
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
+	AdminEnabled             bool                     // Whether admin API and dashboard are enabled
+	AdminHandler             *admin.Handler           // Admin API handler (nil if disabled)
+	DashboardHandler         *dashboard.Handler       // Dashboard UI handler (nil if disabled)
 }
 
 // New creates a new HTTP server
@@ -66,6 +71,11 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 			metricsPath = "/metrics"
 		}
 		authSkipPaths = append(authSkipPaths, metricsPath)
+	}
+
+	// Admin dashboard pages and static assets skip auth (/* enables prefix matching)
+	if cfg != nil && cfg.AdminEnabled && cfg.AdminHandler != nil && cfg.DashboardHandler != nil {
+		authSkipPaths = append(authSkipPaths, "/admin/dashboard", "/admin/static/*")
 	}
 
 	// Global middleware stack (order matters)
@@ -132,6 +142,19 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)
+
+	// Admin routes (behind feature flag)
+	if cfg != nil && cfg.AdminEnabled && cfg.AdminHandler != nil && cfg.DashboardHandler != nil {
+		// Dashboard UI
+		e.GET("/admin/dashboard", cfg.DashboardHandler.Index)
+		e.GET("/admin/static/*", cfg.DashboardHandler.Static)
+
+		// Admin API (auth-protected — not in skip paths)
+		adminAPI := e.Group("/admin/api/v1")
+		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
+		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
+		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
+	}
 
 	return &Server{
 		echo:    e,

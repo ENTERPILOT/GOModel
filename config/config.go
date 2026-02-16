@@ -34,8 +34,16 @@ type Config struct {
 	Usage      UsageConfig               `yaml:"usage"`
 	Metrics    MetricsConfig             `yaml:"metrics"`
 	HTTP       HTTPConfig                `yaml:"http"`
+	Admin      AdminConfig               `yaml:"admin"`
 	Guardrails GuardrailsConfig          `yaml:"guardrails"`
 	Providers  map[string]ProviderConfig `yaml:"providers"`
+}
+
+// AdminConfig holds configuration for the admin dashboard and API.
+type AdminConfig struct {
+	// Enabled controls whether the admin API and dashboard are active
+	// Default: true
+	Enabled bool `yaml:"enabled" env:"ADMIN_ENABLED"`
 }
 
 // GuardrailsConfig holds configuration for the request guardrails pipeline.
@@ -215,7 +223,7 @@ type RedisConfig struct {
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
 	Port          string `yaml:"port" env:"PORT"`
-	MasterKey     string `yaml:"master_key" env:"GOMODEL_MASTER_KEY"`         // Optional: Master key for authentication
+	MasterKey     string `yaml:"master_key" env:"GOMODEL_MASTER_KEY"`   // Optional: Master key for authentication
 	BodySizeLimit string `yaml:"body_size_limit" env:"BODY_SIZE_LIMIT"` // Max request body size (e.g., "10M", "1024K")
 }
 
@@ -284,8 +292,9 @@ func defaultConfig() Config {
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
 		},
+		Admin:      AdminConfig{Enabled: true},
 		Guardrails: GuardrailsConfig{},
-		Providers: make(map[string]ProviderConfig),
+		Providers:  make(map[string]ProviderConfig),
 	}
 }
 
