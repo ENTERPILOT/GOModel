@@ -1,5 +1,7 @@
 /* GOModel Dashboard Styles */
 
+/* TODO: It might be optimized once the css preprocessor is added. Intentional duplication for now */
+
 /* Dark mode (default) — matches gomodel.enterpilot.io */
 :root {
     --bg: #111110;
