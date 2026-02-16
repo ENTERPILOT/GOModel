@@ -197,6 +197,7 @@ function dashboard() {
                             ticks: { color: colors.text, font: { size: 11 }, maxTicksLimit: 10 }
                         },
                         y: {
+                            beginAtZero: true,
                             grid: { color: colors.grid },
                             ticks: {
                                 color: colors.text,
