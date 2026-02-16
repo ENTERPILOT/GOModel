@@ -81,7 +81,7 @@ func TestAuthMiddleware(t *testing.T) {
 			}
 
 			// Wrap the handler with auth middleware
-			handler := AuthMiddleware(tt.masterKey, nil)(testHandler)
+			handler := AuthMiddleware(tt.masterKey, nil, nil)(testHandler)
 
 			// Create request
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -112,7 +112,7 @@ func TestAuthMiddleware(t *testing.T) {
 func TestAuthMiddleware_Integration(t *testing.T) {
 	t.Run("with master key - protects all routes", func(t *testing.T) {
 		e := echo.New()
-		e.Use(AuthMiddleware("my-secret-key", nil))
+		e.Use(AuthMiddleware("my-secret-key", nil, nil))
 
 		e.GET("/test", func(c echo.Context) error {
 			return c.String(http.StatusOK, "success")
@@ -135,7 +135,7 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 
 	t.Run("without master key - allows all routes", func(t *testing.T) {
 		e := echo.New()
-		e.Use(AuthMiddleware("", nil))
+		e.Use(AuthMiddleware("", nil, nil))
 
 		e.GET("/test", func(c echo.Context) error {
 			return c.String(http.StatusOK, "success")
@@ -153,7 +153,7 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 func TestAuthMiddleware_SkipPaths(t *testing.T) {
 	t.Run("skips authentication for specified paths", func(t *testing.T) {
 		e := echo.New()
-		e.Use(AuthMiddleware("my-secret-key", []string{"/health", "/metrics"}))
+		e.Use(AuthMiddleware("my-secret-key", []string{"/health", "/metrics"}, nil))
 
 		e.GET("/health", func(c echo.Context) error {
 			return c.String(http.StatusOK, "healthy")
@@ -196,7 +196,7 @@ func TestAuthMiddleware_SkipPaths(t *testing.T) {
 
 	t.Run("empty skip paths requires auth for all routes", func(t *testing.T) {
 		e := echo.New()
-		e.Use(AuthMiddleware("my-secret-key", []string{}))
+		e.Use(AuthMiddleware("my-secret-key", []string{}, nil))
 
 		e.GET("/health", func(c echo.Context) error {
 			return c.String(http.StatusOK, "healthy")
@@ -267,7 +267,7 @@ func TestAuthMiddleware_ConstantTimeComparison(t *testing.T) {
 				}
 
 				// Wrap with auth middleware
-				handler := AuthMiddleware(tc.masterKey, nil)(testHandler)
+				handler := AuthMiddleware(tc.masterKey, nil, nil)(testHandler)
 
 				// Create request
 				req := httptest.NewRequest(http.MethodGet, "/", nil)

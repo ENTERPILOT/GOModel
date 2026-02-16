@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api
+.PHONY: build build-no-dashboard build-dashboard dev-dashboard run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api
 
 # Get version info
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -10,8 +10,23 @@ LDFLAGS := -X "gomodel/internal/version.Version=$(VERSION)" \
            -X "gomodel/internal/version.Commit=$(COMMIT)" \
            -X "gomodel/internal/version.Date=$(DATE)"
 
-build:
+build: build-dashboard
 	go build -ldflags '$(LDFLAGS)' -o bin/gomodel ./cmd/gomodel
+
+# Build Go binary only (skip dashboard build)
+build-no-dashboard:
+	go build -ldflags '$(LDFLAGS)' -o bin/gomodel ./cmd/gomodel
+
+# Build the dashboard SPA and copy output to the embedded directory
+build-dashboard:
+	cd web/dashboard && npm ci && npm run build
+	rm -rf internal/server/dashboard_dist/*
+	cp -r web/dashboard/dist/* internal/server/dashboard_dist/
+
+# Start the Vite dev server for dashboard development (with HMR)
+dev-dashboard:
+	cd web/dashboard && npm run dev
+
 # Run the application
 run:
 	go run ./cmd/gomodel

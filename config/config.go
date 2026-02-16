@@ -35,7 +35,24 @@ type Config struct {
 	Metrics    MetricsConfig             `yaml:"metrics"`
 	HTTP       HTTPConfig                `yaml:"http"`
 	Guardrails GuardrailsConfig          `yaml:"guardrails"`
+	Admin      AdminConfig               `yaml:"admin"`
 	Providers  map[string]ProviderConfig `yaml:"providers"`
+}
+
+// AdminConfig holds configuration for the admin API and dashboard.
+type AdminConfig struct {
+	API       AdminAPIConfig       `yaml:"api"`
+	Dashboard AdminDashboardConfig `yaml:"dashboard"`
+}
+
+// AdminAPIConfig holds configuration for the admin REST API.
+type AdminAPIConfig struct {
+	Enabled bool `yaml:"enabled" env:"ADMIN_API_ENABLED"`
+}
+
+// AdminDashboardConfig holds configuration for the admin dashboard SPA.
+type AdminDashboardConfig struct {
+	Enabled bool `yaml:"enabled" env:"ADMIN_DASHBOARD_ENABLED"`
 }
 
 // GuardrailsConfig holds configuration for the request guardrails pipeline.
@@ -285,6 +302,10 @@ func defaultConfig() Config {
 			ResponseHeaderTimeout: 600,
 		},
 		Guardrails: GuardrailsConfig{},
+		Admin: AdminConfig{
+			API:       AdminAPIConfig{Enabled: true},
+			Dashboard: AdminDashboardConfig{Enabled: true},
+		},
 		Providers: make(map[string]ProviderConfig),
 	}
 }

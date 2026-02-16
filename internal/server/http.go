@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"gomodel/internal/admin"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
@@ -31,6 +32,9 @@ type Config struct {
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
+	AdminAPIEnabled          bool                     // Whether to enable admin API endpoints
+	AdminDashboardEnabled    bool                     // Whether to enable admin dashboard SPA
+	AdminHandler             *admin.AdminHandler      // Admin API handler (nil if disabled)
 }
 
 // New creates a new HTTP server
@@ -117,9 +121,17 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		e.Use(auditlog.Middleware(cfg.AuditLogger))
 	}
 
+	// Build list of path prefixes that skip authentication
+	var authSkipPrefixes []string
+
+	// Admin dashboard: when enabled, skip auth for all /admin/ paths (SPA assets + pages)
+	if cfg != nil && cfg.AdminDashboardEnabled && cfg.AdminHandler != nil {
+		authSkipPrefixes = append(authSkipPrefixes, "/admin/")
+	}
+
 	// Authentication (skips public paths)
 	if cfg != nil && cfg.MasterKey != "" {
-		e.Use(AuthMiddleware(cfg.MasterKey, authSkipPaths))
+		e.Use(AuthMiddleware(cfg.MasterKey, authSkipPaths, authSkipPrefixes))
 	}
 
 	// Public routes
@@ -132,6 +144,17 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)
+
+	// Admin API routes
+	if cfg != nil && cfg.AdminAPIEnabled && cfg.AdminHandler != nil {
+		e.GET("/admin/api/v1/overview", cfg.AdminHandler.Overview)
+		e.GET("/admin/api/v1/models", cfg.AdminHandler.Models)
+	}
+
+	// Admin dashboard SPA
+	if cfg != nil && cfg.AdminDashboardEnabled && cfg.AdminHandler != nil {
+		RegisterDashboard(e)
+	}
 
 	return &Server{
 		echo:    e,

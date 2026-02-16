@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gomodel/config"
+	"gomodel/internal/admin"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
@@ -104,6 +105,21 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.usage = usageResult
 
+	// Initialize admin handler
+	var adminHandler *admin.AdminHandler
+	adminAPIEnabled := cfg.AppConfig.Admin.API.Enabled
+	adminDashboardEnabled := cfg.AppConfig.Admin.Dashboard.Enabled
+
+	// Dashboard requires API to be enabled
+	if adminDashboardEnabled && !adminAPIEnabled {
+		slog.Warn("admin dashboard requires admin API to be enabled, disabling dashboard")
+		adminDashboardEnabled = false
+	}
+
+	if adminAPIEnabled {
+		adminHandler = admin.NewAdminHandler(providerResult.Registry)
+	}
+
 	// Log configuration status
 	app.logStartupInfo()
 
@@ -133,6 +149,9 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		AuditLogger:              auditResult.Logger,
 		UsageLogger:              usageResult.Logger,
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
+		AdminAPIEnabled:          adminAPIEnabled,
+		AdminDashboardEnabled:    adminDashboardEnabled,
+		AdminHandler:             adminHandler,
 	}
 	app.server = server.New(provider, serverCfg)
 
@@ -283,6 +302,13 @@ func (a *App) logStartupInfo() {
 		)
 	} else {
 		slog.Info("usage tracking disabled")
+	}
+
+	// Admin configuration
+	if cfg.Admin.API.Enabled {
+		slog.Info("admin API enabled", "dashboard", cfg.Admin.Dashboard.Enabled)
+	} else {
+		slog.Info("admin API disabled")
 	}
 }
 

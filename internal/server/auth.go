@@ -10,8 +10,9 @@ import (
 
 // AuthMiddleware creates an Echo middleware that validates the master key
 // if it's configured. If masterKey is empty, no authentication is required.
-// skipPaths is a list of paths that should bypass authentication.
-func AuthMiddleware(masterKey string, skipPaths []string) echo.MiddlewareFunc {
+// skipPaths is a list of paths that should bypass authentication (exact match).
+// skipPrefixes is a list of path prefixes that should bypass authentication.
+func AuthMiddleware(masterKey string, skipPaths []string, skipPrefixes []string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// If no master key is configured, allow all requests
@@ -19,10 +20,17 @@ func AuthMiddleware(masterKey string, skipPaths []string) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// Check if path should skip authentication
+			// Check if path should skip authentication (exact match)
 			requestPath := c.Request().URL.Path
 			for _, skipPath := range skipPaths {
 				if requestPath == skipPath {
+					return next(c)
+				}
+			}
+
+			// Check if path should skip authentication (prefix match)
+			for _, prefix := range skipPrefixes {
+				if strings.HasPrefix(requestPath, prefix) {
 					return next(c)
 				}
 			}
