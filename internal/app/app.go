@@ -138,15 +138,23 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
 	}
 
-	// Initialize admin API and dashboard (behind feature flag)
-	if cfg.AppConfig.Admin.Enabled {
-		adminHandler, dashHandler, adminErr := initAdmin(auditResult.Storage, usageResult.Storage, providerResult.Registry)
+	// Initialize admin API and dashboard (behind separate feature flags)
+	adminCfg := cfg.AppConfig.Admin
+	if !adminCfg.EndpointsEnabled && adminCfg.UIEnabled {
+		slog.Warn("ADMIN_UI_ENABLED=true requires ADMIN_ENDPOINTS_ENABLED=true — forcing UI to disabled")
+		adminCfg.UIEnabled = false
+	}
+	if adminCfg.EndpointsEnabled {
+		adminHandler, dashHandler, adminErr := initAdmin(auditResult.Storage, usageResult.Storage, providerResult.Registry, adminCfg.UIEnabled)
 		if adminErr != nil {
-			slog.Warn("failed to initialize admin dashboard", "error", adminErr)
+			slog.Warn("failed to initialize admin", "error", adminErr)
 		} else {
-			serverCfg.AdminEnabled = true
+			serverCfg.AdminEndpointsEnabled = true
 			serverCfg.AdminHandler = adminHandler
-			serverCfg.DashboardHandler = dashHandler
+			if adminCfg.UIEnabled {
+				serverCfg.AdminUIEnabled = true
+				serverCfg.DashboardHandler = dashHandler
+			}
 		}
 	}
 
@@ -301,17 +309,22 @@ func (a *App) logStartupInfo() {
 		slog.Info("usage tracking disabled")
 	}
 
-	// Admin dashboard configuration
-	if cfg.Admin.Enabled {
-		slog.Info("admin dashboard enabled", "url", "/admin/dashboard", "api", "/admin/api/v1")
+	// Admin configuration
+	if cfg.Admin.EndpointsEnabled {
+		slog.Info("admin API enabled", "api", "/admin/api/v1")
 	} else {
-		slog.Info("admin dashboard disabled")
+		slog.Info("admin API disabled")
+	}
+	if cfg.Admin.UIEnabled && cfg.Admin.EndpointsEnabled {
+		slog.Info("admin UI enabled", "url", "/admin/dashboard")
+	} else {
+		slog.Info("admin UI disabled")
 	}
 }
 
-// initAdmin creates the admin API handler and dashboard handler.
-// Returns nil handlers if admin cannot be initialized.
-func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.ModelRegistry) (*admin.Handler, *dashboard.Handler, error) {
+// initAdmin creates the admin API handler and optionally the dashboard handler.
+// Returns nil dashboard handler if uiEnabled is false.
+func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.ModelRegistry, uiEnabled bool) (*admin.Handler, *dashboard.Handler, error) {
 	// Find a storage connection for reading usage data
 	var store storage.Storage
 	if auditStorage != nil {
@@ -332,9 +345,13 @@ func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.M
 
 	adminHandler := admin.NewHandler(reader, registry)
 
-	dashHandler, err := dashboard.New()
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to initialize dashboard: %w", err)
+	var dashHandler *dashboard.Handler
+	if uiEnabled {
+		var err error
+		dashHandler, err = dashboard.New()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to initialize dashboard: %w", err)
+		}
 	}
 
 	return adminHandler, dashHandler, nil

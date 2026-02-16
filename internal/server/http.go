@@ -33,7 +33,8 @@ type Config struct {
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
-	AdminEnabled             bool                     // Whether admin API and dashboard are enabled
+	AdminEndpointsEnabled    bool                     // Whether admin API endpoints are enabled
+	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
 	AdminHandler             *admin.Handler           // Admin API handler (nil if disabled)
 	DashboardHandler         *dashboard.Handler       // Dashboard UI handler (nil if disabled)
 }
@@ -74,7 +75,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	// Admin dashboard pages and static assets skip auth (/* enables prefix matching)
-	if cfg != nil && cfg.AdminEnabled && cfg.AdminHandler != nil && cfg.DashboardHandler != nil {
+	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
 		authSkipPaths = append(authSkipPaths, "/admin/dashboard", "/admin/static/*")
 	}
 
@@ -143,17 +144,18 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)
 
-	// Admin routes (behind feature flag)
-	if cfg != nil && cfg.AdminEnabled && cfg.AdminHandler != nil && cfg.DashboardHandler != nil {
-		// Dashboard UI
-		e.GET("/admin/dashboard", cfg.DashboardHandler.Index)
-		e.GET("/admin/static/*", cfg.DashboardHandler.Static)
-
-		// Admin API (auth-protected — not in skip paths)
+	// Admin API routes (behind ADMIN_ENDPOINTS_ENABLED flag)
+	if cfg != nil && cfg.AdminEndpointsEnabled && cfg.AdminHandler != nil {
 		adminAPI := e.Group("/admin/api/v1")
 		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
 		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
 		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
+	}
+
+	// Admin dashboard UI routes (behind ADMIN_UI_ENABLED flag)
+	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
+		e.GET("/admin/dashboard", cfg.DashboardHandler.Index)
+		e.GET("/admin/static/*", cfg.DashboardHandler.Static)
 	}
 
 	return &Server{

@@ -39,11 +39,17 @@ type Config struct {
 	Providers  map[string]ProviderConfig `yaml:"providers"`
 }
 
-// AdminConfig holds configuration for the admin dashboard and API.
+// AdminConfig holds configuration for the admin API and dashboard UI.
 type AdminConfig struct {
-	// Enabled controls whether the admin API and dashboard are active
+	// EndpointsEnabled controls whether the admin REST API is active
 	// Default: true
-	Enabled bool `yaml:"enabled" env:"ADMIN_ENABLED"`
+	EndpointsEnabled bool `yaml:"endpoints_enabled" env:"ADMIN_ENDPOINTS_ENABLED"`
+
+	// UIEnabled controls whether the admin dashboard UI is active
+	// Requires EndpointsEnabled — if endpoints are disabled and UI is enabled,
+	// a warning is logged and UI is forced to false.
+	// Default: true
+	UIEnabled bool `yaml:"ui_enabled" env:"ADMIN_UI_ENABLED"`
 }
 
 // GuardrailsConfig holds configuration for the request guardrails pipeline.
@@ -292,7 +298,7 @@ func defaultConfig() Config {
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
 		},
-		Admin:      AdminConfig{Enabled: true},
+		Admin:      AdminConfig{EndpointsEnabled: true, UIEnabled: true},
 		Guardrails: GuardrailsConfig{},
 		Providers:  make(map[string]ProviderConfig),
 	}
