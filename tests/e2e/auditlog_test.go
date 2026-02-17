@@ -659,6 +659,40 @@ func TestAuditLogErrorCapture(t *testing.T) {
 		assert.Equal(t, "/v1/chat/completions", entry.Path)
 	})
 
+	t.Run("logs 405 for wrong HTTP method", func(t *testing.T) {
+		store := newMockLogStore()
+		cfg := auditlog.Config{
+			Enabled:       true,
+			LogBodies:     false,
+			LogHeaders:    false,
+			BufferSize:    100,
+			FlushInterval: 100 * time.Millisecond,
+		}
+
+		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(ctx)
+			_ = logger.Close()
+		}()
+
+		// Send GET to a POST-only endpoint
+		resp, err := http.Get(serverURL + "/v1/chat/completions")
+		require.NoError(t, err)
+		defer closeBody(resp)
+		assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+
+		// Wait for log entry
+		entries := store.WaitForAPIEntries(1, 2*time.Second)
+		require.Len(t, entries, 1)
+
+		entry := entries[0]
+		assert.Equal(t, http.StatusMethodNotAllowed, entry.StatusCode)
+		assert.Equal(t, "GET", entry.Method)
+		assert.Equal(t, "/v1/chat/completions", entry.Path)
+	})
+
 	t.Run("logs invalid JSON requests", func(t *testing.T) {
 		store := newMockLogStore()
 		cfg := auditlog.Config{
