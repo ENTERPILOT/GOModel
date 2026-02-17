@@ -3,7 +3,7 @@
 <div x-show="page==='overview'">
     <div class="page-header">
         <h2>Usage Overview</h2>
-        <div style="display:flex;align-items:center;gap:12px;">
+        <div class="page-header-controls">
             <div class="interval-picker">
                 <button class="interval-btn" :class="{active: interval==='daily'}" @click="setInterval('daily')">Daily</button>
                 <button class="interval-btn" :class="{active: interval==='weekly'}" @click="setInterval('weekly')">Weekly</button>
@@ -58,9 +58,11 @@
                     <!-- Right calendar (current month) -->
                     <div class="dp-calendar">
                         <div class="dp-cal-header">
-                            <span></span>
+                            <button class="dp-nav-btn dp-nav-prev-mobile" @click="prevMonth()">
+                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5L5 7l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                            </button>
                             <span class="dp-cal-title" x-text="calendarTitle(0)"></span>
-                            <button class="dp-nav-btn" @click="nextMonth()">
+                            <button class="dp-nav-btn" @click="nextMonth()" :disabled="isCurrentMonth()">
                                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
                             </button>
                         </div>

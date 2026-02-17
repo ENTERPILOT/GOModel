@@ -173,6 +173,12 @@ function dashboard() {
             }
         },
 
+        isCurrentMonth() {
+            const today = new Date();
+            return this.calendarMonth.getFullYear() === today.getFullYear()
+                && this.calendarMonth.getMonth() === today.getMonth();
+        },
+
         selectCalendarDay(day) {
             if (!day.current || this.isFutureDay(day)) return;
             const clicked = new Date(day.date);

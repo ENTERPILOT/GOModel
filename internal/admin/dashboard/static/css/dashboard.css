@@ -499,6 +499,16 @@ body {
     color: var(--text);
 }
 
+.dp-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+.dp-nav-prev-mobile {
+    display: none;
+}
+
 .dp-weekdays {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
@@ -586,6 +596,13 @@ body {
     pointer-events: none;
 }
 
+
+/* Page Header Controls (interval + date picker wrapper) */
+.page-header-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
 
 /* Interval Picker */
 .interval-picker {
@@ -789,6 +806,20 @@ body {
     .content { margin-left: 60px; padding: 20px; }
     .cards { grid-template-columns: repeat(2, 1fr); }
 
+    /* Page header stacking */
+    .page-header {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .page-header h2 {
+        width: 100%;
+    }
+    .page-header-controls {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+
     /* Interval picker mobile */
     .interval-btn {
         padding: 4px 8px;
@@ -798,8 +829,8 @@ body {
     /* Date picker mobile */
     .date-picker-dropdown {
         flex-direction: column;
-        right: -16px;
-        left: -16px;
+        right: 0;
+        left: 0;
         position: fixed;
         top: auto;
         bottom: 0;
@@ -809,7 +840,9 @@ body {
     }
     .date-picker-presets {
         flex-direction: row;
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
         border-right: none;
         border-bottom: 1px solid var(--border);
         min-width: 0;
@@ -819,5 +852,8 @@ body {
     }
     .dp-calendar:first-child {
         display: none;
+    }
+    .dp-nav-prev-mobile {
+        display: flex;
     }
 }
