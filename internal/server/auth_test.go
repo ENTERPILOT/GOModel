@@ -210,6 +210,68 @@ func TestAuthMiddleware_SkipPaths(t *testing.T) {
 	})
 }
 
+func TestAuthMiddleware_WildcardSkipPaths(t *testing.T) {
+	skipPaths := []string{"/admin/dashboard", "/admin/dashboard/*", "/admin/static/*"}
+
+	tests := []struct {
+		name       string
+		path       string
+		wantSkip   bool
+	}{
+		{
+			name:     "exact match /admin/dashboard",
+			path:     "/admin/dashboard",
+			wantSkip: true,
+		},
+		{
+			name:     "wildcard match /admin/dashboard/overview",
+			path:     "/admin/dashboard/overview",
+			wantSkip: true,
+		},
+		{
+			name:     "wildcard match /admin/dashboard/deep/nested",
+			path:     "/admin/dashboard/deep/nested",
+			wantSkip: true,
+		},
+		{
+			name:     "wildcard match /admin/static/css/dashboard.css",
+			path:     "/admin/static/css/dashboard.css",
+			wantSkip: true,
+		},
+		{
+			name:     "no match /admin/api/v1/models",
+			path:     "/admin/api/v1/models",
+			wantSkip: false,
+		},
+		{
+			name:     "no match /admin/dashboardx (not prefix of /admin/dashboard/)",
+			path:     "/admin/dashboardx",
+			wantSkip: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			e.Use(AuthMiddleware("secret-key", skipPaths))
+
+			e.GET(tt.path, func(c echo.Context) error {
+				return c.String(http.StatusOK, "ok")
+			})
+
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+
+			if tt.wantSkip {
+				assert.Equal(t, http.StatusOK, rec.Code, "expected path %s to skip auth", tt.path)
+			} else {
+				assert.Equal(t, http.StatusUnauthorized, rec.Code, "expected path %s to require auth", tt.path)
+			}
+		})
+	}
+}
+
 func TestAuthMiddleware_ConstantTimeComparison(t *testing.T) {
 	t.Run("constant-time comparison prevents timing attacks", func(t *testing.T) {
 		// Test that the constant-time comparison works correctly for various inputs

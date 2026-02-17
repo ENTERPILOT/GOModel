@@ -342,6 +342,94 @@ func TestModelRegistry(t *testing.T) {
 	})
 }
 
+func TestListModelsWithProvider_Empty(t *testing.T) {
+	registry := NewModelRegistry()
+	models := registry.ListModelsWithProvider()
+	if len(models) != 0 {
+		t.Errorf("expected empty slice, got %d models", len(models))
+	}
+}
+
+func TestListModelsWithProvider_Sorted(t *testing.T) {
+	registry := NewModelRegistry()
+
+	mock1 := &registryMockProvider{
+		name: "provider1",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "zebra-model", Object: "model", OwnedBy: "provider1"},
+				{ID: "alpha-model", Object: "model", OwnedBy: "provider1"},
+			},
+		},
+	}
+	mock2 := &registryMockProvider{
+		name: "provider2",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "middle-model", Object: "model", OwnedBy: "provider2"},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock1, "openai")
+	registry.RegisterProviderWithType(mock2, "anthropic")
+	_ = registry.Initialize(context.Background())
+
+	models := registry.ListModelsWithProvider()
+	if len(models) != 3 {
+		t.Fatalf("expected 3 models, got %d", len(models))
+	}
+	if models[0].Model.ID != "alpha-model" {
+		t.Errorf("expected first model alpha-model, got %s", models[0].Model.ID)
+	}
+	if models[1].Model.ID != "middle-model" {
+		t.Errorf("expected second model middle-model, got %s", models[1].Model.ID)
+	}
+	if models[2].Model.ID != "zebra-model" {
+		t.Errorf("expected third model zebra-model, got %s", models[2].Model.ID)
+	}
+}
+
+func TestListModelsWithProvider_IncludesProviderType(t *testing.T) {
+	registry := NewModelRegistry()
+
+	mock1 := &registryMockProvider{
+		name: "provider1",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}
+	mock2 := &registryMockProvider{
+		name: "provider2",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "claude-3", Object: "model", OwnedBy: "anthropic"},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock1, "openai")
+	registry.RegisterProviderWithType(mock2, "anthropic")
+	_ = registry.Initialize(context.Background())
+
+	models := registry.ListModelsWithProvider()
+	if len(models) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(models))
+	}
+
+	// Models are sorted: claude-3 before gpt-4
+	if models[0].ProviderType != "anthropic" {
+		t.Errorf("expected claude-3 provider type 'anthropic', got %q", models[0].ProviderType)
+	}
+	if models[1].ProviderType != "openai" {
+		t.Errorf("expected gpt-4 provider type 'openai', got %q", models[1].ProviderType)
+	}
+}
+
 // countingRegistryMockProvider wraps registryMockProvider and counts ListModels calls
 type countingRegistryMockProvider struct {
 	*registryMockProvider

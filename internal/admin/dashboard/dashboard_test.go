@@ -1,0 +1,139 @@
+package dashboard
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/labstack/echo/v4"
+)
+
+func TestNew(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+	if h == nil {
+		t.Fatal("New() returned nil handler")
+	}
+}
+
+func TestIndex_ReturnsHTML(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.Index(c); err != nil {
+		t.Fatalf("Index() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	contentType := rec.Header().Get("Content-Type")
+	if contentType != "text/html; charset=utf-8" {
+		t.Errorf("expected Content-Type text/html; charset=utf-8, got %s", contentType)
+	}
+
+	body := strings.ToLower(rec.Body.String())
+	if !strings.Contains(body, "<!doctype html") && !strings.Contains(body, "<html") {
+		t.Errorf("expected HTML content, got: %.200s", rec.Body.String())
+	}
+}
+
+func TestStatic_ServesCSS(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/admin/static/css/dashboard.css", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.Static(c); err != nil {
+		t.Fatalf("Static() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.Len() == 0 {
+		t.Error("expected non-empty body for CSS file")
+	}
+}
+
+func TestStatic_ServesJS(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/admin/static/js/dashboard.js", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.Static(c); err != nil {
+		t.Fatalf("Static() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.Len() == 0 {
+		t.Error("expected non-empty body for JS file")
+	}
+}
+
+func TestStatic_ServesFavicon(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/admin/static/favicon.svg", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.Static(c); err != nil {
+		t.Fatalf("Static() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.Len() == 0 {
+		t.Error("expected non-empty body for favicon")
+	}
+}
+
+func TestStatic_NotFound(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/admin/static/nonexistent.txt", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.Static(c); err != nil {
+		t.Fatalf("Static() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}

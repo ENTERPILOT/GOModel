@@ -5,6 +5,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"gomodel/internal/admin"
+	"gomodel/internal/admin/dashboard"
 )
 
 func TestMetricsEndpoint(t *testing.T) {
@@ -209,6 +212,151 @@ func TestServerWithMasterKeyAndMetrics(t *testing.T) {
 			t.Errorf("expected status 200 with valid auth, got %d", rec.Code)
 		}
 	})
+}
+
+func newDashboardHandler(t *testing.T) *dashboard.Handler {
+	t.Helper()
+	h, err := dashboard.New()
+	if err != nil {
+		t.Fatalf("failed to create dashboard handler: %v", err)
+	}
+	return h
+}
+
+func TestAdminEndpoints_Enabled(t *testing.T) {
+	mock := &mockProvider{}
+	adminHandler := admin.NewHandler(nil, nil)
+	srv := New(mock, &Config{
+		AdminEndpointsEnabled: true,
+		AdminHandler:          adminHandler,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/v1/models", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
+func TestAdminEndpoints_Disabled(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, &Config{
+		AdminEndpointsEnabled: false,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/v1/models", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestAdminUI_Enabled(t *testing.T) {
+	mock := &mockProvider{}
+	dashHandler := newDashboardHandler(t)
+	adminHandler := admin.NewHandler(nil, nil)
+	srv := New(mock, &Config{
+		AdminEndpointsEnabled: true,
+		AdminUIEnabled:        true,
+		AdminHandler:          adminHandler,
+		DashboardHandler:      dashHandler,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	contentType := rec.Header().Get("Content-Type")
+	if !strings.Contains(contentType, "text/html") {
+		t.Errorf("expected text/html Content-Type, got %s", contentType)
+	}
+}
+
+func TestAdminUI_Disabled(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, &Config{
+		AdminEndpointsEnabled: true,
+		AdminUIEnabled:        false,
+		AdminHandler:          admin.NewHandler(nil, nil),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestAdminDashboard_SkipsAuth(t *testing.T) {
+	mock := &mockProvider{}
+	dashHandler := newDashboardHandler(t)
+	adminHandler := admin.NewHandler(nil, nil)
+	srv := New(mock, &Config{
+		MasterKey:             "test-secret-key",
+		AdminEndpointsEnabled: true,
+		AdminUIEnabled:        true,
+		AdminHandler:          adminHandler,
+		DashboardHandler:      dashHandler,
+	})
+
+	// Dashboard should be accessible without auth
+	req := httptest.NewRequest(http.MethodGet, "/admin/dashboard", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 (no auth), got %d", rec.Code)
+	}
+}
+
+func TestAdminAPI_RequiresAuth(t *testing.T) {
+	mock := &mockProvider{}
+	adminHandler := admin.NewHandler(nil, nil)
+	srv := New(mock, &Config{
+		MasterKey:             "test-secret-key",
+		AdminEndpointsEnabled: true,
+		AdminHandler:          adminHandler,
+	})
+
+	// Admin API should require auth
+	req := httptest.NewRequest(http.MethodGet, "/admin/api/v1/models", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401, got %d", rec.Code)
+	}
+}
+
+func TestAdminStaticAssets_SkipAuth(t *testing.T) {
+	mock := &mockProvider{}
+	dashHandler := newDashboardHandler(t)
+	adminHandler := admin.NewHandler(nil, nil)
+	srv := New(mock, &Config{
+		MasterKey:             "test-secret-key",
+		AdminEndpointsEnabled: true,
+		AdminUIEnabled:        true,
+		AdminHandler:          adminHandler,
+		DashboardHandler:      dashHandler,
+	})
+
+	// Static assets should be accessible without auth
+	req := httptest.NewRequest(http.MethodGet, "/admin/static/css/dashboard.css", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200 for static asset without auth, got %d", rec.Code)
+	}
 }
 
 func TestHealthEndpointAlwaysAvailable(t *testing.T) {
