@@ -260,6 +260,7 @@ body {
 /* Content */
 .content {
     flex: 1;
+    min-width: 0;
     margin-left: var(--sidebar-width);
     padding: 32px;
     max-width: 1200px;
