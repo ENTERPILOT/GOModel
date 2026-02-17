@@ -423,7 +423,10 @@ func newContext(query string) echo.Context {
 
 func TestParseUsageParams_DaysDefault(t *testing.T) {
 	c := newContext("")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if params.Interval != "daily" {
 		t.Errorf("expected interval 'daily', got %q", params.Interval)
@@ -443,7 +446,10 @@ func TestParseUsageParams_DaysDefault(t *testing.T) {
 
 func TestParseUsageParams_DaysExplicit(t *testing.T) {
 	c := newContext("days=7")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	today := time.Now().UTC()
 	expectedEnd := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
@@ -459,7 +465,10 @@ func TestParseUsageParams_DaysExplicit(t *testing.T) {
 
 func TestParseUsageParams_StartAndEndDate(t *testing.T) {
 	c := newContext("start_date=2026-01-01&end_date=2026-01-31")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	expectedStart := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	expectedEnd := time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
@@ -474,7 +483,10 @@ func TestParseUsageParams_StartAndEndDate(t *testing.T) {
 
 func TestParseUsageParams_OnlyStartDate(t *testing.T) {
 	c := newContext("start_date=2026-01-15")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	expectedStart := time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC)
 	today := time.Now().UTC()
@@ -490,7 +502,10 @@ func TestParseUsageParams_OnlyStartDate(t *testing.T) {
 
 func TestParseUsageParams_OnlyEndDate(t *testing.T) {
 	c := newContext("end_date=2026-02-10")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	expectedEnd := time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC)
 	expectedStart := expectedEnd.AddDate(0, 0, -29)
@@ -503,26 +518,44 @@ func TestParseUsageParams_OnlyEndDate(t *testing.T) {
 	}
 }
 
-func TestParseUsageParams_InvalidDates(t *testing.T) {
-	c := newContext("start_date=invalid&end_date=also-invalid")
-	params := parseUsageParams(c)
-
-	// Should fall back to days=30 default
-	today := time.Now().UTC()
-	expectedEnd := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC)
-	expectedStart := expectedEnd.AddDate(0, 0, -29)
-
-	if !params.StartDate.Equal(expectedStart) {
-		t.Errorf("expected start date %v, got %v", expectedStart, params.StartDate)
+func TestParseUsageParams_InvalidStartDate(t *testing.T) {
+	c := newContext("start_date=invalid")
+	_, err := parseUsageParams(c)
+	if err == nil {
+		t.Fatal("expected error for invalid start_date, got nil")
 	}
-	if !params.EndDate.Equal(expectedEnd) {
-		t.Errorf("expected end date %v, got %v", expectedEnd, params.EndDate)
+
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("expected GatewayError, got %T", err)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", gatewayErr.HTTPStatusCode())
+	}
+}
+
+func TestParseUsageParams_InvalidEndDate(t *testing.T) {
+	c := newContext("start_date=2026-01-01&end_date=also-invalid")
+	_, err := parseUsageParams(c)
+	if err == nil {
+		t.Fatal("expected error for invalid end_date, got nil")
+	}
+
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("expected GatewayError, got %T", err)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", gatewayErr.HTTPStatusCode())
 	}
 }
 
 func TestParseUsageParams_IntervalWeekly(t *testing.T) {
 	c := newContext("interval=weekly")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if params.Interval != "weekly" {
 		t.Errorf("expected interval 'weekly', got %q", params.Interval)
@@ -531,7 +564,10 @@ func TestParseUsageParams_IntervalWeekly(t *testing.T) {
 
 func TestParseUsageParams_IntervalMonthly(t *testing.T) {
 	c := newContext("interval=monthly")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if params.Interval != "monthly" {
 		t.Errorf("expected interval 'monthly', got %q", params.Interval)
@@ -540,7 +576,10 @@ func TestParseUsageParams_IntervalMonthly(t *testing.T) {
 
 func TestParseUsageParams_IntervalInvalid(t *testing.T) {
 	c := newContext("interval=hourly")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if params.Interval != "daily" {
 		t.Errorf("expected default interval 'daily', got %q", params.Interval)
@@ -549,7 +588,10 @@ func TestParseUsageParams_IntervalInvalid(t *testing.T) {
 
 func TestParseUsageParams_IntervalEmpty(t *testing.T) {
 	c := newContext("")
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
 	if params.Interval != "daily" {
 		t.Errorf("expected default interval 'daily', got %q", params.Interval)

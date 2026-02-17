@@ -37,7 +37,8 @@ var validIntervals = map[string]bool{
 }
 
 // parseUsageParams extracts UsageQueryParams from the request query string.
-func parseUsageParams(c echo.Context) usage.UsageQueryParams {
+// Returns an error if date parameters are provided but malformed.
+func parseUsageParams(c echo.Context) (usage.UsageQueryParams, error) {
 	var params usage.UsageQueryParams
 
 	now := time.Now().UTC()
@@ -49,17 +50,21 @@ func parseUsageParams(c echo.Context) usage.UsageQueryParams {
 	var startParsed, endParsed bool
 
 	if startStr != "" {
-		if t, err := time.Parse("2006-01-02", startStr); err == nil {
-			params.StartDate = t
-			startParsed = true
+		t, err := time.Parse("2006-01-02", startStr)
+		if err != nil {
+			return params, core.NewInvalidRequestError("invalid start_date format, expected YYYY-MM-DD", nil)
 		}
+		params.StartDate = t
+		startParsed = true
 	}
 
 	if endStr != "" {
-		if t, err := time.Parse("2006-01-02", endStr); err == nil {
-			params.EndDate = t
-			endParsed = true
+		t, err := time.Parse("2006-01-02", endStr)
+		if err != nil {
+			return params, core.NewInvalidRequestError("invalid end_date format, expected YYYY-MM-DD", nil)
 		}
+		params.EndDate = t
+		endParsed = true
 	}
 
 	if startParsed || endParsed {
@@ -88,7 +93,7 @@ func parseUsageParams(c echo.Context) usage.UsageQueryParams {
 		params.Interval = "daily"
 	}
 
-	return params
+	return params, nil
 }
 
 // handleError converts errors to appropriate HTTP responses, matching the
@@ -113,7 +118,10 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 		return c.JSON(http.StatusOK, usage.UsageSummary{})
 	}
 
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
 
 	summary, err := h.usageReader.GetSummary(c.Request().Context(), params)
 	if err != nil {
@@ -129,7 +137,10 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 		return c.JSON(http.StatusOK, []usage.DailyUsage{})
 	}
 
-	params := parseUsageParams(c)
+	params, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
 
 	daily, err := h.usageReader.GetDailyUsage(c.Request().Context(), params)
 	if err != nil {
