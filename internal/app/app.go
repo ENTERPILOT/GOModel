@@ -316,7 +316,7 @@ func (a *App) logStartupInfo() {
 		slog.Info("admin API disabled")
 	}
 	if cfg.Admin.UIEnabled && cfg.Admin.EndpointsEnabled {
-		slog.Info("admin UI enabled", "url", "/admin/dashboard")
+		slog.Info("admin UI enabled", "url", fmt.Sprintf("http://localhost:%s/admin/dashboard", cfg.Server.Port))
 	} else {
 		slog.Info("admin UI disabled")
 	}
