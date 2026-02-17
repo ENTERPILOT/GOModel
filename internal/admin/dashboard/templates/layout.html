@@ -67,7 +67,7 @@
             </div>
         </aside>
         <div class="sidebar-toggle"
-             @click="toggleSidebar()"
+             @mousedown="toggleSidebar()"
              :class="{ collapsed: sidebarCollapsed }"
              :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"></div>
         <main class="content" :class="{ 'content-collapsed': sidebarCollapsed }">
