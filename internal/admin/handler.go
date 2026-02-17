@@ -2,12 +2,14 @@
 package admin
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/labstack/echo/v4"
 
+	"gomodel/internal/core"
 	"gomodel/internal/providers"
 	"gomodel/internal/usage"
 )
@@ -89,6 +91,22 @@ func parseUsageParams(c echo.Context) usage.UsageQueryParams {
 	return params
 }
 
+// handleError converts errors to appropriate HTTP responses, matching the
+// format used by the main API handlers in the server package.
+func handleError(c echo.Context, err error) error {
+	var gatewayErr *core.GatewayError
+	if errors.As(err, &gatewayErr) {
+		return c.JSON(gatewayErr.HTTPStatusCode(), gatewayErr.ToJSON())
+	}
+
+	return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+		"error": map[string]interface{}{
+			"type":    "internal_error",
+			"message": "an unexpected error occurred",
+		},
+	})
+}
+
 // UsageSummary handles GET /admin/api/v1/usage/summary
 func (h *Handler) UsageSummary(c echo.Context) error {
 	if h.usageReader == nil {
@@ -99,9 +117,7 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 
 	summary, err := h.usageReader.GetSummary(c.Request().Context(), params)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "failed to fetch usage summary",
-		})
+		return handleError(c, err)
 	}
 
 	return c.JSON(http.StatusOK, summary)
@@ -117,9 +133,7 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 
 	daily, err := h.usageReader.GetDailyUsage(c.Request().Context(), params)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error": "failed to fetch daily usage",
-		})
+		return handleError(c, err)
 	}
 
 	if daily == nil {
