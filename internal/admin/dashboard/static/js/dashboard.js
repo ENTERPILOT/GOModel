@@ -348,6 +348,7 @@ function dashboard() {
         async fetchAll() {
             this.loading = true;
             this.authError = false;
+            this.needsAuth = false;
             await Promise.all([this.fetchUsage(), this.fetchModels()]);
             this.loading = false;
         },
