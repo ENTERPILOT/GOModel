@@ -15,7 +15,7 @@
 </head>
 <body x-data="dashboard()" x-init="init()">
     <div class="app">
-        <aside class="sidebar">
+        <aside class="sidebar" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
             <div class="sidebar-header">
                 <div class="sidebar-logo">
                     <svg viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -66,7 +66,11 @@
                 </div>
             </div>
         </aside>
-        <main class="content">
+        <div class="sidebar-toggle"
+             @click="toggleSidebar()"
+             :class="{ collapsed: sidebarCollapsed }"
+             :title="sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'"></div>
+        <main class="content" :class="{ 'content-collapsed': sidebarCollapsed }">
             {{template "index" .}}
         </main>
     </div>

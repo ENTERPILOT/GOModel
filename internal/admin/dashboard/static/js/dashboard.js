@@ -10,6 +10,7 @@ function dashboard() {
         needsAuth: false,
         apiKey: '',
         theme: 'system', // 'system', 'light', 'dark'
+        sidebarCollapsed: false,
 
         // Data
         summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0 },
@@ -25,6 +26,7 @@ function dashboard() {
         init() {
             this.apiKey = localStorage.getItem('gomodel_api_key') || '';
             this.theme = localStorage.getItem('gomodel_theme') || 'system';
+            this.sidebarCollapsed = localStorage.getItem('gomodel_sidebar_collapsed') === 'true';
             this.applyTheme();
 
             // Parse initial page from URL path
@@ -48,6 +50,13 @@ function dashboard() {
             });
 
             this.fetchAll();
+        },
+
+        toggleSidebar() {
+            this.sidebarCollapsed = !this.sidebarCollapsed;
+            localStorage.setItem('gomodel_sidebar_collapsed', this.sidebarCollapsed);
+            // Re-render chart after CSS transition so Chart.js picks up the new width
+            setTimeout(() => this.renderChart(), 220);
         },
 
         navigate(page) {
