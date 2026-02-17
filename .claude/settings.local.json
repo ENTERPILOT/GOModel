@@ -20,7 +20,9 @@
       "mcp__linear-server__get_issue",
       "Bash(make build:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(git -C:*)"
     ],
     "deny": [],
     "ask": []
