@@ -109,6 +109,10 @@ func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryPara
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
 			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
 		}}})
+	} else if !endZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}},
+		}}})
 	}
 
 	dateFormat := mongoDateFormat(interval)

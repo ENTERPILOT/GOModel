@@ -53,7 +53,7 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 func sqliteGroupExpr(interval string) string {
 	switch interval {
 	case "weekly":
-		return `strftime('%Y-W%W', timestamp)`
+		return `strftime('%G-W%V', timestamp)`
 	case "monthly":
 		return `strftime('%Y-%m', timestamp)`
 	case "yearly":
