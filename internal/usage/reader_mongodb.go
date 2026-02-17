@@ -38,6 +38,10 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
 			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
 		}}})
+	} else if !endZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}},
+		}}})
 	}
 
 	pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.D{
@@ -69,6 +73,10 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 		summary.TotalInput = result.TotalInput
 		summary.TotalOutput = result.TotalOutput
 		summary.TotalTokens = result.TotalTokens
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage summary cursor: %w", err)
 	}
 
 	return summary, nil
@@ -137,7 +145,7 @@ func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryPara
 	}
 	defer cursor.Close(ctx)
 
-	var result []DailyUsage
+	result := make([]DailyUsage, 0)
 	for cursor.Next(ctx) {
 		var row struct {
 			Date         string `bson:"_id"`

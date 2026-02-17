@@ -151,11 +151,15 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		} else {
 			serverCfg.AdminEndpointsEnabled = true
 			serverCfg.AdminHandler = adminHandler
+			slog.Info("admin API enabled", "api", "/admin/api/v1")
 			if adminCfg.UIEnabled {
 				serverCfg.AdminUIEnabled = true
 				serverCfg.DashboardHandler = dashHandler
+				slog.Info("admin UI enabled", "url", fmt.Sprintf("http://localhost:%s/admin/dashboard", cfg.AppConfig.Server.Port))
 			}
 		}
+	} else {
+		slog.Info("admin API disabled")
 	}
 
 	app.server = server.New(provider, serverCfg)
@@ -309,17 +313,6 @@ func (a *App) logStartupInfo() {
 		slog.Info("usage tracking disabled")
 	}
 
-	// Admin configuration
-	if cfg.Admin.EndpointsEnabled {
-		slog.Info("admin API enabled", "api", "/admin/api/v1")
-	} else {
-		slog.Info("admin API disabled")
-	}
-	if cfg.Admin.UIEnabled && cfg.Admin.EndpointsEnabled {
-		slog.Info("admin UI enabled", "url", fmt.Sprintf("http://localhost:%s/admin/dashboard", cfg.Server.Port))
-	} else {
-		slog.Info("admin UI disabled")
-	}
 }
 
 // initAdmin creates the admin API handler and optionally the dashboard handler.

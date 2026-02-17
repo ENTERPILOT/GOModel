@@ -94,7 +94,7 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 	}
 	defer rows.Close()
 
-	var result []DailyUsage
+	result := make([]DailyUsage, 0)
 	for rows.Next() {
 		var d DailyUsage
 		if err := rows.Scan(&d.Date, &d.Requests, &d.InputTokens, &d.OutputTokens, &d.TotalTokens); err != nil {

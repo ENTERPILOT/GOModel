@@ -123,6 +123,9 @@ func TestAdminUsageSummary_MongoDB(t *testing.T) {
 		OnlyModelInteractions: false,
 	})
 
+	// Clear existing usage entries
+	dbassert.ClearUsageMongo(t, fixture.MongoDb)
+
 	// Send 2 chat requests
 	for i := 0; i < 2; i++ {
 		payload := newChatRequest("gpt-4", "Hello!")

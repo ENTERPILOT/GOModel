@@ -117,6 +117,16 @@ func ClearUsage(t *testing.T, pool *pgxpool.Pool) {
 	require.NoError(t, err, "failed to clear usage entries")
 }
 
+// ClearUsageMongo deletes all usage entries from MongoDB.
+func ClearUsageMongo(t *testing.T, db *mongo.Database) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	_, err := db.Collection("usage").DeleteMany(ctx, bson.M{})
+	require.NoError(t, err, "failed to clear usage entries from MongoDB")
+}
+
 // SumTokensByModel returns total token usage grouped by model from PostgreSQL.
 func SumTokensByModel(t *testing.T, pool *pgxpool.Pool) map[string]TokenSummary {
 	t.Helper()
