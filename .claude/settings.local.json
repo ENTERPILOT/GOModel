@@ -17,7 +17,8 @@
       "WebFetch(domain:docs.anthropic.com)",
       "mcp__linear-server__list_projects",
       "mcp__linear-server__list_issues",
-      "mcp__linear-server__get_issue"
+      "mcp__linear-server__get_issue",
+      "Bash(make build:*)"
     ],
     "deny": [],
     "ask": []

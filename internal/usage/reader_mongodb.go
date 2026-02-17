@@ -3,7 +3,6 @@ package usage
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -22,13 +21,22 @@ func NewMongoDBReader(database *mongo.Database) (*MongoDBReader, error) {
 	return &MongoDBReader{collection: database.Collection("usage")}, nil
 }
 
-func (r *MongoDBReader) GetSummary(ctx context.Context, days int) (*UsageSummary, error) {
+func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	pipeline := bson.A{}
 
-	if days > 0 {
-		cutoff := time.Now().AddDate(0, 0, -days).UTC()
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: cutoff}}},
+			{Key: "timestamp", Value: bson.D{
+				{Key: "$gte", Value: params.StartDate.UTC()},
+				{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
+			}},
+		}}})
+	} else if !startZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
 		}}})
 	}
 
@@ -66,20 +74,49 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, days int) (*UsageSummary
 	return summary, nil
 }
 
-func (r *MongoDBReader) GetDailyUsage(ctx context.Context, days int) ([]DailyUsage, error) {
+func mongoDateFormat(interval string) string {
+	switch interval {
+	case "weekly":
+		return "%G-W%V"
+	case "monthly":
+		return "%Y-%m"
+	case "yearly":
+		return "%Y"
+	default:
+		return "%Y-%m-%d"
+	}
+}
+
+func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
+	interval := params.Interval
+	if interval == "" {
+		interval = "daily"
+	}
+
 	pipeline := bson.A{}
 
-	if days > 0 {
-		cutoff := time.Now().AddDate(0, 0, -days).UTC()
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: cutoff}}},
+			{Key: "timestamp", Value: bson.D{
+				{Key: "$gte", Value: params.StartDate.UTC()},
+				{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
+			}},
+		}}})
+	} else if !startZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
 		}}})
 	}
+
+	dateFormat := mongoDateFormat(interval)
 
 	pipeline = append(pipeline,
 		bson.D{{Key: "$group", Value: bson.D{
 			{Key: "_id", Value: bson.D{{Key: "$dateToString", Value: bson.D{
-				{Key: "format", Value: "%Y-%m-%d"},
+				{Key: "format", Value: dateFormat},
 				{Key: "date", Value: "$timestamp"},
 			}}}},
 			{Key: "requests", Value: bson.D{{Key: "$sum", Value: 1}}},

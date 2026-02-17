@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"time"
 )
 
 // SQLiteReader implements UsageReader for SQLite databases.
@@ -20,15 +19,21 @@ func NewSQLiteReader(db *sql.DB) (*SQLiteReader, error) {
 	return &SQLiteReader{db: db}, nil
 }
 
-func (r *SQLiteReader) GetSummary(ctx context.Context, days int) (*UsageSummary, error) {
+func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	var query string
 	var args []interface{}
 
-	if days > 0 {
-		cutoff := time.Now().AddDate(0, 0, -days).UTC().Format(time.RFC3339Nano)
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+			FROM usage WHERE timestamp >= ? AND timestamp < ?`
+		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
+	} else if !startZero {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
 			FROM usage WHERE timestamp >= ?`
-		args = append(args, cutoff)
+		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
 	} else {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
 			FROM usage`
@@ -45,20 +50,42 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, days int) (*UsageSummary,
 	return summary, nil
 }
 
-func (r *SQLiteReader) GetDailyUsage(ctx context.Context, days int) ([]DailyUsage, error) {
-	var query string
+func sqliteGroupExpr(interval string) string {
+	switch interval {
+	case "weekly":
+		return `strftime('%Y-W%W', timestamp)`
+	case "monthly":
+		return `strftime('%Y-%m', timestamp)`
+	case "yearly":
+		return `strftime('%Y', timestamp)`
+	default:
+		return `DATE(timestamp)`
+	}
+}
+
+func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
+	interval := params.Interval
+	if interval == "" {
+		interval = "daily"
+	}
+	groupExpr := sqliteGroupExpr(interval)
+
+	var where string
 	var args []interface{}
 
-	if days > 0 {
-		cutoff := time.Now().AddDate(0, 0, -days).UTC().Format(time.RFC3339Nano)
-		query = `SELECT DATE(timestamp) as day, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM usage WHERE timestamp >= ?
-			GROUP BY DATE(timestamp) ORDER BY day`
-		args = append(args, cutoff)
-	} else {
-		query = `SELECT DATE(timestamp) as day, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM usage GROUP BY DATE(timestamp) ORDER BY day`
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		where = ` WHERE timestamp >= ? AND timestamp < ?`
+		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
+	} else if !startZero {
+		where = ` WHERE timestamp >= ?`
+		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
 	}
+
+	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		FROM usage%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {

@@ -3,7 +3,6 @@ package usage
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -21,15 +20,21 @@ func NewPostgreSQLReader(pool *pgxpool.Pool) (*PostgreSQLReader, error) {
 	return &PostgreSQLReader{pool: pool}, nil
 }
 
-func (r *PostgreSQLReader) GetSummary(ctx context.Context, days int) (*UsageSummary, error) {
+func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	var query string
 	var args []interface{}
 
-	if days > 0 {
-		cutoff := time.Now().AddDate(0, 0, -days).UTC()
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2`
+		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
+	} else if !startZero {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
 			FROM "usage" WHERE timestamp >= $1`
-		args = append(args, cutoff)
+		args = append(args, params.StartDate.UTC())
 	} else {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
 			FROM "usage"`
@@ -46,20 +51,42 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, days int) (*UsageSumm
 	return summary, nil
 }
 
-func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, days int) ([]DailyUsage, error) {
-	var query string
+func pgGroupExpr(interval string) string {
+	switch interval {
+	case "weekly":
+		return `to_char(DATE_TRUNC('week', timestamp AT TIME ZONE 'UTC'), 'IYYY-"W"IW')`
+	case "monthly":
+		return `to_char(DATE_TRUNC('month', timestamp AT TIME ZONE 'UTC'), 'YYYY-MM')`
+	case "yearly":
+		return `to_char(DATE_TRUNC('year', timestamp AT TIME ZONE 'UTC'), 'YYYY')`
+	default:
+		return `to_char(DATE(timestamp AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`
+	}
+}
+
+func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
+	interval := params.Interval
+	if interval == "" {
+		interval = "daily"
+	}
+	groupExpr := pgGroupExpr(interval)
+
+	var where string
 	var args []interface{}
 
-	if days > 0 {
-		cutoff := time.Now().AddDate(0, 0, -days).UTC()
-		query = `SELECT DATE(timestamp AT TIME ZONE 'UTC') as day, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM "usage" WHERE timestamp >= $1
-			GROUP BY DATE(timestamp AT TIME ZONE 'UTC') ORDER BY day`
-		args = append(args, cutoff)
-	} else {
-		query = `SELECT DATE(timestamp AT TIME ZONE 'UTC') as day, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM "usage" GROUP BY DATE(timestamp AT TIME ZONE 'UTC') ORDER BY day`
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		where = ` WHERE timestamp >= $1 AND timestamp < $2`
+		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
+	} else if !startZero {
+		where = ` WHERE timestamp >= $1`
+		args = append(args, params.StartDate.UTC())
 	}
+
+	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		FROM "usage"%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -70,11 +97,9 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, days int) ([]Daily
 	var result []DailyUsage
 	for rows.Next() {
 		var d DailyUsage
-		var day time.Time
-		if err := rows.Scan(&day, &d.Requests, &d.InputTokens, &d.OutputTokens, &d.TotalTokens); err != nil {
+		if err := rows.Scan(&d.Date, &d.Requests, &d.InputTokens, &d.OutputTokens, &d.TotalTokens); err != nil {
 			return nil, fmt.Errorf("failed to scan daily usage row: %w", err)
 		}
-		d.Date = day.Format("2006-01-02")
 		result = append(result, d)
 	}
 
