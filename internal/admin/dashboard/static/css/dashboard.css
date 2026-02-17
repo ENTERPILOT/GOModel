@@ -271,7 +271,7 @@ body {
 }
 
 .sidebar-toggle:hover {
-    background: var(--accent);
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .sidebar-toggle.collapsed {
