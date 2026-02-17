@@ -101,6 +101,13 @@ Storage is shared by audit logging, usage tracking, and future features like IAM
 | `METRICS_ENABLED`  | Enable Prometheus metrics | `false`    |
 | `METRICS_ENDPOINT` | HTTP path for metrics     | `/metrics` |
 
+#### Admin
+
+| Variable                  | Description                   | Default |
+| ------------------------- | ----------------------------- | ------- |
+| `ADMIN_ENDPOINTS_ENABLED` | Enable the admin REST API     | `true`  |
+| `ADMIN_UI_ENABLED`        | Enable the admin dashboard UI | `true`  |
+
 #### HTTP Client
 
 These control timeouts for upstream API requests to LLM providers.

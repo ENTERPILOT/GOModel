@@ -355,6 +355,32 @@ func (r *ModelRegistry) GetProviderType(model string) string {
 	return r.providerTypes[info.Provider]
 }
 
+// ModelWithProvider holds a model alongside its provider type string.
+type ModelWithProvider struct {
+	Model        core.Model `json:"model"`
+	ProviderType string     `json:"provider_type"`
+}
+
+// ListModelsWithProvider returns all models with their provider types, sorted by model ID.
+func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]ModelWithProvider, 0, len(r.models))
+	for _, info := range r.models {
+		result = append(result, ModelWithProvider{
+			Model:        info.Model,
+			ProviderType: r.providerTypes[info.Provider],
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Model.ID < result[j].Model.ID
+	})
+
+	return result
+}
+
 // ProviderCount returns the number of registered providers
 func (r *ModelRegistry) ProviderCount() int {
 	r.mu.RLock()

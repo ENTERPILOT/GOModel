@@ -157,6 +157,23 @@ Full reference: `.env.template` and `config/config.yaml`
 - **Guardrails:** Configured via `config/config.yaml` only (except `GUARDRAILS_ENABLED` env var)
 - **Providers:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`
 
+## Documentation Maintenance
+
+After completing any code change, routinely check whether documentation needs updating. This applies to all three documentation layers:
+
+1. **README files** (`README.md`, `helm/README.md`, `tests/contract/README.md`) — Update when adding/removing features, changing setup steps, modifying CLI flags, or altering configuration options.
+2. **In-code documentation** (Go doc comments on exported types, functions, interfaces) — Update when changing public APIs, adding new exported symbols, or modifying function signatures/behavior.
+3. **Mintlify / technical docs** (`docs/` directory) — Update `docs/advanced/*.mdx` pages when changing configuration options or guardrails behavior. Update `docs/adr/` when making significant architectural decisions. Update `docs/plans/` if implementation diverges from existing plans. Check `docs.json` if new pages need to be added to the navigation.
+
+**When to update:**
+- Adding a new provider, endpoint, config option, or feature
+- Changing existing behavior, defaults, or API contracts
+- Renaming or removing configuration variables
+- Adding or modifying middleware, guardrails, or storage backends
+- Changing build/test commands or requirements
+
+**How to check:** After making changes, scan the affected documentation layers for stale or missing information. Do not add speculative documentation for unimplemented features — only document what exists.
+
 ## Key Details
 
 1. Providers are registered explicitly via `factory.Register()` in main.go — order matters, first registered wins for duplicate model names

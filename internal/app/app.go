@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"gomodel/config"
+	"gomodel/internal/admin"
+	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
 	"gomodel/internal/server"
+	"gomodel/internal/storage"
 	"gomodel/internal/usage"
 )
 
@@ -134,6 +137,31 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		UsageLogger:              usageResult.Logger,
 		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
 	}
+
+	// Initialize admin API and dashboard (behind separate feature flags)
+	adminCfg := cfg.AppConfig.Admin
+	if !adminCfg.EndpointsEnabled && adminCfg.UIEnabled {
+		slog.Warn("ADMIN_UI_ENABLED=true requires ADMIN_ENDPOINTS_ENABLED=true — forcing UI to disabled")
+		adminCfg.UIEnabled = false
+	}
+	if adminCfg.EndpointsEnabled {
+		adminHandler, dashHandler, adminErr := initAdmin(auditResult.Storage, usageResult.Storage, providerResult.Registry, adminCfg.UIEnabled)
+		if adminErr != nil {
+			slog.Warn("failed to initialize admin", "error", adminErr)
+		} else {
+			serverCfg.AdminEndpointsEnabled = true
+			serverCfg.AdminHandler = adminHandler
+			slog.Info("admin API enabled", "api", "/admin/api/v1")
+			if adminCfg.UIEnabled {
+				serverCfg.AdminUIEnabled = true
+				serverCfg.DashboardHandler = dashHandler
+				slog.Info("admin UI enabled", "url", fmt.Sprintf("http://localhost:%s/admin/dashboard", cfg.AppConfig.Server.Port))
+			}
+		}
+	} else {
+		slog.Info("admin API disabled")
+	}
+
 	app.server = server.New(provider, serverCfg)
 
 	return app, nil
@@ -284,6 +312,42 @@ func (a *App) logStartupInfo() {
 	} else {
 		slog.Info("usage tracking disabled")
 	}
+
+}
+
+// initAdmin creates the admin API handler and optionally the dashboard handler.
+// Returns nil dashboard handler if uiEnabled is false.
+func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.ModelRegistry, uiEnabled bool) (*admin.Handler, *dashboard.Handler, error) {
+	// Find a storage connection for reading usage data
+	var store storage.Storage
+	if auditStorage != nil {
+		store = auditStorage
+	} else if usageStorage != nil {
+		store = usageStorage
+	}
+
+	// Create usage reader (may be nil if no storage)
+	var reader usage.UsageReader
+	if store != nil {
+		var err error
+		reader, err = usage.NewReader(store)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create usage reader: %w", err)
+		}
+	}
+
+	adminHandler := admin.NewHandler(reader, registry)
+
+	var dashHandler *dashboard.Handler
+	if uiEnabled {
+		var err error
+		dashHandler, err = dashboard.New()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to initialize dashboard: %w", err)
+		}
+	}
+
+	return adminHandler, dashHandler, nil
 }
 
 // buildGuardrailsPipeline creates a guardrails pipeline from configuration.

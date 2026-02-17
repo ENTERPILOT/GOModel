@@ -19,10 +19,16 @@ func AuthMiddleware(masterKey string, skipPaths []string) echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			// Check if path should skip authentication
+			// Check if path should skip authentication.
+			// Paths ending with "/*" are treated as prefix matches.
 			requestPath := c.Request().URL.Path
 			for _, skipPath := range skipPaths {
-				if requestPath == skipPath {
+				if strings.HasSuffix(skipPath, "/*") {
+					prefix := strings.TrimSuffix(skipPath, "*")
+					if strings.HasPrefix(requestPath, prefix) {
+						return next(c)
+					}
+				} else if requestPath == skipPath {
 					return next(c)
 				}
 			}

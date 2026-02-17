@@ -1,0 +1,185 @@
+---
+title: "Admin Endpoints"
+description: "Built-in REST API and dashboard for monitoring usage, models, and gateway health."
+---
+
+## Philosophy
+
+GOModel ships with admin endpoints **enabled by default**. The goal is simple: you should be able to deploy GOModel and immediately have visibility into what's happening — no extra services, no separate monitoring stack, no configuration.
+
+The admin layer is split into two independently controllable pieces:
+
+1. **Admin REST API** (`/admin/api/v1/*`) — machine-readable JSON endpoints for usage data and model inventory. Protected by `GOMODEL_MASTER_KEY` like all other API routes.
+2. **Admin Dashboard UI** (`/admin/dashboard`) — a lightweight, embedded HTML dashboard that visualizes the same data. No external dependencies, no JavaScript frameworks to install — it's compiled into the binary.
+
+Both are on by default because observability shouldn't be opt-in. If you don't need them, turn them off with a single environment variable.
+
+## Configuration
+
+| Variable                  | Description                          | Default |
+| ------------------------- | ------------------------------------ | ------- |
+| `ADMIN_ENDPOINTS_ENABLED` | Enable the admin REST API            | `true`  |
+| `ADMIN_UI_ENABLED`        | Enable the admin dashboard UI        | `true`  |
+
+Or in YAML:
+
+```yaml
+admin:
+  endpoints_enabled: true
+  ui_enabled: true
+```
+
+<Note>
+  The dashboard UI requires the REST API to be enabled. If you set
+  `ADMIN_ENDPOINTS_ENABLED=false` but leave `ADMIN_UI_ENABLED=true`, the UI
+  will be automatically disabled with a warning in the logs.
+</Note>
+
+## Authentication
+
+The admin REST API endpoints (`/admin/api/v1/*`) are protected by the same `GOMODEL_MASTER_KEY` authentication as the main API routes. Include the key as a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer $GOMODEL_MASTER_KEY" \
+  http://localhost:8080/admin/api/v1/usage/summary
+```
+
+The dashboard UI pages (`/admin/dashboard`) and static assets (`/admin/static/*`) **skip authentication** so the dashboard is accessible without configuring API keys in the browser.
+
+<Warning>
+  If your GOModel instance is publicly accessible, be aware that the dashboard
+  UI is unauthenticated. Disable it with `ADMIN_UI_ENABLED=false` or restrict
+  access at the network level.
+</Warning>
+
+## REST API Endpoints
+
+All admin API endpoints are mounted under `/admin/api/v1`.
+
+### GET /admin/api/v1/usage/summary
+
+Returns aggregate token usage statistics over a configurable time window.
+
+**Query parameters:**
+
+| Parameter    | Type   | Description                                              | Default              |
+| ------------ | ------ | -------------------------------------------------------- | -------------------- |
+| `start_date` | string | Range start in `YYYY-MM-DD` format                       | 29 days before end   |
+| `end_date`   | string | Range end in `YYYY-MM-DD` format                         | Today                |
+| `days`       | int    | Shorthand for look-back window (ignored if dates are set) | `30`                |
+
+Use `start_date`/`end_date` for explicit ranges or `days` as a shorthand. When both are provided, `start_date`/`end_date` take priority.
+
+**Response:**
+
+```json
+{
+  "total_requests": 1542,
+  "total_input_tokens": 2450000,
+  "total_output_tokens": 890000,
+  "total_tokens": 3340000
+}
+```
+
+If usage tracking is disabled, returns zeroed values.
+
+### GET /admin/api/v1/usage/daily
+
+Returns per-period token usage breakdown over a configurable time window, grouped by the specified interval.
+
+**Query parameters:**
+
+| Parameter    | Type   | Description                                              | Default              |
+| ------------ | ------ | -------------------------------------------------------- | -------------------- |
+| `start_date` | string | Range start in `YYYY-MM-DD` format                       | 29 days before end   |
+| `end_date`   | string | Range end in `YYYY-MM-DD` format                         | Today                |
+| `days`       | int    | Shorthand for look-back window (ignored if dates are set) | `30`                |
+| `interval`   | string | Grouping: `daily`, `weekly`, `monthly`, `yearly`         | `daily`              |
+
+The `date` field in the response changes format based on the interval: `YYYY-MM-DD` (daily), `YYYY-Www` (weekly), `YYYY-MM` (monthly), or `YYYY` (yearly).
+
+**Response:**
+
+```json
+[
+  {
+    "date": "2026-02-17",
+    "requests": 84,
+    "input_tokens": 120000,
+    "output_tokens": 45000,
+    "total_tokens": 165000
+  },
+  {
+    "date": "2026-02-16",
+    "requests": 102,
+    "input_tokens": 155000,
+    "output_tokens": 58000,
+    "total_tokens": 213000
+  }
+]
+```
+
+Returns an empty array if usage tracking is disabled or no data exists for the period.
+
+### GET /admin/api/v1/models
+
+Returns all registered models with their provider type.
+
+**Response:**
+
+```json
+[
+  {
+    "model": {
+      "id": "gpt-4o",
+      "object": "model",
+      "created": 1715367049,
+      "owned_by": "system"
+    },
+    "provider_type": "openai"
+  },
+  {
+    "model": {
+      "id": "claude-sonnet-4-5-20250929",
+      "object": "model",
+      "created": 1727568000,
+      "owned_by": "system"
+    },
+    "provider_type": "anthropic"
+  }
+]
+```
+
+This differs from the standard `/v1/models` endpoint: the admin version includes `provider_type` for each model, making it useful for understanding which provider serves which model.
+
+## Admin Dashboard
+
+The dashboard is a server-rendered HTML page embedded in the GOModel binary. Access it at:
+
+```
+http://localhost:8080/admin/dashboard
+```
+
+It provides a visual overview of usage statistics and registered models using the same data as the REST API endpoints above.
+
+## Disabling Admin Features
+
+To disable all admin features:
+
+```bash
+export ADMIN_ENDPOINTS_ENABLED=false
+```
+
+This disables both the REST API and the dashboard UI. To keep the API but hide the dashboard:
+
+```bash
+export ADMIN_ENDPOINTS_ENABLED=true
+export ADMIN_UI_ENABLED=false
+```
+
+<Tip>
+  The admin layer is designed to degrade gracefully. If usage tracking is off,
+  the usage endpoints return empty results instead of errors. If the model
+  registry isn't ready, the models endpoint returns an empty array. The gateway
+  keeps running regardless.
+</Tip>

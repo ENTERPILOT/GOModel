@@ -11,6 +11,8 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"gomodel/internal/admin"
+	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
@@ -31,6 +33,10 @@ type Config struct {
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
+	AdminEndpointsEnabled    bool                     // Whether admin API endpoints are enabled
+	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
+	AdminHandler             *admin.Handler           // Admin API handler (nil if disabled)
+	DashboardHandler         *dashboard.Handler       // Dashboard UI handler (nil if disabled)
 }
 
 // New creates a new HTTP server
@@ -66,6 +72,11 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 			metricsPath = "/metrics"
 		}
 		authSkipPaths = append(authSkipPaths, metricsPath)
+	}
+
+	// Admin dashboard pages and static assets skip auth (/* enables prefix matching)
+	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
+		authSkipPaths = append(authSkipPaths, "/admin/dashboard", "/admin/dashboard/*", "/admin/static/*")
 	}
 
 	// Global middleware stack (order matters)
@@ -132,6 +143,21 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)
+
+	// Admin API routes (behind ADMIN_ENDPOINTS_ENABLED flag)
+	if cfg != nil && cfg.AdminEndpointsEnabled && cfg.AdminHandler != nil {
+		adminAPI := e.Group("/admin/api/v1")
+		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
+		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
+		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
+	}
+
+	// Admin dashboard UI routes (behind ADMIN_UI_ENABLED flag)
+	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
+		e.GET("/admin/dashboard", cfg.DashboardHandler.Index)
+		e.GET("/admin/dashboard/*", cfg.DashboardHandler.Index)
+		e.GET("/admin/static/*", cfg.DashboardHandler.Static)
+	}
 
 	return &Server{
 		echo:    e,

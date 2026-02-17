@@ -1,0 +1,233 @@
+//go:build integration
+
+package integration
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"gomodel/internal/providers"
+	"gomodel/internal/usage"
+	"gomodel/tests/integration/dbassert"
+)
+
+func TestAdminUsageSummary_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		UsageEnabled:          true,
+		AdminEndpointsEnabled: true,
+		OnlyModelInteractions: false,
+	})
+
+	// Clear existing usage entries
+	dbassert.ClearUsage(t, fixture.PgPool)
+
+	// Send 2 chat requests
+	for i := 0; i < 2; i++ {
+		payload := newChatRequest("gpt-4", "Hello!")
+		resp := sendChatRequest(t, fixture.ServerURL, payload)
+		require.Equal(t, 200, resp.StatusCode)
+		closeBody(resp)
+	}
+
+	// Wait for usage buffer to flush (flush interval is 1s in tests)
+	time.Sleep(2 * time.Second)
+
+	// Query admin API
+	resp, err := http.Get(fixture.ServerURL + "/admin/api/v1/usage/summary?days=30")
+	require.NoError(t, err)
+	defer closeBody(resp)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var summary usage.UsageSummary
+	require.NoError(t, json.Unmarshal(body, &summary))
+
+	assert.Equal(t, 2, summary.TotalRequests, "expected 2 total requests")
+	assert.Equal(t, int64(20), summary.TotalInput, "expected 20 input tokens (2 * 10)")
+	assert.Equal(t, int64(16), summary.TotalOutput, "expected 16 output tokens (2 * 8)")
+	assert.Equal(t, int64(36), summary.TotalTokens, "expected 36 total tokens (2 * 18)")
+
+	fixture.FlushAndClose(t)
+}
+
+func TestAdminDailyUsage_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		UsageEnabled:          true,
+		AdminEndpointsEnabled: true,
+		OnlyModelInteractions: false,
+	})
+
+	// Clear existing usage entries
+	dbassert.ClearUsage(t, fixture.PgPool)
+
+	// Send requests
+	for i := 0; i < 2; i++ {
+		payload := newChatRequest("gpt-4", "Hello!")
+		resp := sendChatRequest(t, fixture.ServerURL, payload)
+		require.Equal(t, 200, resp.StatusCode)
+		closeBody(resp)
+	}
+
+	// Wait for usage buffer to flush
+	time.Sleep(2 * time.Second)
+
+	// Query admin API
+	resp, err := http.Get(fixture.ServerURL + "/admin/api/v1/usage/daily?days=30")
+	require.NoError(t, err)
+	defer closeBody(resp)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var daily []usage.DailyUsage
+	require.NoError(t, json.Unmarshal(body, &daily))
+
+	require.NotEmpty(t, daily, "expected at least one daily entry")
+
+	// Find today's entry
+	today := time.Now().UTC().Format("2006-01-02")
+	var todayEntry *usage.DailyUsage
+	for i := range daily {
+		if daily[i].Date == today {
+			todayEntry = &daily[i]
+			break
+		}
+	}
+	require.NotNil(t, todayEntry, "expected entry for today %s", today)
+	assert.Equal(t, 2, todayEntry.Requests, "expected 2 requests today")
+	assert.Equal(t, int64(20), todayEntry.InputTokens, "expected 20 input tokens")
+	assert.Equal(t, int64(16), todayEntry.OutputTokens, "expected 16 output tokens")
+	assert.Equal(t, int64(36), todayEntry.TotalTokens, "expected 36 total tokens")
+
+	fixture.FlushAndClose(t)
+}
+
+func TestAdminUsageSummary_MongoDB(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "mongodb",
+		UsageEnabled:          true,
+		AdminEndpointsEnabled: true,
+		OnlyModelInteractions: false,
+	})
+
+	// Clear existing usage entries
+	dbassert.ClearUsageMongo(t, fixture.MongoDb)
+
+	// Send 2 chat requests
+	for i := 0; i < 2; i++ {
+		payload := newChatRequest("gpt-4", "Hello!")
+		resp := sendChatRequest(t, fixture.ServerURL, payload)
+		require.Equal(t, 200, resp.StatusCode)
+		closeBody(resp)
+	}
+
+	// Wait for usage buffer to flush
+	time.Sleep(2 * time.Second)
+
+	// Query admin API
+	resp, err := http.Get(fixture.ServerURL + "/admin/api/v1/usage/summary?days=30")
+	require.NoError(t, err)
+	defer closeBody(resp)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var summary usage.UsageSummary
+	require.NoError(t, json.Unmarshal(body, &summary))
+
+	assert.Equal(t, 2, summary.TotalRequests, "expected 2 total requests")
+	assert.Equal(t, int64(20), summary.TotalInput, "expected 20 input tokens (2 * 10)")
+	assert.Equal(t, int64(16), summary.TotalOutput, "expected 16 output tokens (2 * 8)")
+	assert.Equal(t, int64(36), summary.TotalTokens, "expected 36 total tokens (2 * 18)")
+
+	fixture.FlushAndClose(t)
+}
+
+func TestAdminDailyUsage_WithInterval_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		UsageEnabled:          true,
+		AdminEndpointsEnabled: true,
+		OnlyModelInteractions: false,
+	})
+
+	// Send a request so there's data
+	payload := newChatRequest("gpt-4", "Hello!")
+	resp := sendChatRequest(t, fixture.ServerURL, payload)
+	require.Equal(t, 200, resp.StatusCode)
+	closeBody(resp)
+
+	// Wait for usage buffer to flush
+	time.Sleep(2 * time.Second)
+
+	// Query with weekly interval
+	resp, err := http.Get(fixture.ServerURL + "/admin/api/v1/usage/daily?interval=weekly")
+	require.NoError(t, err)
+	defer closeBody(resp)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var daily []usage.DailyUsage
+	require.NoError(t, json.Unmarshal(body, &daily))
+
+	// Should return valid JSON array (may be empty or have entries)
+	assert.True(t, json.Valid(body), "response should be valid JSON")
+
+	fixture.FlushAndClose(t)
+}
+
+func TestAdminModels_PostgreSQL(t *testing.T) {
+	fixture := SetupTestServer(t, TestServerConfig{
+		DBType:                "postgresql",
+		UsageEnabled:          false,
+		AdminEndpointsEnabled: true,
+		OnlyModelInteractions: false,
+	})
+
+	// Query admin models endpoint
+	resp, err := http.Get(fixture.ServerURL + "/admin/api/v1/models")
+	require.NoError(t, err)
+	defer closeBody(resp)
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	require.NoError(t, err)
+
+	var models []providers.ModelWithProvider
+	require.NoError(t, json.Unmarshal(body, &models))
+
+	require.NotEmpty(t, models, "expected at least one model")
+
+	// Should be sorted by model ID
+	for i := 1; i < len(models); i++ {
+		assert.True(t, models[i-1].Model.ID < models[i].Model.ID,
+			"models should be sorted, but %s >= %s", models[i-1].Model.ID, models[i].Model.ID)
+	}
+
+	// Each model should have model.id and provider_type
+	for _, m := range models {
+		assert.NotEmpty(t, m.Model.ID, "model.id should not be empty")
+		assert.NotEmpty(t, m.ProviderType, "provider_type should not be empty")
+	}
+
+	fixture.FlushAndClose(t)
+}

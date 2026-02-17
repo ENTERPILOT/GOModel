@@ -162,6 +162,10 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 | `/v1/models` | GET | List available models |
 | `/health` | GET | Health check |
 | `/metrics` | GET | Prometheus metrics (when enabled) |
+| `/admin/api/v1/usage/summary` | GET | Aggregate token usage statistics |
+| `/admin/api/v1/usage/daily` | GET | Per-period token usage breakdown |
+| `/admin/api/v1/models` | GET | List models with provider type |
+| `/admin/dashboard` | GET | Admin dashboard UI |
 
 ---
 
@@ -198,10 +202,10 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 | Full-observability         | 🚧   | 🚧   |
 | Budget management          | 🚧   | 🚧   |
 | Many keys support          | 🚧   | 🚧   |
-| Administrative endpoints   | 🚧   | 🚧   |
-| Guardrails                 | 🚧   | 🚧   |
+| Administrative endpoints   | ✅   | 🚧   |
+| Guardrails                 | ✅   | 🚧   |
 | SSO                        | 🚧   | 🚧   |
-| System Prompt (GuardRails) | 🚧   | 🚧   |
+| System Prompt (GuardRails) | ✅   | 🚧   |
 
 ## Integrations
 

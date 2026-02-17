@@ -44,6 +44,15 @@ type TestServerConfig struct {
 
 	// OnlyModelInteractions limits logging to model endpoints only
 	OnlyModelInteractions bool
+
+	// AdminEndpointsEnabled enables admin API endpoints
+	AdminEndpointsEnabled bool
+
+	// AdminUIEnabled enables admin dashboard UI
+	AdminUIEnabled bool
+
+	// MasterKey sets the authentication master key (empty = unsafe mode)
+	MasterKey string
 }
 
 // TestServerFixture holds test server resources.
@@ -172,8 +181,12 @@ func buildAppConfig(t *testing.T, cfg TestServerConfig, mockLLMURL string, port 
 
 	appCfg := &config.Config{
 		Server: config.ServerConfig{
-			Port: fmt.Sprintf("%d", port),
-			// No master key for tests (unsafe mode)
+			Port:      fmt.Sprintf("%d", port),
+			MasterKey: cfg.MasterKey,
+		},
+		Admin: config.AdminConfig{
+			EndpointsEnabled: cfg.AdminEndpointsEnabled,
+			UIEnabled:        cfg.AdminUIEnabled,
 		},
 		Cache: config.CacheConfig{
 			Type: "local",

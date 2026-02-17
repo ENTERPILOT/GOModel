@@ -110,6 +110,44 @@ func NewWithSharedStorage(ctx context.Context, cfg *config.Config, store storage
 	}, nil
 }
 
+// NewReader creates a UsageReader from a storage backend.
+// Returns nil if the storage is nil (usage data not available).
+func NewReader(store storage.Storage) (UsageReader, error) {
+	if store == nil {
+		return nil, nil
+	}
+
+	switch store.Type() {
+	case storage.TypeSQLite:
+		return NewSQLiteReader(store.SQLiteDB())
+
+	case storage.TypePostgreSQL:
+		pool := store.PostgreSQLPool()
+		if pool == nil {
+			return nil, fmt.Errorf("PostgreSQL pool is nil")
+		}
+		pgxPool, ok := pool.(*pgxpool.Pool)
+		if !ok {
+			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
+		}
+		return NewPostgreSQLReader(pgxPool)
+
+	case storage.TypeMongoDB:
+		db := store.MongoDatabase()
+		if db == nil {
+			return nil, fmt.Errorf("MongoDB database is nil")
+		}
+		mongoDB, ok := db.(*mongo.Database)
+		if !ok {
+			return nil, fmt.Errorf("invalid MongoDB database type: %T", db)
+		}
+		return NewMongoDBReader(mongoDB)
+
+	default:
+		return nil, fmt.Errorf("unknown storage type: %s", store.Type())
+	}
+}
+
 // buildStorageConfig creates a storage.Config from the application config.
 func buildStorageConfig(cfg *config.Config) storage.Config {
 	storageCfg := storage.Config{
