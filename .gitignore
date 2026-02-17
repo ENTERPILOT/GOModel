@@ -27,4 +27,4 @@
 /opencode.json
 
 # Claude Code local settings (user-specific)
-.claude/settings.local.json
+/.claude/settings.local.json
