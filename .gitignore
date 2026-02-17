@@ -25,3 +25,6 @@
 
 # OpenCode config - ignore because it might contain private servers URLs
 /opencode.json
+
+# Claude Code local settings (user-specific)
+/.claude/settings.local.json

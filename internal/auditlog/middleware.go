@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -121,7 +122,22 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			entry.DurationNs = time.Since(start).Nanoseconds()
 
 			// Capture response metadata
-			entry.StatusCode = c.Response().Status
+			// If the response has been committed (written to the client), use
+			// the actual status code. Otherwise, when err is an *echo.HTTPError
+			// (e.g. 405 Method Not Allowed), Echo's error handler hasn't written
+			// the response yet, so c.Response().Status still defaults to 200.
+			if c.Response().Committed {
+				entry.StatusCode = c.Response().Status
+			} else if err != nil {
+				var he *echo.HTTPError
+				if errors.As(err, &he) {
+					entry.StatusCode = he.Code
+				} else {
+					entry.StatusCode = http.StatusInternalServerError
+				}
+			} else {
+				entry.StatusCode = c.Response().Status
+			}
 
 			// Log response headers if enabled
 			if cfg.LogHeaders {
