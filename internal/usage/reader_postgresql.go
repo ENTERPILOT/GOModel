@@ -28,11 +28,11 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, days int) (*UsageSumm
 	if days > 0 {
 		cutoff := time.Now().AddDate(0, 0, -days).UTC()
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM usage WHERE timestamp >= $1`
+			FROM "usage" WHERE timestamp >= $1`
 		args = append(args, cutoff)
 	} else {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM usage`
+			FROM "usage"`
 	}
 
 	summary := &UsageSummary{}
@@ -53,12 +53,12 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, days int) ([]Daily
 	if days > 0 {
 		cutoff := time.Now().AddDate(0, 0, -days).UTC()
 		query = `SELECT DATE(timestamp AT TIME ZONE 'UTC') as day, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM usage WHERE timestamp >= $1
+			FROM "usage" WHERE timestamp >= $1
 			GROUP BY DATE(timestamp AT TIME ZONE 'UTC') ORDER BY day`
 		args = append(args, cutoff)
 	} else {
 		query = `SELECT DATE(timestamp AT TIME ZONE 'UTC') as day, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
-			FROM usage GROUP BY DATE(timestamp AT TIME ZONE 'UTC') ORDER BY day`
+			FROM "usage" GROUP BY DATE(timestamp AT TIME ZONE 'UTC') ORDER BY day`
 	}
 
 	rows, err := r.pool.Query(ctx, query, args...)

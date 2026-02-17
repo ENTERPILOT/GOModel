@@ -2,6 +2,7 @@
 package dashboard
 
 import (
+	"bytes"
 	"embed"
 	"html/template"
 	"io/fs"
@@ -39,8 +40,14 @@ func New() (*Handler, error) {
 
 // Index serves GET /admin/dashboard — the main dashboard page.
 func (h *Handler) Index(c echo.Context) error {
+	var buf bytes.Buffer
+	if err := h.indexTmpl.ExecuteTemplate(&buf, "layout", nil); err != nil {
+		return err
+	}
 	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
-	return h.indexTmpl.ExecuteTemplate(c.Response().Writer, "layout", nil)
+	c.Response().WriteHeader(http.StatusOK)
+	_, err := buf.WriteTo(c.Response().Writer)
+	return err
 }
 
 // Static serves GET /admin/static/* — embedded CSS/JS assets.

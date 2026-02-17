@@ -86,20 +86,17 @@ function dashboard() {
             }
         },
 
-        isDark() {
-            if (this.theme === 'dark') return true;
-            if (this.theme === 'light') return false;
-            return window.matchMedia('(prefers-color-scheme: dark)').matches;
+        cssVar(name) {
+            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
         },
 
         chartColors() {
-            const dark = this.isDark();
             return {
-                grid: dark ? '#2a2826' : '#e8e0d6',
-                text: dark ? '#9a918a' : '#7a7068',
-                tooltipBg: dark ? '#1e1d1c' : '#ffffff',
-                tooltipBorder: dark ? '#2a2826' : '#e8e0d6',
-                tooltipText: dark ? '#e8e0d6' : '#2d2519',
+                grid: this.cssVar('--chart-grid'),
+                text: this.cssVar('--chart-text'),
+                tooltipBg: this.cssVar('--chart-tooltip-bg'),
+                tooltipBorder: this.cssVar('--chart-tooltip-border'),
+                tooltipText: this.cssVar('--chart-tooltip-text'),
             };
         },
 
@@ -126,6 +123,19 @@ function dashboard() {
             this.loading = false;
         },
 
+        handleFetchResponse(res, label) {
+            if (res.status === 401) {
+                this.authError = true;
+                this.needsAuth = true;
+                return false;
+            }
+            if (!res.ok) {
+                console.error(`Failed to fetch ${label}: ${res.status} ${res.statusText}`);
+                return false;
+            }
+            return true;
+        },
+
         async fetchUsage() {
             try {
                 const [summaryRes, dailyRes] = await Promise.all([
@@ -133,9 +143,8 @@ function dashboard() {
                     fetch('/admin/api/v1/usage/daily?days=' + this.days, { headers: this.headers() })
                 ]);
 
-                if (summaryRes.status === 401 || dailyRes.status === 401) {
-                    this.authError = true;
-                    this.needsAuth = true;
+                if (!this.handleFetchResponse(summaryRes, 'usage summary') ||
+                    !this.handleFetchResponse(dailyRes, 'usage daily')) {
                     return;
                 }
 
@@ -150,14 +159,14 @@ function dashboard() {
         async fetchModels() {
             try {
                 const res = await fetch('/admin/api/v1/models', { headers: this.headers() });
-                if (res.status === 401) {
-                    this.authError = true;
-                    this.needsAuth = true;
+                if (!this.handleFetchResponse(res, 'models')) {
+                    this.models = [];
                     return;
                 }
                 this.models = await res.json();
             } catch (e) {
                 console.error('Failed to fetch models:', e);
+                this.models = [];
             }
         },
 
@@ -271,9 +280,9 @@ function dashboard() {
             if (!this.modelFilter) return this.models;
             const f = this.modelFilter.toLowerCase();
             return this.models.filter(m =>
-                m.model.id.toLowerCase().includes(f) ||
-                m.provider_type.toLowerCase().includes(f) ||
-                (m.model.owned_by && m.model.owned_by.toLowerCase().includes(f))
+                (m.model?.id ?? '').toLowerCase().includes(f) ||
+                (m.provider_type ?? '').toLowerCase().includes(f) ||
+                (m.model?.owned_by ?? '').toLowerCase().includes(f)
             );
         },
 
