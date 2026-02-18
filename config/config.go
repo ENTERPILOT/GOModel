@@ -286,11 +286,11 @@ type MetricsConfig struct {
 // RetryConfig holds resolved retry settings for an LLM client.
 // This is the canonical type shared between config and llmclient.
 type RetryConfig struct {
-	MaxRetries     int           `yaml:"max_retries"`
-	InitialBackoff time.Duration `yaml:"initial_backoff"`
-	MaxBackoff     time.Duration `yaml:"max_backoff"`
-	BackoffFactor  float64       `yaml:"backoff_factor"`
-	JitterFactor   float64       `yaml:"jitter_factor"`
+	MaxRetries     int           `yaml:"max_retries"     env:"RETRY_MAX_RETRIES"`
+	InitialBackoff time.Duration `yaml:"initial_backoff" env:"RETRY_INITIAL_BACKOFF"`
+	MaxBackoff     time.Duration `yaml:"max_backoff"     env:"RETRY_MAX_BACKOFF"`
+	BackoffFactor  float64       `yaml:"backoff_factor"  env:"RETRY_BACKOFF_FACTOR"`
+	JitterFactor   float64       `yaml:"jitter_factor"   env:"RETRY_JITTER_FACTOR"`
 }
 
 // DefaultRetryConfig returns the default retry settings.
@@ -484,6 +484,19 @@ func applyEnvOverridesValue(v reflect.Value) error {
 				return fmt.Errorf("invalid value for %s (%s): %q is not a valid integer", field.Name, envKey, envVal)
 			}
 			fieldVal.SetInt(int64(n))
+		case reflect.Int64:
+			// time.Duration is int64 underneath; accept Go duration strings (e.g. "1s", "500ms").
+			d, err := time.ParseDuration(envVal)
+			if err != nil {
+				return fmt.Errorf("invalid value for %s (%s): %q is not a valid duration", field.Name, envKey, envVal)
+			}
+			fieldVal.SetInt(int64(d))
+		case reflect.Float64:
+			f, err := strconv.ParseFloat(envVal, 64)
+			if err != nil {
+				return fmt.Errorf("invalid value for %s (%s): %q is not a valid float", field.Name, envKey, envVal)
+			}
+			fieldVal.SetFloat(f)
 		}
 	}
 	return nil

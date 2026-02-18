@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -247,6 +248,45 @@ func TestApplyEnvOverrides(t *testing.T) {
 				}
 				if cfg.HTTP.Timeout != 600 {
 					t.Errorf("HTTP.Timeout = %d, want 600", cfg.HTTP.Timeout)
+				}
+			},
+		},
+		{
+			name: "retry int override",
+			envVars: map[string]string{"RETRY_MAX_RETRIES": "7"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.Retry.MaxRetries != 7 {
+					t.Errorf("Resilience.Retry.MaxRetries = %d, want 7", cfg.Resilience.Retry.MaxRetries)
+				}
+			},
+		},
+		{
+			name: "retry duration overrides",
+			envVars: map[string]string{
+				"RETRY_INITIAL_BACKOFF": "500ms",
+				"RETRY_MAX_BACKOFF":     "20s",
+			},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.Retry.InitialBackoff != 500*time.Millisecond {
+					t.Errorf("InitialBackoff = %v, want 500ms", cfg.Resilience.Retry.InitialBackoff)
+				}
+				if cfg.Resilience.Retry.MaxBackoff != 20*time.Second {
+					t.Errorf("MaxBackoff = %v, want 20s", cfg.Resilience.Retry.MaxBackoff)
+				}
+			},
+		},
+		{
+			name: "retry float overrides",
+			envVars: map[string]string{
+				"RETRY_BACKOFF_FACTOR": "3.5",
+				"RETRY_JITTER_FACTOR":  "0.25",
+			},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.Retry.BackoffFactor != 3.5 {
+					t.Errorf("BackoffFactor = %f, want 3.5", cfg.Resilience.Retry.BackoffFactor)
+				}
+				if cfg.Resilience.Retry.JitterFactor != 0.25 {
+					t.Errorf("JitterFactor = %f, want 0.25", cfg.Resilience.Retry.JitterFactor)
 				}
 			},
 		},
