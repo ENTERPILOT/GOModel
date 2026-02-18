@@ -40,19 +40,22 @@ func (r *InitResult) Close() error {
 // Init initializes the provider registry, cache, and router.
 //
 // It performs:
-// 1. Cache initialization (local or Redis based on config)
-// 2. Provider creation and registration
-// 3. Async model loading (from cache first, then network refresh)
-// 4. Background refresh scheduling (hourly)
-// 5. Router creation
+// 1. Provider config resolution (env var overlay, filtering, resilience merging)
+// 2. Cache initialization (local or Redis based on config)
+// 3. Provider instantiation and registration
+// 4. Async model loading (from cache first, then network refresh)
+// 5. Background refresh scheduling (hourly)
+// 6. Router creation
 //
 // The caller must call InitResult.Close() during shutdown.
-func Init(ctx context.Context, cfg *config.Config, factory *ProviderFactory) (*InitResult, error) {
+func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFactory) (*InitResult, error) {
 	if factory == nil {
 		return nil, fmt.Errorf("factory is required")
 	}
 
-	modelCache, err := initCache(cfg)
+	providerMap := resolveProviders(result.RawProviders, result.Config.Resilience)
+
+	modelCache, err := initCache(result.Config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize cache: %w", err)
 	}
@@ -60,7 +63,7 @@ func Init(ctx context.Context, cfg *config.Config, factory *ProviderFactory) (*I
 	registry := NewModelRegistry()
 	registry.SetCache(modelCache)
 
-	count, err := registerProviders(cfg, factory, registry)
+	count, err := initializeProviders(providerMap, factory, registry)
 	if err != nil {
 		modelCache.Close()
 		return nil, err
@@ -78,7 +81,7 @@ func Init(ctx context.Context, cfg *config.Config, factory *ProviderFactory) (*I
 		"providers", registry.ProviderCount(),
 	)
 
-	refreshInterval := time.Duration(cfg.Cache.RefreshInterval) * time.Second
+	refreshInterval := time.Duration(result.Config.Cache.RefreshInterval) * time.Second
 	if refreshInterval <= 0 {
 		refreshInterval = time.Hour
 	}
@@ -99,7 +102,6 @@ func Init(ctx context.Context, cfg *config.Config, factory *ProviderFactory) (*I
 		stopRefresh: stopRefresh,
 	}, nil
 }
-
 
 // initCache initializes the appropriate cache backend based on configuration.
 func initCache(cfg *config.Config) (cache.Cache, error) {
@@ -140,19 +142,19 @@ func initCache(cfg *config.Config) (cache.Cache, error) {
 	}
 }
 
-// registerProviders creates and registers all configured providers.
+// initializeProviders instantiates and registers all resolved providers.
 // Returns the count of successfully initialized providers.
-func registerProviders(cfg *config.Config, factory *ProviderFactory, registry *ModelRegistry) (int, error) {
+func initializeProviders(providerMap map[string]ProviderConfig, factory *ProviderFactory, registry *ModelRegistry) (int, error) {
 	// Sort provider names for deterministic initialization order
-	providerNames := make([]string, 0, len(cfg.Providers))
-	for name := range cfg.Providers {
-		providerNames = append(providerNames, name)
+	names := make([]string, 0, len(providerMap))
+	for name := range providerMap {
+		names = append(names, name)
 	}
-	sort.Strings(providerNames)
+	sort.Strings(names)
 
-	var initializedCount int
-	for _, name := range providerNames {
-		pCfg := cfg.Providers[name]
+	var count int
+	for _, name := range names {
+		pCfg := providerMap[name]
 		p, err := factory.Create(pCfg)
 		if err != nil {
 			slog.Error("failed to initialize provider",
@@ -177,9 +179,9 @@ func registerProviders(cfg *config.Config, factory *ProviderFactory, registry *M
 		}
 
 		registry.RegisterProviderWithType(p, pCfg.Type)
-		initializedCount++
+		count++
 		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
 	}
 
-	return initializedCount, nil
+	return count, nil
 }

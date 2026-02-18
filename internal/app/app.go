@@ -37,7 +37,7 @@ type App struct {
 
 // Config holds the configuration options for creating an App.
 type Config struct {
-	AppConfig *config.Config
+	AppConfig *config.LoadResult
 	Factory   *providers.ProviderFactory
 }
 
@@ -51,8 +51,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		return nil, fmt.Errorf("factory is required")
 	}
 
+	appCfg := cfg.AppConfig.Config
+
 	app := &App{
-		config: cfg.AppConfig,
+		config: appCfg,
 	}
 
 	providerResult, err := providers.Init(ctx, cfg.AppConfig, cfg.Factory)
@@ -62,7 +64,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	app.providers = providerResult
 
 	// Initialize audit logging
-	auditResult, err := auditlog.New(ctx, cfg.AppConfig)
+	auditResult, err := auditlog.New(ctx, appCfg)
 	if err != nil {
 		closeErr := app.providers.Close()
 		if closeErr != nil {
@@ -75,12 +77,12 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	// Initialize usage tracking
 	// Use shared storage if both audit logging and usage tracking use the same backend
 	var usageResult *usage.Result
-	if auditResult.Storage != nil && cfg.AppConfig.Usage.Enabled {
+	if auditResult.Storage != nil && appCfg.Usage.Enabled {
 		// Share storage connection with audit logging
-		usageResult, err = usage.NewWithSharedStorage(ctx, cfg.AppConfig, auditResult.Storage)
+		usageResult, err = usage.NewWithSharedStorage(ctx, appCfg, auditResult.Storage)
 	} else {
 		// Create separate storage or return noop logger
-		usageResult, err = usage.New(ctx, cfg.AppConfig)
+		usageResult, err = usage.New(ctx, appCfg)
 	}
 	if err != nil {
 		closeErr := errors.Join(app.audit.Close(), app.providers.Close())
@@ -96,8 +98,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 
 	// Build the provider chain: router optionally wrapped with guardrails
 	var provider core.RoutableProvider = app.providers.Router
-	if cfg.AppConfig.Guardrails.Enabled {
-		pipeline, err := buildGuardrailsPipeline(cfg.AppConfig.Guardrails)
+	if appCfg.Guardrails.Enabled {
+		pipeline, err := buildGuardrailsPipeline(appCfg.Guardrails)
 		if err != nil {
 			closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
 			if closeErr != nil {
@@ -113,17 +115,17 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 
 	// Create server
 	serverCfg := &server.Config{
-		MasterKey:                cfg.AppConfig.Server.MasterKey,
-		MetricsEnabled:           cfg.AppConfig.Metrics.Enabled,
-		MetricsEndpoint:          cfg.AppConfig.Metrics.Endpoint,
-		BodySizeLimit:            cfg.AppConfig.Server.BodySizeLimit,
+		MasterKey:                appCfg.Server.MasterKey,
+		MetricsEnabled:           appCfg.Metrics.Enabled,
+		MetricsEndpoint:          appCfg.Metrics.Endpoint,
+		BodySizeLimit:            appCfg.Server.BodySizeLimit,
 		AuditLogger:              auditResult.Logger,
 		UsageLogger:              usageResult.Logger,
-		LogOnlyModelInteractions: cfg.AppConfig.Logging.OnlyModelInteractions,
+		LogOnlyModelInteractions: appCfg.Logging.OnlyModelInteractions,
 	}
 
 	// Initialize admin API and dashboard (behind separate feature flags)
-	adminCfg := cfg.AppConfig.Admin
+	adminCfg := appCfg.Admin
 	if !adminCfg.EndpointsEnabled && adminCfg.UIEnabled {
 		slog.Warn("ADMIN_UI_ENABLED=true requires ADMIN_ENDPOINTS_ENABLED=true — forcing UI to disabled")
 		adminCfg.UIEnabled = false
@@ -139,7 +141,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			if adminCfg.UIEnabled {
 				serverCfg.AdminUIEnabled = true
 				serverCfg.DashboardHandler = dashHandler
-				slog.Info("admin UI enabled", "url", fmt.Sprintf("http://localhost:%s/admin/dashboard", cfg.AppConfig.Server.Port))
+				slog.Info("admin UI enabled", "url", fmt.Sprintf("http://localhost:%s/admin/dashboard", appCfg.Server.Port))
 			}
 		}
 	} else {

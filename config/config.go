@@ -26,19 +26,52 @@ const (
 var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration.
-// Providers are fully resolved: global Resilience defaults merged with per-provider overrides.
 type Config struct {
-	Server     ServerConfig              `yaml:"server"`
-	Cache      CacheConfig               `yaml:"cache"`
-	Storage    StorageConfig             `yaml:"storage"`
-	Logging    LogConfig                 `yaml:"logging"`
-	Usage      UsageConfig               `yaml:"usage"`
-	Metrics    MetricsConfig             `yaml:"metrics"`
-	HTTP       HTTPConfig                `yaml:"http"`
-	Admin      AdminConfig               `yaml:"admin"`
-	Guardrails GuardrailsConfig          `yaml:"guardrails"`
-	Resilience ResilienceConfig          `yaml:"resilience"`
-	Providers  map[string]ProviderConfig `yaml:"-"`
+	Server     ServerConfig     `yaml:"server"`
+	Cache      CacheConfig      `yaml:"cache"`
+	Storage    StorageConfig    `yaml:"storage"`
+	Logging    LogConfig        `yaml:"logging"`
+	Usage      UsageConfig      `yaml:"usage"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
+	HTTP       HTTPConfig       `yaml:"http"`
+	Admin      AdminConfig      `yaml:"admin"`
+	Guardrails GuardrailsConfig `yaml:"guardrails"`
+	Resilience ResilienceConfig `yaml:"resilience"`
+}
+
+// LoadResult is returned by Load and bundles the application config with the raw
+// provider map parsed from YAML. Provider env vars and resolution are handled by
+// the providers package.
+type LoadResult struct {
+	Config       *Config
+	RawProviders map[string]RawProviderConfig
+}
+
+// RawProviderConfig is the YAML-sourced provider configuration before env var
+// overrides, credential filtering, or resilience merging. Exported so the
+// providers package can resolve it into a fully-configured ProviderConfig.
+type RawProviderConfig struct {
+	Type       string               `yaml:"type"`
+	APIKey     string               `yaml:"api_key"`
+	BaseURL    string               `yaml:"base_url"`
+	Models     []string             `yaml:"models"`
+	Resilience *RawResilienceConfig `yaml:"resilience"`
+}
+
+// RawResilienceConfig holds optional per-provider resilience overrides from YAML.
+// Nil fields inherit from the global ResilienceConfig.
+type RawResilienceConfig struct {
+	Retry *RawRetryConfig `yaml:"retry"`
+}
+
+// RawRetryConfig holds optional per-provider retry overrides from YAML.
+// Nil fields inherit from the global RetryConfig.
+type RawRetryConfig struct {
+	MaxRetries     *int           `yaml:"max_retries"`
+	InitialBackoff *time.Duration `yaml:"initial_backoff"`
+	MaxBackoff     *time.Duration `yaml:"max_backoff"`
+	BackoffFactor  *float64       `yaml:"backoff_factor"`
+	JitterFactor   *float64       `yaml:"jitter_factor"`
 }
 
 // AdminConfig holds configuration for the admin API and dashboard UI.
@@ -276,41 +309,6 @@ type ResilienceConfig struct {
 	Retry RetryConfig `yaml:"retry"`
 }
 
-// rawRetryConfig holds optional per-provider retry overrides.
-// Nil fields inherit from the global ResilienceConfig.
-type rawRetryConfig struct {
-	MaxRetries     *int           `yaml:"max_retries"`
-	InitialBackoff *time.Duration `yaml:"initial_backoff"`
-	MaxBackoff     *time.Duration `yaml:"max_backoff"`
-	BackoffFactor  *float64       `yaml:"backoff_factor"`
-	JitterFactor   *float64       `yaml:"jitter_factor"`
-}
-
-// rawResilienceConfig holds optional per-provider resilience overrides.
-type rawResilienceConfig struct {
-	Retry *rawRetryConfig `yaml:"retry"`
-}
-
-// rawProviderConfig is the YAML-facing provider configuration with nullable resilience overrides.
-// Used only during config loading; resolved into ProviderConfig via resolveProviders.
-type rawProviderConfig struct {
-	Type       string               `yaml:"type"`
-	APIKey     string               `yaml:"api_key"`
-	BaseURL    string               `yaml:"base_url"`
-	Models     []string             `yaml:"models"`
-	Resilience *rawResilienceConfig `yaml:"resilience"`
-}
-
-// ProviderConfig holds the fully resolved provider configuration after merging global defaults
-// with per-provider overrides.
-type ProviderConfig struct {
-	Type       string           `yaml:"type"`
-	APIKey     string           `yaml:"api_key"`
-	BaseURL    string           `yaml:"base_url"`
-	Models     []string         `yaml:"models"`
-	Resilience ResilienceConfig `yaml:"resilience"`
-}
-
 // buildDefaultConfig returns the single source of truth for all configuration defaults.
 func buildDefaultConfig() *Config {
 	return &Config{
@@ -363,51 +361,6 @@ func buildDefaultConfig() *Config {
 		},
 		Admin:      AdminConfig{EndpointsEnabled: true, UIEnabled: true},
 		Guardrails: GuardrailsConfig{},
-		Providers:  make(map[string]ProviderConfig),
-	}
-}
-
-// buildProviderConfig merges a rawProviderConfig with global ResilienceConfig defaults.
-// Non-nil fields in the raw config override global defaults.
-func buildProviderConfig(raw rawProviderConfig, global ResilienceConfig) ProviderConfig {
-	resolved := ProviderConfig{
-		Type:       raw.Type,
-		APIKey:     raw.APIKey,
-		BaseURL:    raw.BaseURL,
-		Models:     raw.Models,
-		Resilience: global,
-	}
-
-	if raw.Resilience == nil || raw.Resilience.Retry == nil {
-		return resolved
-	}
-
-	r := raw.Resilience.Retry
-	if r.MaxRetries != nil {
-		resolved.Resilience.Retry.MaxRetries = *r.MaxRetries
-	}
-	if r.InitialBackoff != nil {
-		resolved.Resilience.Retry.InitialBackoff = *r.InitialBackoff
-	}
-	if r.MaxBackoff != nil {
-		resolved.Resilience.Retry.MaxBackoff = *r.MaxBackoff
-	}
-	if r.BackoffFactor != nil {
-		resolved.Resilience.Retry.BackoffFactor = *r.BackoffFactor
-	}
-	if r.JitterFactor != nil {
-		resolved.Resilience.Retry.JitterFactor = *r.JitterFactor
-	}
-
-	return resolved
-}
-
-// resolveProviders merges global resilience defaults into each raw provider config
-// and populates cfg.Providers with the fully resolved results.
-func resolveProviders(cfg *Config, rawProviders map[string]rawProviderConfig) {
-	cfg.Providers = make(map[string]ProviderConfig, len(rawProviders))
-	for name, raw := range rawProviders {
-		cfg.Providers[name] = buildProviderConfig(raw, cfg.Resilience)
 	}
 }
 
@@ -415,8 +368,10 @@ func resolveProviders(cfg *Config, rawProviders map[string]rawProviderConfig) {
 //
 //	defaults (code) → config.yaml (optional overlay) → env vars (always win)
 //
-// Every run follows the same code path regardless of whether config.yaml exists.
-func Load() (*Config, error) {
+// The returned LoadResult contains the resolved application Config and the raw
+// provider map parsed from YAML. Provider env var discovery, credential filtering,
+// and resilience merging are handled by the providers package.
+func Load() (*LoadResult, error) {
 	_ = godotenv.Load()
 
 	cfg := buildDefaultConfig()
@@ -430,23 +385,22 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	applyProviderEnvVars(cfg, rawProviders)
-	removeEmptyProviders(rawProviders)
-	resolveProviders(cfg, rawProviders)
-
 	if cfg.Server.BodySizeLimit != "" {
 		if err := ValidateBodySizeLimit(cfg.Server.BodySizeLimit); err != nil {
 			return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
 		}
 	}
 
-	return cfg, nil
+	return &LoadResult{
+		Config:       cfg,
+		RawProviders: rawProviders,
+	}, nil
 }
 
 // applyYAML reads an optional config.yaml and overlays it onto cfg.
-// Returns the raw provider map parsed from YAML (before env var overrides).
+// Returns the raw provider map parsed from the providers: YAML section.
 // If no config file is found, this is a no-op (not an error).
-func applyYAML(cfg *Config) (map[string]rawProviderConfig, error) {
+func applyYAML(cfg *Config) (map[string]RawProviderConfig, error) {
 	paths := []string{
 		"config/config.yaml",
 		"config.yaml",
@@ -461,7 +415,7 @@ func applyYAML(cfg *Config) (map[string]rawProviderConfig, error) {
 		}
 	}
 
-	rawProviders := make(map[string]rawProviderConfig)
+	rawProviders := make(map[string]RawProviderConfig)
 
 	if data == nil {
 		return rawProviders, nil
@@ -470,10 +424,10 @@ func applyYAML(cfg *Config) (map[string]rawProviderConfig, error) {
 	expanded := expandString(string(data))
 
 	// yamlTarget is a local struct that mirrors Config for YAML unmarshaling,
-	// using rawProviderConfig for providers so nullable resilience overrides are preserved.
+	// using RawProviderConfig for providers so nullable resilience overrides are preserved.
 	type yamlTarget struct {
 		*Config      `yaml:",inline"`
-		RawProviders map[string]rawProviderConfig `yaml:"providers"`
+		RawProviders map[string]RawProviderConfig `yaml:"providers"`
 	}
 
 	target := yamlTarget{Config: cfg}
@@ -489,7 +443,7 @@ func applyYAML(cfg *Config) (map[string]rawProviderConfig, error) {
 }
 
 // applyEnvOverrides walks cfg's struct fields and applies env var overrides
-// based on `env` struct tags. Maps are skipped (providers are handled separately).
+// based on `env` struct tags. Maps are skipped.
 func applyEnvOverrides(cfg *Config) error {
 	return applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
 }
@@ -500,11 +454,9 @@ func applyEnvOverridesValue(v reflect.Value) error {
 		field := t.Field(i)
 		fieldVal := v.Field(i)
 
-		// Skip maps — providers are handled by applyProviderEnvVars
 		if field.Type.Kind() == reflect.Map {
 			continue
 		}
-		// Recurse into nested structs
 		if field.Type.Kind() == reflect.Struct {
 			if err := applyEnvOverridesValue(fieldVal); err != nil {
 				return err
@@ -535,69 +487,6 @@ func applyEnvOverridesValue(v reflect.Value) error {
 		}
 	}
 	return nil
-}
-
-// knownProvider describes a provider that can be auto-discovered from environment variables.
-type knownProvider struct {
-	apiKeyEnv    string
-	baseURLEnv   string
-	name         string
-	providerType string
-}
-
-var knownProviders = []knownProvider{
-	{"OPENAI_API_KEY", "OPENAI_BASE_URL", "openai", "openai"},
-	{"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "anthropic", "anthropic"},
-	{"GEMINI_API_KEY", "GEMINI_BASE_URL", "gemini", "gemini"},
-	{"XAI_API_KEY", "XAI_BASE_URL", "xai", "xai"},
-	{"GROQ_API_KEY", "GROQ_BASE_URL", "groq", "groq"},
-	{"OLLAMA_API_KEY", "OLLAMA_BASE_URL", "ollama", "ollama"},
-}
-
-// applyProviderEnvVars discovers providers from well-known environment variables.
-// Env vars override YAML-provided values for the same provider name.
-func applyProviderEnvVars(_ *Config, rawProviders map[string]rawProviderConfig) {
-	for _, kp := range knownProviders {
-		apiKey := os.Getenv(kp.apiKeyEnv)
-		baseURL := os.Getenv(kp.baseURLEnv)
-
-		if apiKey == "" && baseURL == "" {
-			continue
-		}
-
-		if kp.providerType == "ollama" && apiKey == "" && baseURL == "" {
-			continue
-		}
-
-		existing, exists := rawProviders[kp.name]
-		if exists {
-			if apiKey != "" {
-				existing.APIKey = apiKey
-			}
-			if baseURL != "" {
-				existing.BaseURL = baseURL
-			}
-			rawProviders[kp.name] = existing
-		} else {
-			rawProviders[kp.name] = rawProviderConfig{
-				Type:    kp.providerType,
-				APIKey:  apiKey,
-				BaseURL: baseURL,
-			}
-		}
-	}
-}
-
-// removeEmptyProviders removes providers that have no valid credentials.
-func removeEmptyProviders(rawProviders map[string]rawProviderConfig) {
-	for name, pCfg := range rawProviders {
-		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
-			continue
-		}
-		if pCfg.APIKey == "" || strings.Contains(pCfg.APIKey, "${") {
-			delete(rawProviders, name)
-		}
-	}
 }
 
 // expandString expands environment variable references like ${VAR} or ${VAR:-default} in a string.

@@ -96,7 +96,7 @@ func SetupTestServer(t *testing.T, cfg TestServerConfig) *TestServerFixture {
 	// Create provider factory
 	factory := providers.NewProviderFactory()
 	testProvider := NewTestProvider(mockLLM.URL(), "sk-test-key")
-	factory.Register(providers.Registration{
+	factory.Add(providers.Registration{
 		Type: "test",
 		New:  func(_ string, _ providers.ProviderOptions) core.Provider { return testProvider },
 	})
@@ -174,7 +174,7 @@ func (f *TestServerFixture) Shutdown(t *testing.T) {
 }
 
 // buildAppConfig creates an application config for testing.
-func buildAppConfig(t *testing.T, cfg TestServerConfig, mockLLMURL string, port int) *config.Config {
+func buildAppConfig(t *testing.T, cfg TestServerConfig, mockLLMURL string, port int) *config.LoadResult {
 	t.Helper()
 
 	appCfg := &config.Config{
@@ -193,9 +193,9 @@ func buildAppConfig(t *testing.T, cfg TestServerConfig, mockLLMURL string, port 
 			Enabled:               cfg.AuditLogEnabled,
 			LogBodies:             cfg.LogBodies,
 			LogHeaders:            cfg.LogHeaders,
-			BufferSize:            100,           // Smaller buffer for faster flushing in tests
-			FlushInterval:         1,             // 1 second flush interval
-			RetentionDays:         0,             // No retention cleanup in tests
+			BufferSize:            100,
+			FlushInterval:         1,
+			RetentionDays:         0,
 			OnlyModelInteractions: cfg.OnlyModelInteractions,
 		},
 		Usage: config.UsageConfig{
@@ -207,13 +207,6 @@ func buildAppConfig(t *testing.T, cfg TestServerConfig, mockLLMURL string, port 
 		},
 		Metrics: config.MetricsConfig{
 			Enabled: false,
-		},
-		Providers: map[string]config.ProviderConfig{
-			"test": {
-				Type:    "test",
-				APIKey:  "sk-test-key",
-				BaseURL: mockLLMURL,
-			},
 		},
 	}
 
@@ -239,7 +232,16 @@ func buildAppConfig(t *testing.T, cfg TestServerConfig, mockLLMURL string, port 
 		t.Fatalf("unsupported DB type: %s", cfg.DBType)
 	}
 
-	return appCfg
+	return &config.LoadResult{
+		Config: appCfg,
+		RawProviders: map[string]config.RawProviderConfig{
+			"test": {
+				Type:    "test",
+				APIKey:  "sk-test-key",
+				BaseURL: mockLLMURL,
+			},
+		},
+	}
 }
 
 // waitForServer waits for the server to become healthy.

@@ -47,7 +47,7 @@ func (m *factoryMockProvider) StreamResponses(ctx context.Context, req *core.Res
 func TestProviderFactory_Register(t *testing.T) {
 	factory := NewProviderFactory()
 
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "test-provider",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			return &factoryMockProvider{}
@@ -66,7 +66,7 @@ func TestProviderFactory_Register(t *testing.T) {
 func TestProviderFactory_Create_UnknownType(t *testing.T) {
 	factory := NewProviderFactory()
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:   "unknown-type",
 		APIKey: "test-key",
 	}
@@ -85,14 +85,14 @@ func TestProviderFactory_Create_UnknownType(t *testing.T) {
 func TestProviderFactory_Create_Success(t *testing.T) {
 	factory := NewProviderFactory()
 
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "mock",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			return &factoryMockProvider{}
 		},
 	})
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:   "mock",
 		APIKey: "test-key",
 	}
@@ -111,7 +111,7 @@ func TestProviderFactory_RegisteredTypes(t *testing.T) {
 	factory := NewProviderFactory()
 
 	for _, name := range []string{"provider1", "provider2", "provider3"} {
-		factory.Register(Registration{
+		factory.Add(Registration{
 			Type: name,
 			New: func(apiKey string, opts ProviderOptions) core.Provider {
 				return &factoryMockProvider{}
@@ -149,14 +149,14 @@ func TestProviderFactory_Create_WithBaseURL(t *testing.T) {
 	}
 	mockProvider := &mockWithBaseURL{}
 
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "custom",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			return mockProvider
 		},
 	})
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:    "custom",
 		APIKey:  "test-key",
 		BaseURL: customBaseURL,
@@ -185,7 +185,7 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 	factory.SetHooks(mockHooks)
 
 	var receivedOpts ProviderOptions
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "test",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			receivedOpts = opts
@@ -193,7 +193,7 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 		},
 	})
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:   "test",
 		APIKey: "test-key",
 	}
@@ -220,7 +220,7 @@ func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 
 	var receivedOpts ProviderOptions
 
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "test",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			receivedOpts = opts
@@ -228,7 +228,7 @@ func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 		},
 	})
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:   "test",
 		APIKey: "test-key",
 	}
@@ -248,7 +248,7 @@ func TestProviderFactory_ZeroHooks(t *testing.T) {
 
 	var receivedOpts ProviderOptions
 
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "test",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			receivedOpts = opts
@@ -256,7 +256,7 @@ func TestProviderFactory_ZeroHooks(t *testing.T) {
 		},
 	})
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:   "test",
 		APIKey: "test-key",
 	}
@@ -275,7 +275,7 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 	factory := NewProviderFactory()
 
 	var receivedOpts ProviderOptions
-	factory.Register(Registration{
+	factory.Add(Registration{
 		Type: "test",
 		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			receivedOpts = opts
@@ -285,12 +285,12 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 
 	resilience := config.ResilienceConfig{
 		Retry: config.RetryConfig{
-			MaxRetries:  7,
+			MaxRetries:   7,
 			JitterFactor: 0.5,
 		},
 	}
 
-	cfg := config.ProviderConfig{
+	cfg := ProviderConfig{
 		Type:       "test",
 		APIKey:     "test-key",
 		Resilience: resilience,

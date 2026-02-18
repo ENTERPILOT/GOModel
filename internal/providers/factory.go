@@ -46,15 +46,15 @@ func (f *ProviderFactory) SetHooks(hooks llmclient.Hooks) {
 	f.hooks = hooks
 }
 
-// Register adds a provider to the factory.
-func (f *ProviderFactory) Register(reg Registration) {
+// Add registers a provider constructor with the factory.
+func (f *ProviderFactory) Add(reg Registration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.builders[reg.Type] = reg.New
 }
 
 // Create instantiates a provider based on its resolved configuration.
-func (f *ProviderFactory) Create(cfg config.ProviderConfig) (core.Provider, error) {
+func (f *ProviderFactory) Create(cfg ProviderConfig) (core.Provider, error) {
 	f.mu.RLock()
 	builder, ok := f.builders[cfg.Type]
 	hooks := f.hooks
