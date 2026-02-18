@@ -47,7 +47,7 @@ Client → Echo Middleware (logger → recover → body limit → audit log → 
 - `internal/app/app.go` — Application orchestrator. Wires all dependencies, manages lifecycle. Shutdown sequences teardown in correct order.
 - `internal/core/interfaces.go` — `Provider` interface (ChatCompletion, StreamChatCompletion, ListModels, Responses, StreamResponses). `RoutableProvider` adds `Supports()` and `GetProviderType()`. `AvailabilityChecker` for providers without API keys (Ollama).
 - `internal/core/errors.go` — `GatewayError` with typed categories mapping to HTTP status codes (see Error Handling below).
-- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Register()` calls. Observability hooks are set on the factory *before* registering providers. Factory passes `ProviderOptions` (hooks + resolved resilience config) to provider constructors.
+- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Add()` calls. Observability hooks are set on the factory *before* registering providers. Factory passes `ProviderOptions` (hooks + resolved resilience config) to provider constructors.
 - `internal/providers/registry.go` — Model-to-provider mapping with local/Redis cache and hourly background refresh.
 - `internal/providers/router.go` — Routes by model name, returns error if registry not initialized.
 - `internal/guardrails/` — Pluggable guardrails pipeline. `GuardedProvider` wraps a `RoutableProvider` and applies guardrails *before* routing. Guardrails operate on normalized `[]Message` DTOs decoupled from API types. Currently supports `system_prompt` type with inject/override/decorator modes.
