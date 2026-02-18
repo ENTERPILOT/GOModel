@@ -44,7 +44,7 @@ func (r *InitResult) Close() error {
 // 2. Cache initialization (local or Redis based on config)
 // 3. Provider instantiation and registration
 // 4. Async model loading (from cache first, then network refresh)
-// 5. Background refresh scheduling (hourly)
+// 5. Background refresh scheduling (interval from cfg.Cache.RefreshInterval)
 // 6. Router creation
 //
 // The caller must call InitResult.Close() during shutdown.
