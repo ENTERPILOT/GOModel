@@ -37,8 +37,12 @@ type App struct {
 
 // Config holds the configuration options for creating an App.
 type Config struct {
+	// AppConfig holds the loaded application configuration and raw provider data
+	// produced by config.Load.
 	AppConfig *config.LoadResult
-	Factory   *providers.ProviderFactory
+
+	// Factory provides the ProviderFactory used to construct provider instances.
+	Factory *providers.ProviderFactory
 }
 
 // New creates a new App with all dependencies initialized.
