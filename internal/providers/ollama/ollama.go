@@ -32,10 +32,19 @@ type Provider struct {
 }
 
 // New creates a new Ollama provider.
-func New(apiKey string, hooks llmclient.Hooks) core.Provider {
+func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
-	cfg := llmclient.DefaultConfig("ollama", defaultBaseURL)
-	cfg.Hooks = hooks
+	cfg := llmclient.Config{
+		ProviderName: "ollama",
+		BaseURL:      defaultBaseURL,
+		Retry:        opts.Resilience.Retry,
+		Hooks:        opts.Hooks,
+		CircuitBreaker: &llmclient.CircuitBreakerConfig{
+			FailureThreshold: 5,
+			SuccessThreshold: 2,
+			Timeout:          30 * time.Second,
+		},
+	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }

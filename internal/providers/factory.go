@@ -10,29 +10,32 @@ import (
 	"gomodel/internal/llmclient"
 )
 
-// NewFunc is the constructor signature for providers.
-type NewFunc func(apiKey string, hooks llmclient.Hooks) core.Provider
+// ProviderOptions bundles runtime settings passed from the factory to provider constructors.
+type ProviderOptions struct {
+	Hooks      llmclient.Hooks
+	Resilience config.ResilienceConfig
+}
+
+// ProviderConstructor is the constructor signature for providers.
+type ProviderConstructor func(apiKey string, opts ProviderOptions) core.Provider
 
 // Registration contains metadata for registering a provider with the factory.
 type Registration struct {
-	// Type is the provider identifier (e.g., "openai", "anthropic")
 	Type string
-
-	// New creates a new provider instance
-	New NewFunc
+	New  ProviderConstructor
 }
 
 // ProviderFactory manages provider registration and creation.
 type ProviderFactory struct {
 	mu       sync.RWMutex
-	builders map[string]NewFunc
+	builders map[string]ProviderConstructor
 	hooks    llmclient.Hooks
 }
 
 // NewProviderFactory creates a new provider factory instance.
 func NewProviderFactory() *ProviderFactory {
 	return &ProviderFactory{
-		builders: make(map[string]NewFunc),
+		builders: make(map[string]ProviderConstructor),
 	}
 }
 
@@ -50,7 +53,7 @@ func (f *ProviderFactory) Register(reg Registration) {
 	f.builders[reg.Type] = reg.New
 }
 
-// Create instantiates a provider based on configuration.
+// Create instantiates a provider based on its resolved configuration.
 func (f *ProviderFactory) Create(cfg config.ProviderConfig) (core.Provider, error) {
 	f.mu.RLock()
 	builder, ok := f.builders[cfg.Type]
@@ -61,9 +64,13 @@ func (f *ProviderFactory) Create(cfg config.ProviderConfig) (core.Provider, erro
 		return nil, fmt.Errorf("unknown provider type: %s", cfg.Type)
 	}
 
-	p := builder(cfg.APIKey, hooks)
+	opts := ProviderOptions{
+		Hooks:      hooks,
+		Resilience: cfg.Resilience,
+	}
 
-	// Set custom base URL if configured
+	p := builder(cfg.APIKey, opts)
+
 	if cfg.BaseURL != "" {
 		if setter, ok := p.(interface{ SetBaseURL(string) }); ok {
 			setter.SetBaseURL(cfg.BaseURL)

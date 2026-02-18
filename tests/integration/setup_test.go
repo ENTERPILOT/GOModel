@@ -21,7 +21,6 @@ import (
 	"gomodel/config"
 	"gomodel/internal/app"
 	"gomodel/internal/core"
-	"gomodel/internal/llmclient"
 	"gomodel/internal/providers"
 )
 
@@ -99,14 +98,13 @@ func SetupTestServer(t *testing.T, cfg TestServerConfig) *TestServerFixture {
 	testProvider := NewTestProvider(mockLLM.URL(), "sk-test-key")
 	factory.Register(providers.Registration{
 		Type: "test",
-		New:  func(_ string, _ llmclient.Hooks) core.Provider { return testProvider },
+		New:  func(_ string, _ providers.ProviderOptions) core.Provider { return testProvider },
 	})
 
 	// Create app
 	application, err := app.New(ctx, app.Config{
-		AppConfig:       appCfg,
-		Factory:         factory,
-		RefreshInterval: 1 * time.Hour, // Don't refresh during tests
+		AppConfig: appCfg,
+		Factory:   factory,
 	})
 	require.NoError(t, err, "failed to create app")
 

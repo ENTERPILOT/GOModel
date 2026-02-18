@@ -47,11 +47,11 @@ Client → Echo Middleware (logger → recover → body limit → audit log → 
 - `internal/app/app.go` — Application orchestrator. Wires all dependencies, manages lifecycle. Shutdown sequences teardown in correct order.
 - `internal/core/interfaces.go` — `Provider` interface (ChatCompletion, StreamChatCompletion, ListModels, Responses, StreamResponses). `RoutableProvider` adds `Supports()` and `GetProviderType()`. `AvailabilityChecker` for providers without API keys (Ollama).
 - `internal/core/errors.go` — `GatewayError` with typed categories mapping to HTTP status codes (see Error Handling below).
-- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Register()` calls. Observability hooks are set on the factory *before* registering providers.
+- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Register()` calls. Observability hooks are set on the factory *before* registering providers. Factory passes `ProviderOptions` (hooks + resolved resilience config) to provider constructors.
 - `internal/providers/registry.go` — Model-to-provider mapping with local/Redis cache and hourly background refresh.
 - `internal/providers/router.go` — Routes by model name, returns error if registry not initialized.
 - `internal/guardrails/` — Pluggable guardrails pipeline. `GuardedProvider` wraps a `RoutableProvider` and applies guardrails *before* routing. Guardrails operate on normalized `[]Message` DTOs decoupled from API types. Currently supports `system_prompt` type with inject/override/decorator modes.
-- `internal/llmclient/client.go` — Base HTTP client for all providers. Retries with exponential backoff + jitter. Circuit breaker (closed → open → half-open). Observability hooks. Streaming does NOT retry.
+- `internal/llmclient/client.go` — Base HTTP client for all providers. Retry settings come from `config.RetryConfig` (resolved per-provider). Circuit breaker (closed → open → half-open). Observability hooks. Streaming does NOT retry.
 - `internal/auditlog/` — Request/response audit logging with buffered writes. Middleware generates `X-Request-ID` if missing. Sensitive headers auto-redacted. Streaming has separate `StreamLogWrapper`.
 - `internal/usage/` — Token usage tracking with buffered writes. Normalizes tokens across providers (input/output/total) + provider-specific `RawData` (cached tokens, reasoning tokens, etc.).
 - `internal/storage/` — Unified storage abstraction (SQLite default, PostgreSQL, MongoDB). Shared by audit logging and usage tracking — connection created once.
@@ -151,8 +151,9 @@ Full reference: `.env.template` and `config/config.yaml`
 - **Storage:** `STORAGE_TYPE` (sqlite), `SQLITE_PATH` (data/gomodel.db), `POSTGRES_URL`, `MONGODB_URL`
 - **Audit logging:** `LOGGING_ENABLED` (false), `LOGGING_LOG_BODIES` (false), `LOGGING_LOG_HEADERS` (false), `LOGGING_RETENTION_DAYS` (30)
 - **Usage tracking:** `USAGE_ENABLED` (true), `ENFORCE_RETURNING_USAGE_DATA` (true), `USAGE_RETENTION_DAYS` (90)
-- **Cache:** `CACHE_TYPE` (local), `REDIS_URL`, `REDIS_KEY`
+- **Cache:** `CACHE_TYPE` (local), `CACHE_REFRESH_INTERVAL` (3600s), `REDIS_URL`, `REDIS_KEY`
 - **HTTP client:** `HTTP_TIMEOUT` (600s), `HTTP_RESPONSE_HEADER_TIMEOUT` (600s)
+- **Resilience:** Configured via `config/config.yaml` — global `resilience.retry.*` defaults with optional per-provider overrides under `providers.<name>.resilience.retry.*`. Defaults: `max_retries` (3), `initial_backoff` (1s), `max_backoff` (30s), `backoff_factor` (2.0), `jitter_factor` (0.1)
 - **Metrics:** `METRICS_ENABLED` (false), `METRICS_ENDPOINT` (/metrics)
 - **Guardrails:** Configured via `config/config.yaml` only (except `GUARDRAILS_ENABLED` env var)
 - **Providers:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`
@@ -179,7 +180,7 @@ After completing any code change, routinely check whether documentation needs up
 1. Providers are registered explicitly via `factory.Register()` in main.go — order matters, first registered wins for duplicate model names
 2. Router requires initialized registry — check `ModelCount() > 0` before routing
 3. Streaming returns `io.ReadCloser` — caller must close. Streaming requests do NOT retry.
-4. Models auto-refresh hourly by default (configurable via `RefreshInterval`)
+4. Models auto-refresh hourly by default (configurable via `CACHE_REFRESH_INTERVAL` or `cache.refresh_interval` in YAML, in seconds)
 5. Auth via `GOMODEL_MASTER_KEY` — if unset, server runs in unsafe mode with a warning. Uses `Bearer` token in `Authorization` header. Constant-time comparison.
 6. Observability hooks (`OnRequestStart`/`OnRequestEnd`) are set on the factory *before* provider registration, then injected into `llmclient`
 7. `X-Request-ID` is auto-generated (UUID) if not present in request. Propagates through context to providers and audit logs.
@@ -190,3 +191,4 @@ After completing any code change, routinely check whether documentation needs up
 12. Ollama requires no API key — enabled via `OLLAMA_BASE_URL`. Implements `AvailabilityChecker` and is skipped if unreachable.
 13. `GuardedProvider` wraps the Router — guardrails run *before* routing, not inside providers. They operate on normalized `[]Message` DTOs, decoupled from API-specific request types.
 14. Config loading: `.env` loaded first (godotenv), then code defaults, then optional YAML, then env vars always win. YAML supports `${VAR:-default}` expansion.
+15. Resilience config (retry settings) is global with optional per-provider overrides. `config.RetryConfig` is the canonical type shared between the config and llmclient packages. Provider-level overrides use nullable `ProviderConfigInput` which is merged with global defaults via `buildProviderConfig()` during config resolution.

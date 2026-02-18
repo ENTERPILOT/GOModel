@@ -10,6 +10,8 @@ import (
 	"gomodel/internal/llmclient"
 )
 
+var _ ProviderConstructor = func(_ string, _ ProviderOptions) core.Provider { return nil }
+
 // factoryMockProvider is a test implementation of core.Provider
 type factoryMockProvider struct {
 	supportsFunc func(model string) bool
@@ -45,10 +47,9 @@ func (m *factoryMockProvider) StreamResponses(ctx context.Context, req *core.Res
 func TestProviderFactory_Register(t *testing.T) {
 	factory := NewProviderFactory()
 
-	// Test registering a new provider type
 	factory.Register(Registration{
 		Type: "test-provider",
-		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			return &factoryMockProvider{}
 		},
 	})
@@ -84,10 +85,9 @@ func TestProviderFactory_Create_UnknownType(t *testing.T) {
 func TestProviderFactory_Create_Success(t *testing.T) {
 	factory := NewProviderFactory()
 
-	// Register a mock builder
 	factory.Register(Registration{
 		Type: "mock",
-		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			return &factoryMockProvider{}
 		},
 	})
@@ -110,11 +110,10 @@ func TestProviderFactory_Create_Success(t *testing.T) {
 func TestProviderFactory_RegisteredTypes(t *testing.T) {
 	factory := NewProviderFactory()
 
-	// Register some test providers
 	for _, name := range []string{"provider1", "provider2", "provider3"} {
 		factory.Register(Registration{
 			Type: name,
-			New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
+			New: func(apiKey string, opts ProviderOptions) core.Provider {
 				return &factoryMockProvider{}
 			},
 		})
@@ -145,16 +144,14 @@ func TestProviderFactory_Create_WithBaseURL(t *testing.T) {
 
 	customBaseURL := "https://custom.api.endpoint.com/v1"
 
-	// Create a mock provider
 	type mockWithBaseURL struct {
 		factoryMockProvider
 	}
 	mockProvider := &mockWithBaseURL{}
 
-	// Register a mock builder
 	factory.Register(Registration{
 		Type: "custom",
-		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
 			return mockProvider
 		},
 	})
@@ -180,7 +177,6 @@ func TestProviderFactory_Create_WithBaseURL(t *testing.T) {
 func TestProviderFactory_SetHooks(t *testing.T) {
 	factory := NewProviderFactory()
 
-	// Create mock hooks with identifiable callbacks
 	mockHooks := llmclient.Hooks{
 		OnRequestStart: func(ctx context.Context, info llmclient.RequestInfo) context.Context {
 			return ctx
@@ -188,12 +184,11 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 	}
 	factory.SetHooks(mockHooks)
 
-	// Verify hooks were set by creating a provider and checking it received them
-	var receivedHooks llmclient.Hooks
+	var receivedOpts ProviderOptions
 	factory.Register(Registration{
 		Type: "test",
-		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
-			receivedHooks = hooks
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
+			receivedOpts = opts
 			return &factoryMockProvider{}
 		},
 	})
@@ -208,16 +203,14 @@ func TestProviderFactory_SetHooks(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify hooks were passed by checking callback exists
-	if receivedHooks.OnRequestStart == nil {
-		t.Error("expected hooks to be passed to builder")
+	if receivedOpts.Hooks.OnRequestStart == nil {
+		t.Error("expected hooks to be passed to builder via ProviderOptions")
 	}
 }
 
 func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 	factory := NewProviderFactory()
 
-	// Create mock hooks
 	mockHooks := llmclient.Hooks{
 		OnRequestStart: func(ctx context.Context, info llmclient.RequestInfo) context.Context {
 			return ctx
@@ -225,12 +218,12 @@ func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 	}
 	factory.SetHooks(mockHooks)
 
-	var receivedHooks llmclient.Hooks
+	var receivedOpts ProviderOptions
 
 	factory.Register(Registration{
 		Type: "test",
-		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
-			receivedHooks = hooks
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
+			receivedOpts = opts
 			return &factoryMockProvider{}
 		},
 	})
@@ -245,21 +238,20 @@ func TestProviderFactory_HooksPassedToBuilder(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Verify hooks were passed by checking callback exists
-	if receivedHooks.OnRequestStart == nil {
-		t.Error("expected hooks to be passed to builder")
+	if receivedOpts.Hooks.OnRequestStart == nil {
+		t.Error("expected hooks to be passed to builder via ProviderOptions")
 	}
 }
 
 func TestProviderFactory_ZeroHooks(t *testing.T) {
 	factory := NewProviderFactory()
 
-	var receivedHooks llmclient.Hooks
+	var receivedOpts ProviderOptions
 
 	factory.Register(Registration{
 		Type: "test",
-		New: func(apiKey string, hooks llmclient.Hooks) core.Provider {
-			receivedHooks = hooks
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
+			receivedOpts = opts
 			return &factoryMockProvider{}
 		},
 	})
@@ -274,8 +266,45 @@ func TestProviderFactory_ZeroHooks(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Without SetHooks being called, hooks should be zero value (empty callbacks)
-	if receivedHooks.OnRequestStart != nil || receivedHooks.OnRequestEnd != nil {
+	if receivedOpts.Hooks.OnRequestStart != nil || receivedOpts.Hooks.OnRequestEnd != nil {
 		t.Error("expected zero hooks when SetHooks not called")
+	}
+}
+
+func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
+	factory := NewProviderFactory()
+
+	var receivedOpts ProviderOptions
+	factory.Register(Registration{
+		Type: "test",
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
+			receivedOpts = opts
+			return &factoryMockProvider{}
+		},
+	})
+
+	resilience := config.ResilienceConfig{
+		Retry: config.RetryConfig{
+			MaxRetries:  7,
+			JitterFactor: 0.5,
+		},
+	}
+
+	cfg := config.ProviderConfig{
+		Type:       "test",
+		APIKey:     "test-key",
+		Resilience: resilience,
+	}
+
+	_, err := factory.Create(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if receivedOpts.Resilience.Retry.MaxRetries != 7 {
+		t.Errorf("expected MaxRetries=7, got %d", receivedOpts.Resilience.Retry.MaxRetries)
+	}
+	if receivedOpts.Resilience.Retry.JitterFactor != 0.5 {
+		t.Errorf("expected JitterFactor=0.5, got %f", receivedOpts.Resilience.Retry.JitterFactor)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"gomodel/config"
 	"gomodel/internal/core"
 	"gomodel/internal/httpclient"
 )
@@ -55,24 +56,11 @@ type Hooks struct {
 
 // Config holds configuration for the LLM client
 type Config struct {
-	// ProviderName identifies the provider for error messages
-	ProviderName string
-
-	// BaseURL is the API base URL
-	BaseURL string
-
-	// Retry configuration
-	MaxRetries     int           // Maximum number of retry attempts (default: 3)
-	InitialBackoff time.Duration // Initial backoff duration (default: 1s)
-	MaxBackoff     time.Duration // Maximum backoff duration (default: 30s)
-	BackoffFactor  float64       // Backoff multiplier (default: 2.0)
-	JitterFactor   float64       // Jitter factor 0-1, adds randomness to backoff (default: 0.1)
-
-	// Circuit breaker configuration
+	ProviderName   string
+	BaseURL        string
+	Retry          config.RetryConfig
 	CircuitBreaker *CircuitBreakerConfig
-
-	// Hooks for observability (metrics, tracing, logging)
-	Hooks Hooks
+	Hooks          Hooks
 }
 
 // CircuitBreakerConfig holds circuit breaker settings
@@ -88,13 +76,9 @@ type CircuitBreakerConfig struct {
 // DefaultConfig returns default client configuration
 func DefaultConfig(providerName, baseURL string) Config {
 	return Config{
-		ProviderName:   providerName,
-		BaseURL:        baseURL,
-		MaxRetries:     3,
-		InitialBackoff: 1 * time.Second,
-		MaxBackoff:     30 * time.Second,
-		BackoffFactor:  2.0,
-		JitterFactor:   0.1,
+		ProviderName: providerName,
+		BaseURL:      baseURL,
+		Retry:        config.DefaultRetryConfig(),
 		CircuitBreaker: &CircuitBreakerConfig{
 			FailureThreshold: 5,
 			SuccessThreshold: 2,
@@ -116,18 +100,18 @@ type Client struct {
 }
 
 // New creates a new LLM client with the given configuration
-func New(config Config, headerSetter HeaderSetter) *Client {
+func New(cfg Config, headerSetter HeaderSetter) *Client {
 	c := &Client{
 		httpClient:   httpclient.NewDefaultHTTPClient(),
-		config:       config,
+		config:       cfg,
 		headerSetter: headerSetter,
 	}
 
-	if config.CircuitBreaker != nil {
+	if cfg.CircuitBreaker != nil {
 		c.circuitBreaker = newCircuitBreaker(
-			config.CircuitBreaker.FailureThreshold,
-			config.CircuitBreaker.SuccessThreshold,
-			config.CircuitBreaker.Timeout,
+			cfg.CircuitBreaker.FailureThreshold,
+			cfg.CircuitBreaker.SuccessThreshold,
+			cfg.CircuitBreaker.Timeout,
 		)
 	}
 
@@ -135,18 +119,18 @@ func New(config Config, headerSetter HeaderSetter) *Client {
 }
 
 // NewWithHTTPClient creates a new LLM client with a custom HTTP client
-func NewWithHTTPClient(httpClient *http.Client, config Config, headerSetter HeaderSetter) *Client {
+func NewWithHTTPClient(httpClient *http.Client, cfg Config, headerSetter HeaderSetter) *Client {
 	c := &Client{
 		httpClient:   httpClient,
-		config:       config,
+		config:       cfg,
 		headerSetter: headerSetter,
 	}
 
-	if config.CircuitBreaker != nil {
+	if cfg.CircuitBreaker != nil {
 		c.circuitBreaker = newCircuitBreaker(
-			config.CircuitBreaker.FailureThreshold,
-			config.CircuitBreaker.SuccessThreshold,
-			config.CircuitBreaker.Timeout,
+			cfg.CircuitBreaker.FailureThreshold,
+			cfg.CircuitBreaker.SuccessThreshold,
+			cfg.CircuitBreaker.Timeout,
 		)
 	}
 
@@ -271,7 +255,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 
 	var lastErr error
 	var lastStatusCode int
-	maxAttempts := c.config.MaxRetries + 1
+	maxAttempts := c.config.Retry.MaxRetries + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
@@ -585,14 +569,14 @@ func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, 
 
 // calculateBackoff calculates the backoff duration for a given attempt with jitter
 func (c *Client) calculateBackoff(attempt int) time.Duration {
-	backoff := float64(c.config.InitialBackoff) * math.Pow(c.config.BackoffFactor, float64(attempt-1))
-	if backoff > float64(c.config.MaxBackoff) {
-		backoff = float64(c.config.MaxBackoff)
+	retry := c.config.Retry
+	backoff := float64(retry.InitialBackoff) * math.Pow(retry.BackoffFactor, float64(attempt-1))
+	if backoff > float64(retry.MaxBackoff) {
+		backoff = float64(retry.MaxBackoff)
 	}
 
-	// Add jitter: randomize within ±jitterFactor of the backoff
-	if c.config.JitterFactor > 0 {
-		jitter := backoff * c.config.JitterFactor
+	if retry.JitterFactor > 0 {
+		jitter := backoff * retry.JitterFactor
 		//nolint:gosec // math/rand is fine for jitter, no crypto needed
 		backoff = backoff - jitter + (rand.Float64() * 2 * jitter)
 	}

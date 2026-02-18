@@ -155,7 +155,7 @@ func TestClient_Do_ErrorParsing(t *testing.T) {
 			defer server.Close()
 
 			config := DefaultConfig("test", server.URL)
-			config.MaxRetries = 0 // No retries for this test
+			config.Retry.MaxRetries = 0 // No retries for this test
 			client := New(config, nil)
 
 			err := client.Do(context.Background(), Request{
@@ -193,9 +193,9 @@ func TestClient_Do_Retries(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 3
-	config.InitialBackoff = 10 * time.Millisecond // Fast backoff for tests
-	config.JitterFactor = 0                       // Disable jitter for predictable tests
+	config.Retry.MaxRetries = 3
+	config.Retry.InitialBackoff = 10 * time.Millisecond // Fast backoff for tests
+	config.Retry.JitterFactor = 0                       // Disable jitter for predictable tests
 	client := New(config, nil)
 
 	var result struct {
@@ -228,9 +228,9 @@ func TestClient_Do_RetriesExhausted(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 2
-	config.InitialBackoff = 10 * time.Millisecond
-	config.JitterFactor = 0
+	config.Retry.MaxRetries = 2
+	config.Retry.InitialBackoff = 10 * time.Millisecond
+	config.Retry.JitterFactor = 0
 	client := New(config, nil)
 
 	err := client.Do(context.Background(), Request{
@@ -256,7 +256,7 @@ func TestClient_DoRaw_Success(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 0
+	config.Retry.MaxRetries = 0
 	client := New(config, nil)
 
 	resp, err := client.DoRaw(context.Background(), Request{
@@ -287,7 +287,7 @@ func TestClient_DoRaw_Error(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 0
+	config.Retry.MaxRetries = 0
 	client := New(config, nil)
 
 	resp, err := client.DoRaw(context.Background(), Request{
@@ -327,9 +327,9 @@ func TestClient_DoRaw_WithRetries(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 3
-	config.InitialBackoff = 10 * time.Millisecond
-	config.JitterFactor = 0
+	config.Retry.MaxRetries = 3
+	config.Retry.InitialBackoff = 10 * time.Millisecond
+	config.Retry.JitterFactor = 0
 	client := New(config, nil)
 
 	resp, err := client.DoRaw(context.Background(), Request{
@@ -408,7 +408,7 @@ func TestClient_DoStream_Error(t *testing.T) {
 // TestRequest_Validation tests validation of Request fields
 func TestRequest_Validation(t *testing.T) {
 	config := DefaultConfig("test", "http://localhost")
-	config.MaxRetries = 0
+	config.Retry.MaxRetries = 0
 	client := New(config, nil)
 
 	tests := []struct {
@@ -479,7 +479,7 @@ func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 0 // No retries
+	config.Retry.MaxRetries = 0 // No retries
 	config.CircuitBreaker = &CircuitBreakerConfig{
 		FailureThreshold: 3,
 		SuccessThreshold: 2,
@@ -538,7 +538,7 @@ func TestCircuitBreaker_ClosesAfterTimeout(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 0
+	config.Retry.MaxRetries = 0
 	config.CircuitBreaker = &CircuitBreakerConfig{
 		FailureThreshold: 2,
 		SuccessThreshold: 1,
@@ -600,7 +600,7 @@ func TestCircuitBreaker_HalfOpenPreventsThunderingHerd(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 0
+	config.Retry.MaxRetries = 0
 	config.CircuitBreaker = &CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 1,
@@ -718,14 +718,14 @@ func TestDefaultConfig(t *testing.T) {
 	if config.BaseURL != "https://api.test.com" {
 		t.Errorf("expected base URL 'https://api.test.com', got '%s'", config.BaseURL)
 	}
-	if config.MaxRetries != 3 {
-		t.Errorf("expected MaxRetries 3, got %d", config.MaxRetries)
+	if config.Retry.MaxRetries != 3 {
+		t.Errorf("expected MaxRetries 3, got %d", config.Retry.MaxRetries)
 	}
-	if config.InitialBackoff != 1*time.Second {
-		t.Errorf("expected InitialBackoff 1s, got %v", config.InitialBackoff)
+	if config.Retry.InitialBackoff != 1*time.Second {
+		t.Errorf("expected InitialBackoff 1s, got %v", config.Retry.InitialBackoff)
 	}
-	if config.JitterFactor != 0.1 {
-		t.Errorf("expected JitterFactor 0.1, got %v", config.JitterFactor)
+	if config.Retry.JitterFactor != 0.1 {
+		t.Errorf("expected JitterFactor 0.1, got %v", config.Retry.JitterFactor)
 	}
 	if config.CircuitBreaker == nil {
 		t.Error("expected CircuitBreaker config to be set")
@@ -777,7 +777,7 @@ func TestClient_NonRetryableErrors(t *testing.T) {
 	defer server.Close()
 
 	config := DefaultConfig("test", server.URL)
-	config.MaxRetries = 3
+	config.Retry.MaxRetries = 3
 	client := New(config, nil)
 
 	err := client.Do(context.Background(), Request{
@@ -796,10 +796,10 @@ func TestClient_NonRetryableErrors(t *testing.T) {
 
 func TestBackoffCalculation(t *testing.T) {
 	config := DefaultConfig("test", "http://test.com")
-	config.InitialBackoff = 100 * time.Millisecond
-	config.MaxBackoff = 1 * time.Second
-	config.BackoffFactor = 2.0
-	config.JitterFactor = 0 // Disable jitter for predictable tests
+	config.Retry.InitialBackoff = 100 * time.Millisecond
+	config.Retry.MaxBackoff = 1 * time.Second
+	config.Retry.BackoffFactor = 2.0
+	config.Retry.JitterFactor = 0 // Disable jitter for predictable tests
 	client := New(config, nil)
 
 	tests := []struct {
@@ -825,10 +825,10 @@ func TestBackoffCalculation(t *testing.T) {
 // TestBackoffCalculation_WithJitter tests that jitter is applied correctly
 func TestBackoffCalculation_WithJitter(t *testing.T) {
 	config := DefaultConfig("test", "http://test.com")
-	config.InitialBackoff = 100 * time.Millisecond
-	config.MaxBackoff = 1 * time.Second
-	config.BackoffFactor = 2.0
-	config.JitterFactor = 0.5 // 50% jitter
+	config.Retry.InitialBackoff = 100 * time.Millisecond
+	config.Retry.MaxBackoff = 1 * time.Second
+	config.Retry.BackoffFactor = 2.0
+	config.Retry.JitterFactor = 0.5 // 50% jitter
 	client := New(config, nil)
 
 	// With 50% jitter on 100ms base, result should be between 50ms and 150ms

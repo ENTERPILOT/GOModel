@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
-	"time"
 
 	"gomodel/config"
 	"gomodel/internal/admin"
@@ -38,16 +37,8 @@ type App struct {
 
 // Config holds the configuration options for creating an App.
 type Config struct {
-	// AppConfig is the main application configuration.
 	AppConfig *config.Config
-
-	// RefreshInterval is how often to refresh the model registry.
-	// Default: 1 hour
-	RefreshInterval time.Duration
-
-	// Factory is the provider factory with registered providers.
-	// Hooks should be set on the factory before passing it here.
-	Factory *providers.ProviderFactory
+	Factory   *providers.ProviderFactory
 }
 
 // New creates a new App with all dependencies initialized.
@@ -64,14 +55,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		config: cfg.AppConfig,
 	}
 
-	// Initialize provider infrastructure
-	// RefreshInterval default (1 hour) is applied in providers.InitWithConfig if zero
-	initCfg := providers.InitConfig{
-		RefreshInterval: cfg.RefreshInterval,
-		Factory:         cfg.Factory,
-	}
-
-	providerResult, err := providers.InitWithConfig(ctx, cfg.AppConfig, initCfg)
+	providerResult, err := providers.Init(ctx, cfg.AppConfig, cfg.Factory)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize providers: %w", err)
 	}

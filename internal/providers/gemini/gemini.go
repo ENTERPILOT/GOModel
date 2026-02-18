@@ -37,14 +37,23 @@ type Provider struct {
 }
 
 // New creates a new Gemini provider.
-func New(apiKey string, hooks llmclient.Hooks) core.Provider {
+func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{
 		apiKey:    apiKey,
-		hooks:     hooks,
+		hooks:     opts.Hooks,
 		modelsURL: defaultModelsBaseURL,
 	}
-	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
-	cfg.Hooks = hooks
+	cfg := llmclient.Config{
+		ProviderName: "gemini",
+		BaseURL:      defaultOpenAICompatibleBaseURL,
+		Retry:        opts.Resilience.Retry,
+		Hooks:        opts.Hooks,
+		CircuitBreaker: &llmclient.CircuitBreakerConfig{
+			FailureThreshold: 5,
+			SuccessThreshold: 2,
+			Timeout:          30 * time.Second,
+		},
+	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }

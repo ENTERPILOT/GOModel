@@ -37,59 +37,29 @@ func (r *InitResult) Close() error {
 	return nil
 }
 
-// InitConfig holds options for provider initialization.
-type InitConfig struct {
-	// RefreshInterval is how often to refresh the model registry.
-	// Default: 1 hour
-	RefreshInterval time.Duration
-
-	// Factory is the provider factory with registered providers.
-	// Hooks should be set on the factory before passing it here.
-	Factory *ProviderFactory
-}
-
-// DefaultInitConfig returns sensible defaults for initialization.
-func DefaultInitConfig() InitConfig {
-	return InitConfig{
-		RefreshInterval: time.Hour,
-	}
-}
-
 // Init initializes the provider registry, cache, and router.
-// This is the main entry point for provider infrastructure setup.
 //
 // It performs:
 // 1. Cache initialization (local or Redis based on config)
 // 2. Provider creation and registration
 // 3. Async model loading (from cache first, then network refresh)
-// 4. Background refresh scheduling
+// 4. Background refresh scheduling (hourly)
 // 5. Router creation
 //
 // The caller must call InitResult.Close() during shutdown.
-func Init(ctx context.Context, cfg *config.Config) (*InitResult, error) {
-	return InitWithConfig(ctx, cfg, DefaultInitConfig())
-}
-
-// InitWithConfig initializes the provider infrastructure with custom options.
-func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig) (*InitResult, error) {
-	// Validate that factory is provided
-	if initCfg.Factory == nil {
-		return nil, fmt.Errorf("InitConfig.Factory is required")
+func Init(ctx context.Context, cfg *config.Config, factory *ProviderFactory) (*InitResult, error) {
+	if factory == nil {
+		return nil, fmt.Errorf("factory is required")
 	}
 
-	// Initialize cache backend based on configuration
 	modelCache, err := initCache(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize cache: %w", err)
 	}
 
-	factory := initCfg.Factory
-
-	// Create model registry with cache
 	registry := NewModelRegistry()
 	registry.SetCache(modelCache)
 
-	// Register providers using the factory
 	count, err := registerProviders(cfg, factory, registry)
 	if err != nil {
 		modelCache.Close()
@@ -100,7 +70,6 @@ func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig)
 		return nil, fmt.Errorf("no providers were successfully initialized")
 	}
 
-	// Non-blocking initialization: load from cache, then refresh in background
 	slog.Info("starting non-blocking model registry initialization...")
 	registry.InitializeAsync(ctx)
 
@@ -109,14 +78,12 @@ func InitWithConfig(ctx context.Context, cfg *config.Config, initCfg InitConfig)
 		"providers", registry.ProviderCount(),
 	)
 
-	// Start background refresh
-	interval := initCfg.RefreshInterval
-	if interval <= 0 {
-		interval = time.Hour
+	refreshInterval := time.Duration(cfg.Cache.RefreshInterval) * time.Second
+	if refreshInterval <= 0 {
+		refreshInterval = time.Hour
 	}
-	stopRefresh := registry.StartBackgroundRefresh(interval)
+	stopRefresh := registry.StartBackgroundRefresh(refreshInterval)
 
-	// Create router
 	router, err := NewRouter(registry)
 	if err != nil {
 		stopRefresh()

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -25,7 +26,8 @@ const (
 // bodySizeLimitRegex validates body size limit format: digits followed by optional K/M/G unit and optional B suffix
 var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
-// Config holds the application configuration
+// Config holds the application configuration.
+// Providers are fully resolved: global Resilience defaults merged with per-provider overrides.
 type Config struct {
 	Server     ServerConfig              `yaml:"server"`
 	Cache      CacheConfig               `yaml:"cache"`
@@ -36,7 +38,24 @@ type Config struct {
 	HTTP       HTTPConfig                `yaml:"http"`
 	Admin      AdminConfig               `yaml:"admin"`
 	Guardrails GuardrailsConfig          `yaml:"guardrails"`
-	Providers  map[string]ProviderConfig `yaml:"providers"`
+	Resilience ResilienceConfig          `yaml:"resilience"`
+	Providers  map[string]ProviderConfig `yaml:"-"`
+}
+
+// rawConfig mirrors Config but uses ProviderConfigInput for YAML unmarshaling.
+// After loading, providers are resolved into Config.Providers via buildProviderConfig.
+type rawConfig struct {
+	Server     ServerConfig                       `yaml:"server"`
+	Cache      CacheConfig                        `yaml:"cache"`
+	Storage    StorageConfig                      `yaml:"storage"`
+	Logging    LogConfig                          `yaml:"logging"`
+	Usage      UsageConfig                        `yaml:"usage"`
+	Metrics    MetricsConfig                      `yaml:"metrics"`
+	HTTP       HTTPConfig                         `yaml:"http"`
+	Admin      AdminConfig                        `yaml:"admin"`
+	Guardrails GuardrailsConfig                   `yaml:"guardrails"`
+	Resilience ResilienceConfig                   `yaml:"resilience"`
+	Providers  map[string]ProviderConfigInput     `yaml:"providers"`
 }
 
 // AdminConfig holds configuration for the admin API and dashboard UI.
@@ -210,6 +229,10 @@ type CacheConfig struct {
 	// CacheDir is the directory for local cache files (default: ".cache")
 	CacheDir string `yaml:"cache_dir" env:"GOMODEL_CACHE_DIR"`
 
+	// RefreshInterval is how often to refresh the model registry in seconds.
+	// Default: 3600 (1 hour)
+	RefreshInterval int `yaml:"refresh_interval" env:"CACHE_REFRESH_INTERVAL"`
+
 	// Redis configuration (only used when Type is "redis")
 	Redis RedisConfig `yaml:"redis"`
 }
@@ -244,21 +267,75 @@ type MetricsConfig struct {
 	Endpoint string `yaml:"endpoint" env:"METRICS_ENDPOINT"`
 }
 
-// ProviderConfig holds generic provider configuration
-type ProviderConfig struct {
-	Type    string   `yaml:"type"`     // e.g., "openai", "anthropic", "gemini"
-	APIKey  string   `yaml:"api_key"`  // API key for authentication
-	BaseURL string   `yaml:"base_url"` // Optional: override default base URL
-	Models  []string `yaml:"models"`   // Optional: restrict to specific models
+// RetryConfig holds resolved retry settings for an LLM client.
+// This is the canonical type shared between config and llmclient.
+type RetryConfig struct {
+	MaxRetries     int           `yaml:"max_retries"`
+	InitialBackoff time.Duration `yaml:"initial_backoff"`
+	MaxBackoff     time.Duration `yaml:"max_backoff"`
+	BackoffFactor  float64       `yaml:"backoff_factor"`
+	JitterFactor   float64       `yaml:"jitter_factor"`
 }
 
-// defaultConfig returns the single source of truth for all configuration defaults.
-func defaultConfig() Config {
-	return Config{
+// DefaultRetryConfig returns the default retry settings.
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:     3,
+		InitialBackoff: 1 * time.Second,
+		MaxBackoff:     30 * time.Second,
+		BackoffFactor:  2.0,
+		JitterFactor:   0.1,
+	}
+}
+
+// ResilienceConfig holds resolved resilience settings (retry, and future circuit breaker/failover).
+type ResilienceConfig struct {
+	Retry RetryConfig `yaml:"retry"`
+}
+
+// RetryConfigInput holds optional per-provider retry overrides.
+// Nil fields inherit from the global ResilienceConfig.
+type RetryConfigInput struct {
+	MaxRetries     *int            `yaml:"max_retries"`
+	InitialBackoff *time.Duration  `yaml:"initial_backoff"`
+	MaxBackoff     *time.Duration  `yaml:"max_backoff"`
+	BackoffFactor  *float64        `yaml:"backoff_factor"`
+	JitterFactor   *float64        `yaml:"jitter_factor"`
+}
+
+// ResilienceConfigInput holds optional per-provider resilience overrides.
+type ResilienceConfigInput struct {
+	Retry *RetryConfigInput `yaml:"retry"`
+}
+
+// ProviderConfigInput is the user-facing provider configuration with nullable overrides.
+// YAML and env vars are unmarshaled into this type, then resolved into ProviderConfig via buildProviderConfig.
+type ProviderConfigInput struct {
+	Type       string                 `yaml:"type"`
+	APIKey     string                 `yaml:"api_key"`
+	BaseURL    string                 `yaml:"base_url"`
+	Models     []string               `yaml:"models"`
+	Resilience *ResilienceConfigInput `yaml:"resilience"`
+}
+
+// ProviderConfig holds the fully resolved provider configuration after merging global defaults
+// with per-provider overrides.
+type ProviderConfig struct {
+	Type       string           `yaml:"type"`
+	APIKey     string           `yaml:"api_key"`
+	BaseURL    string           `yaml:"base_url"`
+	Models     []string         `yaml:"models"`
+	Resilience ResilienceConfig `yaml:"resilience"`
+}
+
+// buildDefaultConfig returns the single source of truth for all configuration defaults.
+func buildDefaultConfig() rawConfig {
+	return rawConfig{
 		Server: ServerConfig{Port: "8080"},
 		Cache: CacheConfig{
-			Type:     "local",
-			CacheDir: ".cache",
+			Type:            "local",
+			CacheDir:        ".cache",
+			RefreshInterval: 3600,
 			Redis: RedisConfig{
 				Key: "gomodel:models",
 				TTL: 86400,
@@ -298,10 +375,72 @@ func defaultConfig() Config {
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
 		},
+		Resilience: ResilienceConfig{
+			Retry: DefaultRetryConfig(),
+		},
 		Admin:      AdminConfig{EndpointsEnabled: true, UIEnabled: true},
 		Guardrails: GuardrailsConfig{},
-		Providers:  make(map[string]ProviderConfig),
+		Providers:  make(map[string]ProviderConfigInput),
 	}
+}
+
+// buildProviderConfig merges a ProviderConfigInput with global ResilienceConfig defaults.
+// Non-nil fields in the input override global defaults.
+func buildProviderConfig(input ProviderConfigInput, global ResilienceConfig) ProviderConfig {
+	resolved := ProviderConfig{
+		Type:       input.Type,
+		APIKey:     input.APIKey,
+		BaseURL:    input.BaseURL,
+		Models:     input.Models,
+		Resilience: global,
+	}
+
+	if input.Resilience == nil || input.Resilience.Retry == nil {
+		return resolved
+	}
+
+	r := input.Resilience.Retry
+	if r.MaxRetries != nil {
+		resolved.Resilience.Retry.MaxRetries = *r.MaxRetries
+	}
+	if r.InitialBackoff != nil {
+		resolved.Resilience.Retry.InitialBackoff = *r.InitialBackoff
+	}
+	if r.MaxBackoff != nil {
+		resolved.Resilience.Retry.MaxBackoff = *r.MaxBackoff
+	}
+	if r.BackoffFactor != nil {
+		resolved.Resilience.Retry.BackoffFactor = *r.BackoffFactor
+	}
+	if r.JitterFactor != nil {
+		resolved.Resilience.Retry.JitterFactor = *r.JitterFactor
+	}
+
+	return resolved
+}
+
+// resolveConfig converts a rawConfig (with ProviderConfigInput) into the final Config
+// by merging global resilience defaults into each provider.
+func resolveConfig(raw rawConfig) Config {
+	cfg := Config{
+		Server:     raw.Server,
+		Cache:      raw.Cache,
+		Storage:    raw.Storage,
+		Logging:    raw.Logging,
+		Usage:      raw.Usage,
+		Metrics:    raw.Metrics,
+		HTTP:       raw.HTTP,
+		Admin:      raw.Admin,
+		Guardrails: raw.Guardrails,
+		Resilience: raw.Resilience,
+		Providers:  make(map[string]ProviderConfig, len(raw.Providers)),
+	}
+
+	for name, input := range raw.Providers {
+		cfg.Providers[name] = buildProviderConfig(input, raw.Resilience)
+	}
+
+	return cfg
 }
 
 // Load reads configuration from file and environment using a three-layer pipeline:
@@ -310,42 +449,34 @@ func defaultConfig() Config {
 //
 // Every run follows the same code path regardless of whether config.yaml exists.
 func Load() (*Config, error) {
-	// 1. Load .env into process env (ignore if not found)
 	_ = godotenv.Load()
 
-	// 2. Start with compiled defaults
-	cfg := defaultConfig()
+	raw := buildDefaultConfig()
 
-	// 3. Optional YAML overlay
-	if err := applyYAML(&cfg); err != nil {
+	if err := applyYAML(&raw); err != nil {
 		return nil, err
 	}
 
-	// 4. Env vars always win
-	if err := applyEnvOverrides(&cfg); err != nil {
+	if err := applyEnvOverrides(&raw); err != nil {
 		return nil, err
 	}
 
-	// 5. Discover providers from env
-	applyProviderEnvVars(&cfg)
+	applyProviderEnvVars(&raw)
+	removeEmptyProviders(&raw)
 
-	// 6. Filter invalid providers
-	removeEmptyProviders(&cfg)
-
-	// 7. Validate
-	if cfg.Server.BodySizeLimit != "" {
-		if err := ValidateBodySizeLimit(cfg.Server.BodySizeLimit); err != nil {
+	if raw.Server.BodySizeLimit != "" {
+		if err := ValidateBodySizeLimit(raw.Server.BodySizeLimit); err != nil {
 			return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
 		}
 	}
 
+	cfg := resolveConfig(raw)
 	return &cfg, nil
 }
 
 // applyYAML reads an optional config.yaml and overlays it onto cfg.
 // If no config file is found, this is a no-op (not an error).
-func applyYAML(cfg *Config) error {
-	// Search paths: config/config.yaml then ./config.yaml
+func applyYAML(cfg *rawConfig) error {
 	paths := []string{
 		"config/config.yaml",
 		"config.yaml",
@@ -361,20 +492,17 @@ func applyYAML(cfg *Config) error {
 	}
 
 	if data == nil {
-		return nil // No config file found — not an error
+		return nil
 	}
 
-	// Expand ${VAR} and ${VAR:-default} before YAML parsing
 	expanded := expandString(string(data))
 
-	// Unmarshal into the existing cfg — unset YAML fields preserve defaults
 	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
 		return fmt.Errorf("failed to parse config.yaml: %w", err)
 	}
 
-	// Ensure Providers map is initialized even if YAML had none
 	if cfg.Providers == nil {
-		cfg.Providers = make(map[string]ProviderConfig)
+		cfg.Providers = make(map[string]ProviderConfigInput)
 	}
 
 	return nil
@@ -382,7 +510,7 @@ func applyYAML(cfg *Config) error {
 
 // applyEnvOverrides walks cfg's struct fields and applies env var overrides
 // based on `env` struct tags. Maps are skipped (providers are handled separately).
-func applyEnvOverrides(cfg *Config) error {
+func applyEnvOverrides(cfg *rawConfig) error {
 	return applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
 }
 
@@ -448,24 +576,21 @@ var knownProviders = []knownProvider{
 
 // applyProviderEnvVars discovers providers from well-known environment variables.
 // Env vars override YAML-provided values for the same provider name.
-func applyProviderEnvVars(cfg *Config) {
+func applyProviderEnvVars(cfg *rawConfig) {
 	for _, kp := range knownProviders {
 		apiKey := os.Getenv(kp.apiKeyEnv)
 		baseURL := os.Getenv(kp.baseURLEnv)
 
-		// Skip if no env vars set for this provider
 		if apiKey == "" && baseURL == "" {
 			continue
 		}
 
-		// Ollama special case: no API key required, enabled via base URL
 		if kp.providerType == "ollama" && apiKey == "" && baseURL == "" {
 			continue
 		}
 
 		existing, exists := cfg.Providers[kp.name]
 		if exists {
-			// Override existing provider's env-sourced values
 			if apiKey != "" {
 				existing.APIKey = apiKey
 			}
@@ -474,8 +599,7 @@ func applyProviderEnvVars(cfg *Config) {
 			}
 			cfg.Providers[kp.name] = existing
 		} else {
-			// Add new provider from env
-			cfg.Providers[kp.name] = ProviderConfig{
+			cfg.Providers[kp.name] = ProviderConfigInput{
 				Type:    kp.providerType,
 				APIKey:  apiKey,
 				BaseURL: baseURL,
@@ -485,13 +609,11 @@ func applyProviderEnvVars(cfg *Config) {
 }
 
 // removeEmptyProviders removes providers that have no valid credentials.
-func removeEmptyProviders(cfg *Config) {
+func removeEmptyProviders(cfg *rawConfig) {
 	for name, pCfg := range cfg.Providers {
-		// Preserve Ollama providers with a non-empty BaseURL (no API key required)
 		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
 			continue
 		}
-		// Remove provider if API key is empty or contains unexpanded placeholders
 		if pCfg.APIKey == "" || strings.Contains(pCfg.APIKey, "${") {
 			delete(cfg.Providers, name)
 		}

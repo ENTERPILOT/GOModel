@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // clearProviderEnvVars unsets all known provider-related environment variables.
@@ -60,8 +61,8 @@ func withTempDir(t *testing.T, fn func(dir string)) {
 	fn(tempDir)
 }
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := defaultConfig()
+func TestBuildDefaultConfig(t *testing.T) {
+	cfg := buildDefaultConfig()
 
 	if cfg.Server.Port != "8080" {
 		t.Errorf("expected Server.Port=8080, got %s", cfg.Server.Port)
@@ -71,6 +72,9 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.Cache.CacheDir != ".cache" {
 		t.Errorf("expected Cache.CacheDir=.cache, got %s", cfg.Cache.CacheDir)
+	}
+	if cfg.Cache.RefreshInterval != 3600 {
+		t.Errorf("expected Cache.RefreshInterval=3600, got %d", cfg.Cache.RefreshInterval)
 	}
 	if cfg.Cache.Redis.Key != "gomodel:models" {
 		t.Errorf("expected Cache.Redis.Key=gomodel:models, got %s", cfg.Cache.Redis.Key)
@@ -140,6 +144,143 @@ func TestDefaultConfig(t *testing.T) {
 	}
 	if cfg.Providers == nil {
 		t.Error("expected Providers to be initialized (non-nil)")
+	}
+
+	expected := DefaultRetryConfig()
+	if cfg.Resilience.Retry != expected {
+		t.Errorf("expected Resilience.Retry=%+v, got %+v", expected, cfg.Resilience.Retry)
+	}
+}
+
+func TestBuildProviderConfig_InheritsGlobalDefaults(t *testing.T) {
+	global := ResilienceConfig{
+		Retry: RetryConfig{
+			MaxRetries:     5,
+			InitialBackoff: 2 * time.Second,
+			MaxBackoff:     60 * time.Second,
+			BackoffFactor:  3.0,
+			JitterFactor:   0.2,
+		},
+	}
+	input := ProviderConfigInput{
+		Type:   "openai",
+		APIKey: "sk-test",
+	}
+
+	result := buildProviderConfig(input, global)
+
+	if result.Type != "openai" {
+		t.Errorf("expected Type=openai, got %s", result.Type)
+	}
+	if result.Resilience.Retry != global.Retry {
+		t.Errorf("expected provider to inherit global retry config\ngot:  %+v\nwant: %+v", result.Resilience.Retry, global.Retry)
+	}
+}
+
+func TestBuildProviderConfig_OverridesSpecificFields(t *testing.T) {
+	global := ResilienceConfig{
+		Retry: DefaultRetryConfig(),
+	}
+	maxRetries := 10
+	jitter := 0.5
+	input := ProviderConfigInput{
+		Type:   "anthropic",
+		APIKey: "sk-ant",
+		Resilience: &ResilienceConfigInput{
+			Retry: &RetryConfigInput{
+				MaxRetries:   &maxRetries,
+				JitterFactor: &jitter,
+			},
+		},
+	}
+
+	result := buildProviderConfig(input, global)
+
+	if result.Resilience.Retry.MaxRetries != 10 {
+		t.Errorf("expected MaxRetries=10, got %d", result.Resilience.Retry.MaxRetries)
+	}
+	if result.Resilience.Retry.JitterFactor != 0.5 {
+		t.Errorf("expected JitterFactor=0.5, got %f", result.Resilience.Retry.JitterFactor)
+	}
+	if result.Resilience.Retry.InitialBackoff != global.Retry.InitialBackoff {
+		t.Errorf("expected InitialBackoff to be inherited from global, got %v", result.Resilience.Retry.InitialBackoff)
+	}
+	if result.Resilience.Retry.MaxBackoff != global.Retry.MaxBackoff {
+		t.Errorf("expected MaxBackoff to be inherited from global, got %v", result.Resilience.Retry.MaxBackoff)
+	}
+	if result.Resilience.Retry.BackoffFactor != global.Retry.BackoffFactor {
+		t.Errorf("expected BackoffFactor to be inherited from global, got %f", result.Resilience.Retry.BackoffFactor)
+	}
+}
+
+func TestBuildProviderConfig_OverridesAllFields(t *testing.T) {
+	global := ResilienceConfig{Retry: DefaultRetryConfig()}
+	maxRetries := 7
+	initial := 500 * time.Millisecond
+	maxBack := 10 * time.Second
+	factor := 1.5
+	jitter := 0.3
+	input := ProviderConfigInput{
+		Type:   "gemini",
+		APIKey: "sk-gem",
+		Resilience: &ResilienceConfigInput{
+			Retry: &RetryConfigInput{
+				MaxRetries:     &maxRetries,
+				InitialBackoff: &initial,
+				MaxBackoff:     &maxBack,
+				BackoffFactor:  &factor,
+				JitterFactor:   &jitter,
+			},
+		},
+	}
+
+	result := buildProviderConfig(input, global)
+
+	if result.Resilience.Retry.MaxRetries != 7 {
+		t.Errorf("expected MaxRetries=7, got %d", result.Resilience.Retry.MaxRetries)
+	}
+	if result.Resilience.Retry.InitialBackoff != 500*time.Millisecond {
+		t.Errorf("expected InitialBackoff=500ms, got %v", result.Resilience.Retry.InitialBackoff)
+	}
+	if result.Resilience.Retry.MaxBackoff != 10*time.Second {
+		t.Errorf("expected MaxBackoff=10s, got %v", result.Resilience.Retry.MaxBackoff)
+	}
+	if result.Resilience.Retry.BackoffFactor != 1.5 {
+		t.Errorf("expected BackoffFactor=1.5, got %f", result.Resilience.Retry.BackoffFactor)
+	}
+	if result.Resilience.Retry.JitterFactor != 0.3 {
+		t.Errorf("expected JitterFactor=0.3, got %f", result.Resilience.Retry.JitterFactor)
+	}
+}
+
+func TestResolveConfig_MergesProviders(t *testing.T) {
+	raw := buildDefaultConfig()
+	raw.Resilience.Retry.MaxRetries = 5
+	maxRetries := 10
+	raw.Providers["openai"] = ProviderConfigInput{
+		Type:   "openai",
+		APIKey: "sk-test",
+		Resilience: &ResilienceConfigInput{
+			Retry: &RetryConfigInput{
+				MaxRetries: &maxRetries,
+			},
+		},
+	}
+	raw.Providers["anthropic"] = ProviderConfigInput{
+		Type:   "anthropic",
+		APIKey: "sk-ant",
+	}
+
+	cfg := resolveConfig(raw)
+
+	if cfg.Providers["openai"].Resilience.Retry.MaxRetries != 10 {
+		t.Errorf("expected openai MaxRetries=10 (overridden), got %d", cfg.Providers["openai"].Resilience.Retry.MaxRetries)
+	}
+	if cfg.Providers["anthropic"].Resilience.Retry.MaxRetries != 5 {
+		t.Errorf("expected anthropic MaxRetries=5 (global), got %d", cfg.Providers["anthropic"].Resilience.Retry.MaxRetries)
+	}
+	if cfg.Resilience.Retry.MaxRetries != 5 {
+		t.Errorf("expected global Resilience.Retry.MaxRetries=5, got %d", cfg.Resilience.Retry.MaxRetries)
 	}
 }
 
@@ -309,6 +450,10 @@ func TestLoad_ProviderFromEnv(t *testing.T) {
 		if provider.APIKey != "sk-test-key" {
 			t.Errorf("expected API key sk-test-key, got %s", provider.APIKey)
 		}
+		expected := DefaultRetryConfig()
+		if provider.Resilience.Retry != expected {
+			t.Errorf("expected provider to inherit global retry defaults\ngot:  %+v\nwant: %+v", provider.Resilience.Retry, expected)
+		}
 	})
 }
 
@@ -341,6 +486,48 @@ providers:
 		}
 		if provider.BaseURL != "https://custom.openai.com" {
 			t.Errorf("expected base URL https://custom.openai.com, got %s", provider.BaseURL)
+		}
+	})
+}
+
+func TestLoad_ProviderResilienceOverrideFromYAML(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yamlContent := `
+resilience:
+  retry:
+    max_retries: 5
+providers:
+  openai:
+    type: openai
+    api_key: "sk-yaml-key"
+    resilience:
+      retry:
+        max_retries: 10
+  anthropic:
+    type: anthropic
+    api_key: "sk-ant-key"
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yamlContent), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.Resilience.Retry.MaxRetries != 5 {
+			t.Errorf("expected global MaxRetries=5, got %d", cfg.Resilience.Retry.MaxRetries)
+		}
+		openai := cfg.Providers["openai"]
+		if openai.Resilience.Retry.MaxRetries != 10 {
+			t.Errorf("expected openai MaxRetries=10 (override), got %d", openai.Resilience.Retry.MaxRetries)
+		}
+		anthropic := cfg.Providers["anthropic"]
+		if anthropic.Resilience.Retry.MaxRetries != 5 {
+			t.Errorf("expected anthropic MaxRetries=5 (global), got %d", anthropic.Resilience.Retry.MaxRetries)
 		}
 	})
 }

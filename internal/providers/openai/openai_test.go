@@ -11,6 +11,7 @@ import (
 
 	"gomodel/internal/core"
 	"gomodel/internal/llmclient"
+	"gomodel/internal/providers"
 )
 
 func TestNew(t *testing.T) {
@@ -28,7 +29,7 @@ func TestNew(t *testing.T) {
 
 func TestNew_ReturnsProvider(t *testing.T) {
 	apiKey := "test-api-key"
-	provider := New(apiKey, llmclient.Hooks{})
+	provider := New(apiKey, providers.ProviderOptions{})
 
 	if provider == nil {
 		t.Error("provider should not be nil")
