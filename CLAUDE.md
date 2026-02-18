@@ -47,7 +47,7 @@ Client → Echo Middleware (logger → recover → body limit → audit log → 
 - `internal/app/app.go` — Application orchestrator. Wires all dependencies, manages lifecycle. Shutdown sequences teardown in correct order.
 - `internal/core/interfaces.go` — `Provider` interface (ChatCompletion, StreamChatCompletion, ListModels, Responses, StreamResponses). `RoutableProvider` adds `Supports()` and `GetProviderType()`. `AvailabilityChecker` for providers without API keys (Ollama).
 - `internal/core/errors.go` — `GatewayError` with typed categories mapping to HTTP status codes (see Error Handling below).
-- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Register()` calls. Observability hooks are set on the factory *before* registering providers. Factory passes `ProviderOptions` (hooks + resolved resilience config) to provider constructors.
+- `internal/providers/factory.go` — Provider instantiation via explicit `factory.Add()` calls. Observability hooks are set on the factory *before* registering providers. Factory passes `ProviderOptions` (hooks + resolved resilience config) to provider constructors.
 - `internal/providers/registry.go` — Model-to-provider mapping with local/Redis cache and hourly background refresh.
 - `internal/providers/router.go` — Routes by model name, returns error if registry not initialized.
 - `internal/guardrails/` — Pluggable guardrails pipeline. `GuardedProvider` wraps a `RoutableProvider` and applies guardrails *before* routing. Guardrails operate on normalized `[]Message` DTOs decoupled from API types. Currently supports `system_prompt` type with inject/override/decorator modes.
@@ -105,7 +105,7 @@ helm/                  # Kubernetes Helm charts
 
 1. Create `internal/providers/{name}/` implementing `core.Provider`
 2. Export a `Registration` variable: `var Registration = providers.Registration{Type: "{name}", New: New}`
-3. Register in `cmd/gomodel/main.go` via `factory.Register({name}.Registration)`
+3. Register in `cmd/gomodel/main.go` via `factory.Add({name}.Registration)`
 4. Add API key env var to `.env.template` and to `knownProviders` in `config/config.go`
 
 **No API key** (like Ollama): implement `core.AvailabilityChecker` so the provider is skipped if unreachable. Config uses `BaseURL` env var instead of API key.
@@ -177,7 +177,7 @@ After completing any code change, routinely check whether documentation needs up
 
 ## Key Details
 
-1. Providers are registered explicitly via `factory.Register()` in main.go — order matters, first registered wins for duplicate model names
+1. Providers are registered explicitly via `factory.Add()` in main.go — order matters, first registered wins for duplicate model names
 2. Router requires initialized registry — check `ModelCount() > 0` before routing
 3. Streaming returns `io.ReadCloser` — caller must close. Streaming requests do NOT retry.
 4. Models auto-refresh hourly by default (configurable via `CACHE_REFRESH_INTERVAL` or `cache.refresh_interval` in YAML, in seconds)

@@ -10,7 +10,7 @@ Use explicit registration in main.go:
 
 - Don't use `init()` functions from provider packages
 - Export `NewProviderFactory()` for creating factory instances
-- Register providers explicitly: `factory.Register(openai.Registration)`
+- Register providers explicitly: `factory.Add(openai.Registration)`
 
 ## Consequences
 
