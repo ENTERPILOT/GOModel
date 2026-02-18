@@ -10,11 +10,11 @@ import (
 // ProviderConfig holds the fully resolved provider configuration after merging
 // global defaults with per-provider overrides.
 type ProviderConfig struct {
-	Type       string                 `yaml:"type"`
-	APIKey     string                 `yaml:"api_key"`
-	BaseURL    string                 `yaml:"base_url"`
-	Models     []string               `yaml:"models"`
-	Resilience config.ResilienceConfig `yaml:"resilience"`
+	Type       string
+	APIKey     string
+	BaseURL    string
+	Models     []string
+	Resilience config.ResilienceConfig
 }
 
 // knownProviderEnvs maps well-known provider names to their environment variables.
