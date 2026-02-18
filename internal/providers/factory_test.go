@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"gomodel/config"
 	"gomodel/internal/core"
@@ -306,8 +307,11 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 
 	resilience := config.ResilienceConfig{
 		Retry: config.RetryConfig{
-			MaxRetries:   7,
-			JitterFactor: 0.5,
+			MaxRetries:     7,
+			InitialBackoff: 2 * time.Second,
+			MaxBackoff:     60 * time.Second,
+			BackoffFactor:  3.0,
+			JitterFactor:   0.5,
 		},
 	}
 
@@ -322,10 +326,20 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if receivedOpts.Resilience.Retry.MaxRetries != 7 {
-		t.Errorf("expected MaxRetries=7, got %d", receivedOpts.Resilience.Retry.MaxRetries)
+	r := receivedOpts.Resilience.Retry
+	if r.MaxRetries != 7 {
+		t.Errorf("MaxRetries = %d, want 7", r.MaxRetries)
 	}
-	if receivedOpts.Resilience.Retry.JitterFactor != 0.5 {
-		t.Errorf("expected JitterFactor=0.5, got %f", receivedOpts.Resilience.Retry.JitterFactor)
+	if r.InitialBackoff != 2*time.Second {
+		t.Errorf("InitialBackoff = %v, want 2s", r.InitialBackoff)
+	}
+	if r.MaxBackoff != 60*time.Second {
+		t.Errorf("MaxBackoff = %v, want 60s", r.MaxBackoff)
+	}
+	if r.BackoffFactor != 3.0 {
+		t.Errorf("BackoffFactor = %f, want 3.0", r.BackoffFactor)
+	}
+	if r.JitterFactor != 0.5 {
+		t.Errorf("JitterFactor = %f, want 0.5", r.JitterFactor)
 	}
 }
