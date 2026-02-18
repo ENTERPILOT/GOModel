@@ -227,36 +227,22 @@ func TestFilterEmptyProviders_RemovesPartialPlaceholder(t *testing.T) {
 	}
 }
 
-func TestFilterEmptyProviders_OllamaExemptWithBaseURL(t *testing.T) {
-	raw := map[string]config.RawProviderConfig{
-		"ollama": {Type: "ollama", APIKey: "", BaseURL: "http://localhost:11434/v1"},
+func TestFilterEmptyProviders_OllamaAlwaysKept(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  config.RawProviderConfig
+	}{
+		{"no credentials", config.RawProviderConfig{Type: "ollama"}},
+		{"with base url", config.RawProviderConfig{Type: "ollama", BaseURL: "http://localhost:11434/v1"}},
+		{"with api key and base url", config.RawProviderConfig{Type: "ollama", APIKey: "sk-ollama", BaseURL: "http://localhost:11434/v1"}},
 	}
-	got := filterEmptyProviders(raw)
-
-	if _, exists := got["ollama"]; !exists {
-		t.Error("expected ollama with BaseURL to be kept without API key")
-	}
-}
-
-func TestFilterEmptyProviders_OllamaRemovedWithoutBaseURL(t *testing.T) {
-	raw := map[string]config.RawProviderConfig{
-		"ollama": {Type: "ollama", APIKey: "", BaseURL: ""},
-	}
-	got := filterEmptyProviders(raw)
-
-	if _, exists := got["ollama"]; exists {
-		t.Error("expected ollama without BaseURL to be removed")
-	}
-}
-
-func TestFilterEmptyProviders_OllamaWithBothAPIKeyAndBaseURL(t *testing.T) {
-	raw := map[string]config.RawProviderConfig{
-		"ollama": {Type: "ollama", APIKey: "sk-ollama", BaseURL: "http://localhost:11434/v1"},
-	}
-	got := filterEmptyProviders(raw)
-
-	if _, exists := got["ollama"]; !exists {
-		t.Error("expected ollama with both key and URL to be kept")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := filterEmptyProviders(map[string]config.RawProviderConfig{"ollama": tc.raw})
+			if _, exists := got["ollama"]; !exists {
+				t.Errorf("expected ollama to be kept (%s)", tc.name)
+			}
+		})
 	}
 }
 

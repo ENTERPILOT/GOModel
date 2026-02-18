@@ -80,11 +80,11 @@ func applyProviderEnvVars(raw map[string]config.RawProviderConfig) map[string]co
 }
 
 // filterEmptyProviders removes providers without valid credentials.
-// Ollama is exempt from the API key requirement if it has a BaseURL.
+// Ollama is always valid — it uses a default base URL when none is configured.
 func filterEmptyProviders(raw map[string]config.RawProviderConfig) map[string]config.RawProviderConfig {
 	result := make(map[string]config.RawProviderConfig, len(raw))
 	for name, p := range raw {
-		if p.Type == "ollama" && p.BaseURL != "" {
+		if p.Type == "ollama" {
 			result[name] = p
 			continue
 		}
