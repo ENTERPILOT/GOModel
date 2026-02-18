@@ -1,5 +1,8 @@
-# Build stage
-FROM golang:1.24-alpine3.23 AS builder
+# Build stage — run on the build host's native arch for speed, cross-compile for target
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine3.23 AS builder
+
+ARG TARGETOS
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -10,9 +13,9 @@ RUN apk add --no-cache ca-certificates=20251003-r0
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source and build
+# Copy source and cross-compile for the target platform
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
 
 # Create cache directory for runtime (with placeholder for COPY)
 RUN mkdir -p /app/.cache && touch /app/.cache/.keep
