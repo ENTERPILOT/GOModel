@@ -116,25 +116,38 @@ func buildProviderConfig(raw config.RawProviderConfig, global config.ResilienceC
 		Resilience: global,
 	}
 
-	if raw.Resilience == nil || raw.Resilience.Retry == nil {
+	if raw.Resilience == nil {
 		return resolved
 	}
 
-	r := raw.Resilience.Retry
-	if r.MaxRetries != nil {
-		resolved.Resilience.Retry.MaxRetries = *r.MaxRetries
+	if r := raw.Resilience.Retry; r != nil {
+		if r.MaxRetries != nil {
+			resolved.Resilience.Retry.MaxRetries = *r.MaxRetries
+		}
+		if r.InitialBackoff != nil {
+			resolved.Resilience.Retry.InitialBackoff = *r.InitialBackoff
+		}
+		if r.MaxBackoff != nil {
+			resolved.Resilience.Retry.MaxBackoff = *r.MaxBackoff
+		}
+		if r.BackoffFactor != nil {
+			resolved.Resilience.Retry.BackoffFactor = *r.BackoffFactor
+		}
+		if r.JitterFactor != nil {
+			resolved.Resilience.Retry.JitterFactor = *r.JitterFactor
+		}
 	}
-	if r.InitialBackoff != nil {
-		resolved.Resilience.Retry.InitialBackoff = *r.InitialBackoff
-	}
-	if r.MaxBackoff != nil {
-		resolved.Resilience.Retry.MaxBackoff = *r.MaxBackoff
-	}
-	if r.BackoffFactor != nil {
-		resolved.Resilience.Retry.BackoffFactor = *r.BackoffFactor
-	}
-	if r.JitterFactor != nil {
-		resolved.Resilience.Retry.JitterFactor = *r.JitterFactor
+
+	if cb := raw.Resilience.CircuitBreaker; cb != nil {
+		if cb.FailureThreshold != nil {
+			resolved.Resilience.CircuitBreaker.FailureThreshold = *cb.FailureThreshold
+		}
+		if cb.SuccessThreshold != nil {
+			resolved.Resilience.CircuitBreaker.SuccessThreshold = *cb.SuccessThreshold
+		}
+		if cb.Timeout != nil {
+			resolved.Resilience.CircuitBreaker.Timeout = *cb.Timeout
+		}
 	}
 
 	return resolved

@@ -39,11 +39,7 @@ func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 		BaseURL:      defaultBaseURL,
 		Retry:        opts.Resilience.Retry,
 		Hooks:        opts.Hooks,
-		CircuitBreaker: &llmclient.CircuitBreakerConfig{
-			FailureThreshold: 5,
-			SuccessThreshold: 2,
-			Timeout:          30 * time.Second,
-		},
+		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p

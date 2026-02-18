@@ -370,6 +370,120 @@ func TestApplyProviderEnvVars_PreservesUnknownYAMLProviders(t *testing.T) {
 	}
 }
 
+// --- buildProviderConfig: circuit breaker ---
+
+func TestBuildProviderConfig_CircuitBreaker_InheritsGlobal(t *testing.T) {
+	global := globalResilience
+	global.CircuitBreaker = config.CircuitBreakerConfig{
+		FailureThreshold: 5,
+		SuccessThreshold: 2,
+		Timeout:          30 * time.Second,
+	}
+	raw := config.RawProviderConfig{Type: "openai", APIKey: "sk"}
+	got := buildProviderConfig(raw, global)
+
+	if got.Resilience.CircuitBreaker != global.CircuitBreaker {
+		t.Errorf("expected global circuit breaker to be inherited\ngot:  %+v\nwant: %+v",
+			got.Resilience.CircuitBreaker, global.CircuitBreaker)
+	}
+}
+
+func TestBuildProviderConfig_CircuitBreaker_NilOverride(t *testing.T) {
+	global := globalResilience
+	global.CircuitBreaker = config.DefaultCircuitBreakerConfig()
+	raw := config.RawProviderConfig{
+		Type:       "openai",
+		APIKey:     "sk",
+		Resilience: &config.RawResilienceConfig{CircuitBreaker: nil},
+	}
+	got := buildProviderConfig(raw, global)
+
+	if got.Resilience.CircuitBreaker != global.CircuitBreaker {
+		t.Error("nil CircuitBreaker override should inherit global")
+	}
+}
+
+func TestBuildProviderConfig_CircuitBreaker_PartialOverride(t *testing.T) {
+	global := globalResilience
+	global.CircuitBreaker = config.DefaultCircuitBreakerConfig()
+
+	failureThreshold := 10
+	raw := config.RawProviderConfig{
+		Type:   "openai",
+		APIKey: "sk",
+		Resilience: &config.RawResilienceConfig{
+			CircuitBreaker: &config.RawCircuitBreakerConfig{
+				FailureThreshold: &failureThreshold,
+			},
+		},
+	}
+	got := buildProviderConfig(raw, global)
+
+	if got.Resilience.CircuitBreaker.FailureThreshold != 10 {
+		t.Errorf("FailureThreshold = %d, want 10", got.Resilience.CircuitBreaker.FailureThreshold)
+	}
+	if got.Resilience.CircuitBreaker.SuccessThreshold != global.CircuitBreaker.SuccessThreshold {
+		t.Errorf("SuccessThreshold should be inherited, got %d", got.Resilience.CircuitBreaker.SuccessThreshold)
+	}
+	if got.Resilience.CircuitBreaker.Timeout != global.CircuitBreaker.Timeout {
+		t.Errorf("Timeout should be inherited, got %v", got.Resilience.CircuitBreaker.Timeout)
+	}
+}
+
+func TestBuildProviderConfig_CircuitBreaker_FullOverride(t *testing.T) {
+	global := globalResilience
+	global.CircuitBreaker = config.DefaultCircuitBreakerConfig()
+
+	failureThreshold := 3
+	successThreshold := 1
+	timeout := 10 * time.Second
+
+	raw := config.RawProviderConfig{
+		Type:   "openai",
+		APIKey: "sk",
+		Resilience: &config.RawResilienceConfig{
+			CircuitBreaker: &config.RawCircuitBreakerConfig{
+				FailureThreshold: &failureThreshold,
+				SuccessThreshold: &successThreshold,
+				Timeout:          &timeout,
+			},
+		},
+	}
+	got := buildProviderConfig(raw, global)
+
+	cb := got.Resilience.CircuitBreaker
+	if cb.FailureThreshold != 3 {
+		t.Errorf("FailureThreshold = %d, want 3", cb.FailureThreshold)
+	}
+	if cb.SuccessThreshold != 1 {
+		t.Errorf("SuccessThreshold = %d, want 1", cb.SuccessThreshold)
+	}
+	if cb.Timeout != 10*time.Second {
+		t.Errorf("Timeout = %v, want 10s", cb.Timeout)
+	}
+}
+
+func TestBuildProviderConfig_CircuitBreaker_ZeroValueOverride(t *testing.T) {
+	global := globalResilience
+	global.CircuitBreaker = config.DefaultCircuitBreakerConfig()
+
+	zero := 0
+	raw := config.RawProviderConfig{
+		Type:   "openai",
+		APIKey: "sk",
+		Resilience: &config.RawResilienceConfig{
+			CircuitBreaker: &config.RawCircuitBreakerConfig{
+				FailureThreshold: &zero,
+			},
+		},
+	}
+	got := buildProviderConfig(raw, global)
+
+	if got.Resilience.CircuitBreaker.FailureThreshold != 0 {
+		t.Errorf("explicit 0 should override global, got %d", got.Resilience.CircuitBreaker.FailureThreshold)
+	}
+}
+
 // --- resolveProviders (integration of all three stages) ---
 
 func TestResolveProviders_EndToEnd(t *testing.T) {

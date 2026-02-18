@@ -61,7 +61,16 @@ type RawProviderConfig struct {
 // RawResilienceConfig holds optional per-provider resilience overrides from YAML.
 // Nil fields inherit from the global ResilienceConfig.
 type RawResilienceConfig struct {
-	Retry *RawRetryConfig `yaml:"retry"`
+	Retry          *RawRetryConfig          `yaml:"retry"`
+	CircuitBreaker *RawCircuitBreakerConfig `yaml:"circuit_breaker"`
+}
+
+// RawCircuitBreakerConfig holds optional per-provider circuit breaker overrides from YAML.
+// Nil fields inherit from the global CircuitBreakerConfig.
+type RawCircuitBreakerConfig struct {
+	FailureThreshold *int           `yaml:"failure_threshold"`
+	SuccessThreshold *int           `yaml:"success_threshold"`
+	Timeout          *time.Duration `yaml:"timeout"`
 }
 
 // RawRetryConfig holds optional per-provider retry overrides from YAML.
@@ -304,9 +313,27 @@ func DefaultRetryConfig() RetryConfig {
 	}
 }
 
-// ResilienceConfig holds resolved resilience settings (retry, and future circuit breaker/failover).
+// CircuitBreakerConfig holds resolved circuit breaker settings.
+// This is the canonical type shared between config and llmclient.
+type CircuitBreakerConfig struct {
+	FailureThreshold int           `yaml:"failure_threshold" env:"CIRCUIT_BREAKER_FAILURE_THRESHOLD"`
+	SuccessThreshold int           `yaml:"success_threshold" env:"CIRCUIT_BREAKER_SUCCESS_THRESHOLD"`
+	Timeout          time.Duration `yaml:"timeout"           env:"CIRCUIT_BREAKER_TIMEOUT"`
+}
+
+// DefaultCircuitBreakerConfig returns the default circuit breaker settings.
+func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
+	return CircuitBreakerConfig{
+		FailureThreshold: 5,
+		SuccessThreshold: 2,
+		Timeout:          30 * time.Second,
+	}
+}
+
+// ResilienceConfig holds resolved resilience settings (retry and circuit breaker).
 type ResilienceConfig struct {
-	Retry RetryConfig `yaml:"retry"`
+	Retry          RetryConfig          `yaml:"retry"`
+	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
 }
 
 // buildDefaultConfig returns the single source of truth for all configuration defaults.
@@ -357,7 +384,8 @@ func buildDefaultConfig() *Config {
 			ResponseHeaderTimeout: 600,
 		},
 		Resilience: ResilienceConfig{
-			Retry: DefaultRetryConfig(),
+			Retry:          DefaultRetryConfig(),
+			CircuitBreaker: DefaultCircuitBreakerConfig(),
 		},
 		Admin:      AdminConfig{EndpointsEnabled: true, UIEnabled: true},
 		Guardrails: GuardrailsConfig{},

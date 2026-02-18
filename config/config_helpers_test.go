@@ -290,6 +290,30 @@ func TestApplyEnvOverrides(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "circuit breaker int overrides",
+			envVars: map[string]string{
+				"CIRCUIT_BREAKER_FAILURE_THRESHOLD": "3",
+				"CIRCUIT_BREAKER_SUCCESS_THRESHOLD": "1",
+			},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.CircuitBreaker.FailureThreshold != 3 {
+					t.Errorf("FailureThreshold = %d, want 3", cfg.Resilience.CircuitBreaker.FailureThreshold)
+				}
+				if cfg.Resilience.CircuitBreaker.SuccessThreshold != 1 {
+					t.Errorf("SuccessThreshold = %d, want 1", cfg.Resilience.CircuitBreaker.SuccessThreshold)
+				}
+			},
+		},
+		{
+			name:    "circuit breaker timeout override",
+			envVars: map[string]string{"CIRCUIT_BREAKER_TIMEOUT": "10s"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.CircuitBreaker.Timeout != 10*time.Second {
+					t.Errorf("Timeout = %v, want 10s", cfg.Resilience.CircuitBreaker.Timeout)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

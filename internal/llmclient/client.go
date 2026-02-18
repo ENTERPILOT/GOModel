@@ -59,31 +59,17 @@ type Config struct {
 	ProviderName   string
 	BaseURL        string
 	Retry          config.RetryConfig
-	CircuitBreaker *CircuitBreakerConfig
+	CircuitBreaker config.CircuitBreakerConfig
 	Hooks          Hooks
-}
-
-// CircuitBreakerConfig holds circuit breaker settings
-type CircuitBreakerConfig struct {
-	// FailureThreshold is the number of failures before opening the circuit
-	FailureThreshold int
-	// SuccessThreshold is the number of successes needed to close an open circuit
-	SuccessThreshold int
-	// Timeout is how long to wait before attempting to close an open circuit
-	Timeout time.Duration
 }
 
 // DefaultConfig returns default client configuration
 func DefaultConfig(providerName, baseURL string) Config {
 	return Config{
-		ProviderName: providerName,
-		BaseURL:      baseURL,
-		Retry:        config.DefaultRetryConfig(),
-		CircuitBreaker: &CircuitBreakerConfig{
-			FailureThreshold: 5,
-			SuccessThreshold: 2,
-			Timeout:          30 * time.Second,
-		},
+		ProviderName:   providerName,
+		BaseURL:        baseURL,
+		Retry:          config.DefaultRetryConfig(),
+		CircuitBreaker: config.DefaultCircuitBreakerConfig(),
 	}
 }
 
@@ -107,7 +93,7 @@ func New(cfg Config, headerSetter HeaderSetter) *Client {
 		headerSetter: headerSetter,
 	}
 
-	if cfg.CircuitBreaker != nil {
+	if cfg.CircuitBreaker.FailureThreshold > 0 {
 		c.circuitBreaker = newCircuitBreaker(
 			cfg.CircuitBreaker.FailureThreshold,
 			cfg.CircuitBreaker.SuccessThreshold,
@@ -126,7 +112,7 @@ func NewWithHTTPClient(httpClient *http.Client, cfg Config, headerSetter HeaderS
 		headerSetter: headerSetter,
 	}
 
-	if cfg.CircuitBreaker != nil {
+	if cfg.CircuitBreaker.FailureThreshold > 0 {
 		c.circuitBreaker = newCircuitBreaker(
 			cfg.CircuitBreaker.FailureThreshold,
 			cfg.CircuitBreaker.SuccessThreshold,

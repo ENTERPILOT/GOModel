@@ -142,9 +142,14 @@ func TestBuildDefaultConfig(t *testing.T) {
 		t.Errorf("expected HTTP.ResponseHeaderTimeout=600, got %d", cfg.HTTP.ResponseHeaderTimeout)
 	}
 
-	expected := DefaultRetryConfig()
-	if cfg.Resilience.Retry != expected {
-		t.Errorf("expected Resilience.Retry=%+v, got %+v", expected, cfg.Resilience.Retry)
+	expectedRetry := DefaultRetryConfig()
+	if cfg.Resilience.Retry != expectedRetry {
+		t.Errorf("expected Resilience.Retry=%+v, got %+v", expectedRetry, cfg.Resilience.Retry)
+	}
+
+	expectedCB := DefaultCircuitBreakerConfig()
+	if cfg.Resilience.CircuitBreaker != expectedCB {
+		t.Errorf("expected Resilience.CircuitBreaker=%+v, got %+v", expectedCB, cfg.Resilience.CircuitBreaker)
 	}
 }
 

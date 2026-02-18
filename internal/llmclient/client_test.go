@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	goconfig "gomodel/config"
 	"gomodel/internal/core"
 )
 
@@ -480,7 +481,7 @@ func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 
 	config := DefaultConfig("test", server.URL)
 	config.Retry.MaxRetries = 0 // No retries
-	config.CircuitBreaker = &CircuitBreakerConfig{
+	config.CircuitBreaker = goconfig.CircuitBreakerConfig{
 		FailureThreshold: 3,
 		SuccessThreshold: 2,
 		Timeout:          1 * time.Second,
@@ -539,10 +540,10 @@ func TestCircuitBreaker_ClosesAfterTimeout(t *testing.T) {
 
 	config := DefaultConfig("test", server.URL)
 	config.Retry.MaxRetries = 0
-	config.CircuitBreaker = &CircuitBreakerConfig{
+	config.CircuitBreaker = goconfig.CircuitBreakerConfig{
 		FailureThreshold: 2,
 		SuccessThreshold: 1,
-		Timeout:          50 * time.Millisecond, // Short timeout for testing
+		Timeout:          50 * time.Millisecond,
 	}
 	client := New(config, nil)
 
@@ -601,7 +602,7 @@ func TestCircuitBreaker_HalfOpenPreventsThunderingHerd(t *testing.T) {
 
 	config := DefaultConfig("test", server.URL)
 	config.Retry.MaxRetries = 0
-	config.CircuitBreaker = &CircuitBreakerConfig{
+	config.CircuitBreaker = goconfig.CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 1,
 		Timeout:          10 * time.Millisecond,
@@ -727,7 +728,7 @@ func TestDefaultConfig(t *testing.T) {
 	if config.Retry.JitterFactor != 0.1 {
 		t.Errorf("expected JitterFactor 0.1, got %v", config.Retry.JitterFactor)
 	}
-	if config.CircuitBreaker == nil {
+	if config.CircuitBreaker.FailureThreshold == 0 {
 		t.Error("expected CircuitBreaker config to be set")
 	}
 }
