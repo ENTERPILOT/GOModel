@@ -49,6 +49,9 @@ func (r *InitResult) Close() error {
 //
 // The caller must call InitResult.Close() during shutdown.
 func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFactory) (*InitResult, error) {
+	if result == nil {
+		return nil, fmt.Errorf("load result is required")
+	}
 	if factory == nil {
 		return nil, fmt.Errorf("factory is required")
 	}
