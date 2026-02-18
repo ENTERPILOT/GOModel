@@ -63,6 +63,27 @@ func TestProviderFactory_Register(t *testing.T) {
 	}
 }
 
+func TestProviderFactory_Add_PanicsOnEmptyType(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for empty Type, got none")
+		}
+	}()
+	NewProviderFactory().Add(Registration{
+		Type: "",
+		New:  func(_ string, _ ProviderOptions) core.Provider { return nil },
+	})
+}
+
+func TestProviderFactory_Add_PanicsOnNilConstructor(t *testing.T) {
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("expected panic for nil New, got none")
+		}
+	}()
+	NewProviderFactory().Add(Registration{Type: "test", New: nil})
+}
+
 func TestProviderFactory_Create_UnknownType(t *testing.T) {
 	factory := NewProviderFactory()
 

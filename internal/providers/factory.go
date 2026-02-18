@@ -46,8 +46,16 @@ func (f *ProviderFactory) SetHooks(hooks llmclient.Hooks) {
 	f.hooks = hooks
 }
 
-// Add registers a provider constructor with the factory.
+// Registers a provider constructor with the factory.
+// Panics if reg.Type is empty or reg.New is nil — both are programming errors
+// caught at startup, not runtime conditions.
 func (f *ProviderFactory) Add(reg Registration) {
+	if reg.Type == "" {
+		panic("providers: Add called with empty Type")
+	}
+	if reg.New == nil {
+		panic(fmt.Sprintf("providers: Add called with nil constructor for type %q", reg.Type))
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.builders[reg.Type] = reg.New
