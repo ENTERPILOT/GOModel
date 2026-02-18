@@ -3,6 +3,7 @@ FROM --platform=$BUILDPLATFORM golang:1.24-alpine3.23 AS builder
 
 ARG TARGETOS
 ARG TARGETARCH
+ARG TARGETVARIANT
 
 WORKDIR /app
 
@@ -15,7 +16,7 @@ RUN go mod download
 
 # Copy source and cross-compile for the target platform
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
 
 # Create cache directory for runtime (with placeholder for COPY)
 RUN mkdir -p /app/.cache && touch /app/.cache/.keep
