@@ -162,7 +162,7 @@ func TestBuildProviderConfig_InheritsGlobalDefaults(t *testing.T) {
 			JitterFactor:   0.2,
 		},
 	}
-	input := ProviderConfigInput{
+	input := rawProviderConfig{
 		Type:   "openai",
 		APIKey: "sk-test",
 	}
@@ -183,11 +183,11 @@ func TestBuildProviderConfig_OverridesSpecificFields(t *testing.T) {
 	}
 	maxRetries := 10
 	jitter := 0.5
-	input := ProviderConfigInput{
+	input := rawProviderConfig{
 		Type:   "anthropic",
 		APIKey: "sk-ant",
-		Resilience: &ResilienceConfigInput{
-			Retry: &RetryConfigInput{
+		Resilience: &rawResilienceConfig{
+			Retry: &rawRetryConfig{
 				MaxRetries:   &maxRetries,
 				JitterFactor: &jitter,
 			},
@@ -220,11 +220,11 @@ func TestBuildProviderConfig_OverridesAllFields(t *testing.T) {
 	maxBack := 10 * time.Second
 	factor := 1.5
 	jitter := 0.3
-	input := ProviderConfigInput{
+	input := rawProviderConfig{
 		Type:   "gemini",
 		APIKey: "sk-gem",
-		Resilience: &ResilienceConfigInput{
-			Retry: &RetryConfigInput{
+		Resilience: &rawResilienceConfig{
+			Retry: &rawRetryConfig{
 				MaxRetries:     &maxRetries,
 				InitialBackoff: &initial,
 				MaxBackoff:     &maxBack,
@@ -253,25 +253,27 @@ func TestBuildProviderConfig_OverridesAllFields(t *testing.T) {
 	}
 }
 
-func TestResolveConfig_MergesProviders(t *testing.T) {
-	raw := buildDefaultConfig()
-	raw.Resilience.Retry.MaxRetries = 5
+func TestResolveProviders_MergesProviders(t *testing.T) {
+	cfg := buildDefaultConfig()
+	cfg.Resilience.Retry.MaxRetries = 5
 	maxRetries := 10
-	raw.Providers["openai"] = ProviderConfigInput{
-		Type:   "openai",
-		APIKey: "sk-test",
-		Resilience: &ResilienceConfigInput{
-			Retry: &RetryConfigInput{
-				MaxRetries: &maxRetries,
+	rawProviders := map[string]rawProviderConfig{
+		"openai": {
+			Type:   "openai",
+			APIKey: "sk-test",
+			Resilience: &rawResilienceConfig{
+				Retry: &rawRetryConfig{
+					MaxRetries: &maxRetries,
+				},
 			},
 		},
-	}
-	raw.Providers["anthropic"] = ProviderConfigInput{
-		Type:   "anthropic",
-		APIKey: "sk-ant",
+		"anthropic": {
+			Type:   "anthropic",
+			APIKey: "sk-ant",
+		},
 	}
 
-	cfg := resolveConfig(raw)
+	resolveProviders(cfg, rawProviders)
 
 	if cfg.Providers["openai"].Resilience.Retry.MaxRetries != 10 {
 		t.Errorf("expected openai MaxRetries=10 (overridden), got %d", cfg.Providers["openai"].Resilience.Retry.MaxRetries)

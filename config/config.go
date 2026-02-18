@@ -23,7 +23,6 @@ const (
 	MaxBodySizeLimit     int64 = 100 * 1024 * 1024 // 100MB
 )
 
-// bodySizeLimitRegex validates body size limit format: digits followed by optional K/M/G unit and optional B suffix
 var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration.
@@ -40,22 +39,6 @@ type Config struct {
 	Guardrails GuardrailsConfig          `yaml:"guardrails"`
 	Resilience ResilienceConfig          `yaml:"resilience"`
 	Providers  map[string]ProviderConfig `yaml:"-"`
-}
-
-// rawConfig mirrors Config but uses ProviderConfigInput for YAML unmarshaling.
-// After loading, providers are resolved into Config.Providers via buildProviderConfig.
-type rawConfig struct {
-	Server     ServerConfig                       `yaml:"server"`
-	Cache      CacheConfig                        `yaml:"cache"`
-	Storage    StorageConfig                      `yaml:"storage"`
-	Logging    LogConfig                          `yaml:"logging"`
-	Usage      UsageConfig                        `yaml:"usage"`
-	Metrics    MetricsConfig                      `yaml:"metrics"`
-	HTTP       HTTPConfig                         `yaml:"http"`
-	Admin      AdminConfig                        `yaml:"admin"`
-	Guardrails GuardrailsConfig                   `yaml:"guardrails"`
-	Resilience ResilienceConfig                   `yaml:"resilience"`
-	Providers  map[string]ProviderConfigInput     `yaml:"providers"`
 }
 
 // AdminConfig holds configuration for the admin API and dashboard UI.
@@ -293,29 +276,29 @@ type ResilienceConfig struct {
 	Retry RetryConfig `yaml:"retry"`
 }
 
-// RetryConfigInput holds optional per-provider retry overrides.
+// rawRetryConfig holds optional per-provider retry overrides.
 // Nil fields inherit from the global ResilienceConfig.
-type RetryConfigInput struct {
-	MaxRetries     *int            `yaml:"max_retries"`
-	InitialBackoff *time.Duration  `yaml:"initial_backoff"`
-	MaxBackoff     *time.Duration  `yaml:"max_backoff"`
-	BackoffFactor  *float64        `yaml:"backoff_factor"`
-	JitterFactor   *float64        `yaml:"jitter_factor"`
+type rawRetryConfig struct {
+	MaxRetries     *int           `yaml:"max_retries"`
+	InitialBackoff *time.Duration `yaml:"initial_backoff"`
+	MaxBackoff     *time.Duration `yaml:"max_backoff"`
+	BackoffFactor  *float64       `yaml:"backoff_factor"`
+	JitterFactor   *float64       `yaml:"jitter_factor"`
 }
 
-// ResilienceConfigInput holds optional per-provider resilience overrides.
-type ResilienceConfigInput struct {
-	Retry *RetryConfigInput `yaml:"retry"`
+// rawResilienceConfig holds optional per-provider resilience overrides.
+type rawResilienceConfig struct {
+	Retry *rawRetryConfig `yaml:"retry"`
 }
 
-// ProviderConfigInput is the user-facing provider configuration with nullable overrides.
-// YAML and env vars are unmarshaled into this type, then resolved into ProviderConfig via buildProviderConfig.
-type ProviderConfigInput struct {
-	Type       string                 `yaml:"type"`
-	APIKey     string                 `yaml:"api_key"`
-	BaseURL    string                 `yaml:"base_url"`
-	Models     []string               `yaml:"models"`
-	Resilience *ResilienceConfigInput `yaml:"resilience"`
+// rawProviderConfig is the YAML-facing provider configuration with nullable resilience overrides.
+// Used only during config loading; resolved into ProviderConfig via resolveProviders.
+type rawProviderConfig struct {
+	Type       string               `yaml:"type"`
+	APIKey     string               `yaml:"api_key"`
+	BaseURL    string               `yaml:"base_url"`
+	Models     []string             `yaml:"models"`
+	Resilience *rawResilienceConfig `yaml:"resilience"`
 }
 
 // ProviderConfig holds the fully resolved provider configuration after merging global defaults
@@ -329,8 +312,8 @@ type ProviderConfig struct {
 }
 
 // buildDefaultConfig returns the single source of truth for all configuration defaults.
-func buildDefaultConfig() rawConfig {
-	return rawConfig{
+func buildDefaultConfig() *Config {
+	return &Config{
 		Server: ServerConfig{Port: "8080"},
 		Cache: CacheConfig{
 			Type:            "local",
@@ -380,26 +363,26 @@ func buildDefaultConfig() rawConfig {
 		},
 		Admin:      AdminConfig{EndpointsEnabled: true, UIEnabled: true},
 		Guardrails: GuardrailsConfig{},
-		Providers:  make(map[string]ProviderConfigInput),
+		Providers:  make(map[string]ProviderConfig),
 	}
 }
 
-// buildProviderConfig merges a ProviderConfigInput with global ResilienceConfig defaults.
-// Non-nil fields in the input override global defaults.
-func buildProviderConfig(input ProviderConfigInput, global ResilienceConfig) ProviderConfig {
+// buildProviderConfig merges a rawProviderConfig with global ResilienceConfig defaults.
+// Non-nil fields in the raw config override global defaults.
+func buildProviderConfig(raw rawProviderConfig, global ResilienceConfig) ProviderConfig {
 	resolved := ProviderConfig{
-		Type:       input.Type,
-		APIKey:     input.APIKey,
-		BaseURL:    input.BaseURL,
-		Models:     input.Models,
+		Type:       raw.Type,
+		APIKey:     raw.APIKey,
+		BaseURL:    raw.BaseURL,
+		Models:     raw.Models,
 		Resilience: global,
 	}
 
-	if input.Resilience == nil || input.Resilience.Retry == nil {
+	if raw.Resilience == nil || raw.Resilience.Retry == nil {
 		return resolved
 	}
 
-	r := input.Resilience.Retry
+	r := raw.Resilience.Retry
 	if r.MaxRetries != nil {
 		resolved.Resilience.Retry.MaxRetries = *r.MaxRetries
 	}
@@ -419,28 +402,13 @@ func buildProviderConfig(input ProviderConfigInput, global ResilienceConfig) Pro
 	return resolved
 }
 
-// resolveConfig converts a rawConfig (with ProviderConfigInput) into the final Config
-// by merging global resilience defaults into each provider.
-func resolveConfig(raw rawConfig) Config {
-	cfg := Config{
-		Server:     raw.Server,
-		Cache:      raw.Cache,
-		Storage:    raw.Storage,
-		Logging:    raw.Logging,
-		Usage:      raw.Usage,
-		Metrics:    raw.Metrics,
-		HTTP:       raw.HTTP,
-		Admin:      raw.Admin,
-		Guardrails: raw.Guardrails,
-		Resilience: raw.Resilience,
-		Providers:  make(map[string]ProviderConfig, len(raw.Providers)),
+// resolveProviders merges global resilience defaults into each raw provider config
+// and populates cfg.Providers with the fully resolved results.
+func resolveProviders(cfg *Config, rawProviders map[string]rawProviderConfig) {
+	cfg.Providers = make(map[string]ProviderConfig, len(rawProviders))
+	for name, raw := range rawProviders {
+		cfg.Providers[name] = buildProviderConfig(raw, cfg.Resilience)
 	}
-
-	for name, input := range raw.Providers {
-		cfg.Providers[name] = buildProviderConfig(input, raw.Resilience)
-	}
-
-	return cfg
 }
 
 // Load reads configuration from file and environment using a three-layer pipeline:
@@ -451,32 +419,34 @@ func resolveConfig(raw rawConfig) Config {
 func Load() (*Config, error) {
 	_ = godotenv.Load()
 
-	raw := buildDefaultConfig()
+	cfg := buildDefaultConfig()
 
-	if err := applyYAML(&raw); err != nil {
+	rawProviders, err := applyYAML(cfg)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := applyEnvOverrides(&raw); err != nil {
+	if err := applyEnvOverrides(cfg); err != nil {
 		return nil, err
 	}
 
-	applyProviderEnvVars(&raw)
-	removeEmptyProviders(&raw)
+	applyProviderEnvVars(cfg, rawProviders)
+	removeEmptyProviders(rawProviders)
+	resolveProviders(cfg, rawProviders)
 
-	if raw.Server.BodySizeLimit != "" {
-		if err := ValidateBodySizeLimit(raw.Server.BodySizeLimit); err != nil {
+	if cfg.Server.BodySizeLimit != "" {
+		if err := ValidateBodySizeLimit(cfg.Server.BodySizeLimit); err != nil {
 			return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
 		}
 	}
 
-	cfg := resolveConfig(raw)
-	return &cfg, nil
+	return cfg, nil
 }
 
 // applyYAML reads an optional config.yaml and overlays it onto cfg.
+// Returns the raw provider map parsed from YAML (before env var overrides).
 // If no config file is found, this is a no-op (not an error).
-func applyYAML(cfg *rawConfig) error {
+func applyYAML(cfg *Config) (map[string]rawProviderConfig, error) {
 	paths := []string{
 		"config/config.yaml",
 		"config.yaml",
@@ -491,26 +461,36 @@ func applyYAML(cfg *rawConfig) error {
 		}
 	}
 
+	rawProviders := make(map[string]rawProviderConfig)
+
 	if data == nil {
-		return nil
+		return rawProviders, nil
 	}
 
 	expanded := expandString(string(data))
 
-	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
-		return fmt.Errorf("failed to parse config.yaml: %w", err)
+	// yamlTarget is a local struct that mirrors Config for YAML unmarshaling,
+	// using rawProviderConfig for providers so nullable resilience overrides are preserved.
+	type yamlTarget struct {
+		*Config      `yaml:",inline"`
+		RawProviders map[string]rawProviderConfig `yaml:"providers"`
 	}
 
-	if cfg.Providers == nil {
-		cfg.Providers = make(map[string]ProviderConfigInput)
+	target := yamlTarget{Config: cfg}
+	if err := yaml.Unmarshal([]byte(expanded), &target); err != nil {
+		return nil, fmt.Errorf("failed to parse config.yaml: %w", err)
 	}
 
-	return nil
+	if target.RawProviders != nil {
+		rawProviders = target.RawProviders
+	}
+
+	return rawProviders, nil
 }
 
 // applyEnvOverrides walks cfg's struct fields and applies env var overrides
 // based on `env` struct tags. Maps are skipped (providers are handled separately).
-func applyEnvOverrides(cfg *rawConfig) error {
+func applyEnvOverrides(cfg *Config) error {
 	return applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
 }
 
@@ -576,7 +556,7 @@ var knownProviders = []knownProvider{
 
 // applyProviderEnvVars discovers providers from well-known environment variables.
 // Env vars override YAML-provided values for the same provider name.
-func applyProviderEnvVars(cfg *rawConfig) {
+func applyProviderEnvVars(_ *Config, rawProviders map[string]rawProviderConfig) {
 	for _, kp := range knownProviders {
 		apiKey := os.Getenv(kp.apiKeyEnv)
 		baseURL := os.Getenv(kp.baseURLEnv)
@@ -589,7 +569,7 @@ func applyProviderEnvVars(cfg *rawConfig) {
 			continue
 		}
 
-		existing, exists := cfg.Providers[kp.name]
+		existing, exists := rawProviders[kp.name]
 		if exists {
 			if apiKey != "" {
 				existing.APIKey = apiKey
@@ -597,9 +577,9 @@ func applyProviderEnvVars(cfg *rawConfig) {
 			if baseURL != "" {
 				existing.BaseURL = baseURL
 			}
-			cfg.Providers[kp.name] = existing
+			rawProviders[kp.name] = existing
 		} else {
-			cfg.Providers[kp.name] = ProviderConfigInput{
+			rawProviders[kp.name] = rawProviderConfig{
 				Type:    kp.providerType,
 				APIKey:  apiKey,
 				BaseURL: baseURL,
@@ -609,13 +589,13 @@ func applyProviderEnvVars(cfg *rawConfig) {
 }
 
 // removeEmptyProviders removes providers that have no valid credentials.
-func removeEmptyProviders(cfg *rawConfig) {
-	for name, pCfg := range cfg.Providers {
+func removeEmptyProviders(rawProviders map[string]rawProviderConfig) {
+	for name, pCfg := range rawProviders {
 		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
 			continue
 		}
 		if pCfg.APIKey == "" || strings.Contains(pCfg.APIKey, "${") {
-			delete(cfg.Providers, name)
+			delete(rawProviders, name)
 		}
 	}
 }
@@ -669,7 +649,6 @@ func ValidateBodySizeLimit(s string) error {
 		return fmt.Errorf("invalid number in %q: %w", s, err)
 	}
 
-	// Apply unit multiplier (case-insensitive due to regex flag)
 	switch strings.ToUpper(matches[2]) {
 	case "K":
 		value *= 1024
@@ -679,7 +658,6 @@ func ValidateBodySizeLimit(s string) error {
 		value *= 1024 * 1024 * 1024
 	}
 
-	// Validate bounds
 	if value < MinBodySizeLimit {
 		return fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
 	}

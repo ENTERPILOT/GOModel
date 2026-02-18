@@ -168,12 +168,12 @@ func TestExpandString(t *testing.T) {
 func TestRemoveEmptyProviders(t *testing.T) {
 	tests := []struct {
 		name              string
-		providers         map[string]ProviderConfigInput
-		expectedProviders map[string]ProviderConfigInput
+		providers         map[string]rawProviderConfig
+		expectedProviders map[string]rawProviderConfig
 	}{
 		{
 			name: "remove provider with empty API key",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "",
@@ -183,7 +183,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 					APIKey: "sk-ant-valid",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"anthropic": {
 					Type:   "anthropic",
 					APIKey: "sk-ant-valid",
@@ -192,7 +192,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name: "remove provider with unresolved placeholder",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "${OPENAI_API_KEY}",
@@ -202,7 +202,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 					APIKey: "sk-ant-valid",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"anthropic": {
 					Type:   "anthropic",
 					APIKey: "sk-ant-valid",
@@ -211,7 +211,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name: "remove provider with partially resolved placeholder",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "prefix-${UNRESOLVED}",
@@ -221,7 +221,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 					APIKey: "sk-ant-valid",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"anthropic": {
 					Type:   "anthropic",
 					APIKey: "sk-ant-valid",
@@ -230,7 +230,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name: "keep all providers with valid API keys",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "sk-openai-123",
@@ -244,7 +244,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 					APIKey: "sk-gem-789",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "sk-openai-123",
@@ -261,7 +261,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name: "remove all providers when all have invalid keys",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "${OPENAI_API_KEY}",
@@ -275,11 +275,11 @@ func TestRemoveEmptyProviders(t *testing.T) {
 					APIKey: "${GEMINI_API_KEY}",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{},
+			expectedProviders: map[string]rawProviderConfig{},
 		},
 		{
 			name: "mixed valid and invalid providers",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "sk-openai-valid",
@@ -297,7 +297,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 					APIKey: "sk-gemini-valid",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"openai": {
 					Type:   "openai",
 					APIKey: "sk-openai-valid",
@@ -310,19 +310,19 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name:              "empty providers map",
-			providers:         map[string]ProviderConfigInput{},
-			expectedProviders: map[string]ProviderConfigInput{},
+			providers:         map[string]rawProviderConfig{},
+			expectedProviders: map[string]rawProviderConfig{},
 		},
 		{
 			name: "provider with valid API key but empty BaseURL should be kept",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:    "openai",
 					APIKey:  "sk-openai-123",
 					BaseURL: "",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"openai": {
 					Type:    "openai",
 					APIKey:  "sk-openai-123",
@@ -332,14 +332,14 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name: "provider with valid API key but unresolved BaseURL should be kept",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"openai": {
 					Type:    "openai",
 					APIKey:  "sk-openai-123",
 					BaseURL: "${CUSTOM_URL}",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"openai": {
 					Type:    "openai",
 					APIKey:  "sk-openai-123",
@@ -349,14 +349,14 @@ func TestRemoveEmptyProviders(t *testing.T) {
 		},
 		{
 			name: "ollama with base URL preserved (no API key needed)",
-			providers: map[string]ProviderConfigInput{
+			providers: map[string]rawProviderConfig{
 				"ollama": {
 					Type:    "ollama",
 					APIKey:  "",
 					BaseURL: "http://localhost:11434/v1",
 				},
 			},
-			expectedProviders: map[string]ProviderConfigInput{
+			expectedProviders: map[string]rawProviderConfig{
 				"ollama": {
 					Type:    "ollama",
 					APIKey:  "",
@@ -368,18 +368,14 @@ func TestRemoveEmptyProviders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := &rawConfig{
-				Server:    ServerConfig{Port: "8080"},
-				Providers: tt.providers,
-			}
-			removeEmptyProviders(cfg)
+			removeEmptyProviders(tt.providers)
 
-			if len(cfg.Providers) != len(tt.expectedProviders) {
-				t.Errorf("len(Providers) = %d, want %d", len(cfg.Providers), len(tt.expectedProviders))
+			if len(tt.providers) != len(tt.expectedProviders) {
+				t.Errorf("len(Providers) = %d, want %d", len(tt.providers), len(tt.expectedProviders))
 			}
 
 			for name, expectedProvider := range tt.expectedProviders {
-				resultProvider, exists := cfg.Providers[name]
+				resultProvider, exists := tt.providers[name]
 				if !exists {
 					t.Errorf("Provider %q not found in result", name)
 					continue
@@ -396,7 +392,7 @@ func TestRemoveEmptyProviders(t *testing.T) {
 				}
 			}
 
-			for name := range cfg.Providers {
+			for name := range tt.providers {
 				if _, exists := tt.expectedProviders[name]; !exists {
 					t.Errorf("Unexpected provider %q found in result", name)
 				}
@@ -408,14 +404,14 @@ func TestRemoveEmptyProviders(t *testing.T) {
 // TestApplyEnvOverrides tests the applyEnvOverrides function
 func TestApplyEnvOverrides(t *testing.T) {
 	tests := []struct {
-		name     string
-		envVars  map[string]string
-		check    func(t *testing.T, cfg *rawConfig)
+		name    string
+		envVars map[string]string
+		check   func(t *testing.T, cfg *Config)
 	}{
 		{
 			name:    "PORT override",
 			envVars: map[string]string{"PORT": "3000"},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if cfg.Server.Port != "3000" {
 					t.Errorf("Server.Port = %q, want %q", cfg.Server.Port, "3000")
 				}
@@ -424,7 +420,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		{
 			name:    "GOMODEL_MASTER_KEY override",
 			envVars: map[string]string{"GOMODEL_MASTER_KEY": "my-secret"},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if cfg.Server.MasterKey != "my-secret" {
 					t.Errorf("Server.MasterKey = %q, want %q", cfg.Server.MasterKey, "my-secret")
 				}
@@ -433,7 +429,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		{
 			name:    "storage overrides",
 			envVars: map[string]string{"STORAGE_TYPE": "postgresql", "POSTGRES_URL": "postgres://localhost/test", "POSTGRES_MAX_CONNS": "20"},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if cfg.Storage.Type != "postgresql" {
 					t.Errorf("Storage.Type = %q, want %q", cfg.Storage.Type, "postgresql")
 				}
@@ -448,7 +444,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		{
 			name:    "bool overrides",
 			envVars: map[string]string{"METRICS_ENABLED": "true", "LOGGING_ENABLED": "1", "LOGGING_LOG_BODIES": "false"},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if !cfg.Metrics.Enabled {
 					t.Error("Metrics.Enabled should be true")
 				}
@@ -463,7 +459,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		{
 			name:    "HTTP timeout overrides",
 			envVars: map[string]string{"HTTP_TIMEOUT": "30", "HTTP_RESPONSE_HEADER_TIMEOUT": "60"},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if cfg.HTTP.Timeout != 30 {
 					t.Errorf("HTTP.Timeout = %d, want 30", cfg.HTTP.Timeout)
 				}
@@ -475,7 +471,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		{
 			name:    "CACHE_REFRESH_INTERVAL override",
 			envVars: map[string]string{"CACHE_REFRESH_INTERVAL": "1800"},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if cfg.Cache.RefreshInterval != 1800 {
 					t.Errorf("Cache.RefreshInterval = %d, want 1800", cfg.Cache.RefreshInterval)
 				}
@@ -484,7 +480,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 		{
 			name:    "no env vars set preserves defaults",
 			envVars: map[string]string{},
-			check: func(t *testing.T, cfg *rawConfig) {
+			check: func(t *testing.T, cfg *Config) {
 				if cfg.Server.Port != "8080" {
 					t.Errorf("Server.Port = %q, want %q", cfg.Server.Port, "8080")
 				}
@@ -502,8 +498,8 @@ func TestApplyEnvOverrides(t *testing.T) {
 			}
 
 			cfg := buildDefaultConfig()
-			require.NoError(t, applyEnvOverrides(&cfg))
-			tt.check(t, &cfg)
+			require.NoError(t, applyEnvOverrides(cfg))
+			tt.check(t, cfg)
 		})
 	}
 }
@@ -513,9 +509,10 @@ func TestApplyProviderEnvVars(t *testing.T) {
 	t.Run("discovers provider from API key", func(t *testing.T) {
 		t.Setenv("OPENAI_API_KEY", "sk-test-123")
 		cfg := buildDefaultConfig()
-		applyProviderEnvVars(&cfg)
+		rawProviders := make(map[string]rawProviderConfig)
+		applyProviderEnvVars(cfg, rawProviders)
 
-		p, ok := cfg.Providers["openai"]
+		p, ok := rawProviders["openai"]
 		if !ok {
 			t.Fatal("expected openai provider")
 		}
@@ -530,10 +527,12 @@ func TestApplyProviderEnvVars(t *testing.T) {
 	t.Run("overrides existing YAML provider", func(t *testing.T) {
 		t.Setenv("OPENAI_API_KEY", "sk-env-key")
 		cfg := buildDefaultConfig()
-		cfg.Providers["openai"] = ProviderConfigInput{Type: "openai", APIKey: "sk-yaml-key", BaseURL: "https://custom.api.com"}
-		applyProviderEnvVars(&cfg)
+		rawProviders := map[string]rawProviderConfig{
+			"openai": {Type: "openai", APIKey: "sk-yaml-key", BaseURL: "https://custom.api.com"},
+		}
+		applyProviderEnvVars(cfg, rawProviders)
 
-		p := cfg.Providers["openai"]
+		p := rawProviders["openai"]
 		if p.APIKey != "sk-env-key" {
 			t.Errorf("APIKey = %q, want %q (env should override yaml)", p.APIKey, "sk-env-key")
 		}
@@ -545,9 +544,10 @@ func TestApplyProviderEnvVars(t *testing.T) {
 	t.Run("ollama enabled via base URL only", func(t *testing.T) {
 		t.Setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 		cfg := buildDefaultConfig()
-		applyProviderEnvVars(&cfg)
+		rawProviders := make(map[string]rawProviderConfig)
+		applyProviderEnvVars(cfg, rawProviders)
 
-		p, ok := cfg.Providers["ollama"]
+		p, ok := rawProviders["ollama"]
 		if !ok {
 			t.Fatal("expected ollama provider")
 		}
@@ -558,10 +558,11 @@ func TestApplyProviderEnvVars(t *testing.T) {
 
 	t.Run("skips when no env vars set", func(t *testing.T) {
 		cfg := buildDefaultConfig()
-		applyProviderEnvVars(&cfg)
+		rawProviders := make(map[string]rawProviderConfig)
+		applyProviderEnvVars(cfg, rawProviders)
 
-		if len(cfg.Providers) != 0 {
-			t.Errorf("expected no providers, got %d", len(cfg.Providers))
+		if len(rawProviders) != 0 {
+			t.Errorf("expected no providers, got %d", len(rawProviders))
 		}
 	})
 }
@@ -572,8 +573,7 @@ func TestIntegration_ExpandAndFilter(t *testing.T) {
 		_ = os.Setenv("OPENAI_API_KEY", "sk-openai-123")
 		defer os.Unsetenv("OPENAI_API_KEY")
 
-		cfg := buildDefaultConfig()
-		cfg.Providers = map[string]ProviderConfigInput{
+		rawProviders := map[string]rawProviderConfig{
 			"openai": {
 				Type:   "openai",
 				APIKey: "sk-openai-123",
@@ -587,12 +587,12 @@ func TestIntegration_ExpandAndFilter(t *testing.T) {
 				APIKey: "${ANTHROPIC_API_KEY}",
 			},
 		}
-		removeEmptyProviders(&cfg)
+		removeEmptyProviders(rawProviders)
 
-		if len(cfg.Providers) != 1 {
-			t.Errorf("expected 1 provider, got %d: %v", len(cfg.Providers), cfg.Providers)
+		if len(rawProviders) != 1 {
+			t.Errorf("expected 1 provider, got %d: %v", len(rawProviders), rawProviders)
 		}
-		if _, ok := cfg.Providers["openai"]; !ok {
+		if _, ok := rawProviders["openai"]; !ok {
 			t.Error("expected openai to survive filtering")
 		}
 	})
