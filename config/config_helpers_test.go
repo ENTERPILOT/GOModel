@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -145,11 +146,9 @@ func TestExpandString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment variables
 			for k, v := range tt.envVars {
 				_ = os.Setenv(k, v)
 			}
-			// Cleanup after test
 			defer func() {
 				for k := range tt.envVars {
 					_ = os.Unsetenv(k)
@@ -164,253 +163,12 @@ func TestExpandString(t *testing.T) {
 	}
 }
 
-// TestRemoveEmptyProviders tests the removeEmptyProviders function
-func TestRemoveEmptyProviders(t *testing.T) {
-	tests := []struct {
-		name              string
-		providers         map[string]ProviderConfig
-		expectedProviders map[string]ProviderConfig
-	}{
-		{
-			name: "remove provider with empty API key",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-valid",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-valid",
-				},
-			},
-		},
-		{
-			name: "remove provider with unresolved placeholder",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "${OPENAI_API_KEY}",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-valid",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-valid",
-				},
-			},
-		},
-		{
-			name: "remove provider with partially resolved placeholder",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "prefix-${UNRESOLVED}",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-valid",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-valid",
-				},
-			},
-		},
-		{
-			name: "keep all providers with valid API keys",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "sk-openai-123",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-456",
-				},
-				"gemini": {
-					Type:   "gemini",
-					APIKey: "sk-gem-789",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "sk-openai-123",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "sk-ant-456",
-				},
-				"gemini": {
-					Type:   "gemini",
-					APIKey: "sk-gem-789",
-				},
-			},
-		},
-		{
-			name: "remove all providers when all have invalid keys",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "${OPENAI_API_KEY}",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "",
-				},
-				"gemini": {
-					Type:   "gemini",
-					APIKey: "${GEMINI_API_KEY}",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{},
-		},
-		{
-			name: "mixed valid and invalid providers",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "sk-openai-valid",
-				},
-				"openai-fallback": {
-					Type:   "openai",
-					APIKey: "${OPENAI_FALLBACK_KEY}",
-				},
-				"anthropic": {
-					Type:   "anthropic",
-					APIKey: "",
-				},
-				"gemini": {
-					Type:   "gemini",
-					APIKey: "sk-gemini-valid",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"openai": {
-					Type:   "openai",
-					APIKey: "sk-openai-valid",
-				},
-				"gemini": {
-					Type:   "gemini",
-					APIKey: "sk-gemini-valid",
-				},
-			},
-		},
-		{
-			name:              "empty providers map",
-			providers:         map[string]ProviderConfig{},
-			expectedProviders: map[string]ProviderConfig{},
-		},
-		{
-			name: "provider with valid API key but empty BaseURL should be kept",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:    "openai",
-					APIKey:  "sk-openai-123",
-					BaseURL: "",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"openai": {
-					Type:    "openai",
-					APIKey:  "sk-openai-123",
-					BaseURL: "",
-				},
-			},
-		},
-		{
-			name: "provider with valid API key but unresolved BaseURL should be kept",
-			providers: map[string]ProviderConfig{
-				"openai": {
-					Type:    "openai",
-					APIKey:  "sk-openai-123",
-					BaseURL: "${CUSTOM_URL}",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"openai": {
-					Type:    "openai",
-					APIKey:  "sk-openai-123",
-					BaseURL: "${CUSTOM_URL}",
-				},
-			},
-		},
-		{
-			name: "ollama with base URL preserved (no API key needed)",
-			providers: map[string]ProviderConfig{
-				"ollama": {
-					Type:    "ollama",
-					APIKey:  "",
-					BaseURL: "http://localhost:11434/v1",
-				},
-			},
-			expectedProviders: map[string]ProviderConfig{
-				"ollama": {
-					Type:    "ollama",
-					APIKey:  "",
-					BaseURL: "http://localhost:11434/v1",
-				},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg := &Config{
-				Server:    ServerConfig{Port: "8080"},
-				Providers: tt.providers,
-			}
-			removeEmptyProviders(cfg)
-
-			if len(cfg.Providers) != len(tt.expectedProviders) {
-				t.Errorf("len(Providers) = %d, want %d", len(cfg.Providers), len(tt.expectedProviders))
-			}
-
-			for name, expectedProvider := range tt.expectedProviders {
-				resultProvider, exists := cfg.Providers[name]
-				if !exists {
-					t.Errorf("Provider %q not found in result", name)
-					continue
-				}
-
-				if resultProvider.Type != expectedProvider.Type {
-					t.Errorf("Provider %q: Type = %q, want %q", name, resultProvider.Type, expectedProvider.Type)
-				}
-				if resultProvider.APIKey != expectedProvider.APIKey {
-					t.Errorf("Provider %q: APIKey = %q, want %q", name, resultProvider.APIKey, expectedProvider.APIKey)
-				}
-				if resultProvider.BaseURL != expectedProvider.BaseURL {
-					t.Errorf("Provider %q: BaseURL = %q, want %q", name, resultProvider.BaseURL, expectedProvider.BaseURL)
-				}
-			}
-
-			for name := range cfg.Providers {
-				if _, exists := tt.expectedProviders[name]; !exists {
-					t.Errorf("Unexpected provider %q found in result", name)
-				}
-			}
-		})
-	}
-}
-
 // TestApplyEnvOverrides tests the applyEnvOverrides function
 func TestApplyEnvOverrides(t *testing.T) {
 	tests := []struct {
-		name     string
-		envVars  map[string]string
-		check    func(t *testing.T, cfg *Config)
+		name    string
+		envVars map[string]string
+		check   func(t *testing.T, cfg *Config)
 	}{
 		{
 			name:    "PORT override",
@@ -473,6 +231,15 @@ func TestApplyEnvOverrides(t *testing.T) {
 			},
 		},
 		{
+			name:    "CACHE_REFRESH_INTERVAL override",
+			envVars: map[string]string{"CACHE_REFRESH_INTERVAL": "1800"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Cache.RefreshInterval != 1800 {
+					t.Errorf("Cache.RefreshInterval = %d, want 1800", cfg.Cache.RefreshInterval)
+				}
+			},
+		},
+		{
 			name:    "no env vars set preserves defaults",
 			envVars: map[string]string{},
 			check: func(t *testing.T, cfg *Config) {
@@ -484,108 +251,80 @@ func TestApplyEnvOverrides(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "retry int override",
+			envVars: map[string]string{"RETRY_MAX_RETRIES": "7"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.Retry.MaxRetries != 7 {
+					t.Errorf("Resilience.Retry.MaxRetries = %d, want 7", cfg.Resilience.Retry.MaxRetries)
+				}
+			},
+		},
+		{
+			name: "retry duration overrides",
+			envVars: map[string]string{
+				"RETRY_INITIAL_BACKOFF": "500ms",
+				"RETRY_MAX_BACKOFF":     "20s",
+			},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.Retry.InitialBackoff != 500*time.Millisecond {
+					t.Errorf("InitialBackoff = %v, want 500ms", cfg.Resilience.Retry.InitialBackoff)
+				}
+				if cfg.Resilience.Retry.MaxBackoff != 20*time.Second {
+					t.Errorf("MaxBackoff = %v, want 20s", cfg.Resilience.Retry.MaxBackoff)
+				}
+			},
+		},
+		{
+			name: "retry float overrides",
+			envVars: map[string]string{
+				"RETRY_BACKOFF_FACTOR": "3.5",
+				"RETRY_JITTER_FACTOR":  "0.25",
+			},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.Retry.BackoffFactor != 3.5 {
+					t.Errorf("BackoffFactor = %f, want 3.5", cfg.Resilience.Retry.BackoffFactor)
+				}
+				if cfg.Resilience.Retry.JitterFactor != 0.25 {
+					t.Errorf("JitterFactor = %f, want 0.25", cfg.Resilience.Retry.JitterFactor)
+				}
+			},
+		},
+		{
+			name: "circuit breaker int overrides",
+			envVars: map[string]string{
+				"CIRCUIT_BREAKER_FAILURE_THRESHOLD": "3",
+				"CIRCUIT_BREAKER_SUCCESS_THRESHOLD": "1",
+			},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.CircuitBreaker.FailureThreshold != 3 {
+					t.Errorf("FailureThreshold = %d, want 3", cfg.Resilience.CircuitBreaker.FailureThreshold)
+				}
+				if cfg.Resilience.CircuitBreaker.SuccessThreshold != 1 {
+					t.Errorf("SuccessThreshold = %d, want 1", cfg.Resilience.CircuitBreaker.SuccessThreshold)
+				}
+			},
+		},
+		{
+			name:    "circuit breaker timeout override",
+			envVars: map[string]string{"CIRCUIT_BREAKER_TIMEOUT": "10s"},
+			check: func(t *testing.T, cfg *Config) {
+				if cfg.Resilience.CircuitBreaker.Timeout != 10*time.Second {
+					t.Errorf("Timeout = %v, want 10s", cfg.Resilience.CircuitBreaker.Timeout)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Setup environment variables
 			for k, v := range tt.envVars {
 				t.Setenv(k, v)
 			}
 
-			cfg := defaultConfig()
-			require.NoError(t, applyEnvOverrides(&cfg))
-			tt.check(t, &cfg)
+			cfg := buildDefaultConfig()
+			require.NoError(t, applyEnvOverrides(cfg))
+			tt.check(t, cfg)
 		})
 	}
-}
-
-// TestApplyProviderEnvVars tests the applyProviderEnvVars function
-func TestApplyProviderEnvVars(t *testing.T) {
-	t.Run("discovers provider from API key", func(t *testing.T) {
-		t.Setenv("OPENAI_API_KEY", "sk-test-123")
-		cfg := defaultConfig()
-		applyProviderEnvVars(&cfg)
-
-		p, ok := cfg.Providers["openai"]
-		if !ok {
-			t.Fatal("expected openai provider")
-		}
-		if p.APIKey != "sk-test-123" {
-			t.Errorf("APIKey = %q, want %q", p.APIKey, "sk-test-123")
-		}
-		if p.Type != "openai" {
-			t.Errorf("Type = %q, want %q", p.Type, "openai")
-		}
-	})
-
-	t.Run("overrides existing YAML provider", func(t *testing.T) {
-		t.Setenv("OPENAI_API_KEY", "sk-env-key")
-		cfg := defaultConfig()
-		cfg.Providers["openai"] = ProviderConfig{Type: "openai", APIKey: "sk-yaml-key", BaseURL: "https://custom.api.com"}
-		applyProviderEnvVars(&cfg)
-
-		p := cfg.Providers["openai"]
-		if p.APIKey != "sk-env-key" {
-			t.Errorf("APIKey = %q, want %q (env should override yaml)", p.APIKey, "sk-env-key")
-		}
-		if p.BaseURL != "https://custom.api.com" {
-			t.Errorf("BaseURL = %q should be preserved from YAML", p.BaseURL)
-		}
-	})
-
-	t.Run("ollama enabled via base URL only", func(t *testing.T) {
-		t.Setenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
-		cfg := defaultConfig()
-		applyProviderEnvVars(&cfg)
-
-		p, ok := cfg.Providers["ollama"]
-		if !ok {
-			t.Fatal("expected ollama provider")
-		}
-		if p.BaseURL != "http://localhost:11434/v1" {
-			t.Errorf("BaseURL = %q", p.BaseURL)
-		}
-	})
-
-	t.Run("skips when no env vars set", func(t *testing.T) {
-		cfg := defaultConfig()
-		applyProviderEnvVars(&cfg)
-
-		if len(cfg.Providers) != 0 {
-			t.Errorf("expected no providers, got %d", len(cfg.Providers))
-		}
-	})
-}
-
-// TestIntegration_ExpandAndFilter tests env var expansion in YAML + provider filtering
-func TestIntegration_ExpandAndFilter(t *testing.T) {
-	t.Run("expand and filter mixed providers", func(t *testing.T) {
-		_ = os.Setenv("OPENAI_API_KEY", "sk-openai-123")
-		defer os.Unsetenv("OPENAI_API_KEY")
-
-		cfg := defaultConfig()
-		cfg.Providers = map[string]ProviderConfig{
-			"openai": {
-				Type:   "openai",
-				APIKey: "sk-openai-123", // already expanded
-			},
-			"openai-fallback": {
-				Type:   "openai",
-				APIKey: "${OPENAI_FALLBACK_KEY}", // unresolved
-			},
-			"anthropic": {
-				Type:   "anthropic",
-				APIKey: "${ANTHROPIC_API_KEY}", // unresolved
-			},
-		}
-		removeEmptyProviders(&cfg)
-
-		if len(cfg.Providers) != 1 {
-			t.Errorf("expected 1 provider, got %d: %v", len(cfg.Providers), cfg.Providers)
-		}
-		if _, ok := cfg.Providers["openai"]; !ok {
-			t.Error("expected openai to survive filtering")
-		}
-	})
 }

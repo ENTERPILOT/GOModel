@@ -25,7 +25,6 @@ import (
 )
 
 func main() {
-	// Add a version flag check
 	versionFlag := flag.Bool("version", false, "Print version information")
 	flag.Parse()
 
@@ -34,49 +33,36 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Setup structured logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 
-	// Log the version immediately on startup
 	slog.Info("starting gomodel",
 		"version", version.Version,
 		"commit", version.Commit,
 		"build_date", version.Date,
 	)
 
-	// Load configuration
-	cfg, err := config.Load()
+	result, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	// Validate that at least one provider is configured
-	if len(cfg.Providers) == 0 {
-		slog.Error("at least one provider must be configured")
-		os.Exit(1)
-	}
-
-	// Create provider factory and register all providers explicitly
 	factory := providers.NewProviderFactory()
 
-	// Set observability hooks before registering providers
-	if cfg.Metrics.Enabled {
+	if result.Config.Metrics.Enabled {
 		factory.SetHooks(observability.NewPrometheusHooks())
 	}
 
-	// Register all providers with the factory
-	factory.Register(openai.Registration)
-	factory.Register(anthropic.Registration)
-	factory.Register(gemini.Registration)
-	factory.Register(groq.Registration)
-	factory.Register(ollama.Registration)
-	factory.Register(xai.Registration)
+	factory.Add(openai.Registration)
+	factory.Add(anthropic.Registration)
+	factory.Add(gemini.Registration)
+	factory.Add(groq.Registration)
+	factory.Add(ollama.Registration)
+	factory.Add(xai.Registration)
 
-	// Create the application
 	application, err := app.New(context.Background(), app.Config{
-		AppConfig: cfg,
+		AppConfig: result,
 		Factory:   factory,
 	})
 	if err != nil {
@@ -84,7 +70,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Handle graceful shutdown
 	go func() {
 		quit := make(chan os.Signal, 1)
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
@@ -98,8 +83,7 @@ func main() {
 		}
 	}()
 
-	// Start the server (blocking)
-	addr := ":" + cfg.Server.Port
+	addr := ":" + result.Config.Server.Port
 	if err := application.Start(addr); err != nil {
 		slog.Error("application failed", "error", err)
 		os.Exit(1)

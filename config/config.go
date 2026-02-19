@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 	"gopkg.in/yaml.v3"
@@ -22,21 +23,64 @@ const (
 	MaxBodySizeLimit     int64 = 100 * 1024 * 1024 // 100MB
 )
 
-// bodySizeLimitRegex validates body size limit format: digits followed by optional K/M/G unit and optional B suffix
 var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
-// Config holds the application configuration
+// Config holds the application configuration.
 type Config struct {
-	Server     ServerConfig              `yaml:"server"`
-	Cache      CacheConfig               `yaml:"cache"`
-	Storage    StorageConfig             `yaml:"storage"`
-	Logging    LogConfig                 `yaml:"logging"`
-	Usage      UsageConfig               `yaml:"usage"`
-	Metrics    MetricsConfig             `yaml:"metrics"`
-	HTTP       HTTPConfig                `yaml:"http"`
-	Admin      AdminConfig               `yaml:"admin"`
-	Guardrails GuardrailsConfig          `yaml:"guardrails"`
-	Providers  map[string]ProviderConfig `yaml:"providers"`
+	Server     ServerConfig     `yaml:"server"`
+	Cache      CacheConfig      `yaml:"cache"`
+	Storage    StorageConfig    `yaml:"storage"`
+	Logging    LogConfig        `yaml:"logging"`
+	Usage      UsageConfig      `yaml:"usage"`
+	Metrics    MetricsConfig    `yaml:"metrics"`
+	HTTP       HTTPConfig       `yaml:"http"`
+	Admin      AdminConfig      `yaml:"admin"`
+	Guardrails GuardrailsConfig `yaml:"guardrails"`
+	Resilience ResilienceConfig `yaml:"resilience"`
+}
+
+// LoadResult is returned by Load and bundles the application config with the raw
+// provider map parsed from YAML. Provider env vars and resolution are handled by
+// the providers package.
+type LoadResult struct {
+	Config       *Config
+	RawProviders map[string]RawProviderConfig
+}
+
+// RawProviderConfig is the YAML-sourced provider configuration before env var
+// overrides, credential filtering, or resilience merging. Exported so the
+// providers package can resolve it into a fully-configured ProviderConfig.
+type RawProviderConfig struct {
+	Type       string               `yaml:"type"`
+	APIKey     string               `yaml:"api_key"`
+	BaseURL    string               `yaml:"base_url"`
+	Models     []string             `yaml:"models"`
+	Resilience *RawResilienceConfig `yaml:"resilience"`
+}
+
+// RawResilienceConfig holds optional per-provider resilience overrides from YAML.
+// Nil fields inherit from the global ResilienceConfig.
+type RawResilienceConfig struct {
+	Retry          *RawRetryConfig          `yaml:"retry"`
+	CircuitBreaker *RawCircuitBreakerConfig `yaml:"circuit_breaker"`
+}
+
+// RawCircuitBreakerConfig holds optional per-provider circuit breaker overrides from YAML.
+// Nil fields inherit from the global CircuitBreakerConfig.
+type RawCircuitBreakerConfig struct {
+	FailureThreshold *int           `yaml:"failure_threshold"`
+	SuccessThreshold *int           `yaml:"success_threshold"`
+	Timeout          *time.Duration `yaml:"timeout"`
+}
+
+// RawRetryConfig holds optional per-provider retry overrides from YAML.
+// Nil fields inherit from the global RetryConfig.
+type RawRetryConfig struct {
+	MaxRetries     *int           `yaml:"max_retries"`
+	InitialBackoff *time.Duration `yaml:"initial_backoff"`
+	MaxBackoff     *time.Duration `yaml:"max_backoff"`
+	BackoffFactor  *float64       `yaml:"backoff_factor"`
+	JitterFactor   *float64       `yaml:"jitter_factor"`
 }
 
 // AdminConfig holds configuration for the admin API and dashboard UI.
@@ -210,6 +254,10 @@ type CacheConfig struct {
 	// CacheDir is the directory for local cache files (default: ".cache")
 	CacheDir string `yaml:"cache_dir" env:"GOMODEL_CACHE_DIR"`
 
+	// RefreshInterval is how often to refresh the model registry in seconds.
+	// Default: 3600 (1 hour)
+	RefreshInterval int `yaml:"refresh_interval" env:"CACHE_REFRESH_INTERVAL"`
+
 	// Redis configuration (only used when Type is "redis")
 	Redis RedisConfig `yaml:"redis"`
 }
@@ -244,21 +292,58 @@ type MetricsConfig struct {
 	Endpoint string `yaml:"endpoint" env:"METRICS_ENDPOINT"`
 }
 
-// ProviderConfig holds generic provider configuration
-type ProviderConfig struct {
-	Type    string   `yaml:"type"`     // e.g., "openai", "anthropic", "gemini"
-	APIKey  string   `yaml:"api_key"`  // API key for authentication
-	BaseURL string   `yaml:"base_url"` // Optional: override default base URL
-	Models  []string `yaml:"models"`   // Optional: restrict to specific models
+// RetryConfig holds resolved retry settings for an LLM client.
+// This is the canonical type shared between config and llmclient.
+type RetryConfig struct {
+	MaxRetries     int           `yaml:"max_retries"     env:"RETRY_MAX_RETRIES"`
+	InitialBackoff time.Duration `yaml:"initial_backoff" env:"RETRY_INITIAL_BACKOFF"`
+	MaxBackoff     time.Duration `yaml:"max_backoff"     env:"RETRY_MAX_BACKOFF"`
+	BackoffFactor  float64       `yaml:"backoff_factor"  env:"RETRY_BACKOFF_FACTOR"`
+	JitterFactor   float64       `yaml:"jitter_factor"   env:"RETRY_JITTER_FACTOR"`
 }
 
-// defaultConfig returns the single source of truth for all configuration defaults.
-func defaultConfig() Config {
-	return Config{
+// DefaultRetryConfig returns the default retry settings.
+func DefaultRetryConfig() RetryConfig {
+	return RetryConfig{
+		MaxRetries:     3,
+		InitialBackoff: 1 * time.Second,
+		MaxBackoff:     30 * time.Second,
+		BackoffFactor:  2.0,
+		JitterFactor:   0.1,
+	}
+}
+
+// CircuitBreakerConfig holds resolved circuit breaker settings.
+// This is the canonical type shared between config and llmclient.
+type CircuitBreakerConfig struct {
+	FailureThreshold int           `yaml:"failure_threshold" env:"CIRCUIT_BREAKER_FAILURE_THRESHOLD"`
+	SuccessThreshold int           `yaml:"success_threshold" env:"CIRCUIT_BREAKER_SUCCESS_THRESHOLD"`
+	Timeout          time.Duration `yaml:"timeout"           env:"CIRCUIT_BREAKER_TIMEOUT"`
+}
+
+// DefaultCircuitBreakerConfig returns the default circuit breaker settings.
+func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
+	return CircuitBreakerConfig{
+		FailureThreshold: 5,
+		SuccessThreshold: 2,
+		Timeout:          30 * time.Second,
+	}
+}
+
+// ResilienceConfig holds resolved resilience settings (retry and circuit breaker).
+type ResilienceConfig struct {
+	Retry          RetryConfig          `yaml:"retry"`
+	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
+}
+
+// buildDefaultConfig returns the single source of truth for all configuration defaults.
+func buildDefaultConfig() *Config {
+	return &Config{
 		Server: ServerConfig{Port: "8080"},
 		Cache: CacheConfig{
-			Type:     "local",
-			CacheDir: ".cache",
+			Type:            "local",
+			CacheDir:        ".cache",
+			RefreshInterval: 3600,
 			Redis: RedisConfig{
 				Key: "gomodel:models",
 				TTL: 86400,
@@ -298,9 +383,12 @@ func defaultConfig() Config {
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
 		},
+		Resilience: ResilienceConfig{
+			Retry:          DefaultRetryConfig(),
+			CircuitBreaker: DefaultCircuitBreakerConfig(),
+		},
 		Admin:      AdminConfig{EndpointsEnabled: true, UIEnabled: true},
 		Guardrails: GuardrailsConfig{},
-		Providers:  make(map[string]ProviderConfig),
 	}
 }
 
@@ -308,44 +396,39 @@ func defaultConfig() Config {
 //
 //	defaults (code) → config.yaml (optional overlay) → env vars (always win)
 //
-// Every run follows the same code path regardless of whether config.yaml exists.
-func Load() (*Config, error) {
-	// 1. Load .env into process env (ignore if not found)
+// The returned LoadResult contains the resolved application Config and the raw
+// provider map parsed from YAML. Provider env var discovery, credential filtering,
+// and resilience merging are handled by the providers package.
+func Load() (*LoadResult, error) {
 	_ = godotenv.Load()
 
-	// 2. Start with compiled defaults
-	cfg := defaultConfig()
+	cfg := buildDefaultConfig()
 
-	// 3. Optional YAML overlay
-	if err := applyYAML(&cfg); err != nil {
+	rawProviders, err := applyYAML(cfg)
+	if err != nil {
 		return nil, err
 	}
 
-	// 4. Env vars always win
-	if err := applyEnvOverrides(&cfg); err != nil {
+	if err := applyEnvOverrides(cfg); err != nil {
 		return nil, err
 	}
 
-	// 5. Discover providers from env
-	applyProviderEnvVars(&cfg)
-
-	// 6. Filter invalid providers
-	removeEmptyProviders(&cfg)
-
-	// 7. Validate
 	if cfg.Server.BodySizeLimit != "" {
 		if err := ValidateBodySizeLimit(cfg.Server.BodySizeLimit); err != nil {
 			return nil, fmt.Errorf("invalid BODY_SIZE_LIMIT: %w", err)
 		}
 	}
 
-	return &cfg, nil
+	return &LoadResult{
+		Config:       cfg,
+		RawProviders: rawProviders,
+	}, nil
 }
 
 // applyYAML reads an optional config.yaml and overlays it onto cfg.
+// Returns the raw provider map parsed from the providers: YAML section.
 // If no config file is found, this is a no-op (not an error).
-func applyYAML(cfg *Config) error {
-	// Search paths: config/config.yaml then ./config.yaml
+func applyYAML(cfg *Config) (map[string]RawProviderConfig, error) {
 	paths := []string{
 		"config/config.yaml",
 		"config.yaml",
@@ -360,28 +443,35 @@ func applyYAML(cfg *Config) error {
 		}
 	}
 
+	rawProviders := make(map[string]RawProviderConfig)
+
 	if data == nil {
-		return nil // No config file found — not an error
+		return rawProviders, nil
 	}
 
-	// Expand ${VAR} and ${VAR:-default} before YAML parsing
 	expanded := expandString(string(data))
 
-	// Unmarshal into the existing cfg — unset YAML fields preserve defaults
-	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
-		return fmt.Errorf("failed to parse config.yaml: %w", err)
+	// yamlTarget is a local struct that mirrors Config for YAML unmarshaling,
+	// using RawProviderConfig for providers so nullable resilience overrides are preserved.
+	type yamlTarget struct {
+		*Config      `yaml:",inline"`
+		RawProviders map[string]RawProviderConfig `yaml:"providers"`
 	}
 
-	// Ensure Providers map is initialized even if YAML had none
-	if cfg.Providers == nil {
-		cfg.Providers = make(map[string]ProviderConfig)
+	target := yamlTarget{Config: cfg}
+	if err := yaml.Unmarshal([]byte(expanded), &target); err != nil {
+		return nil, fmt.Errorf("failed to parse config.yaml: %w", err)
 	}
 
-	return nil
+	if target.RawProviders != nil {
+		rawProviders = target.RawProviders
+	}
+
+	return rawProviders, nil
 }
 
 // applyEnvOverrides walks cfg's struct fields and applies env var overrides
-// based on `env` struct tags. Maps are skipped (providers are handled separately).
+// based on `env` struct tags. Maps are skipped.
 func applyEnvOverrides(cfg *Config) error {
 	return applyEnvOverridesValue(reflect.ValueOf(cfg).Elem())
 }
@@ -392,11 +482,9 @@ func applyEnvOverridesValue(v reflect.Value) error {
 		field := t.Field(i)
 		fieldVal := v.Field(i)
 
-		// Skip maps — providers are handled by applyProviderEnvVars
 		if field.Type.Kind() == reflect.Map {
 			continue
 		}
-		// Recurse into nested structs
 		if field.Type.Kind() == reflect.Struct {
 			if err := applyEnvOverridesValue(fieldVal); err != nil {
 				return err
@@ -424,78 +512,30 @@ func applyEnvOverridesValue(v reflect.Value) error {
 				return fmt.Errorf("invalid value for %s (%s): %q is not a valid integer", field.Name, envKey, envVal)
 			}
 			fieldVal.SetInt(int64(n))
+		case reflect.Int64:
+			if field.Type == reflect.TypeOf(time.Duration(0)) {
+				// time.Duration is represented as int64; accept Go duration strings (e.g. "1s", "500ms").
+				d, err := time.ParseDuration(envVal)
+				if err != nil {
+					return fmt.Errorf("invalid value for %s (%s): %q is not a valid duration", field.Name, envKey, envVal)
+				}
+				fieldVal.SetInt(int64(d))
+			} else {
+				n, err := strconv.ParseInt(envVal, 10, 64)
+				if err != nil {
+					return fmt.Errorf("invalid value for %s (%s): %q is not a valid integer", field.Name, envKey, envVal)
+				}
+				fieldVal.SetInt(n)
+			}
+		case reflect.Float64:
+			f, err := strconv.ParseFloat(envVal, 64)
+			if err != nil {
+				return fmt.Errorf("invalid value for %s (%s): %q is not a valid float", field.Name, envKey, envVal)
+			}
+			fieldVal.SetFloat(f)
 		}
 	}
 	return nil
-}
-
-// knownProvider describes a provider that can be auto-discovered from environment variables.
-type knownProvider struct {
-	apiKeyEnv    string
-	baseURLEnv   string
-	name         string
-	providerType string
-}
-
-var knownProviders = []knownProvider{
-	{"OPENAI_API_KEY", "OPENAI_BASE_URL", "openai", "openai"},
-	{"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "anthropic", "anthropic"},
-	{"GEMINI_API_KEY", "GEMINI_BASE_URL", "gemini", "gemini"},
-	{"XAI_API_KEY", "XAI_BASE_URL", "xai", "xai"},
-	{"GROQ_API_KEY", "GROQ_BASE_URL", "groq", "groq"},
-	{"OLLAMA_API_KEY", "OLLAMA_BASE_URL", "ollama", "ollama"},
-}
-
-// applyProviderEnvVars discovers providers from well-known environment variables.
-// Env vars override YAML-provided values for the same provider name.
-func applyProviderEnvVars(cfg *Config) {
-	for _, kp := range knownProviders {
-		apiKey := os.Getenv(kp.apiKeyEnv)
-		baseURL := os.Getenv(kp.baseURLEnv)
-
-		// Skip if no env vars set for this provider
-		if apiKey == "" && baseURL == "" {
-			continue
-		}
-
-		// Ollama special case: no API key required, enabled via base URL
-		if kp.providerType == "ollama" && apiKey == "" && baseURL == "" {
-			continue
-		}
-
-		existing, exists := cfg.Providers[kp.name]
-		if exists {
-			// Override existing provider's env-sourced values
-			if apiKey != "" {
-				existing.APIKey = apiKey
-			}
-			if baseURL != "" {
-				existing.BaseURL = baseURL
-			}
-			cfg.Providers[kp.name] = existing
-		} else {
-			// Add new provider from env
-			cfg.Providers[kp.name] = ProviderConfig{
-				Type:    kp.providerType,
-				APIKey:  apiKey,
-				BaseURL: baseURL,
-			}
-		}
-	}
-}
-
-// removeEmptyProviders removes providers that have no valid credentials.
-func removeEmptyProviders(cfg *Config) {
-	for name, pCfg := range cfg.Providers {
-		// Preserve Ollama providers with a non-empty BaseURL (no API key required)
-		if pCfg.Type == "ollama" && pCfg.BaseURL != "" {
-			continue
-		}
-		// Remove provider if API key is empty or contains unexpanded placeholders
-		if pCfg.APIKey == "" || strings.Contains(pCfg.APIKey, "${") {
-			delete(cfg.Providers, name)
-		}
-	}
 }
 
 // expandString expands environment variable references like ${VAR} or ${VAR:-default} in a string.
@@ -547,7 +587,6 @@ func ValidateBodySizeLimit(s string) error {
 		return fmt.Errorf("invalid number in %q: %w", s, err)
 	}
 
-	// Apply unit multiplier (case-insensitive due to regex flag)
 	switch strings.ToUpper(matches[2]) {
 	case "K":
 		value *= 1024
@@ -557,7 +596,6 @@ func ValidateBodySizeLimit(s string) error {
 		value *= 1024 * 1024 * 1024
 	}
 
-	// Validate bounds
 	if value < MinBodySizeLimit {
 		return fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
 	}

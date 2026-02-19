@@ -28,10 +28,15 @@ type Provider struct {
 }
 
 // New creates a new xAI provider.
-func New(apiKey string, hooks llmclient.Hooks) core.Provider {
+func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
-	cfg := llmclient.DefaultConfig("xai", defaultBaseURL)
-	cfg.Hooks = hooks
+	cfg := llmclient.Config{
+		ProviderName: "xai",
+		BaseURL:      defaultBaseURL,
+		Retry:        opts.Resilience.Retry,
+		Hooks:        opts.Hooks,
+		CircuitBreaker: opts.Resilience.CircuitBreaker,
+	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }

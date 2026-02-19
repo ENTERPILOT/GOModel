@@ -31,10 +31,15 @@ type Provider struct {
 }
 
 // New creates a new Groq provider.
-func New(apiKey string, hooks llmclient.Hooks) core.Provider {
+func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
-	cfg := llmclient.DefaultConfig("groq", defaultBaseURL)
-	cfg.Hooks = hooks
+	cfg := llmclient.Config{
+		ProviderName: "groq",
+		BaseURL:      defaultBaseURL,
+		Retry:        opts.Resilience.Retry,
+		Hooks:        opts.Hooks,
+		CircuitBreaker: opts.Resilience.CircuitBreaker,
+	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }

@@ -11,6 +11,7 @@ server:
 cache:
   type: "local" # "local" or "redis"
   cache_dir: ".cache" # local cache directory
+  refresh_interval: 3600 # how often to refresh the model registry (seconds, default: 3600)
   redis:
     url: "redis://localhost:6379"
     key: "gomodel:models"
@@ -51,6 +52,16 @@ http:
   timeout: 600 # seconds (10 minutes)
   response_header_timeout: 600
 
+# Global resilience settings (applied to all providers by default)
+# Individual providers can override any of these values.
+resilience:
+  retry:
+    max_retries: 3
+    initial_backoff: 1s
+    max_backoff: 30s
+    backoff_factor: 2.0
+    jitter_factor: 0.1
+
 guardrails:
   enabled: false
   rules:
@@ -90,6 +101,11 @@ providers:
   openai:
     type: openai
     api_key: "sk-..."
+    # Per-provider resilience overrides (optional).
+    # Only specified fields override the global defaults above.
+    # resilience:
+    #   retry:
+    #     max_retries: 5
 
   anthropic:
     type: anthropic

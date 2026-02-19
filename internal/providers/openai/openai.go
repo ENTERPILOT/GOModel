@@ -28,10 +28,15 @@ type Provider struct {
 }
 
 // New creates a new OpenAI provider.
-func New(apiKey string, hooks llmclient.Hooks) core.Provider {
+func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
-	cfg := llmclient.DefaultConfig("openai", defaultBaseURL)
-	cfg.Hooks = hooks
+	cfg := llmclient.Config{
+		ProviderName: "openai",
+		BaseURL:      defaultBaseURL,
+		Retry:        opts.Resilience.Retry,
+		Hooks:        opts.Hooks,
+		CircuitBreaker: opts.Resilience.CircuitBreaker,
+	}
 	p.client = llmclient.New(cfg, p.setHeaders)
 	return p
 }
