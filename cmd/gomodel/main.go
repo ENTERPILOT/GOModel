@@ -38,8 +38,10 @@ func main() {
 
 	var handler slog.Handler
 	if strings.ToLower(os.Getenv("LOG_FORMAT")) == "text" {
+		fi, err := os.Stderr.Stat()
 		handler = tint.NewHandler(os.Stderr, &tint.Options{
 			TimeFormat: time.Kitchen,
+			NoColor:    err != nil || fi.Mode()&os.ModeCharDevice == 0,
 		})
 	} else {
 		handler = slog.NewJSONHandler(os.Stdout, nil)

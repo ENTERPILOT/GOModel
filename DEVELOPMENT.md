@@ -19,7 +19,7 @@ make lint-fix      # Auto-fix issues
 
 ## Log output
 
-By default the server uses [tint](https://github.com/lmittmann/tint) to print colorized, human-readable logs to stderr — useful for local development. Colors are automatically disabled when stderr is not a TTY (e.g. when output is piped or redirected).
+By default the server uses [tint](https://github.com/lmittmann/tint) to print colorized, human-readable logs to stderr — useful for local development. Colors are disabled automatically when stderr is not a TTY (e.g. when output is piped or redirected), detected via `isatty.IsTerminal`.
 
 ```text
 12:12PM INFO  starting gomodel version=dev commit=none
