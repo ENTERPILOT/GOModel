@@ -41,7 +41,7 @@ func main() {
 
 	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
 
-	var handler slog.Handler = slog.NewJSONHandler(os.Stdout, nil)
+	var handler slog.Handler = slog.NewJSONHandler(os.Stderr, nil)
 
 	if (isTTYTerminal && logFormat != "json") || logFormat == "text" {
 		handler = tint.NewHandler(os.Stderr, &tint.Options{
