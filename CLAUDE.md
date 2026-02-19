@@ -178,7 +178,7 @@ After completing any code change, routinely check whether documentation needs up
 ## Key Details
 
 1. Providers are registered explicitly via `factory.Add()` in main.go — order matters, first registered wins for duplicate model names
-2. Router requires initialized registry — check `ModelCount() > 0` before routing
+2. Router requires an initialized registry — check `ModelCount() > 0` before routing
 3. Streaming returns `io.ReadCloser` — caller must close. Streaming requests do NOT retry.
 4. Models auto-refresh hourly by default (configurable via `CACHE_REFRESH_INTERVAL` or `cache.refresh_interval` in YAML, in seconds)
 5. Auth via `GOMODEL_MASTER_KEY` — if unset, server runs in unsafe mode with a warning. Uses `Bearer` token in `Authorization` header. Constant-time comparison.
