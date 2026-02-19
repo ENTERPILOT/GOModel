@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-
 	"github.com/lmittmann/tint"
 	"gomodel/config"
 	"gomodel/internal/app"
