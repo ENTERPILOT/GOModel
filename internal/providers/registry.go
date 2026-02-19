@@ -505,7 +505,7 @@ func (a *registryAccessor) SetMetadata(modelID string, meta *core.ModelMetadata)
 // StartBackgroundRefresh starts a goroutine that periodically refreshes the model registry.
 // If modelListURL is non-empty, the model list is also re-fetched on each tick.
 // Returns a cancel function to stop the refresh loop.
-func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelListURL string, modelListTimeout time.Duration) func() {
+func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelListURL string) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -530,7 +530,7 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 
 				// Also refresh model list if configured
 				if modelListURL != "" {
-					r.refreshModelList(modelListURL, modelListTimeout)
+					r.refreshModelList(modelListURL)
 				}
 			}
 		}
@@ -540,8 +540,8 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 }
 
 // refreshModelList fetches the model list and re-enriches all models.
-func (r *ModelRegistry) refreshModelList(url string, timeout time.Duration) {
-	fetchCtx, cancel := context.WithTimeout(context.Background(), timeout)
+func (r *ModelRegistry) refreshModelList(url string) {
+	fetchCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
 
 	list, raw, err := modeldata.Fetch(fetchCtx, url)

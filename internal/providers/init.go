@@ -87,13 +87,9 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 
 	// Fetch model list in background (best-effort, non-blocking)
 	modelListURL := result.Config.Cache.ModelList.URL
-	modelListTimeout := time.Duration(result.Config.Cache.ModelList.Timeout) * time.Second
-	if modelListTimeout <= 0 {
-		modelListTimeout = 30 * time.Second
-	}
 	if modelListURL != "" {
 		go func() {
-			fetchCtx, cancel := context.WithTimeout(context.Background(), modelListTimeout)
+			fetchCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer cancel()
 
 			list, raw, err := modeldata.Fetch(fetchCtx, modelListURL)
@@ -123,7 +119,7 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 	if refreshInterval <= 0 {
 		refreshInterval = time.Hour
 	}
-	stopRefresh := registry.StartBackgroundRefresh(refreshInterval, modelListURL, modelListTimeout)
+	stopRefresh := registry.StartBackgroundRefresh(refreshInterval, modelListURL)
 
 	router, err := NewRouter(registry)
 	if err != nil {

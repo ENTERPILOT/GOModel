@@ -269,9 +269,6 @@ type CacheConfig struct {
 type ModelListConfig struct {
 	// URL is the HTTP(S) URL to fetch models.json from (empty = disabled)
 	URL string `yaml:"url" env:"MODEL_LIST_URL"`
-
-	// Timeout is the HTTP fetch timeout in seconds (default: 30)
-	Timeout int `yaml:"timeout" env:"MODEL_LIST_TIMEOUT"`
 }
 
 // RedisConfig holds Redis-specific configuration
@@ -361,8 +358,7 @@ func buildDefaultConfig() *Config {
 				TTL: 86400,
 			},
 			ModelList: ModelListConfig{
-				URL:     "https://raw.githubusercontent.com/ENTERPILOT/ai-model-list/refs/heads/main/models.json",
-				Timeout: 30,
+				URL: "https://raw.githubusercontent.com/ENTERPILOT/ai-model-list/refs/heads/main/models.json",
 			},
 		},
 		Storage: StorageConfig{
