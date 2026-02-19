@@ -8,12 +8,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+
+	"github.com/lmittmann/tint"
 	"gomodel/config"
 	"gomodel/internal/app"
-	"gomodel/internal/logging"
 	"gomodel/internal/observability"
 	"gomodel/internal/providers"
 	"gomodel/internal/providers/anthropic"
@@ -35,10 +37,12 @@ func main() {
 	}
 
 	var handler slog.Handler
-	if os.Getenv("LOG_FORMAT") == "json" {
+	if strings.ToLower(os.Getenv("LOG_FORMAT")) == "json" {
 		handler = slog.NewJSONHandler(os.Stdout, nil)
 	} else {
-		handler = logging.NewPrettyHandler(os.Stderr)
+		handler = tint.NewHandler(os.Stderr, &tint.Options{
+			TimeFormat: time.Kitchen,
+		})
 	}
 	slog.SetDefault(slog.New(handler))
 

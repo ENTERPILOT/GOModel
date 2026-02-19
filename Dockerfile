@@ -36,4 +36,6 @@ WORKDIR /app
 
 EXPOSE 8080
 
+ENV LOG_FORMAT=json
+
 ENTRYPOINT ["/gomodel"]
