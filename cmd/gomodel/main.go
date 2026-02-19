@@ -37,12 +37,12 @@ func main() {
 	}
 
 	var handler slog.Handler
-	if strings.ToLower(os.Getenv("LOG_FORMAT")) == "json" {
-		handler = slog.NewJSONHandler(os.Stdout, nil)
-	} else {
+	if strings.ToLower(os.Getenv("LOG_FORMAT")) == "text" {
 		handler = tint.NewHandler(os.Stderr, &tint.Options{
 			TimeFormat: time.Kitchen,
 		})
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
 	}
 	slog.SetDefault(slog.New(handler))
 

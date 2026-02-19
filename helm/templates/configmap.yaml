@@ -13,3 +13,4 @@ data:
   {{- end }}
   METRICS_ENABLED: {{ .Values.metrics.enabled | quote }}
   METRICS_ENDPOINT: {{ .Values.metrics.endpoint | quote }}
+  LOG_FORMAT: {{ .Values.logging.format | quote }}

@@ -72,6 +72,12 @@ spec:
                   name: {{ include "gomodel.fullname" . }}
                   key: REDIS_KEY
             {{- end }}
+            # Logging configuration
+            - name: LOG_FORMAT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "gomodel.fullname" . }}
+                  key: LOG_FORMAT
             # Metrics configuration
             - name: METRICS_ENABLED
               valueFrom:
