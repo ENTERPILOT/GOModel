@@ -544,7 +544,7 @@ func (r *ModelRegistry) refreshModelList(url string, timeout time.Duration) {
 	fetchCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	list, raw, err := modeldata.Fetch(fetchCtx, url, timeout)
+	list, raw, err := modeldata.Fetch(fetchCtx, url)
 	if err != nil {
 		slog.Warn("failed to refresh model list", "url", url, "error", err)
 		return

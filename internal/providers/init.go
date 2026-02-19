@@ -96,7 +96,7 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 			fetchCtx, cancel := context.WithTimeout(context.Background(), modelListTimeout)
 			defer cancel()
 
-			list, raw, err := modeldata.Fetch(fetchCtx, modelListURL, modelListTimeout)
+			list, raw, err := modeldata.Fetch(fetchCtx, modelListURL)
 			if err != nil {
 				slog.Warn("failed to fetch model list", "url", modelListURL, "error", err)
 				return

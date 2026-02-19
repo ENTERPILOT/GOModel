@@ -9,7 +9,7 @@ import (
 )
 
 func TestFetch_EmptyURL(t *testing.T) {
-	list, raw, err := Fetch(context.Background(), "", 5*time.Second)
+	list, raw, err := Fetch(context.Background(), "")
 	if list != nil || raw != nil || err != nil {
 		t.Error("expected all nil for empty URL")
 	}
@@ -31,7 +31,7 @@ func TestFetch_Success(t *testing.T) {
 	}))
 	defer server.Close()
 
-	list, raw, err := Fetch(context.Background(), server.URL, 5*time.Second)
+	list, raw, err := Fetch(context.Background(), server.URL)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestFetch_HTTPError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, _, err := Fetch(context.Background(), server.URL, 5*time.Second)
+	_, _, err := Fetch(context.Background(), server.URL)
 	if err == nil {
 		t.Error("expected error for 404 response")
 	}
@@ -70,7 +70,7 @@ func TestFetch_InvalidJSON(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, _, err := Fetch(context.Background(), server.URL, 5*time.Second)
+	_, _, err := Fetch(context.Background(), server.URL)
 	if err == nil {
 		t.Error("expected error for invalid JSON")
 	}
@@ -86,7 +86,7 @@ func TestFetch_Timeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
-	_, _, err := Fetch(ctx, server.URL, 50*time.Millisecond)
+	_, _, err := Fetch(ctx, server.URL)
 	if err == nil {
 		t.Error("expected error for timeout")
 	}

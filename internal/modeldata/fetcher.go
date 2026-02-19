@@ -6,18 +6,18 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // Fetch downloads and parses the model list from the given URL.
 // Returns the parsed ModelList, the raw JSON bytes (for caching), and any error.
 // Returns nil, nil, nil if the URL is empty (feature disabled).
-func Fetch(ctx context.Context, url string, timeout time.Duration) (*ModelList, []byte, error) {
+// The caller controls timeout via the provided context (e.g. context.WithTimeout).
+func Fetch(ctx context.Context, url string) (*ModelList, []byte, error) {
 	if url == "" {
 		return nil, nil, nil
 	}
 
-	client := &http.Client{Timeout: timeout}
+	client := &http.Client{}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
