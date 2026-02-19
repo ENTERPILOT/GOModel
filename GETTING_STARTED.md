@@ -171,6 +171,7 @@ All resilience settings can be overridden at runtime via env vars. Env vars alwa
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | int | `5` | Consecutive failures before opening |
 | `CIRCUIT_BREAKER_SUCCESS_THRESHOLD` | int | `2` | Consecutive successes to close again |
 | `CIRCUIT_BREAKER_TIMEOUT` | duration | `30s` | How long the circuit stays open |
+| `LOG_FORMAT` | string | _(unset)_ | Auto-detects based on environment: colorized text on a TTY, JSON otherwise. Set to `text` to force human-readable output (no colors if not a TTY), or `json` to force structured JSON even on a TTY (recommended for production, CloudWatch, Datadog, GCP). |
 
 Provider credentials:
 

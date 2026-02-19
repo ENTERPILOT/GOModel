@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -22,6 +23,9 @@ import (
 	"gomodel/internal/providers/openai"
 	"gomodel/internal/providers/xai"
 	"gomodel/internal/version"
+
+	"github.com/lmittmann/tint"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -33,8 +37,20 @@ func main() {
 		os.Exit(0)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	isTTYTerminal := term.IsTerminal(int(os.Stderr.Fd()))
+
+	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
+
+	var handler slog.Handler = slog.NewJSONHandler(os.Stdout, nil)
+
+	if (isTTYTerminal && logFormat != "json") || logFormat == "text" {
+		handler = tint.NewHandler(os.Stderr, &tint.Options{
+			TimeFormat: time.Kitchen,
+			NoColor:    !isTTYTerminal,
+		})
+	}
+
+	slog.SetDefault(slog.New(handler))
 
 	slog.Info("starting gomodel",
 		"version", version.Version,
