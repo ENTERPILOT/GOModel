@@ -19,7 +19,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
 
 # Create cache directory for runtime (with placeholder for COPY)
-RUN mkdir -p /app/.cache && touch /app/.cache/.keep
+RUN mkdir -p /app/.cache /app/data && touch /app/.cache/.keep /app/data/.keep
 
 # Runtime stage
 FROM gcr.io/distroless/static-debian12:nonroot
@@ -31,6 +31,7 @@ COPY --from=builder /app/config/*.yaml /app/config/
 
 # Create writable cache directory for SQLite storage (nonroot user UID=65532)
 COPY --from=builder --chown=65532:65532 /app/.cache /app/.cache
+COPY --from=builder --chown=65532:65532 /app/data /app/data
 
 WORKDIR /app
 
