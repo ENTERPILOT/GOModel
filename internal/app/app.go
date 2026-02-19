@@ -51,6 +51,11 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if cfg.AppConfig == nil {
 		return nil, fmt.Errorf("app config is required")
 	}
+
+	if cfg.AppConfig.Config == nil {
+		return nil, fmt.Errorf("app config contains nil Config")
+	}
+
 	if cfg.Factory == nil {
 		return nil, fmt.Errorf("factory is required")
 	}
