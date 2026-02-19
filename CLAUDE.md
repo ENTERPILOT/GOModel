@@ -153,7 +153,7 @@ Full reference: `.env.template` and `config/config.yaml`
 - **Usage tracking:** `USAGE_ENABLED` (true), `ENFORCE_RETURNING_USAGE_DATA` (true), `USAGE_RETENTION_DAYS` (90)
 - **Cache:** `CACHE_TYPE` (local), `CACHE_REFRESH_INTERVAL` (3600s), `REDIS_URL`, `REDIS_KEY`
 - **HTTP client:** `HTTP_TIMEOUT` (600s), `HTTP_RESPONSE_HEADER_TIMEOUT` (600s)
-- **Resilience:** Configured via `config/config.yaml` — global `resilience.retry.*` defaults with optional per-provider overrides under `providers.<name>.resilience.retry.*`. Defaults: `max_retries` (3), `initial_backoff` (1s), `max_backoff` (30s), `backoff_factor` (2.0), `jitter_factor` (0.1)
+- **Resilience:** Configured via `config/config.yaml` — global `resilience.retry.*` and `resilience.circuit_breaker.*` defaults with optional per-provider overrides under `providers.<name>.resilience.retry.*` and `providers.<name>.resilience.circuit_breaker.*`. Retry defaults: `max_retries` (3), `initial_backoff` (1s), `max_backoff` (30s), `backoff_factor` (2.0), `jitter_factor` (0.1). Circuit breaker defaults: `failure_threshold` (5), `success_threshold` (2), `timeout` (30s)
 - **Metrics:** `METRICS_ENABLED` (false), `METRICS_ENDPOINT` (/metrics)
 - **Guardrails:** Configured via `config/config.yaml` only (except `GUARDRAILS_ENABLED` env var)
 - **Providers:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`
@@ -191,4 +191,4 @@ After completing any code change, routinely check whether documentation needs up
 12. Ollama requires no API key — enabled via `OLLAMA_BASE_URL`. Implements `AvailabilityChecker` and is skipped if unreachable.
 13. `GuardedProvider` wraps the Router — guardrails run *before* routing, not inside providers. They operate on normalized `[]Message` DTOs, decoupled from API-specific request types.
 14. Config loading: `.env` loaded first (godotenv), then code defaults, then optional YAML, then env vars always win. YAML supports `${VAR:-default}` expansion.
-15. Resilience config (retry settings) is global with optional per-provider overrides. `config.RetryConfig` is the canonical type shared between the config and llmclient packages. Provider-level overrides use nullable `RawProviderConfig` which is merged with global defaults via `buildProviderConfig()` during config resolution.
+15. Resilience config (retry and circuit-breaker settings) is global with optional per-provider overrides. `config.ResilienceConfig` is the canonical type shared between the config and llmclient packages. Provider-level overrides use nullable `RawProviderConfig` which is merged with global defaults via `buildProviderConfig()` during config resolution.
