@@ -513,12 +513,20 @@ func applyEnvOverridesValue(v reflect.Value) error {
 			}
 			fieldVal.SetInt(int64(n))
 		case reflect.Int64:
-			// time.Duration is int64 underneath; accept Go duration strings (e.g. "1s", "500ms").
-			d, err := time.ParseDuration(envVal)
-			if err != nil {
-				return fmt.Errorf("invalid value for %s (%s): %q is not a valid duration", field.Name, envKey, envVal)
+			if field.Type == reflect.TypeOf(time.Duration(0)) {
+				// time.Duration is represented as int64; accept Go duration strings (e.g. "1s", "500ms").
+				d, err := time.ParseDuration(envVal)
+				if err != nil {
+					return fmt.Errorf("invalid value for %s (%s): %q is not a valid duration", field.Name, envKey, envVal)
+				}
+				fieldVal.SetInt(int64(d))
+			} else {
+				n, err := strconv.ParseInt(envVal, 10, 64)
+				if err != nil {
+					return fmt.Errorf("invalid value for %s (%s): %q is not a valid integer", field.Name, envKey, envVal)
+				}
+				fieldVal.SetInt(n)
 			}
-			fieldVal.SetInt(int64(d))
 		case reflect.Float64:
 			f, err := strconv.ParseFloat(envVal, 64)
 			if err != nil {
