@@ -36,12 +36,17 @@ func main() {
 		os.Exit(0)
 	}
 
+	fi, err := os.Stderr.Stat()
+	isTTYTerminal := err == nil && fi.Mode()&os.ModeCharDevice != 0
+
+	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
+	useText := isTTYTerminal && logFormat != "json" || logFormat == "text"
+
 	var handler slog.Handler
-	if strings.ToLower(os.Getenv("LOG_FORMAT")) == "text" {
-		fi, err := os.Stderr.Stat()
+	if useText {
 		handler = tint.NewHandler(os.Stderr, &tint.Options{
 			TimeFormat: time.Kitchen,
-			NoColor:    err != nil || fi.Mode()&os.ModeCharDevice == 0,
+			NoColor:    !isTTYTerminal,
 		})
 	} else {
 		handler = slog.NewJSONHandler(os.Stdout, nil)
