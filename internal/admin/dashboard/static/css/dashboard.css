@@ -774,6 +774,16 @@ body {
     font-size: 13px;
 }
 
+.col-price {
+    text-align: right;
+}
+
+td.col-price {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
 .provider-badge {
     display: inline-block;
     padding: 2px 10px;

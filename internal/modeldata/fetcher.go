@@ -59,5 +59,6 @@ func Parse(raw []byte) (*ModelList, error) {
 	if err := json.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("parsing model list JSON: %w", err)
 	}
+	list.buildReverseIndex()
 	return &list, nil
 }

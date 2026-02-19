@@ -125,6 +125,10 @@
             <div class="card-label">Total Tokens</div>
             <div class="card-value" x-text="formatNumber(summary.total_tokens)">-</div>
         </div>
+        <div class="card">
+            <div class="card-label">Estimated Cost</div>
+            <div class="card-value" x-text="formatCost(summary.total_cost)">-</div>
+        </div>
     </div>
 
     <!-- Usage Chart -->
@@ -164,6 +168,8 @@
                     <th>Model ID</th>
                     <th>Provider</th>
                     <th>Owned By</th>
+                    <th class="col-price">Input $/MTok</th>
+                    <th class="col-price">Output $/MTok</th>
                 </tr>
             </thead>
             <tbody>
@@ -172,6 +178,8 @@
                         <td class="mono" x-text="m.model.id"></td>
                         <td><span class="provider-badge" x-text="m.provider_type"></span></td>
                         <td x-text="m.model.owned_by || '-'"></td>
+                        <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.input_per_mtok)"></td>
+                        <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.output_per_mtok)"></td>
                     </tr>
                 </template>
             </tbody>

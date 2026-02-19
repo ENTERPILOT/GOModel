@@ -86,6 +86,49 @@ func TestEnrich_NilAccessor(t *testing.T) {
 	Enrich(nil, list) // should not panic
 }
 
+func TestEnrich_ReverseProviderModelIDLookup(t *testing.T) {
+	list := &ModelList{
+		Models: map[string]ModelEntry{
+			"gpt-4o": {
+				DisplayName:   "GPT-4o",
+				Mode:          "chat",
+				ContextWindow: ptr(128000),
+				Pricing: &PricingEntry{
+					Currency:      "USD",
+					InputPerMtok:  ptr(2.50),
+					OutputPerMtok: ptr(10.00),
+				},
+			},
+		},
+		ProviderModels: map[string]ProviderModelEntry{
+			"openai/gpt-4o": {
+				ModelRef:        "gpt-4o",
+				ProviderModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:         true,
+			},
+		},
+	}
+	list.buildReverseIndex()
+
+	// Registry has the dated response model ID, not the canonical one
+	accessor := newMockAccessor(map[string]string{
+		"gpt-4o-2024-08-06": "openai",
+	})
+
+	Enrich(accessor, list)
+
+	meta := accessor.metadata["gpt-4o-2024-08-06"]
+	if meta == nil {
+		t.Fatal("expected gpt-4o-2024-08-06 to be enriched via reverse index")
+	}
+	if meta.DisplayName != "GPT-4o" {
+		t.Errorf("DisplayName = %s, want GPT-4o", meta.DisplayName)
+	}
+	if meta.Pricing == nil || *meta.Pricing.InputPerMtok != 2.50 {
+		t.Error("expected pricing from base model via reverse lookup")
+	}
+}
+
 func TestEnrich_ProviderModelOverride(t *testing.T) {
 	list := &ModelList{
 		Models: map[string]ModelEntry{

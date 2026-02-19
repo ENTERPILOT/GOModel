@@ -109,6 +109,38 @@ func TestParse_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestParse_BuildsReverseIndex(t *testing.T) {
+	raw := []byte(`{
+		"version": 1,
+		"updated_at": "2025-01-01T00:00:00Z",
+		"providers": {},
+		"models": {
+			"gpt-4o": {"display_name": "GPT-4o", "mode": "chat"}
+		},
+		"provider_models": {
+			"openai/gpt-4o": {
+				"model_ref": "gpt-4o",
+				"provider_model_id": "gpt-4o-2024-08-06",
+				"enabled": true
+			}
+		}
+	}`)
+	list, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if list.providerModelByActualID == nil {
+		t.Fatal("expected providerModelByActualID to be built")
+	}
+	compositeKey, ok := list.providerModelByActualID["openai/gpt-4o-2024-08-06"]
+	if !ok {
+		t.Fatal("expected reverse index entry for openai/gpt-4o-2024-08-06")
+	}
+	if compositeKey != "openai/gpt-4o" {
+		t.Errorf("reverse index = %s, want openai/gpt-4o", compositeKey)
+	}
+}
+
 func TestParse_InvalidJSON(t *testing.T) {
 	_, err := Parse([]byte("not json"))
 	if err == nil {

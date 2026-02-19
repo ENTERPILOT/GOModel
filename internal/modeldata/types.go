@@ -9,6 +9,42 @@ type ModelList struct {
 	Providers      map[string]ProviderEntry     `json:"providers"`
 	Models         map[string]ModelEntry        `json:"models"`
 	ProviderModels map[string]ProviderModelEntry `json:"provider_models"`
+
+	// providerModelByActualID maps "providerType/actualModelID" → composite key
+	// in ProviderModels, enabling reverse lookup from a provider's response model
+	// (e.g., "openai/gpt-4o-2024-08-06") to the canonical registry key
+	// (e.g., "openai/gpt-4o"). Built by buildReverseIndex().
+	providerModelByActualID map[string]string
+}
+
+// buildReverseIndex populates providerModelByActualID from ProviderModels entries
+// that have a non-nil provider_model_id differing from the key's model portion.
+func (l *ModelList) buildReverseIndex() {
+	l.providerModelByActualID = make(map[string]string)
+	for compositeKey, pm := range l.ProviderModels {
+		if pm.ProviderModelID == nil {
+			continue
+		}
+		// compositeKey is "providerType/modelID"
+		// Extract provider type from the composite key
+		slashIdx := -1
+		for i, ch := range compositeKey {
+			if ch == '/' {
+				slashIdx = i
+				break
+			}
+		}
+		if slashIdx < 0 {
+			continue
+		}
+		providerType := compositeKey[:slashIdx]
+		actualID := *pm.ProviderModelID
+		reverseKey := providerType + "/" + actualID
+		// Only add if the actual ID differs from the key's model portion
+		if reverseKey != compositeKey {
+			l.providerModelByActualID[reverseKey] = compositeKey
+		}
+	}
 }
 
 // ProviderEntry represents a provider in the registry.

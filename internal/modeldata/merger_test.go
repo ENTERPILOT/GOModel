@@ -286,6 +286,116 @@ func TestResolve_ThreeLayerMerge(t *testing.T) {
 	}
 }
 
+func TestResolve_ReverseProviderModelIDLookup(t *testing.T) {
+	list := &ModelList{
+		Models: map[string]ModelEntry{
+			"gpt-4o": {
+				DisplayName:   "GPT-4o",
+				Mode:          "chat",
+				ContextWindow: ptr(128000),
+				Pricing: &PricingEntry{
+					Currency:      "USD",
+					InputPerMtok:  ptr(2.50),
+					OutputPerMtok: ptr(10.00),
+				},
+			},
+		},
+		ProviderModels: map[string]ProviderModelEntry{
+			"openai/gpt-4o": {
+				ModelRef:        "gpt-4o",
+				ProviderModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:         true,
+			},
+		},
+	}
+	list.buildReverseIndex()
+
+	// Resolve using the dated response model ID
+	meta := Resolve(list, "openai", "gpt-4o-2024-08-06")
+	if meta == nil {
+		t.Fatal("expected non-nil metadata via reverse lookup")
+	}
+	if meta.DisplayName != "GPT-4o" {
+		t.Errorf("DisplayName = %s, want GPT-4o", meta.DisplayName)
+	}
+	if meta.Pricing == nil {
+		t.Fatal("expected non-nil pricing via reverse lookup")
+	}
+	if *meta.Pricing.InputPerMtok != 2.50 {
+		t.Errorf("InputPerMtok = %f, want 2.50", *meta.Pricing.InputPerMtok)
+	}
+}
+
+func TestResolve_ReverseIndexNotBuilt(t *testing.T) {
+	list := &ModelList{
+		Models: map[string]ModelEntry{
+			"gpt-4o": {
+				DisplayName: "GPT-4o",
+				Mode:        "chat",
+			},
+		},
+		ProviderModels: map[string]ProviderModelEntry{
+			"openai/gpt-4o": {
+				ModelRef:        "gpt-4o",
+				ProviderModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:         true,
+			},
+		},
+		// providerModelByActualID is nil (buildReverseIndex not called)
+	}
+
+	meta := Resolve(list, "openai", "gpt-4o-2024-08-06")
+	if meta != nil {
+		t.Error("expected nil when reverse index is not built")
+	}
+}
+
+func TestResolve_ReverseIndexWithProviderModelOverride(t *testing.T) {
+	list := &ModelList{
+		Models: map[string]ModelEntry{
+			"gpt-4o": {
+				DisplayName:   "GPT-4o",
+				Mode:          "chat",
+				ContextWindow: ptr(128000),
+				Pricing: &PricingEntry{
+					Currency:      "USD",
+					InputPerMtok:  ptr(2.50),
+					OutputPerMtok: ptr(10.00),
+				},
+			},
+		},
+		ProviderModels: map[string]ProviderModelEntry{
+			"openai/gpt-4o": {
+				ModelRef:        "gpt-4o",
+				ProviderModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:         true,
+				Pricing: &PricingEntry{
+					Currency:      "USD",
+					InputPerMtok:  ptr(3.00),
+					OutputPerMtok: ptr(12.00),
+				},
+			},
+		},
+	}
+	list.buildReverseIndex()
+
+	// Reverse lookup should resolve and apply provider_model pricing override
+	meta := Resolve(list, "openai", "gpt-4o-2024-08-06")
+	if meta == nil {
+		t.Fatal("expected non-nil metadata via reverse lookup")
+	}
+	if meta.Pricing == nil {
+		t.Fatal("expected non-nil pricing")
+	}
+	// Should use the provider_model override, not the base model pricing
+	if *meta.Pricing.InputPerMtok != 3.00 {
+		t.Errorf("InputPerMtok = %f, want 3.00 (provider override)", *meta.Pricing.InputPerMtok)
+	}
+	if *meta.Pricing.OutputPerMtok != 12.00 {
+		t.Errorf("OutputPerMtok = %f, want 12.00 (provider override)", *meta.Pricing.OutputPerMtok)
+	}
+}
+
 func TestCalculateCost(t *testing.T) {
 	tests := []struct {
 		name        string

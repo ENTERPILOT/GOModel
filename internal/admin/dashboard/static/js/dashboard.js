@@ -25,7 +25,7 @@ function dashboard() {
         interval: 'daily',
 
         // Data
-        summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0 },
+        summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, total_input_cost: null, total_output_cost: null, total_cost: null },
         daily: [],
         models: [],
 
@@ -541,6 +541,16 @@ function dashboard() {
         formatNumber(n) {
             if (n == null || n === undefined) return '-';
             return n.toLocaleString();
+        },
+
+        formatCost(v) {
+            if (v == null || v === undefined) return 'N/A';
+            return '$' + v.toFixed(4);
+        },
+
+        formatPrice(v) {
+            if (v == null || v === undefined) return '\u2014';
+            return '$' + v.toFixed(2);
         }
     };
 }

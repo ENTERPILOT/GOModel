@@ -35,8 +35,14 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 		}
 	}
 
-	// No match at all
+	// No match at all — try reverse lookup via provider_model_id
 	if model == nil && pm == nil {
+		if list.providerModelByActualID != nil {
+			reverseKey := providerType + "/" + modelID
+			if compositeKey, ok := list.providerModelByActualID[reverseKey]; ok {
+				return Resolve(list, providerType, compositeKey[len(providerType)+1:])
+			}
+		}
 		return nil
 	}
 

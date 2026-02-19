@@ -51,6 +51,48 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 	return summary, nil
 }
 
+func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
+	var query string
+	var args []interface{}
+
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2 GROUP BY model, provider`
+		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
+	} else if !startZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+			FROM "usage" WHERE timestamp >= $1 GROUP BY model, provider`
+		args = append(args, params.StartDate.UTC())
+	} else {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+			FROM "usage" GROUP BY model, provider`
+	}
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query usage by model: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]ModelUsage, 0)
+	for rows.Next() {
+		var m ModelUsage
+		if err := rows.Scan(&m.Model, &m.Provider, &m.InputTokens, &m.OutputTokens); err != nil {
+			return nil, fmt.Errorf("failed to scan usage by model row: %w", err)
+		}
+		result = append(result, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage by model rows: %w", err)
+	}
+
+	return result, nil
+}
+
 func pgGroupExpr(interval string) string {
 	switch interval {
 	case "weekly":
