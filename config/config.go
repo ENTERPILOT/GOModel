@@ -260,6 +260,18 @@ type CacheConfig struct {
 
 	// Redis configuration (only used when Type is "redis")
 	Redis RedisConfig `yaml:"redis"`
+
+	// ModelList configuration for the external model metadata registry
+	ModelList ModelListConfig `yaml:"model_list"`
+}
+
+// ModelListConfig holds configuration for fetching the external model metadata registry.
+type ModelListConfig struct {
+	// URL is the HTTP(S) URL to fetch models.json from (empty = disabled)
+	URL string `yaml:"url" env:"MODEL_LIST_URL"`
+
+	// Timeout is the HTTP fetch timeout in seconds (default: 30)
+	Timeout int `yaml:"timeout" env:"MODEL_LIST_TIMEOUT"`
 }
 
 // RedisConfig holds Redis-specific configuration
@@ -347,6 +359,9 @@ func buildDefaultConfig() *Config {
 			Redis: RedisConfig{
 				Key: "gomodel:models",
 				TTL: 86400,
+			},
+			ModelList: ModelListConfig{
+				Timeout: 30,
 			},
 		},
 		Storage: StorageConfig{

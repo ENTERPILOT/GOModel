@@ -75,10 +75,32 @@ type Usage struct {
 
 // Model represents a single model in the models list
 type Model struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	OwnedBy string `json:"owned_by"`
-	Created int64  `json:"created"`
+	ID       string         `json:"id"`
+	Object   string         `json:"object"`
+	OwnedBy  string         `json:"owned_by"`
+	Created  int64          `json:"created"`
+	Metadata *ModelMetadata `json:"metadata,omitempty"`
+}
+
+// ModelMetadata holds enriched metadata from the external model registry.
+type ModelMetadata struct {
+	DisplayName     string          `json:"display_name,omitempty"`
+	Description     string          `json:"description,omitempty"`
+	Family          string          `json:"family,omitempty"`
+	Mode            string          `json:"mode,omitempty"`
+	Tags            []string        `json:"tags,omitempty"`
+	ContextWindow   *int            `json:"context_window,omitempty"`
+	MaxOutputTokens *int            `json:"max_output_tokens,omitempty"`
+	Capabilities    map[string]bool `json:"capabilities,omitempty"`
+	Pricing         *ModelPricing   `json:"pricing,omitempty"`
+}
+
+// ModelPricing holds token pricing information for cost calculation.
+type ModelPricing struct {
+	Currency           string   `json:"currency"`
+	InputPerMtok       *float64 `json:"input_per_mtok,omitempty"`
+	OutputPerMtok      *float64 `json:"output_per_mtok,omitempty"`
+	CachedInputPerMtok *float64 `json:"cached_input_per_mtok,omitempty"`
 }
 
 // ModelsResponse represents the response from the /v1/models endpoint

@@ -466,7 +466,7 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		refreshCount.Store(0)
 
 		interval := 50 * time.Millisecond
-		cancel := registry.StartBackgroundRefresh(interval)
+		cancel := registry.StartBackgroundRefresh(interval, "", 0)
 		defer cancel()
 
 		time.Sleep(interval*3 + 25*time.Millisecond)
@@ -501,7 +501,7 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		refreshCount.Store(0)
 
 		interval := 50 * time.Millisecond
-		cancel := registry.StartBackgroundRefresh(interval)
+		cancel := registry.StartBackgroundRefresh(interval, "", 0)
 		cancel()
 
 		time.Sleep(interval * 3)
@@ -541,7 +541,7 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		refreshCount.Store(0)
 
 		interval := 50 * time.Millisecond
-		cancel := registry.StartBackgroundRefresh(interval)
+		cancel := registry.StartBackgroundRefresh(interval, "", 0)
 		defer cancel()
 
 		time.Sleep(interval*3 + 25*time.Millisecond)

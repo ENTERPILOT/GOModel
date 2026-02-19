@@ -8,9 +8,31 @@ import (
 	"gomodel/internal/core"
 )
 
+// CalculateCost computes input, output, and total costs from token counts and pricing.
+// Returns nil pointers when pricing info is unavailable.
+func CalculateCost(inputTokens, outputTokens int, pricing *core.ModelPricing) (input, output, total *float64) {
+	if pricing == nil {
+		return nil, nil, nil
+	}
+	if pricing.InputPerMtok != nil {
+		v := float64(inputTokens) * *pricing.InputPerMtok / 1_000_000
+		input = &v
+	}
+	if pricing.OutputPerMtok != nil {
+		v := float64(outputTokens) * *pricing.OutputPerMtok / 1_000_000
+		output = &v
+	}
+	if input != nil && output != nil {
+		v := *input + *output
+		total = &v
+	}
+	return
+}
+
 // ExtractFromChatResponse extracts usage data from a ChatResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
-func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpoint string) *UsageEntry {
+// If pricing is provided, cost fields are calculated.
+func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
 	if resp == nil {
 		return nil
 	}
@@ -33,6 +55,11 @@ func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpo
 		entry.RawData = cloneRawData(resp.Usage.RawUsage)
 	}
 
+	// Calculate costs if pricing is provided
+	if len(pricing) > 0 && pricing[0] != nil {
+		entry.InputCost, entry.OutputCost, entry.TotalCost = CalculateCost(entry.InputTokens, entry.OutputTokens, pricing[0])
+	}
+
 	return entry
 }
 
@@ -51,7 +78,8 @@ func cloneRawData(src map[string]any) map[string]any {
 
 // ExtractFromResponsesResponse extracts usage data from a ResponsesResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
-func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provider, endpoint string) *UsageEntry {
+// If pricing is provided, cost fields are calculated.
+func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
 	if resp == nil {
 		return nil
 	}
@@ -78,16 +106,23 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provi
 		}
 	}
 
+	// Calculate costs if pricing is provided
+	if len(pricing) > 0 && pricing[0] != nil {
+		entry.InputCost, entry.OutputCost, entry.TotalCost = CalculateCost(entry.InputTokens, entry.OutputTokens, pricing[0])
+	}
+
 	return entry
 }
 
 // ExtractFromSSEUsage creates a UsageEntry from SSE-extracted usage data.
 // This is used for streaming responses where usage is extracted from the final SSE event.
+// If pricing is provided, cost fields are calculated.
 func ExtractFromSSEUsage(
 	providerID string,
 	inputTokens, outputTokens, totalTokens int,
 	rawData map[string]any,
 	requestID, model, provider, endpoint string,
+	pricing ...*core.ModelPricing,
 ) *UsageEntry {
 	entry := &UsageEntry{
 		ID:           uuid.New().String(),
@@ -105,6 +140,11 @@ func ExtractFromSSEUsage(
 	// Defensive copy to avoid races when original map might be mutated
 	if len(rawData) > 0 {
 		entry.RawData = cloneRawData(rawData)
+	}
+
+	// Calculate costs if pricing is provided
+	if len(pricing) > 0 && pricing[0] != nil {
+		entry.InputCost, entry.OutputCost, entry.TotalCost = CalculateCost(entry.InputTokens, entry.OutputTokens, pricing[0])
 	}
 
 	return entry

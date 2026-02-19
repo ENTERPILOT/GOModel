@@ -4,15 +4,17 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
 // ModelCache represents the cached model data structure.
 // This is the data that gets stored and retrieved from the cache.
 type ModelCache struct {
-	Version   int                    `json:"version"`
-	UpdatedAt time.Time              `json:"updated_at"`
-	Models    map[string]CachedModel `json:"models"`
+	Version       int                    `json:"version"`
+	UpdatedAt     time.Time              `json:"updated_at"`
+	Models        map[string]CachedModel `json:"models"`
+	ModelListData json.RawMessage        `json:"model_list_data,omitempty"`
 }
 
 // CachedModel represents a single cached model entry.

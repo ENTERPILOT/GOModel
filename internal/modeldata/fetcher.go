@@ -1,0 +1,58 @@
+package modeldata
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// Fetch downloads and parses the model list from the given URL.
+// Returns the parsed ModelList, the raw JSON bytes (for caching), and any error.
+// Returns nil, nil, nil if the URL is empty (feature disabled).
+func Fetch(ctx context.Context, url string, timeout time.Duration) (*ModelList, []byte, error) {
+	if url == "" {
+		return nil, nil, nil
+	}
+
+	client := &http.Client{Timeout: timeout}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("fetching model list: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
+	}
+
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading response body: %w", err)
+	}
+
+	list, err := Parse(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return list, raw, nil
+}
+
+// Parse deserializes raw JSON bytes into a ModelList.
+func Parse(raw []byte) (*ModelList, error) {
+	var list ModelList
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("parsing model list JSON: %w", err)
+	}
+	return &list, nil
+}
