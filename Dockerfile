@@ -18,7 +18,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
 
-# Create cache directory for runtime (with placeholder for COPY)
+# Create .cache and data directories for runtime (with placeholder for COPY)
 RUN mkdir -p /app/.cache /app/data && touch /app/.cache/.keep /app/data/.keep
 
 # Runtime stage
@@ -29,7 +29,7 @@ COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /gomodel /gomodel
 COPY --from=builder /app/config/*.yaml /app/config/
 
-# Create writable cache directory for SQLite storage (nonroot user UID=65532)
+# Create writable .cache and data directories for nonroot user (UID=65532)
 COPY --from=builder --chown=65532:65532 /app/.cache /app/.cache
 COPY --from=builder --chown=65532:65532 /app/data /app/data
 
