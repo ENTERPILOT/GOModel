@@ -728,8 +728,14 @@ func TestDefaultConfig(t *testing.T) {
 	if config.Retry.JitterFactor != 0.1 {
 		t.Errorf("expected JitterFactor 0.1, got %v", config.Retry.JitterFactor)
 	}
-	if config.CircuitBreaker.FailureThreshold == 0 {
-		t.Error("expected CircuitBreaker config to be set")
+	if config.CircuitBreaker.FailureThreshold != 5 {
+		t.Errorf("expected CircuitBreaker.FailureThreshold=5, got %d", config.CircuitBreaker.FailureThreshold)
+	}
+	if config.CircuitBreaker.SuccessThreshold != 2 {
+		t.Errorf("expected CircuitBreaker.SuccessThreshold=2, got %d", config.CircuitBreaker.SuccessThreshold)
+	}
+	if config.CircuitBreaker.Timeout != 30*time.Second {
+		t.Errorf("expected CircuitBreaker.Timeout=30s, got %v", config.CircuitBreaker.Timeout)
 	}
 }
 
