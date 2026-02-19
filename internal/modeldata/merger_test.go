@@ -1,6 +1,7 @@
 package modeldata
 
 import (
+	"math"
 	"testing"
 
 	"gomodel/internal/core"
@@ -351,7 +352,10 @@ func TestCalculateCost(t *testing.T) {
 	}
 }
 
-// calculateCostHelper mirrors the CalculateCost logic for testing in this package
+// calculateCostHelper intentionally mirrors usage.CalculateCost for testing within
+// this package. It is duplicated here (rather than imported) to avoid import cycles
+// between modeldata and usage. The canonical implementation lives in
+// usage.CalculateCost — keep both in sync when changing cost calculation logic.
 func calculateCostHelper(inputTokens, outputTokens int, pricing *core.ModelPricing) (input, output, total *float64) {
 	if pricing == nil {
 		return nil, nil, nil
@@ -384,7 +388,8 @@ func assertPtrFloat(t *testing.T, name string, got, want *float64) {
 		t.Errorf("%s: got %f, want nil", name, *got)
 		return
 	}
-	if *got != *want {
+	const eps = 1e-9
+	if math.Abs(*got-*want) > eps {
 		t.Errorf("%s: got %f, want %f", name, *got, *want)
 	}
 }

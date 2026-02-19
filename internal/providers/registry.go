@@ -434,18 +434,23 @@ func (r *ModelRegistry) SetModelList(list *modeldata.ModelList, raw json.RawMess
 
 // EnrichModels re-applies model list metadata to all currently registered models.
 // Call this after SetModelList to update existing models with the new metadata.
+// Holds the write lock for the entire operation to prevent races with concurrent
+// readers (e.g. ListModels) that may read Model.Metadata.
 func (r *ModelRegistry) EnrichModels() {
 	r.mu.Lock()
-	list := r.modelList
-	models := r.models
-	r.mu.Unlock()
+	defer r.mu.Unlock()
 
-	if list == nil || len(models) == 0 {
+	if r.modelList == nil || len(r.models) == 0 {
 		return
 	}
 
-	accessor := &registryAccessor{models: models, providerTypes: r.snapshotProviderTypes()}
-	modeldata.Enrich(accessor, list)
+	providerTypes := make(map[core.Provider]string, len(r.providerTypes))
+	for k, v := range r.providerTypes {
+		providerTypes[k] = v
+	}
+
+	accessor := &registryAccessor{models: r.models, providerTypes: providerTypes}
+	modeldata.Enrich(accessor, r.modelList)
 }
 
 // GetModelMetadata returns the metadata for a model, or nil if not found or not enriched.

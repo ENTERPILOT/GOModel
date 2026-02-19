@@ -35,9 +35,14 @@ func Fetch(ctx context.Context, url string, timeout time.Duration) (*ModelList, 
 		return nil, nil, fmt.Errorf("unexpected status %d from %s", resp.StatusCode, url)
 	}
 
-	raw, err := io.ReadAll(resp.Body)
+	const maxBodySize = 10 * 1024 * 1024 // 10 MB
+	limited := io.LimitReader(resp.Body, maxBodySize+1)
+	raw, err := io.ReadAll(limited)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading response body: %w", err)
+	}
+	if len(raw) > maxBodySize {
+		return nil, nil, fmt.Errorf("response body too large (exceeds %d bytes)", maxBodySize)
 	}
 
 	list, err := Parse(raw)

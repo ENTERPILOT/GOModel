@@ -361,6 +361,7 @@ func buildDefaultConfig() *Config {
 				TTL: 86400,
 			},
 			ModelList: ModelListConfig{
+				URL:     "https://raw.githubusercontent.com/ENTERPILOT/ai-model-list/refs/heads/main/models.json",
 				Timeout: 30,
 			},
 		},
