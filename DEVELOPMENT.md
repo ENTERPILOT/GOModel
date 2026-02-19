@@ -19,7 +19,10 @@ make lint-fix      # Auto-fix issues
 
 ## Log output
 
-By default the server uses [tint](https://github.com/lmittmann/tint) to print colorized, human-readable logs to stderr — useful for local development. Colors are disabled automatically when stderr is not a TTY (e.g. when output is piped or redirected), detected via `isatty.IsTerminal`.
+Log format is chosen automatically based on the environment:
+
+- **TTY** (interactive terminal): colorized, human-readable text via [tint](https://github.com/lmittmann/tint)
+- **Non-TTY** (piped, redirected, Docker, CI): structured JSON
 
 ```text
 12:12PM INFO  starting gomodel version=dev commit=none
@@ -27,10 +30,17 @@ By default the server uses [tint](https://github.com/lmittmann/tint) to print co
 12:12PM INFO  starting server address=:8080
 ```
 
-JSON is the default output format. Set `LOG_FORMAT=text` to switch to tinted human-readable output for local development:
+Override the auto-detection with `LOG_FORMAT`:
+
+| Value | Effect |
+|---|---|
+| _(unset)_ | Auto-detect: text+colors on TTY, JSON otherwise |
+| `text` | Always text (no colors if not a TTY) |
+| `json` | Always JSON, even on a TTY |
 
 ```bash
-LOG_FORMAT=text make run
+LOG_FORMAT=text make run   # force text output
+LOG_FORMAT=json make run   # force JSON output
 ```
 
 ## Pre-commit

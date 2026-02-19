@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lmittmann/tint"
 	"gomodel/config"
 	"gomodel/internal/app"
 	"gomodel/internal/observability"
@@ -24,6 +23,9 @@ import (
 	"gomodel/internal/providers/openai"
 	"gomodel/internal/providers/xai"
 	"gomodel/internal/version"
+
+	"github.com/lmittmann/tint"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -35,21 +37,19 @@ func main() {
 		os.Exit(0)
 	}
 
-	fi, err := os.Stderr.Stat()
-	isTTYTerminal := err == nil && fi.Mode()&os.ModeCharDevice != 0
+	isTTYTerminal := term.IsTerminal(int(os.Stderr.Fd()))
 
 	logFormat := strings.ToLower(os.Getenv("LOG_FORMAT"))
-	useText := isTTYTerminal && logFormat != "json" || logFormat == "text"
 
-	var handler slog.Handler
-	if useText {
+	var handler slog.Handler = slog.NewJSONHandler(os.Stdout, nil)
+
+	if (isTTYTerminal && logFormat != "json") || logFormat == "text" {
 		handler = tint.NewHandler(os.Stderr, &tint.Options{
 			TimeFormat: time.Kitchen,
 			NoColor:    !isTTYTerminal,
 		})
-	} else {
-		handler = slog.NewJSONHandler(os.Stdout, nil)
 	}
+
 	slog.SetDefault(slog.New(handler))
 
 	slog.Info("starting gomodel",
