@@ -13,6 +13,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/app"
+	"gomodel/internal/logging"
 	"gomodel/internal/observability"
 	"gomodel/internal/providers"
 	"gomodel/internal/providers/anthropic"
@@ -33,8 +34,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+	var handler slog.Handler
+	if os.Getenv("LOG_FORMAT") == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	} else {
+		handler = logging.NewPrettyHandler(os.Stderr)
+	}
+	slog.SetDefault(slog.New(handler))
 
 	slog.Info("starting gomodel",
 		"version", version.Version,
