@@ -56,11 +56,17 @@ type Hooks struct {
 
 // Config holds configuration for the LLM client
 type Config struct {
-	ProviderName   string
-	BaseURL        string
-	Retry          config.RetryConfig
+	// ProviderName is the identifier used in logs and metrics (e.g., "openai", "anthropic").
+	ProviderName string
+	// BaseURL is the base URL for the provider's API (e.g., "https://api.openai.com/v1").
+	BaseURL string
+	// Retry specifies retry behaviour for failed requests, including backoff and jitter settings.
+	Retry config.RetryConfig
+	// CircuitBreaker configures the circuit breaker that prevents cascading failures by
+	// stopping requests to an unhealthy provider until it recovers.
 	CircuitBreaker config.CircuitBreakerConfig
-	Hooks          Hooks
+	// Hooks provides optional observability callbacks invoked on request start and end.
+	Hooks Hooks
 }
 
 // DefaultConfig returns default client configuration
