@@ -339,6 +339,11 @@ func TestApplyProviderEnvVars_PreservesYAMLResilience(t *testing.T) {
 }
 
 func TestApplyProviderEnvVars_SkipsWhenNoEnvVars(t *testing.T) {
+	// Ensure no ambient env vars interfere
+	for _, kp := range knownProviderEnvs {
+		t.Setenv(kp.apiKeyEnv, "")
+		t.Setenv(kp.baseURLEnv, "")
+	}
 	got := applyProviderEnvVars(map[string]config.RawProviderConfig{})
 	if len(got) != 0 {
 		t.Errorf("expected empty result when no env vars set, got %d entries", len(got))
