@@ -653,6 +653,9 @@ func TestConvertFromAnthropicResponse_WithThinkingBlocks(t *testing.T) {
 
 			result := convertFromAnthropicResponse(resp)
 
+			if len(result.Choices) == 0 {
+				t.Fatalf("expected at least 1 choice, got 0")
+			}
 			if result.Choices[0].Message.Content != tt.expectedText {
 				t.Errorf("expected %q, got %q", tt.expectedText, result.Choices[0].Message.Content)
 			}
