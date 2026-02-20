@@ -1365,6 +1365,9 @@ func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
 			if len(result.Output) != 1 {
 				t.Fatalf("len(Output) = %d, want 1", len(result.Output))
 			}
+			if len(result.Output[0].Content) == 0 {
+				t.Fatalf("len(Output[0].Content) = 0, want at least 1")
+			}
 			if result.Output[0].Content[0].Text != tt.expectedText {
 				t.Errorf("expected %q, got %q", tt.expectedText, result.Output[0].Content[0].Text)
 			}
@@ -1736,8 +1739,8 @@ func TestIsAdaptiveThinkingModel(t *testing.T) {
 		{"claude-opus-4-6-20260301", true},
 		{"claude-sonnet-4-6", true},
 		{"claude-sonnet-4-6-20260301", true},
-		{"claude-haiku-4-6", true},
-		{"claude-haiku-4-6-20260501", true},
+		{"claude-haiku-4-6", false},
+		{"claude-haiku-4-6-20260501", false},
 		{"claude-3-5-sonnet-20241022", false},
 		{"claude-opus-4-5-20251101", false},
 		{"claude-4-60", false},

@@ -108,7 +108,6 @@ type anthropicRequest struct {
 var adaptiveThinkingPrefixes = []string{
 	"claude-opus-4-6",
 	"claude-sonnet-4-6",
-	"claude-haiku-4-6",
 }
 
 func isAdaptiveThinkingModel(model string) bool {
@@ -182,9 +181,11 @@ type anthropicModelsResponse struct {
 	LastID  string               `json:"last_id"`
 }
 
-// applyReasoning configures thinking and effort on an anthropicRequest.
-// 4.6 models use adaptive thinking with output_config.effort.
-// Older models use manual thinking with budget_tokens.
+// normalizeEffort maps effort to gateway-supported values. Anthropic Opus 4.6
+// supports "max" for adaptive thinking, but the gateway's public type
+// core.Reasoning.Effort only exposes "low", "medium", and "high". "max" is
+// therefore intentionally rejected; any unsupported value is downgraded to
+// "low" and logged via slog.Warn.
 func normalizeEffort(effort string) string {
 	switch effort {
 	case "low", "medium", "high":
@@ -195,6 +196,9 @@ func normalizeEffort(effort string) string {
 	}
 }
 
+// applyReasoning configures thinking and effort on an anthropicRequest.
+// Opus 4.6 and Sonnet 4.6 use adaptive thinking with output_config.effort.
+// Older models and Haiku 4.6 use manual thinking with budget_tokens.
 func applyReasoning(req *anthropicRequest, model, effort string) {
 	if isAdaptiveThinkingModel(model) {
 		req.Thinking = &anthropicThinking{Type: "adaptive"}
