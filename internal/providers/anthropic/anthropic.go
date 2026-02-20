@@ -610,20 +610,12 @@ func extractContentFromResponsesInput(content interface{}) string {
 // Taking the last text block ensures we get the actual answer, not the empty preamble.
 func extractTextContent(blocks []anthropicContent) string {
 	last := ""
-	found := false
 	for _, b := range blocks {
 		if b.Type == "text" {
 			last = b.Text
-			found = true
 		}
 	}
-	if found {
-		return last
-	}
-	if len(blocks) > 0 {
-		return blocks[0].Text
-	}
-	return ""
+	return last
 }
 
 // convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse
