@@ -1499,6 +1499,16 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 			expectedMaxTokens: 4096,
 			expectNilTemp:     true,
 		},
+		{
+			name:              "4.6 model - invalid effort normalizes to low",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "extreme"},
+			maxTokens:         intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "low",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -1642,6 +1652,16 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 			setTemperature:    true,
 			expectedThinkType: "adaptive",
 			expectedEffort:    "medium",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - invalid effort normalizes to low",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "extreme"},
+			maxOutputTokens:   intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "low",
 			expectedMaxTokens: 4096,
 			expectNilTemp:     true,
 		},

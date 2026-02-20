@@ -185,10 +185,20 @@ type anthropicModelsResponse struct {
 // applyReasoning configures thinking and effort on an anthropicRequest.
 // 4.6 models use adaptive thinking with output_config.effort.
 // Older models use manual thinking with budget_tokens.
+func normalizeEffort(effort string) string {
+	switch effort {
+	case "low", "medium", "high":
+		return effort
+	default:
+		slog.Warn("invalid reasoning effort, defaulting to 'low'", "effort", effort)
+		return "low"
+	}
+}
+
 func applyReasoning(req *anthropicRequest, model, effort string) {
 	if isAdaptiveThinkingModel(model) {
 		req.Thinking = &anthropicThinking{Type: "adaptive"}
-		req.OutputConfig = &anthropicOutputConfig{Effort: effort}
+		req.OutputConfig = &anthropicOutputConfig{Effort: normalizeEffort(effort)}
 	} else {
 		budget := reasoningEffortToBudgetTokens(effort)
 		req.Thinking = &anthropicThinking{
@@ -213,15 +223,12 @@ func applyReasoning(req *anthropicRequest, model, effort string) {
 }
 
 func reasoningEffortToBudgetTokens(effort string) int {
-	switch effort {
-	case "low":
-		return 5000
+	switch normalizeEffort(effort) {
 	case "medium":
 		return 10000
 	case "high":
 		return 20000
 	default:
-		slog.Warn("inappropriate reasoning effort, defaulting to 'low'", "effort", effort)
 		return 5000
 	}
 }
