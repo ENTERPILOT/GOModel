@@ -1515,6 +1515,9 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 				if result.Thinking != nil {
 					t.Errorf("Thinking should be nil but got %+v", result.Thinking)
 				}
+				if result.OutputConfig != nil {
+					t.Errorf("OutputConfig should be nil but got %+v", result.OutputConfig)
+				}
 			} else {
 				if result.Thinking == nil {
 					t.Fatal("Thinking should not be nil")
@@ -1554,10 +1557,12 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 		model             string
 		reasoning         *core.Reasoning
 		maxOutputTokens   *int
+		setTemperature    bool
 		expectedThinkType string
 		expectedBudget    int
 		expectedEffort    string
 		expectedMaxTokens int
+		expectNilTemp     bool
 	}{
 		{
 			name:              "no reasoning",
@@ -1581,6 +1586,7 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 			expectedThinkType: "enabled",
 			expectedBudget:    5000,
 			expectedMaxTokens: 6024,
+			expectNilTemp:     true,
 		},
 		{
 			name:              "legacy model - high effort with sufficient tokens",
@@ -1590,6 +1596,18 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 			expectedThinkType: "enabled",
 			expectedBudget:    20000,
 			expectedMaxTokens: 25000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - removes temperature",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxOutputTokens:   intPtr(15000),
+			setTemperature:    true,
+			expectedThinkType: "enabled",
+			expectedBudget:    10000,
+			expectedMaxTokens: 15000,
+			expectNilTemp:     true,
 		},
 		{
 			name:              "4.6 model - adaptive thinking",
@@ -1599,6 +1617,7 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 			expectedThinkType: "adaptive",
 			expectedEffort:    "high",
 			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
 		},
 		{
 			name:              "4.6 model - does not bump max_tokens",
@@ -1608,6 +1627,18 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 			expectedThinkType: "adaptive",
 			expectedEffort:    "high",
 			expectedMaxTokens: 1000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - removes temperature",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxOutputTokens:   intPtr(4096),
+			setTemperature:    true,
+			expectedThinkType: "adaptive",
+			expectedEffort:    "medium",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
 		},
 	}
 
@@ -1619,12 +1650,19 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 				MaxOutputTokens: tt.maxOutputTokens,
 				Reasoning:       tt.reasoning,
 			}
+			if tt.setTemperature {
+				temp := 0.7
+				req.Temperature = &temp
+			}
 
 			result := convertResponsesRequestToAnthropic(req)
 
 			if tt.expectedThinkType == "" {
 				if result.Thinking != nil {
 					t.Errorf("Thinking should be nil but got %+v", result.Thinking)
+				}
+				if result.OutputConfig != nil {
+					t.Errorf("OutputConfig should be nil but got %+v", result.OutputConfig)
 				}
 			} else {
 				if result.Thinking == nil {
@@ -1650,6 +1688,10 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 
 			if result.MaxTokens != tt.expectedMaxTokens {
 				t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
+			}
+
+			if tt.expectNilTemp && result.Temperature != nil {
+				t.Errorf("Temperature should be nil but is %v", *result.Temperature)
 			}
 		})
 	}
