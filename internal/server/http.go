@@ -150,6 +150,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
 		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
 		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
+		adminAPI.GET("/models/categories", cfg.AdminHandler.ListCategories)
 	}
 
 	// Admin dashboard UI routes (behind ADMIN_UI_ENABLED flag)

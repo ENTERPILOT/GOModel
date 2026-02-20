@@ -541,6 +541,161 @@ func TestListModels_EmptyRegistry(t *testing.T) {
 	}
 }
 
+// --- ListModels with category filter tests ---
+
+func TestListModels_WithCategoryFilter(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	mock := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID: "gpt-4o", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Mode:     "chat",
+						Category: core.CategoryTextGeneration,
+					},
+				},
+				{
+					ID: "text-embedding-3-small", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Mode:     "embedding",
+						Category: core.CategoryEmbedding,
+					},
+				},
+				{
+					ID: "dall-e-3", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Mode:     "image_generation",
+						Category: core.CategoryImage,
+					},
+				},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+
+	t.Run("FilterTextGeneration", func(t *testing.T) {
+		c, rec := newHandlerContext("/admin/api/v1/models?category=text_generation")
+		if err := h.ListModels(c); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+		var models []providers.ModelWithProvider
+		if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if len(models) != 1 {
+			t.Fatalf("expected 1 model, got %d", len(models))
+		}
+		if models[0].Model.ID != "gpt-4o" {
+			t.Errorf("expected gpt-4o, got %s", models[0].Model.ID)
+		}
+	})
+
+	t.Run("FilterAll", func(t *testing.T) {
+		c, rec := newHandlerContext("/admin/api/v1/models?category=all")
+		if err := h.ListModels(c); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var models []providers.ModelWithProvider
+		if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if len(models) != 3 {
+			t.Errorf("expected 3 models for 'all', got %d", len(models))
+		}
+	})
+
+	t.Run("NoFilter", func(t *testing.T) {
+		c, rec := newHandlerContext("/admin/api/v1/models")
+		if err := h.ListModels(c); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var models []providers.ModelWithProvider
+		if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if len(models) != 3 {
+			t.Errorf("expected 3 models without filter, got %d", len(models))
+		}
+	})
+}
+
+// --- ListCategories handler tests ---
+
+func TestListCategories_NilRegistry(t *testing.T) {
+	h := NewHandler(nil, nil)
+	c, rec := newHandlerContext("/admin/api/v1/models/categories")
+
+	if err := h.ListCategories(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "[]\n" {
+		t.Errorf("expected empty JSON array, got: %q", rec.Body.String())
+	}
+}
+
+func TestListCategories_WithModels(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	mock := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID: "gpt-4o", Object: "model",
+					Metadata: &core.ModelMetadata{Category: core.CategoryTextGeneration},
+				},
+				{
+					ID: "dall-e-3", Object: "model",
+					Metadata: &core.ModelMetadata{Category: core.CategoryImage},
+				},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+	c, rec := newHandlerContext("/admin/api/v1/models/categories")
+
+	if err := h.ListCategories(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var cats []providers.CategoryCount
+	if err := json.Unmarshal(rec.Body.Bytes(), &cats); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(cats) != 7 {
+		t.Fatalf("expected 7 categories, got %d", len(cats))
+	}
+
+	// Find "all" count
+	for _, cat := range cats {
+		if cat.Category == core.CategoryAll {
+			if cat.Count != 2 {
+				t.Errorf("All count = %d, want 2", cat.Count)
+			}
+		}
+	}
+}
+
 // --- handleError tests ---
 
 func TestHandleError_GatewayErrors(t *testing.T) {

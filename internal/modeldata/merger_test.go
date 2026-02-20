@@ -223,6 +223,100 @@ func TestConvertPricing_WithCachedInput(t *testing.T) {
 	}
 }
 
+func TestConvertPricing_AllFields(t *testing.T) {
+	p := convertPricing(&PricingEntry{
+		Currency:               "USD",
+		InputPerMtok:           ptr(2.50),
+		OutputPerMtok:          ptr(10.00),
+		CachedInputPerMtok:     ptr(1.25),
+		ReasoningOutputPerMtok: ptr(60.00),
+		PerImage:               ptr(0.04),
+		PerSecondInput:         ptr(0.006),
+		PerSecondOutput:        ptr(0.012),
+		PerCharacterInput:      ptr(0.000015),
+		PerRequest:             ptr(0.001),
+		PerPage:                ptr(0.005),
+	})
+	if p == nil {
+		t.Fatal("expected non-nil pricing")
+	}
+
+	checks := []struct {
+		name string
+		got  *float64
+		want float64
+	}{
+		{"InputPerMtok", p.InputPerMtok, 2.50},
+		{"OutputPerMtok", p.OutputPerMtok, 10.00},
+		{"CachedInputPerMtok", p.CachedInputPerMtok, 1.25},
+		{"ReasoningOutputPerMtok", p.ReasoningOutputPerMtok, 60.00},
+		{"PerImage", p.PerImage, 0.04},
+		{"PerSecondInput", p.PerSecondInput, 0.006},
+		{"PerSecondOutput", p.PerSecondOutput, 0.012},
+		{"PerCharacterInput", p.PerCharacterInput, 0.000015},
+		{"PerRequest", p.PerRequest, 0.001},
+		{"PerPage", p.PerPage, 0.005},
+	}
+
+	for _, c := range checks {
+		if c.got == nil {
+			t.Errorf("%s: got nil, want %f", c.name, c.want)
+		} else if math.Abs(*c.got-c.want) > 1e-9 {
+			t.Errorf("%s: got %f, want %f", c.name, *c.got, c.want)
+		}
+	}
+
+	if p.Currency != "USD" {
+		t.Errorf("Currency = %s, want USD", p.Currency)
+	}
+}
+
+func TestResolve_SetsCategoryFromMode(t *testing.T) {
+	list := &ModelList{
+		Models: map[string]ModelEntry{
+			"gpt-4o": {
+				DisplayName: "GPT-4o",
+				Mode:        "chat",
+			},
+			"dall-e-3": {
+				DisplayName: "DALL-E 3",
+				Mode:        "image_generation",
+			},
+			"whisper-1": {
+				DisplayName: "Whisper",
+				Mode:        "audio_transcription",
+			},
+			"text-moderation": {
+				DisplayName: "Moderation",
+				Mode:        "moderation",
+			},
+		},
+		ProviderModels: map[string]ProviderModelEntry{},
+	}
+
+	tests := []struct {
+		modelID  string
+		wantCat  core.ModelCategory
+	}{
+		{"gpt-4o", core.CategoryTextGeneration},
+		{"dall-e-3", core.CategoryImage},
+		{"whisper-1", core.CategoryAudio},
+		{"text-moderation", core.CategoryUtility},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.modelID, func(t *testing.T) {
+			meta := Resolve(list, "openai", tt.modelID)
+			if meta == nil {
+				t.Fatal("expected non-nil metadata")
+			}
+			if meta.Category != tt.wantCat {
+				t.Errorf("Category = %q, want %q", meta.Category, tt.wantCat)
+			}
+		})
+	}
+}
+
 // Verify Resolve handles the three-layer merge correctly:
 // base model fields + provider_model overrides
 func TestResolve_ThreeLayerMerge(t *testing.T) {

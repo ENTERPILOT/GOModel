@@ -88,6 +88,7 @@ type ModelMetadata struct {
 	Description     string          `json:"description,omitempty"`
 	Family          string          `json:"family,omitempty"`
 	Mode            string          `json:"mode,omitempty"`
+	Category        ModelCategory   `json:"category,omitempty"`
 	Tags            []string        `json:"tags,omitempty"`
 	ContextWindow   *int            `json:"context_window,omitempty"`
 	MaxOutputTokens *int            `json:"max_output_tokens,omitempty"`
@@ -95,12 +96,68 @@ type ModelMetadata struct {
 	Pricing         *ModelPricing   `json:"pricing,omitempty"`
 }
 
-// ModelPricing holds token pricing information for cost calculation.
+// ModelCategory represents a model's functional category for UI grouping.
+type ModelCategory string
+
+const (
+	CategoryAll            ModelCategory = "all"
+	CategoryTextGeneration ModelCategory = "text_generation"
+	CategoryEmbedding      ModelCategory = "embedding"
+	CategoryImage          ModelCategory = "image"
+	CategoryAudio          ModelCategory = "audio"
+	CategoryVideo          ModelCategory = "video"
+	CategoryUtility        ModelCategory = "utility"
+)
+
+// modeToCategory maps mode strings from the external registry to categories.
+var modeToCategory = map[string]ModelCategory{
+	"chat":                 CategoryTextGeneration,
+	"completion":           CategoryTextGeneration,
+	"responses":            CategoryTextGeneration,
+	"embedding":            CategoryEmbedding,
+	"rerank":               CategoryEmbedding,
+	"image_generation":     CategoryImage,
+	"image_edit":           CategoryImage,
+	"audio_transcription":  CategoryAudio,
+	"audio_speech":         CategoryAudio,
+	"video_generation":     CategoryVideo,
+	"moderation":           CategoryUtility,
+	"ocr":                  CategoryUtility,
+	"search":               CategoryUtility,
+}
+
+// CategoryForMode returns the ModelCategory for a given mode string.
+// Returns empty string if the mode is not recognized.
+func CategoryForMode(mode string) ModelCategory {
+	return modeToCategory[mode]
+}
+
+// AllCategories returns the ordered list of categories for UI rendering.
+func AllCategories() []ModelCategory {
+	return []ModelCategory{
+		CategoryAll,
+		CategoryTextGeneration,
+		CategoryEmbedding,
+		CategoryImage,
+		CategoryAudio,
+		CategoryVideo,
+		CategoryUtility,
+	}
+}
+
+// ModelPricing holds pricing information for cost calculation.
 type ModelPricing struct {
-	Currency           string   `json:"currency"`
-	InputPerMtok       *float64 `json:"input_per_mtok,omitempty"`
-	OutputPerMtok      *float64 `json:"output_per_mtok,omitempty"`
-	CachedInputPerMtok *float64 `json:"cached_input_per_mtok,omitempty"`
+	Currency               string   `json:"currency"`
+	InputPerMtok           *float64 `json:"input_per_mtok,omitempty"`
+	OutputPerMtok          *float64 `json:"output_per_mtok,omitempty"`
+	CachedInputPerMtok     *float64 `json:"cached_input_per_mtok,omitempty"`
+	ReasoningOutputPerMtok *float64 `json:"reasoning_output_per_mtok,omitempty"`
+	PerImage               *float64 `json:"per_image,omitempty"`
+	PerSecondInput         *float64 `json:"per_second_input,omitempty"`
+	PerSecondOutput        *float64 `json:"per_second_output,omitempty"`
+	PerCharacterInput      *float64 `json:"per_character_input,omitempty"`
+	PerRequest             *float64 `json:"per_request,omitempty"`
+	PerPage                *float64 `json:"per_page,omitempty"`
 }
 
 // ModelsResponse represents the response from the /v1/models endpoint

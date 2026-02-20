@@ -417,6 +417,86 @@ func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 	return result
 }
 
+// ListModelsWithProviderByCategory returns models filtered by category, sorted by model ID.
+// If category is CategoryAll, returns all models (same as ListModelsWithProvider).
+func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCategory) []ModelWithProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]ModelWithProvider, 0)
+	for _, info := range r.models {
+		if category != core.CategoryAll {
+			cat := core.ModelCategory("")
+			if info.Model.Metadata != nil {
+				cat = info.Model.Metadata.Category
+			}
+			if cat != category {
+				continue
+			}
+		}
+		result = append(result, ModelWithProvider{
+			Model:        info.Model,
+			ProviderType: r.providerTypes[info.Provider],
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Model.ID < result[j].Model.ID
+	})
+
+	return result
+}
+
+// CategoryCount holds a model category and the number of models in it.
+type CategoryCount struct {
+	Category    core.ModelCategory `json:"category"`
+	DisplayName string             `json:"display_name"`
+	Count       int                `json:"count"`
+}
+
+// categoryDisplayNames maps categories to human-readable display names.
+var categoryDisplayNames = map[core.ModelCategory]string{
+	core.CategoryAll:            "All",
+	core.CategoryTextGeneration: "Text Generation",
+	core.CategoryEmbedding:      "Embeddings",
+	core.CategoryImage:          "Image",
+	core.CategoryAudio:          "Audio",
+	core.CategoryVideo:          "Video",
+	core.CategoryUtility:        "Utility",
+}
+
+// GetCategoryCounts returns model counts per category, in display order.
+func (r *ModelRegistry) GetCategoryCounts() []CategoryCount {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	counts := make(map[core.ModelCategory]int)
+	for _, info := range r.models {
+		cat := core.ModelCategory("")
+		if info.Model.Metadata != nil {
+			cat = info.Model.Metadata.Category
+		}
+		if cat != "" {
+			counts[cat]++
+		}
+	}
+
+	allCategories := core.AllCategories()
+	result := make([]CategoryCount, 0, len(allCategories))
+	for _, cat := range allCategories {
+		count := counts[cat]
+		if cat == core.CategoryAll {
+			count = len(r.models)
+		}
+		result = append(result, CategoryCount{
+			Category:    cat,
+			DisplayName: categoryDisplayNames[cat],
+			Count:       count,
+		})
+	}
+	return result
+}
+
 // ProviderCount returns the number of registered providers
 func (r *ModelRegistry) ProviderCount() int {
 	r.mu.RLock()

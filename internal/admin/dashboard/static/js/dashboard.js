@@ -28,6 +28,8 @@ function dashboard() {
         summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, total_input_cost: null, total_output_cost: null, total_cost: null },
         daily: [],
         models: [],
+        categories: [],
+        activeCategory: 'all',
 
         // Filters
         modelFilter: '',
@@ -349,7 +351,7 @@ function dashboard() {
             this.loading = true;
             this.authError = false;
             this.needsAuth = false;
-            await Promise.all([this.fetchUsage(), this.fetchModels()]);
+            await Promise.all([this.fetchUsage(), this.fetchModels(), this.fetchCategories()]);
             this.loading = false;
         },
 
@@ -403,7 +405,11 @@ function dashboard() {
 
         async fetchModels() {
             try {
-                const res = await fetch('/admin/api/v1/models', { headers: this.headers() });
+                let url = '/admin/api/v1/models';
+                if (this.activeCategory && this.activeCategory !== 'all') {
+                    url += '?category=' + encodeURIComponent(this.activeCategory);
+                }
+                const res = await fetch(url, { headers: this.headers() });
                 if (!this.handleFetchResponse(res, 'models')) {
                     this.models = [];
                     return;
@@ -413,6 +419,26 @@ function dashboard() {
                 console.error('Failed to fetch models:', e);
                 this.models = [];
             }
+        },
+
+        async fetchCategories() {
+            try {
+                const res = await fetch('/admin/api/v1/models/categories', { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'categories')) {
+                    this.categories = [];
+                    return;
+                }
+                this.categories = await res.json();
+            } catch (e) {
+                console.error('Failed to fetch categories:', e);
+                this.categories = [];
+            }
+        },
+
+        selectCategory(cat) {
+            this.activeCategory = cat;
+            this.modelFilter = '';
+            this.fetchModels();
         },
 
         fillMissingDays(daily) {
@@ -534,7 +560,9 @@ function dashboard() {
             return this.models.filter(m =>
                 (m.model?.id ?? '').toLowerCase().includes(f) ||
                 (m.provider_type ?? '').toLowerCase().includes(f) ||
-                (m.model?.owned_by ?? '').toLowerCase().includes(f)
+                (m.model?.owned_by ?? '').toLowerCase().includes(f) ||
+                (m.model?.metadata?.mode ?? '').toLowerCase().includes(f) ||
+                (m.model?.metadata?.category ?? '').toLowerCase().includes(f)
             );
         },
 
@@ -551,6 +579,17 @@ function dashboard() {
         formatPrice(v) {
             if (v == null || v === undefined) return '\u2014';
             return '$' + v.toFixed(2);
+        },
+
+        formatPriceFine(v) {
+            if (v == null || v === undefined) return '\u2014';
+            if (v < 0.01) return '$' + v.toFixed(6);
+            return '$' + v.toFixed(4);
+        },
+
+        categoryCount(cat) {
+            const entry = this.categories.find(c => c.category === cat);
+            return entry ? entry.count : 0;
         }
     };
 }

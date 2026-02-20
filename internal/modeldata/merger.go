@@ -58,6 +58,7 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 			meta.Family = *model.Family
 		}
 		meta.Mode = model.Mode
+		meta.Category = core.CategoryForMode(model.Mode)
 		meta.Tags = model.Tags
 		meta.ContextWindow = model.ContextWindow
 		meta.MaxOutputTokens = model.MaxOutputTokens
@@ -82,20 +83,21 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 }
 
 // convertPricing maps a registry PricingEntry to the core ModelPricing type.
-// Currently maps 4 of PricingEntry's 11 fields (Currency, InputPerMtok,
-// OutputPerMtok, CachedInputPerMtok). usage.CalculateCost only uses
-// InputPerMtok and OutputPerMtok for cost estimation.
-// TODO: Extend core.ModelPricing before mapping the remaining PricingEntry
-// fields (ReasoningOutputPerMtok, PerImage, PerSecondInput, PerSecondOutput,
-// PerCharacterInput, PerRequest, PerPage).
 func convertPricing(p *PricingEntry) *core.ModelPricing {
 	if p == nil {
 		return nil
 	}
 	return &core.ModelPricing{
-		Currency:           p.Currency,
-		InputPerMtok:       p.InputPerMtok,
-		OutputPerMtok:      p.OutputPerMtok,
-		CachedInputPerMtok: p.CachedInputPerMtok,
+		Currency:               p.Currency,
+		InputPerMtok:           p.InputPerMtok,
+		OutputPerMtok:          p.OutputPerMtok,
+		CachedInputPerMtok:     p.CachedInputPerMtok,
+		ReasoningOutputPerMtok: p.ReasoningOutputPerMtok,
+		PerImage:               p.PerImage,
+		PerSecondInput:         p.PerSecondInput,
+		PerSecondOutput:        p.PerSecondOutput,
+		PerCharacterInput:      p.PerCharacterInput,
+		PerRequest:             p.PerRequest,
+		PerPage:                p.PerPage,
 	}
 }

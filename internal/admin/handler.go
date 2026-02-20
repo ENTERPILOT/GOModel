@@ -202,15 +202,31 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 }
 
 // ListModels handles GET /admin/api/v1/models
+// Supports optional ?category= query param for filtering by model category.
 func (h *Handler) ListModels(c echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
 	}
 
-	models := h.registry.ListModelsWithProvider()
+	var models []providers.ModelWithProvider
+	if cat := core.ModelCategory(c.QueryParam("category")); cat != "" && cat != core.CategoryAll {
+		models = h.registry.ListModelsWithProviderByCategory(cat)
+	} else {
+		models = h.registry.ListModelsWithProvider()
+	}
+
 	if models == nil {
 		models = []providers.ModelWithProvider{}
 	}
 
 	return c.JSON(http.StatusOK, models)
+}
+
+// ListCategories handles GET /admin/api/v1/models/categories
+func (h *Handler) ListCategories(c echo.Context) error {
+	if h.registry == nil {
+		return c.JSON(http.StatusOK, []providers.CategoryCount{})
+	}
+
+	return c.JSON(http.StatusOK, h.registry.GetCategoryCounts())
 }
