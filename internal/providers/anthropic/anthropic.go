@@ -246,10 +246,7 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 
 // convertFromAnthropicResponse converts Anthropic response to core.ChatResponse
 func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
-	content := ""
-	if len(resp.Content) > 0 {
-		content = resp.Content[0].Text
-	}
+	content := extractTextContent(resp.Content)
 
 	finishReason := resp.StopReason
 	if finishReason == "" {
@@ -594,12 +591,23 @@ func extractContentFromResponsesInput(content interface{}) string {
 	return ""
 }
 
+// extractTextContent returns the text from the first "text" content block,
+// skipping "thinking" blocks that appear when extended thinking is enabled.
+func extractTextContent(blocks []anthropicContent) string {
+	for _, b := range blocks {
+		if b.Type == "text" {
+			return b.Text
+		}
+	}
+	if len(blocks) > 0 {
+		return blocks[0].Text
+	}
+	return ""
+}
+
 // convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse
 func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) *core.ResponsesResponse {
-	content := ""
-	if len(resp.Content) > 0 {
-		content = resp.Content[0].Text
-	}
+	content := extractTextContent(resp.Content)
 
 	return &core.ResponsesResponse{
 		ID:        resp.ID,

@@ -614,6 +614,88 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	}
 }
 
+func TestConvertFromAnthropicResponse_WithThinkingBlocks(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_456",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-opus-4-6",
+		Content: []anthropicContent{
+			{Type: "thinking", Text: "Let me think about this..."},
+			{Type: "text", Text: "The capital of France is Paris."},
+		},
+		StopReason: "end_turn",
+		Usage: anthropicUsage{
+			InputTokens:  15,
+			OutputTokens: 40,
+		},
+	}
+
+	result := convertFromAnthropicResponse(resp)
+
+	if result.Choices[0].Message.Content != "The capital of France is Paris." {
+		t.Errorf("expected text content, got %q", result.Choices[0].Message.Content)
+	}
+	if result.Usage.CompletionTokens != 40 {
+		t.Errorf("CompletionTokens = %d, want 40", result.Usage.CompletionTokens)
+	}
+}
+
+func TestExtractTextContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		blocks   []anthropicContent
+		expected string
+	}{
+		{
+			name:     "single text block",
+			blocks:   []anthropicContent{{Type: "text", Text: "hello"}},
+			expected: "hello",
+		},
+		{
+			name: "thinking then text",
+			blocks: []anthropicContent{
+				{Type: "thinking", Text: "reasoning..."},
+				{Type: "text", Text: "answer"},
+			},
+			expected: "answer",
+		},
+		{
+			name: "multiple thinking blocks then text",
+			blocks: []anthropicContent{
+				{Type: "thinking", Text: "step 1"},
+				{Type: "thinking", Text: "step 2"},
+				{Type: "text", Text: "final answer"},
+			},
+			expected: "final answer",
+		},
+		{
+			name:     "empty blocks",
+			blocks:   []anthropicContent{},
+			expected: "",
+		},
+		{
+			name:     "nil blocks",
+			blocks:   nil,
+			expected: "",
+		},
+		{
+			name:     "no type field - falls back to first block",
+			blocks:   []anthropicContent{{Text: "legacy response"}},
+			expected: "legacy response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractTextContent(tt.blocks)
+			if result != tt.expected {
+				t.Errorf("extractTextContent() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestResponses(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -1188,6 +1270,36 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 30 {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
+	}
+}
+
+func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_789",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-opus-4-6",
+		Content: []anthropicContent{
+			{Type: "thinking", Text: "The user is asking about geography..."},
+			{Type: "text", Text: "The capital of France is Paris."},
+		},
+		StopReason: "end_turn",
+		Usage: anthropicUsage{
+			InputTokens:  20,
+			OutputTokens: 50,
+		},
+	}
+
+	result := convertAnthropicResponseToResponses(resp, "claude-opus-4-6")
+
+	if len(result.Output) != 1 {
+		t.Fatalf("len(Output) = %d, want 1", len(result.Output))
+	}
+	if result.Output[0].Content[0].Text != "The capital of France is Paris." {
+		t.Errorf("expected text content, got %q", result.Output[0].Content[0].Text)
+	}
+	if result.Usage.OutputTokens != 50 {
+		t.Errorf("OutputTokens = %d, want 50", result.Usage.OutputTokens)
 	}
 }
 
