@@ -720,9 +720,14 @@ func TestExtractTextContent(t *testing.T) {
 			expected: "",
 		},
 		{
-			name:     "no type field - falls back to first block",
+			name:     "only thinking blocks - returns empty",
+			blocks:   []anthropicContent{{Type: "thinking", Text: "some reasoning"}},
+			expected: "",
+		},
+		{
+			name:     "no type field - returns empty",
 			blocks:   []anthropicContent{{Text: "legacy response"}},
-			expected: "legacy response",
+			expected: "",
 		},
 	}
 
