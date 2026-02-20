@@ -615,29 +615,51 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 }
 
 func TestConvertFromAnthropicResponse_WithThinkingBlocks(t *testing.T) {
-	resp := &anthropicResponse{
-		ID:    "msg_456",
-		Type:  "message",
-		Role:  "assistant",
-		Model: "claude-opus-4-6",
-		Content: []anthropicContent{
-			{Type: "thinking", Text: "Let me think about this..."},
-			{Type: "text", Text: "The capital of France is Paris."},
+	tests := []struct {
+		name         string
+		content      []anthropicContent
+		expectedText string
+	}{
+		{
+			name: "thinking then text",
+			content: []anthropicContent{
+				{Type: "thinking", Text: "Let me think about this..."},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
 		},
-		StopReason: "end_turn",
-		Usage: anthropicUsage{
-			InputTokens:  15,
-			OutputTokens: 40,
+		{
+			name: "preamble text then thinking then answer",
+			content: []anthropicContent{
+				{Type: "text", Text: "\n\n"},
+				{Type: "thinking", Text: ""},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
 		},
 	}
 
-	result := convertFromAnthropicResponse(resp)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &anthropicResponse{
+				ID:         "msg_456",
+				Type:       "message",
+				Role:       "assistant",
+				Model:      "claude-opus-4-6",
+				Content:    tt.content,
+				StopReason: "end_turn",
+				Usage:      anthropicUsage{InputTokens: 15, OutputTokens: 40},
+			}
 
-	if result.Choices[0].Message.Content != "The capital of France is Paris." {
-		t.Errorf("expected text content, got %q", result.Choices[0].Message.Content)
-	}
-	if result.Usage.CompletionTokens != 40 {
-		t.Errorf("CompletionTokens = %d, want 40", result.Usage.CompletionTokens)
+			result := convertFromAnthropicResponse(resp)
+
+			if result.Choices[0].Message.Content != tt.expectedText {
+				t.Errorf("expected %q, got %q", tt.expectedText, result.Choices[0].Message.Content)
+			}
+			if result.Usage.CompletionTokens != 40 {
+				t.Errorf("CompletionTokens = %d, want 40", result.Usage.CompletionTokens)
+			}
+		})
 	}
 }
 
@@ -668,6 +690,24 @@ func TestExtractTextContent(t *testing.T) {
 				{Type: "text", Text: "final answer"},
 			},
 			expected: "final answer",
+		},
+		{
+			name: "preamble text then thinking then answer text",
+			blocks: []anthropicContent{
+				{Type: "text", Text: "\n\n"},
+				{Type: "thinking", Text: ""},
+				{Type: "text", Text: "The capital of France is **Paris**."},
+			},
+			expected: "The capital of France is **Paris**.",
+		},
+		{
+			name: "preamble text then thinking then answer - picks last text",
+			blocks: []anthropicContent{
+				{Type: "text", Text: "preamble"},
+				{Type: "thinking", Text: "let me think..."},
+				{Type: "text", Text: "real answer"},
+			},
+			expected: "real answer",
 		},
 		{
 			name:     "empty blocks",
@@ -1274,32 +1314,54 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 }
 
 func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
-	resp := &anthropicResponse{
-		ID:    "msg_789",
-		Type:  "message",
-		Role:  "assistant",
-		Model: "claude-opus-4-6",
-		Content: []anthropicContent{
-			{Type: "thinking", Text: "The user is asking about geography..."},
-			{Type: "text", Text: "The capital of France is Paris."},
+	tests := []struct {
+		name         string
+		content      []anthropicContent
+		expectedText string
+	}{
+		{
+			name: "thinking then text",
+			content: []anthropicContent{
+				{Type: "thinking", Text: "The user is asking about geography..."},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
 		},
-		StopReason: "end_turn",
-		Usage: anthropicUsage{
-			InputTokens:  20,
-			OutputTokens: 50,
+		{
+			name: "preamble text then thinking then answer",
+			content: []anthropicContent{
+				{Type: "text", Text: "\n\n"},
+				{Type: "thinking", Text: ""},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
 		},
 	}
 
-	result := convertAnthropicResponseToResponses(resp, "claude-opus-4-6")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &anthropicResponse{
+				ID:         "msg_789",
+				Type:       "message",
+				Role:       "assistant",
+				Model:      "claude-opus-4-6",
+				Content:    tt.content,
+				StopReason: "end_turn",
+				Usage:      anthropicUsage{InputTokens: 20, OutputTokens: 50},
+			}
 
-	if len(result.Output) != 1 {
-		t.Fatalf("len(Output) = %d, want 1", len(result.Output))
-	}
-	if result.Output[0].Content[0].Text != "The capital of France is Paris." {
-		t.Errorf("expected text content, got %q", result.Output[0].Content[0].Text)
-	}
-	if result.Usage.OutputTokens != 50 {
-		t.Errorf("OutputTokens = %d, want 50", result.Usage.OutputTokens)
+			result := convertAnthropicResponseToResponses(resp, "claude-opus-4-6")
+
+			if len(result.Output) != 1 {
+				t.Fatalf("len(Output) = %d, want 1", len(result.Output))
+			}
+			if result.Output[0].Content[0].Text != tt.expectedText {
+				t.Errorf("expected %q, got %q", tt.expectedText, result.Output[0].Content[0].Text)
+			}
+			if result.Usage.OutputTokens != 50 {
+				t.Errorf("OutputTokens = %d, want 50", result.Usage.OutputTokens)
+			}
+		})
 	}
 }
 

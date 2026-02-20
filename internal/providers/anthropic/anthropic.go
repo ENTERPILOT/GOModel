@@ -591,13 +591,20 @@ func extractContentFromResponsesInput(content interface{}) string {
 	return ""
 }
 
-// extractTextContent returns the text from the first "text" content block,
-// skipping "thinking" blocks that appear when extended thinking is enabled.
+// extractTextContent returns the text from the last "text" content block.
+// When extended thinking is enabled, Anthropic returns: [text("\n\n"), thinking(...), text(answer)].
+// Taking the last text block ensures we get the actual answer, not the empty preamble.
 func extractTextContent(blocks []anthropicContent) string {
+	last := ""
+	found := false
 	for _, b := range blocks {
 		if b.Type == "text" {
-			return b.Text
+			last = b.Text
+			found = true
 		}
+	}
+	if found {
+		return last
 	}
 	if len(blocks) > 0 {
 		return blocks[0].Text
@@ -847,3 +854,4 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 
 	return ""
 }
+
