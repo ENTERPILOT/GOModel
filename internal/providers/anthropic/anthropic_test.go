@@ -1655,7 +1655,35 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 	}
 }
 
-// Helper function to create int pointer
+func TestIsAdaptiveThinkingModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"claude-opus-4-6", true},
+		{"claude-opus-4-6-20260301", true},
+		{"claude-sonnet-4-6", true},
+		{"claude-sonnet-4-6-20260301", true},
+		{"claude-haiku-4-6", true},
+		{"claude-haiku-4-6-20260501", true},
+		{"claude-3-5-sonnet-20241022", false},
+		{"claude-opus-4-5-20251101", false},
+		{"claude-4-60", false},
+		{"claude-opus-4-6x", false},
+		{"claude-opus-4-65", false},
+		{"something-claude-opus-4-6", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := isAdaptiveThinkingModel(tt.model); got != tt.expected {
+				t.Errorf("isAdaptiveThinkingModel(%q) = %v, want %v", tt.model, got, tt.expected)
+			}
+		})
+	}
+}
+
 func intPtr(i int) *int {
-return &i
+	return &i
 }

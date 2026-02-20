@@ -105,8 +105,19 @@ type anthropicRequest struct {
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
 }
 
+var adaptiveThinkingPrefixes = []string{
+	"claude-opus-4-6",
+	"claude-sonnet-4-6",
+	"claude-haiku-4-6",
+}
+
 func isAdaptiveThinkingModel(model string) bool {
-	return strings.Contains(model, "4-6") || strings.Contains(model, "4.6")
+	for _, prefix := range adaptiveThinkingPrefixes {
+		if model == prefix || strings.HasPrefix(model, prefix+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 // anthropicMessage represents a message in Anthropic format
