@@ -204,8 +204,11 @@ func applyReasoning(req *anthropicRequest, model, effort string) {
 	}
 
 	if req.Temperature != nil {
-		slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
-		req.Temperature = nil
+		if *req.Temperature != 1.0 {
+			slog.Warn("temperature overridden to nil; extended thinking requires temperature=1",
+				"original_temperature", *req.Temperature)
+			req.Temperature = nil
+		}
 	}
 }
 
