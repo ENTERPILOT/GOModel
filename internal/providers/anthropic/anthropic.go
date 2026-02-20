@@ -90,7 +90,7 @@ type anthropicThinking struct {
 
 // anthropicOutputConfig controls effort level for adaptive thinking on 4.6 models.
 type anthropicOutputConfig struct {
-	Effort string `json:"effort"`
+	Effort string `json:"effort,omitempty"`
 }
 
 // anthropicRequest represents the Anthropic API request format
