@@ -1388,11 +1388,13 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 		reasoning           *core.Reasoning
 		maxTokens           *int
 		setTemperature      bool
+		setTemperatureOne   bool
 		expectedThinkType   string
 		expectedBudget      int
 		expectedEffort      string
 		expectedMaxTokens   int
 		expectNilTemp       bool
+		expectedTemp        *float64
 	}{
 		{
 			name:              "reasoning nil - no thinking",
@@ -1470,6 +1472,18 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 			expectNilTemp:     true,
 		},
 		{
+			name:                "legacy model - preserves temperature=1.0 with reasoning",
+			model:               "claude-3-5-sonnet-20241022",
+			reasoning:           &core.Reasoning{Effort: "medium"},
+			maxTokens:           intPtr(15000),
+			setTemperatureOne:   true,
+			expectedThinkType:   "enabled",
+			expectedBudget:      10000,
+			expectedMaxTokens:   15000,
+			expectNilTemp:       false,
+			expectedTemp:        float64Ptr(1.0),
+		},
+		{
 			name:              "4.6 model - adaptive thinking with high effort",
 			model:             "claude-opus-4-6",
 			reasoning:         &core.Reasoning{Effort: "high"},
@@ -1530,7 +1544,10 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 				MaxTokens: tt.maxTokens,
 				Reasoning: tt.reasoning,
 			}
-			if tt.setTemperature {
+			if tt.setTemperatureOne {
+				temp := 1.0
+				req.Temperature = &temp
+			} else if tt.setTemperature {
 				temp := 0.7
 				req.Temperature = &temp
 			}
@@ -1572,6 +1589,13 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 
 			if tt.expectNilTemp && result.Temperature != nil {
 				t.Errorf("Temperature should be nil but is %v", *result.Temperature)
+			}
+			if tt.expectedTemp != nil {
+				if result.Temperature == nil {
+					t.Errorf("Temperature should be %v but is nil", *tt.expectedTemp)
+				} else if *result.Temperature != *tt.expectedTemp {
+					t.Errorf("Temperature = %v, want %v", *result.Temperature, *tt.expectedTemp)
+				}
 			}
 		})
 	}
@@ -1764,4 +1788,8 @@ func TestIsAdaptiveThinkingModel(t *testing.T) {
 
 func intPtr(i int) *int {
 	return &i
+}
+
+func float64Ptr(f float64) *float64 {
+	return &f
 }
