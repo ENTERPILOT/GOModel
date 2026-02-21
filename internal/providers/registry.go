@@ -426,11 +426,7 @@ func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCate
 	result := make([]ModelWithProvider, 0)
 	for _, info := range r.models {
 		if category != core.CategoryAll {
-			cat := core.ModelCategory("")
-			if info.Model.Metadata != nil {
-				cat = info.Model.Metadata.Category
-			}
-			if cat != category {
+			if info.Model.Metadata == nil || !hasCategory(info.Model.Metadata.Categories, category) {
 				continue
 			}
 		}
@@ -445,6 +441,16 @@ func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCate
 	})
 
 	return result
+}
+
+// hasCategory returns true if the category slice contains the target category.
+func hasCategory(cats []core.ModelCategory, target core.ModelCategory) bool {
+	for _, c := range cats {
+		if c == target {
+			return true
+		}
+	}
+	return false
 }
 
 // CategoryCount holds a model category and the number of models in it.
@@ -466,18 +472,17 @@ var categoryDisplayNames = map[core.ModelCategory]string{
 }
 
 // GetCategoryCounts returns model counts per category, in display order.
+// A model with multiple categories is counted in each.
 func (r *ModelRegistry) GetCategoryCounts() []CategoryCount {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
 	counts := make(map[core.ModelCategory]int)
 	for _, info := range r.models {
-		cat := core.ModelCategory("")
 		if info.Model.Metadata != nil {
-			cat = info.Model.Metadata.Category
-		}
-		if cat != "" {
-			counts[cat]++
+			for _, cat := range info.Model.Metadata.Categories {
+				counts[cat]++
+			}
 		}
 	}
 

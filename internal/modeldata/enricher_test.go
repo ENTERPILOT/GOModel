@@ -33,7 +33,7 @@ func TestEnrich_MatchedAndUnmatched(t *testing.T) {
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName:   "GPT-4o",
-				Mode:          "chat",
+				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
 				Pricing: &PricingEntry{
 					Currency:      "USD",
@@ -86,12 +86,12 @@ func TestEnrich_NilAccessor(t *testing.T) {
 	Enrich(nil, list) // should not panic
 }
 
-func TestEnrich_ReverseProviderModelIDLookup(t *testing.T) {
+func TestEnrich_ReverseCustomModelIDLookup(t *testing.T) {
 	list := &ModelList{
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName:   "GPT-4o",
-				Mode:          "chat",
+				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
 				Pricing: &PricingEntry{
 					Currency:      "USD",
@@ -102,9 +102,9 @@ func TestEnrich_ReverseProviderModelIDLookup(t *testing.T) {
 		},
 		ProviderModels: map[string]ProviderModelEntry{
 			"openai/gpt-4o": {
-				ModelRef:        "gpt-4o",
-				ProviderModelID: ptr("gpt-4o-2024-08-06"),
-				Enabled:         true,
+				ModelRef:      "gpt-4o",
+				CustomModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:       true,
 			},
 		},
 	}
@@ -134,7 +134,7 @@ func TestEnrich_ProviderModelOverride(t *testing.T) {
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName:   "GPT-4o",
-				Mode:          "chat",
+				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
 			},
 		},

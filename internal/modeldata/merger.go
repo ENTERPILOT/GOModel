@@ -57,8 +57,8 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 		if model.Family != nil {
 			meta.Family = *model.Family
 		}
-		meta.Mode = model.Mode
-		meta.Category = core.CategoryForMode(model.Mode)
+		meta.Modes = model.Modes
+		meta.Categories = core.CategoriesForModes(model.Modes)
 		meta.Tags = model.Tags
 		meta.ContextWindow = model.ContextWindow
 		meta.MaxOutputTokens = model.MaxOutputTokens
@@ -92,12 +92,34 @@ func convertPricing(p *PricingEntry) *core.ModelPricing {
 		InputPerMtok:           p.InputPerMtok,
 		OutputPerMtok:          p.OutputPerMtok,
 		CachedInputPerMtok:     p.CachedInputPerMtok,
+		CacheWritePerMtok:      p.CacheWritePerMtok,
 		ReasoningOutputPerMtok: p.ReasoningOutputPerMtok,
+		BatchInputPerMtok:      p.BatchInputPerMtok,
+		BatchOutputPerMtok:     p.BatchOutputPerMtok,
+		AudioInputPerMtok:      p.AudioInputPerMtok,
+		AudioOutputPerMtok:     p.AudioOutputPerMtok,
 		PerImage:               p.PerImage,
 		PerSecondInput:         p.PerSecondInput,
 		PerSecondOutput:        p.PerSecondOutput,
 		PerCharacterInput:      p.PerCharacterInput,
 		PerRequest:             p.PerRequest,
 		PerPage:                p.PerPage,
+		Tiers:                  convertPricingTiers(p.Tiers),
 	}
+}
+
+// convertPricingTiers maps registry PricingTier entries to core ModelPricingTier.
+func convertPricingTiers(tiers []PricingTier) []core.ModelPricingTier {
+	if len(tiers) == 0 {
+		return nil
+	}
+	result := make([]core.ModelPricingTier, len(tiers))
+	for i, t := range tiers {
+		result[i] = core.ModelPricingTier{
+			UpToMtok:      t.UpToMtok,
+			InputPerMtok:  t.InputPerMtok,
+			OutputPerMtok: t.OutputPerMtok,
+		}
+	}
+	return result
 }

@@ -34,7 +34,7 @@ func TestResolve_DirectModelMatch(t *testing.T) {
 				DisplayName:     "GPT-4o",
 				Description:     ptr("Flagship model"),
 				Family:          ptr("gpt-4o"),
-				Mode:            "chat",
+				Modes:           []string{"chat"},
 				Tags:            []string{"flagship", "multimodal"},
 				ContextWindow:   ptr(128000),
 				MaxOutputTokens: ptr(16384),
@@ -67,8 +67,8 @@ func TestResolve_DirectModelMatch(t *testing.T) {
 	if meta.Family != "gpt-4o" {
 		t.Errorf("Family = %s, want gpt-4o", meta.Family)
 	}
-	if meta.Mode != "chat" {
-		t.Errorf("Mode = %s, want chat", meta.Mode)
+	if len(meta.Modes) != 1 || meta.Modes[0] != "chat" {
+		t.Errorf("Modes = %v, want [chat]", meta.Modes)
 	}
 	if len(meta.Tags) != 2 {
 		t.Errorf("Tags len = %d, want 2", len(meta.Tags))
@@ -101,7 +101,7 @@ func TestResolve_ProviderModelOverride(t *testing.T) {
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName:     "GPT-4o",
-				Mode:            "chat",
+				Modes:           []string{"chat"},
 				ContextWindow:   ptr(128000),
 				MaxOutputTokens: ptr(16384),
 				Pricing: &PricingEntry{
@@ -186,7 +186,7 @@ func TestResolve_NilPricing(t *testing.T) {
 		Models: map[string]ModelEntry{
 			"text-moderation": {
 				DisplayName: "Text Moderation",
-				Mode:        "moderation",
+				Modes:       []string{"moderation"},
 			},
 		},
 		ProviderModels: map[string]ProviderModelEntry{},
@@ -229,7 +229,12 @@ func TestConvertPricing_AllFields(t *testing.T) {
 		InputPerMtok:           ptr(2.50),
 		OutputPerMtok:          ptr(10.00),
 		CachedInputPerMtok:     ptr(1.25),
+		CacheWritePerMtok:      ptr(3.75),
 		ReasoningOutputPerMtok: ptr(60.00),
+		BatchInputPerMtok:      ptr(1.25),
+		BatchOutputPerMtok:     ptr(5.00),
+		AudioInputPerMtok:      ptr(100.00),
+		AudioOutputPerMtok:     ptr(200.00),
 		PerImage:               ptr(0.04),
 		PerSecondInput:         ptr(0.006),
 		PerSecondOutput:        ptr(0.012),
@@ -249,7 +254,12 @@ func TestConvertPricing_AllFields(t *testing.T) {
 		{"InputPerMtok", p.InputPerMtok, 2.50},
 		{"OutputPerMtok", p.OutputPerMtok, 10.00},
 		{"CachedInputPerMtok", p.CachedInputPerMtok, 1.25},
+		{"CacheWritePerMtok", p.CacheWritePerMtok, 3.75},
 		{"ReasoningOutputPerMtok", p.ReasoningOutputPerMtok, 60.00},
+		{"BatchInputPerMtok", p.BatchInputPerMtok, 1.25},
+		{"BatchOutputPerMtok", p.BatchOutputPerMtok, 5.00},
+		{"AudioInputPerMtok", p.AudioInputPerMtok, 100.00},
+		{"AudioOutputPerMtok", p.AudioOutputPerMtok, 200.00},
 		{"PerImage", p.PerImage, 0.04},
 		{"PerSecondInput", p.PerSecondInput, 0.006},
 		{"PerSecondOutput", p.PerSecondOutput, 0.012},
@@ -271,24 +281,62 @@ func TestConvertPricing_AllFields(t *testing.T) {
 	}
 }
 
-func TestResolve_SetsCategoryFromMode(t *testing.T) {
+func TestConvertPricing_WithTiers(t *testing.T) {
+	p := convertPricing(&PricingEntry{
+		Currency:      "USD",
+		InputPerMtok:  ptr(2.50),
+		OutputPerMtok: ptr(10.00),
+		Tiers: []PricingTier{
+			{UpToMtok: ptr(1.0), InputPerMtok: ptr(2.50), OutputPerMtok: ptr(10.00)},
+			{UpToMtok: nil, InputPerMtok: ptr(1.25), OutputPerMtok: ptr(5.00)},
+		},
+	})
+	if p == nil {
+		t.Fatal("expected non-nil pricing")
+	}
+	if len(p.Tiers) != 2 {
+		t.Fatalf("Tiers len = %d, want 2", len(p.Tiers))
+	}
+	if p.Tiers[0].UpToMtok == nil || *p.Tiers[0].UpToMtok != 1.0 {
+		t.Errorf("Tiers[0].UpToMtok = %v, want 1.0", p.Tiers[0].UpToMtok)
+	}
+	if p.Tiers[1].UpToMtok != nil {
+		t.Errorf("Tiers[1].UpToMtok = %v, want nil", p.Tiers[1].UpToMtok)
+	}
+	if *p.Tiers[1].InputPerMtok != 1.25 {
+		t.Errorf("Tiers[1].InputPerMtok = %f, want 1.25", *p.Tiers[1].InputPerMtok)
+	}
+}
+
+func TestConvertPricingTiers_Empty(t *testing.T) {
+	result := convertPricingTiers(nil)
+	if result != nil {
+		t.Error("expected nil for nil tiers")
+	}
+	result = convertPricingTiers([]PricingTier{})
+	if result != nil {
+		t.Error("expected nil for empty tiers")
+	}
+}
+
+func TestResolve_SetsCategoriesFromModes(t *testing.T) {
 	list := &ModelList{
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName: "GPT-4o",
-				Mode:        "chat",
+				Modes:       []string{"chat"},
 			},
 			"dall-e-3": {
 				DisplayName: "DALL-E 3",
-				Mode:        "image_generation",
+				Modes:       []string{"image_generation"},
 			},
 			"whisper-1": {
 				DisplayName: "Whisper",
-				Mode:        "audio_transcription",
+				Modes:       []string{"audio_transcription"},
 			},
 			"text-moderation": {
 				DisplayName: "Moderation",
-				Mode:        "moderation",
+				Modes:       []string{"moderation"},
 			},
 		},
 		ProviderModels: map[string]ProviderModelEntry{},
@@ -296,12 +344,12 @@ func TestResolve_SetsCategoryFromMode(t *testing.T) {
 
 	tests := []struct {
 		modelID  string
-		wantCat  core.ModelCategory
+		wantCats []core.ModelCategory
 	}{
-		{"gpt-4o", core.CategoryTextGeneration},
-		{"dall-e-3", core.CategoryImage},
-		{"whisper-1", core.CategoryAudio},
-		{"text-moderation", core.CategoryUtility},
+		{"gpt-4o", []core.ModelCategory{core.CategoryTextGeneration}},
+		{"dall-e-3", []core.ModelCategory{core.CategoryImage}},
+		{"whisper-1", []core.ModelCategory{core.CategoryAudio}},
+		{"text-moderation", []core.ModelCategory{core.CategoryUtility}},
 	}
 
 	for _, tt := range tests {
@@ -310,8 +358,13 @@ func TestResolve_SetsCategoryFromMode(t *testing.T) {
 			if meta == nil {
 				t.Fatal("expected non-nil metadata")
 			}
-			if meta.Category != tt.wantCat {
-				t.Errorf("Category = %q, want %q", meta.Category, tt.wantCat)
+			if len(meta.Categories) != len(tt.wantCats) {
+				t.Fatalf("Categories = %v, want %v", meta.Categories, tt.wantCats)
+			}
+			for i, c := range meta.Categories {
+				if c != tt.wantCats[i] {
+					t.Errorf("Categories[%d] = %q, want %q", i, c, tt.wantCats[i])
+				}
 			}
 		})
 	}
@@ -326,7 +379,7 @@ func TestResolve_ThreeLayerMerge(t *testing.T) {
 				DisplayName:     "Claude Sonnet 4",
 				Description:     ptr("Fast, intelligent model"),
 				Family:          ptr("claude-sonnet"),
-				Mode:            "chat",
+				Modes:           []string{"chat"},
 				Tags:            []string{"flagship"},
 				ContextWindow:   ptr(200000),
 				MaxOutputTokens: ptr(16384),
@@ -380,12 +433,12 @@ func TestResolve_ThreeLayerMerge(t *testing.T) {
 	}
 }
 
-func TestResolve_ReverseProviderModelIDLookup(t *testing.T) {
+func TestResolve_ReverseCustomModelIDLookup(t *testing.T) {
 	list := &ModelList{
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName:   "GPT-4o",
-				Mode:          "chat",
+				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
 				Pricing: &PricingEntry{
 					Currency:      "USD",
@@ -396,9 +449,9 @@ func TestResolve_ReverseProviderModelIDLookup(t *testing.T) {
 		},
 		ProviderModels: map[string]ProviderModelEntry{
 			"openai/gpt-4o": {
-				ModelRef:        "gpt-4o",
-				ProviderModelID: ptr("gpt-4o-2024-08-06"),
-				Enabled:         true,
+				ModelRef:      "gpt-4o",
+				CustomModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:       true,
 			},
 		},
 	}
@@ -425,14 +478,14 @@ func TestResolve_ReverseIndexNotBuilt(t *testing.T) {
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName: "GPT-4o",
-				Mode:        "chat",
+				Modes:       []string{"chat"},
 			},
 		},
 		ProviderModels: map[string]ProviderModelEntry{
 			"openai/gpt-4o": {
-				ModelRef:        "gpt-4o",
-				ProviderModelID: ptr("gpt-4o-2024-08-06"),
-				Enabled:         true,
+				ModelRef:      "gpt-4o",
+				CustomModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:       true,
 			},
 		},
 		// providerModelByActualID is nil (buildReverseIndex not called)
@@ -449,7 +502,7 @@ func TestResolve_ReverseIndexWithProviderModelOverride(t *testing.T) {
 		Models: map[string]ModelEntry{
 			"gpt-4o": {
 				DisplayName:   "GPT-4o",
-				Mode:          "chat",
+				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
 				Pricing: &PricingEntry{
 					Currency:      "USD",
@@ -460,9 +513,9 @@ func TestResolve_ReverseIndexWithProviderModelOverride(t *testing.T) {
 		},
 		ProviderModels: map[string]ProviderModelEntry{
 			"openai/gpt-4o": {
-				ModelRef:        "gpt-4o",
-				ProviderModelID: ptr("gpt-4o-2024-08-06"),
-				Enabled:         true,
+				ModelRef:      "gpt-4o",
+				CustomModelID: ptr("gpt-4o-2024-08-06"),
+				Enabled:       true,
 				Pricing: &PricingEntry{
 					Currency:      "USD",
 					InputPerMtok:  ptr(3.00),

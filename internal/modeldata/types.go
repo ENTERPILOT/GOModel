@@ -2,6 +2,7 @@
 // AI model metadata registry (models.json) for enriching GoModel's model data.
 package modeldata
 
+
 // ModelList represents the top-level structure of models.json.
 type ModelList struct {
 	Version        int                          `json:"version"`
@@ -18,11 +19,11 @@ type ModelList struct {
 }
 
 // buildReverseIndex populates providerModelByActualID from ProviderModels entries
-// that have a non-nil provider_model_id differing from the key's model portion.
+// that have a non-nil custom_model_id differing from the key's model portion.
 func (l *ModelList) buildReverseIndex() {
 	l.providerModelByActualID = make(map[string]string)
 	for compositeKey, pm := range l.ProviderModels {
-		if pm.ProviderModelID == nil {
+		if pm.CustomModelID == nil {
 			continue
 		}
 		// compositeKey is "providerType/modelID"
@@ -38,7 +39,7 @@ func (l *ModelList) buildReverseIndex() {
 			continue
 		}
 		providerType := compositeKey[:slashIdx]
-		actualID := *pm.ProviderModelID
+		actualID := *pm.CustomModelID
 		reverseKey := providerType + "/" + actualID
 		// Only add if the actual ID differs from the key's model portion
 		if reverseKey != compositeKey {
@@ -49,60 +50,109 @@ func (l *ModelList) buildReverseIndex() {
 
 // ProviderEntry represents a provider in the registry.
 type ProviderEntry struct {
-	DisplayName    string     `json:"display_name"`
-	Website        *string    `json:"website"`
-	DocsURL        *string    `json:"docs_url"`
-	PricingURL     *string    `json:"pricing_url"`
-	StatusURL      *string    `json:"status_url"`
-	APIType        string     `json:"api_type"`
-	DefaultBaseURL *string    `json:"default_base_url"`
-	SupportedModes []string   `json:"supported_modes"`
+	DisplayName       string      `json:"display_name"`
+	Website           *string     `json:"website"`
+	DocsURL           *string     `json:"docs_url"`
+	PricingURL        *string     `json:"pricing_url"`
+	StatusURL         *string     `json:"status_url"`
+	APIType           string      `json:"api_type"`
+	DefaultBaseURL    *string     `json:"default_base_url"`
+	SupportedModes    []string    `json:"supported_modes"`
+	Auth              *AuthConfig `json:"auth"`
+	BaseURLEnv        *string     `json:"base_url_env"`
 	DefaultRateLimits *RateLimits `json:"default_rate_limits"`
 }
 
 // ModelEntry represents a model in the registry.
 type ModelEntry struct {
-	DisplayName     string          `json:"display_name"`
-	Description     *string         `json:"description"`
-	OwnedBy         *string         `json:"owned_by"`
-	Family          *string         `json:"family"`
-	ReleaseDate     *string         `json:"release_date"`
-	DeprecationDate *string         `json:"deprecation_date"`
-	Tags            []string        `json:"tags"`
-	Mode            string          `json:"mode"`
-	Modalities      *Modalities     `json:"modalities"`
-	Capabilities    map[string]bool `json:"capabilities"`
-	ContextWindow   *int            `json:"context_window"`
-	MaxOutputTokens *int            `json:"max_output_tokens"`
-	Pricing         *PricingEntry   `json:"pricing"`
+	DisplayName          string                    `json:"display_name"`
+	Description          *string                   `json:"description"`
+	OwnedBy              *string                   `json:"owned_by"`
+	Family               *string                   `json:"family"`
+	ReleaseDate          *string                   `json:"release_date"`
+	DeprecationDate      *string                   `json:"deprecation_date"`
+	Tags                 []string                  `json:"tags"`
+	Modes                []string                  `json:"modes"`
+	SourceURL            *string                   `json:"source_url"`
+	Modalities           *Modalities               `json:"modalities"`
+	Capabilities         map[string]bool           `json:"capabilities"`
+	ContextWindow        *int                      `json:"context_window"`
+	MaxOutputTokens      *int                      `json:"max_output_tokens"`
+	MaxImagesPerRequest  *int                      `json:"max_images_per_request"`
+	MaxVideosPerRequest  *int                      `json:"max_videos_per_request"`
+	MaxAudioPerRequest   *int                      `json:"max_audio_per_request"`
+	MaxAudioLengthSeconds *int                      `json:"max_audio_length_seconds"`
+	MaxVideoLengthSeconds *int                      `json:"max_video_length_seconds"`
+	MaxPDFSizeMB         *int                      `json:"max_pdf_size_mb"`
+	OutputVectorSize     *int                      `json:"output_vector_size"`
+	Parameters           map[string]ParameterSpec  `json:"parameters"`
+	Rankings             map[string]RankingEntry   `json:"rankings"`
+	Pricing              *PricingEntry             `json:"pricing"`
 }
 
 // ProviderModelEntry represents a provider-specific model override.
 type ProviderModelEntry struct {
-	ModelRef        string       `json:"model_ref"`
-	ProviderModelID *string      `json:"provider_model_id"`
-	Enabled         bool         `json:"enabled"`
-	Pricing         *PricingEntry `json:"pricing"`
-	ContextWindow   *int         `json:"context_window"`
-	MaxOutputTokens *int         `json:"max_output_tokens"`
-	RateLimits      *RateLimits  `json:"rate_limits"`
-	Endpoints       []string     `json:"endpoints"`
-	Regions         []string     `json:"regions"`
+	ModelRef        string          `json:"model_ref"`
+	CustomModelID   *string         `json:"custom_model_id"`
+	Enabled         bool            `json:"enabled"`
+	Pricing         *PricingEntry   `json:"pricing"`
+	ContextWindow   *int            `json:"context_window"`
+	MaxOutputTokens *int            `json:"max_output_tokens"`
+	Capabilities    map[string]bool `json:"capabilities"`
+	RateLimits      *RateLimits     `json:"rate_limits"`
+	Endpoints       []string        `json:"endpoints"`
+	Regions         []string        `json:"regions"`
 }
 
 // PricingEntry represents pricing information from the registry.
 type PricingEntry struct {
-	Currency              string   `json:"currency"`
-	InputPerMtok          *float64 `json:"input_per_mtok"`
-	OutputPerMtok         *float64 `json:"output_per_mtok"`
-	CachedInputPerMtok    *float64 `json:"cached_input_per_mtok"`
-	ReasoningOutputPerMtok *float64 `json:"reasoning_output_per_mtok"`
-	PerImage              *float64 `json:"per_image"`
-	PerSecondInput        *float64 `json:"per_second_input"`
-	PerSecondOutput       *float64 `json:"per_second_output"`
-	PerCharacterInput     *float64 `json:"per_character_input"`
-	PerRequest            *float64 `json:"per_request"`
-	PerPage               *float64 `json:"per_page"`
+	Currency               string        `json:"currency"`
+	InputPerMtok           *float64      `json:"input_per_mtok"`
+	OutputPerMtok          *float64      `json:"output_per_mtok"`
+	CachedInputPerMtok     *float64      `json:"cached_input_per_mtok"`
+	CacheWritePerMtok      *float64      `json:"cache_write_per_mtok"`
+	ReasoningOutputPerMtok *float64      `json:"reasoning_output_per_mtok"`
+	BatchInputPerMtok      *float64      `json:"batch_input_per_mtok"`
+	BatchOutputPerMtok     *float64      `json:"batch_output_per_mtok"`
+	AudioInputPerMtok      *float64      `json:"audio_input_per_mtok"`
+	AudioOutputPerMtok     *float64      `json:"audio_output_per_mtok"`
+	PerImage               *float64      `json:"per_image"`
+	PerSecondInput         *float64      `json:"per_second_input"`
+	PerSecondOutput        *float64      `json:"per_second_output"`
+	PerCharacterInput      *float64      `json:"per_character_input"`
+	PerRequest             *float64      `json:"per_request"`
+	PerPage                *float64      `json:"per_page"`
+	Tiers                  []PricingTier `json:"tiers"`
+}
+
+// PricingTier represents a volume-based pricing tier.
+type PricingTier struct {
+	UpToMtok      *float64 `json:"up_to_mtok"`
+	InputPerMtok  *float64 `json:"input_per_mtok"`
+	OutputPerMtok *float64 `json:"output_per_mtok"`
+}
+
+// ParameterSpec describes a model parameter's constraints.
+// Values are any because upstream mixes floats, ints, strings, and nulls.
+type ParameterSpec struct {
+	Type    string `json:"type"`
+	Min     any    `json:"min"`
+	Max     any    `json:"max"`
+	Default any    `json:"default"`
+	Enum    []any  `json:"enum"`
+}
+
+// RankingEntry holds a model's score in a benchmark or ranking.
+type RankingEntry struct {
+	Score *float64 `json:"score"`
+	Rank  *int     `json:"rank"`
+}
+
+// AuthConfig describes provider authentication configuration.
+type AuthConfig struct {
+	Type      string  `json:"type"`
+	HeaderKey *string `json:"header_key"`
+	EnvVar    *string `json:"env_var"`
 }
 
 // Modalities describes input/output modality support.

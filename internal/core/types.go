@@ -87,8 +87,8 @@ type ModelMetadata struct {
 	DisplayName     string          `json:"display_name,omitempty"`
 	Description     string          `json:"description,omitempty"`
 	Family          string          `json:"family,omitempty"`
-	Mode            string          `json:"mode,omitempty"`
-	Category        ModelCategory   `json:"category,omitempty"`
+	Modes           []string        `json:"modes,omitempty"`
+	Categories      []ModelCategory `json:"categories,omitempty"`
 	Tags            []string        `json:"tags,omitempty"`
 	ContextWindow   *int            `json:"context_window,omitempty"`
 	MaxOutputTokens *int            `json:"max_output_tokens,omitempty"`
@@ -126,10 +126,23 @@ var modeToCategory = map[string]ModelCategory{
 	"search":               CategoryUtility,
 }
 
-// CategoryForMode returns the ModelCategory for a given mode string.
-// Returns empty string if the mode is not recognized.
-func CategoryForMode(mode string) ModelCategory {
-	return modeToCategory[mode]
+// CategoriesForModes returns deduplicated ModelCategory values for the given mode strings.
+// Unrecognized modes are silently skipped.
+func CategoriesForModes(modes []string) []ModelCategory {
+	seen := make(map[ModelCategory]struct{}, len(modes))
+	result := make([]ModelCategory, 0, len(modes))
+	for _, mode := range modes {
+		cat, ok := modeToCategory[mode]
+		if !ok {
+			continue
+		}
+		if _, dup := seen[cat]; dup {
+			continue
+		}
+		seen[cat] = struct{}{}
+		result = append(result, cat)
+	}
+	return result
 }
 
 // AllCategories returns the ordered list of categories for UI rendering.
@@ -147,17 +160,30 @@ func AllCategories() []ModelCategory {
 
 // ModelPricing holds pricing information for cost calculation.
 type ModelPricing struct {
-	Currency               string   `json:"currency"`
-	InputPerMtok           *float64 `json:"input_per_mtok,omitempty"`
-	OutputPerMtok          *float64 `json:"output_per_mtok,omitempty"`
-	CachedInputPerMtok     *float64 `json:"cached_input_per_mtok,omitempty"`
-	ReasoningOutputPerMtok *float64 `json:"reasoning_output_per_mtok,omitempty"`
-	PerImage               *float64 `json:"per_image,omitempty"`
-	PerSecondInput         *float64 `json:"per_second_input,omitempty"`
-	PerSecondOutput        *float64 `json:"per_second_output,omitempty"`
-	PerCharacterInput      *float64 `json:"per_character_input,omitempty"`
-	PerRequest             *float64 `json:"per_request,omitempty"`
-	PerPage                *float64 `json:"per_page,omitempty"`
+	Currency               string              `json:"currency"`
+	InputPerMtok           *float64            `json:"input_per_mtok,omitempty"`
+	OutputPerMtok          *float64            `json:"output_per_mtok,omitempty"`
+	CachedInputPerMtok     *float64            `json:"cached_input_per_mtok,omitempty"`
+	CacheWritePerMtok      *float64            `json:"cache_write_per_mtok,omitempty"`
+	ReasoningOutputPerMtok *float64            `json:"reasoning_output_per_mtok,omitempty"`
+	BatchInputPerMtok      *float64            `json:"batch_input_per_mtok,omitempty"`
+	BatchOutputPerMtok     *float64            `json:"batch_output_per_mtok,omitempty"`
+	AudioInputPerMtok      *float64            `json:"audio_input_per_mtok,omitempty"`
+	AudioOutputPerMtok     *float64            `json:"audio_output_per_mtok,omitempty"`
+	PerImage               *float64            `json:"per_image,omitempty"`
+	PerSecondInput         *float64            `json:"per_second_input,omitempty"`
+	PerSecondOutput        *float64            `json:"per_second_output,omitempty"`
+	PerCharacterInput      *float64            `json:"per_character_input,omitempty"`
+	PerRequest             *float64            `json:"per_request,omitempty"`
+	PerPage                *float64            `json:"per_page,omitempty"`
+	Tiers                  []ModelPricingTier  `json:"tiers,omitempty"`
+}
+
+// ModelPricingTier represents a volume-based pricing tier.
+type ModelPricingTier struct {
+	UpToMtok      *float64 `json:"up_to_mtok,omitempty"`
+	InputPerMtok  *float64 `json:"input_per_mtok,omitempty"`
+	OutputPerMtok *float64 `json:"output_per_mtok,omitempty"`
 }
 
 // ModelsResponse represents the response from the /v1/models endpoint

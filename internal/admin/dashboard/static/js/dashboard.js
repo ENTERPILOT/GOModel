@@ -561,8 +561,8 @@ function dashboard() {
                 (m.model?.id ?? '').toLowerCase().includes(f) ||
                 (m.provider_type ?? '').toLowerCase().includes(f) ||
                 (m.model?.owned_by ?? '').toLowerCase().includes(f) ||
-                (m.model?.metadata?.mode ?? '').toLowerCase().includes(f) ||
-                (m.model?.metadata?.category ?? '').toLowerCase().includes(f)
+                (m.model?.metadata?.modes ?? []).join(',').toLowerCase().includes(f) ||
+                (m.model?.metadata?.categories ?? []).join(',').toLowerCase().includes(f)
             );
         },
 

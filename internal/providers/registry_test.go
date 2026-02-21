@@ -563,22 +563,22 @@ func TestListModelsWithProviderByCategory(t *testing.T) {
 				{
 					ID: "gpt-4o", Object: "model", OwnedBy: "openai",
 					Metadata: &core.ModelMetadata{
-						Mode:     "chat",
-						Category: core.CategoryTextGeneration,
+						Modes:      []string{"chat"},
+						Categories: []core.ModelCategory{core.CategoryTextGeneration},
 					},
 				},
 				{
 					ID: "text-embedding-3-small", Object: "model", OwnedBy: "openai",
 					Metadata: &core.ModelMetadata{
-						Mode:     "embedding",
-						Category: core.CategoryEmbedding,
+						Modes:      []string{"embedding"},
+						Categories: []core.ModelCategory{core.CategoryEmbedding},
 					},
 				},
 				{
 					ID: "dall-e-3", Object: "model", OwnedBy: "openai",
 					Metadata: &core.ModelMetadata{
-						Mode:     "image_generation",
-						Category: core.CategoryImage,
+						Modes:      []string{"image_generation"},
+						Categories: []core.ModelCategory{core.CategoryImage},
 					},
 				},
 				{
@@ -641,19 +641,19 @@ func TestGetCategoryCounts(t *testing.T) {
 			Data: []core.Model{
 				{
 					ID: "gpt-4o", Object: "model",
-					Metadata: &core.ModelMetadata{Category: core.CategoryTextGeneration},
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryTextGeneration}},
 				},
 				{
 					ID: "gpt-4o-mini", Object: "model",
-					Metadata: &core.ModelMetadata{Category: core.CategoryTextGeneration},
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryTextGeneration}},
 				},
 				{
 					ID: "text-embedding-3-small", Object: "model",
-					Metadata: &core.ModelMetadata{Category: core.CategoryEmbedding},
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryEmbedding}},
 				},
 				{
 					ID: "dall-e-3", Object: "model",
-					Metadata: &core.ModelMetadata{Category: core.CategoryImage},
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryImage}},
 				},
 				{
 					ID: "no-metadata", Object: "model",

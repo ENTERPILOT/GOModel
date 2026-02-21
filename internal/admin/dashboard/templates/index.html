@@ -177,7 +177,7 @@
                 <tr>
                     <th>Model ID</th>
                     <th>Provider</th>
-                    <th>Mode</th>
+                    <th>Modes</th>
                     <th class="col-price">Input $/MTok</th>
                     <th class="col-price">Output $/MTok</th>
                     <th class="col-price" x-show="activeCategory === 'text_generation'">Cached $/MTok</th>
@@ -188,7 +188,7 @@
                     <tr>
                         <td class="mono" x-text="m.model.id"></td>
                         <td><span class="provider-badge" x-text="m.provider_type"></span></td>
-                        <td x-text="m.model.metadata?.mode || '-'"></td>
+                        <td x-text="(m.model.metadata?.modes ?? []).join(', ') || '-'"></td>
                         <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.input_per_mtok)"></td>
                         <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.output_per_mtok)"></td>
                         <td class="col-price" x-show="activeCategory === 'text_generation'" x-text="formatPrice(m.model.metadata?.pricing?.cached_input_per_mtok)"></td>
