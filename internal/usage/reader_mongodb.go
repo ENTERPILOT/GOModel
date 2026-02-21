@@ -82,6 +82,72 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 	return summary, nil
 }
 
+func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
+	pipeline := bson.A{}
+
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{
+				{Key: "$gte", Value: params.StartDate.UTC()},
+				{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
+			}},
+		}}})
+	} else if !startZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
+		}}})
+	} else if !endZero {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
+			{Key: "timestamp", Value: bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}},
+		}}})
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.D{
+		{Key: "_id", Value: bson.D{
+			{Key: "model", Value: "$model"},
+			{Key: "provider", Value: "$provider"},
+		}},
+		{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
+		{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+	}}})
+
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate usage by model: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	result := make([]ModelUsage, 0)
+	for cursor.Next(ctx) {
+		var row struct {
+			ID struct {
+				Model    string `bson:"model"`
+				Provider string `bson:"provider"`
+			} `bson:"_id"`
+			InputTokens  int64 `bson:"input_tokens"`
+			OutputTokens int64 `bson:"output_tokens"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return nil, fmt.Errorf("failed to decode usage by model row: %w", err)
+		}
+		result = append(result, ModelUsage{
+			Model:        row.ID.Model,
+			Provider:     row.ID.Provider,
+			InputTokens:  row.InputTokens,
+			OutputTokens: row.OutputTokens,
+		})
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage by model cursor: %w", err)
+	}
+
+	return result, nil
+}
+
 func mongoDateFormat(interval string) string {
 	switch interval {
 	case "weekly":

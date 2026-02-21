@@ -2,6 +2,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -128,7 +129,53 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 		return handleError(c, err)
 	}
 
+	h.calculateCosts(c.Request().Context(), summary, params)
+
 	return c.JSON(http.StatusOK, summary)
+}
+
+// calculateCosts enriches a UsageSummary with estimated costs by looking up
+// per-model token usage and matching it against registry pricing metadata.
+// Best-effort: if any data is unavailable, cost fields remain nil.
+func (h *Handler) calculateCosts(ctx context.Context, summary *usage.UsageSummary, params usage.UsageQueryParams) {
+	if h.usageReader == nil || h.registry == nil {
+		return
+	}
+
+	modelUsages, err := h.usageReader.GetUsageByModel(ctx, params)
+	if err != nil {
+		return
+	}
+
+	var totalInputCost, totalOutputCost float64
+	var hasPricing bool
+
+	for _, mu := range modelUsages {
+		meta := h.registry.GetModelMetadata(mu.Model)
+		if (meta == nil || meta.Pricing == nil) && mu.Provider != "" {
+			meta = h.registry.ResolveMetadata(mu.Provider, mu.Model)
+		}
+		if meta == nil || meta.Pricing == nil {
+			continue
+		}
+
+		inputCost, outputCost, _ := usage.CalculateCost(int(mu.InputTokens), int(mu.OutputTokens), meta.Pricing)
+		if inputCost != nil {
+			totalInputCost += *inputCost
+			hasPricing = true
+		}
+		if outputCost != nil {
+			totalOutputCost += *outputCost
+			hasPricing = true
+		}
+	}
+
+	if hasPricing {
+		summary.TotalInputCost = &totalInputCost
+		summary.TotalOutputCost = &totalOutputCost
+		total := totalInputCost + totalOutputCost
+		summary.TotalCost = &total
+	}
 }
 
 // DailyUsage handles GET /admin/api/v1/usage/daily
@@ -155,15 +202,31 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 }
 
 // ListModels handles GET /admin/api/v1/models
+// Supports optional ?category= query param for filtering by model category.
 func (h *Handler) ListModels(c echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
 	}
 
-	models := h.registry.ListModelsWithProvider()
+	var models []providers.ModelWithProvider
+	if cat := core.ModelCategory(c.QueryParam("category")); cat != "" && cat != core.CategoryAll {
+		models = h.registry.ListModelsWithProviderByCategory(cat)
+	} else {
+		models = h.registry.ListModelsWithProvider()
+	}
+
 	if models == nil {
 		models = []providers.ModelWithProvider{}
 	}
 
 	return c.JSON(http.StatusOK, models)
+}
+
+// ListCategories handles GET /admin/api/v1/models/categories
+func (h *Handler) ListCategories(c echo.Context) error {
+	if h.registry == nil {
+		return c.JSON(http.StatusOK, []providers.CategoryCount{})
+	}
+
+	return c.JSON(http.StatusOK, h.registry.GetCategoryCounts())
 }

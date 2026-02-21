@@ -52,6 +52,11 @@ type UsageEntry struct {
 	//   Anthropic: {"cache_creation_input_tokens": 200, "cache_read_input_tokens": 150}
 	//   Gemini: {"cached_tokens": 100, "thought_tokens": 75, "tool_use_tokens": 25}
 	RawData map[string]any `json:"raw_data,omitempty" bson:"raw_data,omitempty"`
+
+	// Cost fields (nil = unknown/model not in list, 0.0 = free)
+	InputCost  *float64 `json:"input_cost,omitempty" bson:"input_cost,omitempty"`
+	OutputCost *float64 `json:"output_cost,omitempty" bson:"output_cost,omitempty"`
+	TotalCost  *float64 `json:"total_cost,omitempty" bson:"total_cost,omitempty"`
 }
 
 // Config holds usage tracking configuration
