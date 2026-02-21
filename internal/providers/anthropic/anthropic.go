@@ -41,10 +41,10 @@ type Provider struct {
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.Config{
-		ProviderName: "anthropic",
-		BaseURL:      defaultBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "anthropic",
+		BaseURL:        defaultBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -80,21 +80,43 @@ func (p *Provider) setHeaders(req *http.Request) {
 	}
 }
 
-// anthropicThinking represents the thinking configuration for Anthropic's extended thinking
+// anthropicThinking represents the thinking configuration for Anthropic's extended thinking.
+// For 4.6 models: {type: "adaptive"} (budget_tokens omitted).
+// For older models: {type: "enabled", budget_tokens: N}.
 type anthropicThinking struct {
 	Type         string `json:"type"`
-	BudgetTokens int    `json:"budget_tokens"`
+	BudgetTokens int    `json:"budget_tokens,omitempty"`
+}
+
+// anthropicOutputConfig controls effort level for adaptive thinking on 4.6 models.
+type anthropicOutputConfig struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 // anthropicRequest represents the Anthropic API request format
 type anthropicRequest struct {
-	Model       string             `json:"model"`
-	Messages    []anthropicMessage `json:"messages"`
-	MaxTokens   int                `json:"max_tokens"`
-	Temperature *float64           `json:"temperature,omitempty"`
-	System      string             `json:"system,omitempty"`
-	Stream      bool               `json:"stream,omitempty"`
-	Thinking    *anthropicThinking `json:"thinking,omitempty"`
+	Model        string                 `json:"model"`
+	Messages     []anthropicMessage     `json:"messages"`
+	MaxTokens    int                    `json:"max_tokens"`
+	Temperature  *float64               `json:"temperature,omitempty"`
+	System       string                 `json:"system,omitempty"`
+	Stream       bool                   `json:"stream,omitempty"`
+	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
+	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+}
+
+var adaptiveThinkingPrefixes = []string{
+	"claude-opus-4-6",
+	"claude-sonnet-4-6",
+}
+
+func isAdaptiveThinkingModel(model string) bool {
+	for _, prefix := range adaptiveThinkingPrefixes {
+		if model == prefix || strings.HasPrefix(model, prefix+"-") {
+			return true
+		}
+	}
+	return false
 }
 
 // anthropicMessage represents a message in Anthropic format
@@ -159,27 +181,60 @@ type anthropicModelsResponse struct {
 	LastID  string               `json:"last_id"`
 }
 
-// reasoningEffortToBudgetTokens maps OpenAI reasoning effort levels to Anthropic budget tokens
-func reasoningEffortToBudgetTokens(effort string) int {
+// normalizeEffort maps effort to gateway-supported values. Anthropic Opus 4.6
+// supports "max" for adaptive thinking, but the gateway's public type
+// core.Reasoning.Effort only exposes "low", "medium", and "high". "max" is
+// therefore intentionally rejected; any unsupported value is downgraded to
+// "low" and logged via slog.Warn.
+func normalizeEffort(effort string) string {
 	switch effort {
-	case "low":
-		return 5000
+	case "low", "medium", "high":
+		return effort
+	default:
+		slog.Warn("invalid reasoning effort, defaulting to 'low'", "effort", effort)
+		return "low"
+	}
+}
+
+// applyReasoning configures thinking and effort on an anthropicRequest.
+// Opus 4.6 and Sonnet 4.6 use adaptive thinking with output_config.effort.
+// Older models and Haiku 4.6 use manual thinking with budget_tokens.
+func applyReasoning(req *anthropicRequest, model, effort string) {
+	if isAdaptiveThinkingModel(model) {
+		req.Thinking = &anthropicThinking{Type: "adaptive"}
+		req.OutputConfig = &anthropicOutputConfig{Effort: normalizeEffort(effort)}
+	} else {
+		budget := reasoningEffortToBudgetTokens(effort)
+		req.Thinking = &anthropicThinking{
+			Type:         "enabled",
+			BudgetTokens: budget,
+		}
+		if req.MaxTokens <= budget {
+			adjusted := budget + 1024
+			slog.Info("MaxTokens adjusted for extended thinking",
+				"original", req.MaxTokens, "adjusted", adjusted)
+			req.MaxTokens = adjusted
+		}
+	}
+
+	if req.Temperature != nil {
+		if *req.Temperature != 1.0 {
+			slog.Warn("temperature overridden to nil; extended thinking requires temperature=1",
+				"original_temperature", *req.Temperature)
+			req.Temperature = nil
+		}
+	}
+}
+
+func reasoningEffortToBudgetTokens(effort string) int {
+	switch normalizeEffort(effort) {
 	case "medium":
 		return 10000
 	case "high":
 		return 20000
 	default:
-		slog.Warn("inappropriate reasoning effort, defaulting to 'low'", "effort", effort)
 		return 5000
 	}
-}
-
-// logMaxTokensAdjustment logs when MaxTokens is adjusted to meet Anthropic requirements
-func logMaxTokensAdjustment(original, adjusted int, reason string) {
-	slog.Info("MaxTokens adjusted to meet Anthropic extended thinking requirements",
-		"original", original,
-		"adjusted", adjusted,
-		"reason", reason)
 }
 
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
@@ -196,27 +251,10 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 		anthropicReq.MaxTokens = *req.MaxTokens
 	}
 
-	// Map reasoning effort to Anthropic extended thinking
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
-		budget := reasoningEffortToBudgetTokens(req.Reasoning.Effort)
-		anthropicReq.Thinking = &anthropicThinking{
-			Type:         "enabled",
-			BudgetTokens: budget,
-		}
-		// Ensure MaxTokens is at least the budget tokens
-		if anthropicReq.MaxTokens < budget {
-			logMaxTokensAdjustment(anthropicReq.MaxTokens, budget,
-				"extended thinking budget_tokens must be <= max_tokens")
-			anthropicReq.MaxTokens = budget
-		}
-		// Extended thinking requires temperature to be unset (defaults to 1)
-		if anthropicReq.Temperature != nil {
-			slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
-			anthropicReq.Temperature = nil
-		}
+		applyReasoning(anthropicReq, req.Model, req.Reasoning.Effort)
 	}
 
-	// Extract system message if present and convert messages
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
 			anthropicReq.System = msg.Content
@@ -233,10 +271,7 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 
 // convertFromAnthropicResponse converts Anthropic response to core.ChatResponse
 func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
-	content := ""
-	if len(resp.Content) > 0 {
-		content = resp.Content[0].Text
-	}
+	content := extractTextContent(resp.Content)
 
 	finishReason := resp.StopReason
 	if finishReason == "" {
@@ -527,24 +562,8 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 		anthropicReq.MaxTokens = *req.MaxOutputTokens
 	}
 
-	// Map reasoning effort to Anthropic extended thinking
 	if req.Reasoning != nil && req.Reasoning.Effort != "" {
-		budget := reasoningEffortToBudgetTokens(req.Reasoning.Effort)
-		anthropicReq.Thinking = &anthropicThinking{
-			Type:         "enabled",
-			BudgetTokens: budget,
-		}
-		// Ensure MaxTokens is at least the budget tokens
-		if anthropicReq.MaxTokens < budget {
-			logMaxTokensAdjustment(anthropicReq.MaxTokens, budget,
-				"extended thinking budget_tokens must be <= max_tokens")
-			anthropicReq.MaxTokens = budget
-		}
-		// Extended thinking requires temperature to be unset (defaults to 1)
-		if anthropicReq.Temperature != nil {
-			slog.Warn("temperature overridden to nil, reasoning requires unset temperature")
-			anthropicReq.Temperature = nil
-		}
+		applyReasoning(anthropicReq, req.Model, req.Reasoning.Effort)
 	}
 
 	// Set system instruction if provided
@@ -597,12 +616,22 @@ func extractContentFromResponsesInput(content interface{}) string {
 	return ""
 }
 
+// extractTextContent returns the text from the last "text" content block.
+// When extended thinking is enabled, Anthropic returns: [text("\n\n"), thinking(...), text(answer)].
+// Taking the last text block ensures we get the actual answer, not the empty preamble.
+func extractTextContent(blocks []anthropicContent) string {
+	last := ""
+	for _, b := range blocks {
+		if b.Type == "text" {
+			last = b.Text
+		}
+	}
+	return last
+}
+
 // convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse
 func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) *core.ResponsesResponse {
-	content := ""
-	if len(resp.Content) > 0 {
-		content = resp.Content[0].Text
-	}
+	content := extractTextContent(resp.Content)
 
 	return &core.ResponsesResponse{
 		ID:        resp.ID,
@@ -842,3 +871,4 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 
 	return ""
 }
+
