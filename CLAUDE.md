@@ -6,7 +6,7 @@ Guidance for AI models (like Claude) working with this codebase.
 
 **GOModel** is a high-performance AI gateway in Go that routes requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in LiteLLM replacement.
 
-- **Module:** `gomodel` | **Go:** 1.24.0 | **Repo:** https://github.com/ENTERPILOT/GOModel
+- **Module:** `gomodel` | **Go:** 1.25.0 | **Repo:** https://github.com/ENTERPILOT/GOModel
 - **Stage:** Development—backward compatibility is not a concern
 
 ## Commands
