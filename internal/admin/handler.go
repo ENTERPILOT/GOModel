@@ -123,6 +123,7 @@ func handleError(c echo.Context, err error) error {
 // @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
 // @Success      200  {object}  usage.UsageSummary
 // @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/summary [get]
 func (h *Handler) UsageSummary(c echo.Context) error {
 	if h.usageReader == nil {
@@ -154,6 +155,7 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 // @Param        interval    query     string  false  "Grouping interval: daily, weekly, monthly, yearly (default daily)"
 // @Success      200  {array}   usage.DailyUsage
 // @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/daily [get]
 func (h *Handler) DailyUsage(c echo.Context) error {
 	if h.usageReader == nil {
@@ -184,6 +186,7 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 // @Produce      json
 // @Security     BearerAuth
 // @Success      200  {array}  providers.ModelWithProvider
+// @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/models [get]
 func (h *Handler) ListModels(c echo.Context) error {
 	if h.registry == nil {
