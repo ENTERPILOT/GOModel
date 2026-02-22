@@ -730,9 +730,9 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/",
-	Schemes:          []string{},
+	Schemes:          []string{"http"},
 	Title:            "GOModel API",
 	Description:      "High-performance AI gateway routing requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in OpenAI-compatible API.",
 	InfoInstanceName: "swagger",

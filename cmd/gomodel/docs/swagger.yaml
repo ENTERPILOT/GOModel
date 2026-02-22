@@ -258,7 +258,6 @@ definitions:
       total_tokens:
         type: integer
     type: object
-host: localhost:8080
 info:
   contact: {}
   description: High-performance AI gateway routing requests to multiple LLM providers
@@ -464,6 +463,8 @@ paths:
       summary: Create a model response (Responses API)
       tags:
       - responses
+schemes:
+- http
 securityDefinitions:
   BearerAuth:
     in: header

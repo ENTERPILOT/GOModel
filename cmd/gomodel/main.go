@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"gomodel/cmd/gomodel/docs"
 	"gomodel/config"
 	"gomodel/internal/app"
 	"gomodel/internal/observability"
@@ -31,8 +32,8 @@ import (
 // @title          GOModel API
 // @version        1.0
 // @description    High-performance AI gateway routing requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in OpenAI-compatible API.
-// @host           localhost:8080
 // @BasePath       /
+// @schemes        http
 // @securityDefinitions.apikey BearerAuth
 // @in             header
 // @name           Authorization
@@ -108,6 +109,8 @@ func main() {
 	}()
 
 	addr := ":" + result.Config.Server.Port
+	docs.SwaggerInfo.Host = strings.TrimPrefix(addr, ":")
+	docs.SwaggerInfo.Schemes = []string{"http"}
 	if err := application.Start(addr); err != nil {
 		slog.Error("application failed", "error", err)
 		os.Exit(1)
