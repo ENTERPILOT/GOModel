@@ -11,7 +11,6 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	_ "gomodel/cmd/gomodel/docs" // generated swagger docs
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"

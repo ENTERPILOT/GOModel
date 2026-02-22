@@ -27,6 +27,8 @@ import (
 
 	"github.com/lmittmann/tint"
 	"golang.org/x/term"
+
+	_ "gomodel/cmd/gomodel/docs" // generated swagger docs
 )
 
 // @title          GOModel API
