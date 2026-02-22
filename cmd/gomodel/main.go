@@ -28,6 +28,14 @@ import (
 	"golang.org/x/term"
 )
 
+// @title          GOModel API
+// @version        1.0
+// @description    High-performance AI gateway routing requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in OpenAI-compatible API.
+// @host           localhost:8080
+// @BasePath       /
+// @securityDefinitions.apikey BearerAuth
+// @in             header
+// @name           Authorization
 func main() {
 	versionFlag := flag.Bool("version", false, "Print version information")
 	flag.Parse()

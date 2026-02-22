@@ -11,11 +11,14 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	_ "gomodel/cmd/gomodel/docs" // generated swagger docs
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
+
+	echoswagger "github.com/swaggo/echo-swagger"
 )
 
 // Server wraps the Echo server
@@ -43,6 +46,8 @@ type Config struct {
 func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
+
+	e.GET("/swagger/*", echoswagger.WrapHandler)
 
 	// Get loggers from config (may be nil)
 	var auditLogger auditlog.LoggerInterface
