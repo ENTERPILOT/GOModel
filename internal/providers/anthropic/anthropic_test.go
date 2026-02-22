@@ -614,6 +614,141 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	}
 }
 
+func TestConvertFromAnthropicResponse_WithThinkingBlocks(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      []anthropicContent
+		expectedText string
+	}{
+		{
+			name: "thinking then text",
+			content: []anthropicContent{
+				{Type: "thinking", Text: "Let me think about this..."},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
+		},
+		{
+			name: "preamble text then thinking then answer",
+			content: []anthropicContent{
+				{Type: "text", Text: "\n\n"},
+				{Type: "thinking", Text: ""},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &anthropicResponse{
+				ID:         "msg_456",
+				Type:       "message",
+				Role:       "assistant",
+				Model:      "claude-opus-4-6",
+				Content:    tt.content,
+				StopReason: "end_turn",
+				Usage:      anthropicUsage{InputTokens: 15, OutputTokens: 40},
+			}
+
+			result := convertFromAnthropicResponse(resp)
+
+			if len(result.Choices) == 0 {
+				t.Fatalf("expected at least 1 choice, got 0")
+			}
+			if result.Choices[0].Message.Content != tt.expectedText {
+				t.Errorf("expected %q, got %q", tt.expectedText, result.Choices[0].Message.Content)
+			}
+			if result.Usage.CompletionTokens != 40 {
+				t.Errorf("CompletionTokens = %d, want 40", result.Usage.CompletionTokens)
+			}
+		})
+	}
+}
+
+func TestExtractTextContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		blocks   []anthropicContent
+		expected string
+	}{
+		{
+			name:     "single text block",
+			blocks:   []anthropicContent{{Type: "text", Text: "hello"}},
+			expected: "hello",
+		},
+		{
+			name: "thinking then text",
+			blocks: []anthropicContent{
+				{Type: "thinking", Text: "reasoning..."},
+				{Type: "text", Text: "answer"},
+			},
+			expected: "answer",
+		},
+		{
+			name: "multiple thinking blocks then text",
+			blocks: []anthropicContent{
+				{Type: "thinking", Text: "step 1"},
+				{Type: "thinking", Text: "step 2"},
+				{Type: "text", Text: "final answer"},
+			},
+			expected: "final answer",
+		},
+		{
+			name: "preamble text then thinking then answer text",
+			blocks: []anthropicContent{
+				{Type: "text", Text: "\n\n"},
+				{Type: "thinking", Text: ""},
+				{Type: "text", Text: "The capital of France is **Paris**."},
+			},
+			expected: "The capital of France is **Paris**.",
+		},
+		{
+			name: "preamble text then thinking then answer - picks last text",
+			blocks: []anthropicContent{
+				{Type: "text", Text: "preamble"},
+				{Type: "thinking", Text: "let me think..."},
+				{Type: "text", Text: "real answer"},
+			},
+			expected: "real answer",
+		},
+		{
+			name:     "empty blocks",
+			blocks:   []anthropicContent{},
+			expected: "",
+		},
+		{
+			name:     "nil blocks",
+			blocks:   nil,
+			expected: "",
+		},
+		{
+			name:     "only thinking blocks - returns empty",
+			blocks:   []anthropicContent{{Type: "thinking", Text: "some reasoning"}},
+			expected: "",
+		},
+		{
+			name:     "only thinking blocks with empty text - returns empty",
+			blocks:   []anthropicContent{{Type: "thinking", Text: ""}},
+			expected: "",
+		},
+		{
+			name:     "no type field - returns empty",
+			blocks:   []anthropicContent{{Text: "legacy response"}},
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractTextContent(tt.blocks)
+			if result != tt.expected {
+				t.Errorf("extractTextContent() = %q, want %q", result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestResponses(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -1191,218 +1326,470 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	}
 }
 
-// TestConvertToAnthropicRequest_ReasoningEffort tests handling of reasoning effort parameter
+func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
+	tests := []struct {
+		name         string
+		content      []anthropicContent
+		expectedText string
+	}{
+		{
+			name: "thinking then text",
+			content: []anthropicContent{
+				{Type: "thinking", Text: "The user is asking about geography..."},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
+		},
+		{
+			name: "preamble text then thinking then answer",
+			content: []anthropicContent{
+				{Type: "text", Text: "\n\n"},
+				{Type: "thinking", Text: ""},
+				{Type: "text", Text: "The capital of France is Paris."},
+			},
+			expectedText: "The capital of France is Paris.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := &anthropicResponse{
+				ID:         "msg_789",
+				Type:       "message",
+				Role:       "assistant",
+				Model:      "claude-opus-4-6",
+				Content:    tt.content,
+				StopReason: "end_turn",
+				Usage:      anthropicUsage{InputTokens: 20, OutputTokens: 50},
+			}
+
+			result := convertAnthropicResponseToResponses(resp, "claude-opus-4-6")
+
+			if len(result.Output) != 1 {
+				t.Fatalf("len(Output) = %d, want 1", len(result.Output))
+			}
+			if len(result.Output[0].Content) == 0 {
+				t.Fatalf("len(Output[0].Content) = 0, want at least 1")
+			}
+			if result.Output[0].Content[0].Text != tt.expectedText {
+				t.Errorf("expected %q, got %q", tt.expectedText, result.Output[0].Content[0].Text)
+			}
+			if result.Usage.OutputTokens != 50 {
+				t.Errorf("OutputTokens = %d, want 50", result.Usage.OutputTokens)
+			}
+		})
+	}
+}
+
 func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 	tests := []struct {
-name                string
-reasoning           *core.Reasoning
-maxTokens           *int
-expectedThinking    bool
-expectedBudget      int
-expectedMaxTokens   int
-expectedTemperature *float64
-}{
-{
-name:                "reasoning nil - no thinking enabled",
-reasoning:           nil,
-maxTokens:           intPtr(1000),
-expectedThinking:    false,
-expectedMaxTokens:   1000,
-expectedTemperature: nil,
-},
-{
-name:                "reasoning with empty effort - no thinking enabled",
-reasoning:           &core.Reasoning{Effort: ""},
-maxTokens:           intPtr(1000),
-expectedThinking:    false,
-expectedMaxTokens:   1000,
-expectedTemperature: nil,
-},
-{
-name:                "reasoning with low effort",
-reasoning:           &core.Reasoning{Effort: "low"},
-maxTokens:           intPtr(10000),
-expectedThinking:    true,
-expectedBudget:      5000,
-expectedMaxTokens:   10000,
-expectedTemperature: nil, // Should be unset for reasoning
-},
-{
-name:                "reasoning with medium effort",
-reasoning:           &core.Reasoning{Effort: "medium"},
-maxTokens:           intPtr(15000),
-expectedThinking:    true,
-expectedBudget:      10000,
-expectedMaxTokens:   15000,
-expectedTemperature: nil,
-},
-{
-name:                "reasoning with high effort",
-reasoning:           &core.Reasoning{Effort: "high"},
-maxTokens:           intPtr(25000),
-expectedThinking:    true,
-expectedBudget:      20000,
-expectedMaxTokens:   25000,
-expectedTemperature: nil,
-},
-{
-name:                "reasoning with invalid effort - defaults to low",
-reasoning:           &core.Reasoning{Effort: "invalid"},
-maxTokens:           intPtr(10000),
-expectedThinking:    true,
-expectedBudget:      5000, // Defaults to low
-expectedMaxTokens:   10000,
-expectedTemperature: nil,
-},
-{
-name:                "reasoning bumps up max_tokens when too low",
-reasoning:           &core.Reasoning{Effort: "high"},
-maxTokens:           intPtr(1000), // Lower than budget
-expectedThinking:    true,
-expectedBudget:      20000,
-expectedMaxTokens:   20000, // Should be bumped to budget
-expectedTemperature: nil,
-},
-{
-name:                "reasoning removes temperature when set",
-reasoning:           &core.Reasoning{Effort: "medium"},
-maxTokens:           intPtr(15000),
-expectedThinking:    true,
-expectedBudget:      10000,
-expectedMaxTokens:   15000,
-expectedTemperature: nil, // Should be removed even if originally set
-},
+		name                string
+		model               string
+		reasoning           *core.Reasoning
+		maxTokens           *int
+		setTemperature      bool
+		setTemperatureOne   bool
+		expectedThinkType   string
+		expectedBudget      int
+		expectedEffort      string
+		expectedMaxTokens   int
+		expectNilTemp       bool
+		expectedTemp        *float64
+	}{
+		{
+			name:              "reasoning nil - no thinking",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         nil,
+			maxTokens:         intPtr(1000),
+			expectedMaxTokens: 1000,
+		},
+		{
+			name:              "empty effort - no thinking",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: ""},
+			maxTokens:         intPtr(1000),
+			expectedMaxTokens: 1000,
+		},
+		{
+			name:              "legacy model - low effort",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "low"},
+			maxTokens:         intPtr(10000),
+			expectedThinkType: "enabled",
+			expectedBudget:    5000,
+			expectedMaxTokens: 10000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - medium effort",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxTokens:         intPtr(15000),
+			expectedThinkType: "enabled",
+			expectedBudget:    10000,
+			expectedMaxTokens: 15000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - high effort",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxTokens:         intPtr(25000),
+			expectedThinkType: "enabled",
+			expectedBudget:    20000,
+			expectedMaxTokens: 25000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - invalid effort defaults to low",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "invalid"},
+			maxTokens:         intPtr(10000),
+			expectedThinkType: "enabled",
+			expectedBudget:    5000,
+			expectedMaxTokens: 10000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - bumps max_tokens when too low",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxTokens:         intPtr(1000),
+			expectedThinkType: "enabled",
+			expectedBudget:    20000,
+			expectedMaxTokens: 21024,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - removes temperature",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxTokens:         intPtr(15000),
+			setTemperature:    true,
+			expectedThinkType: "enabled",
+			expectedBudget:    10000,
+			expectedMaxTokens: 15000,
+			expectNilTemp:     true,
+		},
+		{
+			name:                "legacy model - preserves temperature=1.0 with reasoning",
+			model:               "claude-3-5-sonnet-20241022",
+			reasoning:           &core.Reasoning{Effort: "medium"},
+			maxTokens:           intPtr(15000),
+			setTemperatureOne:   true,
+			expectedThinkType:   "enabled",
+			expectedBudget:      10000,
+			expectedMaxTokens:   15000,
+			expectNilTemp:       false,
+			expectedTemp:        float64Ptr(1.0),
+		},
+		{
+			name:              "4.6 model - adaptive thinking with high effort",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxTokens:         intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "high",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - adaptive thinking with low effort",
+			model:             "claude-sonnet-4-6-20260301",
+			reasoning:         &core.Reasoning{Effort: "low"},
+			maxTokens:         intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "low",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - does not bump max_tokens",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxTokens:         intPtr(1000),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "high",
+			expectedMaxTokens: 1000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - removes temperature",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxTokens:         intPtr(4096),
+			setTemperature:    true,
+			expectedThinkType: "adaptive",
+			expectedEffort:    "medium",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - invalid effort normalizes to low",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "extreme"},
+			maxTokens:         intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "low",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &core.ChatRequest{
+				Model:     tt.model,
+				Messages:  []core.Message{{Role: "user", Content: "test"}},
+				MaxTokens: tt.maxTokens,
+				Reasoning: tt.reasoning,
+			}
+			if tt.setTemperatureOne {
+				temp := 1.0
+				req.Temperature = &temp
+			} else if tt.setTemperature {
+				temp := 0.7
+				req.Temperature = &temp
+			}
+
+			result := convertToAnthropicRequest(req)
+
+			if tt.expectedThinkType == "" {
+				if result.Thinking != nil {
+					t.Errorf("Thinking should be nil but got %+v", result.Thinking)
+				}
+				if result.OutputConfig != nil {
+					t.Errorf("OutputConfig should be nil but got %+v", result.OutputConfig)
+				}
+			} else {
+				if result.Thinking == nil {
+					t.Fatal("Thinking should not be nil")
+				}
+				if result.Thinking.Type != tt.expectedThinkType {
+					t.Errorf("Thinking.Type = %q, want %q", result.Thinking.Type, tt.expectedThinkType)
+				}
+				if tt.expectedThinkType == "enabled" {
+					if result.Thinking.BudgetTokens != tt.expectedBudget {
+						t.Errorf("BudgetTokens = %d, want %d", result.Thinking.BudgetTokens, tt.expectedBudget)
+					}
+				}
+				if tt.expectedThinkType == "adaptive" {
+					if result.OutputConfig == nil {
+						t.Fatal("OutputConfig should not be nil for adaptive thinking")
+					}
+					if result.OutputConfig.Effort != tt.expectedEffort {
+						t.Errorf("OutputConfig.Effort = %q, want %q", result.OutputConfig.Effort, tt.expectedEffort)
+					}
+				}
+			}
+
+			if result.MaxTokens != tt.expectedMaxTokens {
+				t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
+			}
+
+			if tt.expectNilTemp && result.Temperature != nil {
+				t.Errorf("Temperature should be nil but is %v", *result.Temperature)
+			}
+			if tt.expectedTemp != nil {
+				if result.Temperature == nil {
+					t.Errorf("Temperature should be %v but is nil", *tt.expectedTemp)
+				} else if *result.Temperature != *tt.expectedTemp {
+					t.Errorf("Temperature = %v, want %v", *result.Temperature, *tt.expectedTemp)
+				}
+			}
+		})
+	}
 }
 
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-req := &core.ChatRequest{
-Model:     "claude-3-5-sonnet-20241022",
-Messages:  []core.Message{{Role: "user", Content: "test"}},
-MaxTokens: tt.maxTokens,
-Reasoning: tt.reasoning,
-}
-
-// Set temperature for the test case about temperature removal
-if tt.name == "reasoning removes temperature when set" {
-temp := 0.7
-req.Temperature = &temp
-}
-
-result := convertToAnthropicRequest(req)
-
-// Check thinking field
-if tt.expectedThinking {
-if result.Thinking == nil {
-t.Error("Thinking should be enabled but is nil")
-} else {
-if result.Thinking.Type != "enabled" {
-t.Errorf("Thinking.Type = %q, want %q", result.Thinking.Type, "enabled")
-}
-if result.Thinking.BudgetTokens != tt.expectedBudget {
-t.Errorf("Thinking.BudgetTokens = %d, want %d", result.Thinking.BudgetTokens, tt.expectedBudget)
-}
-}
-} else {
-if result.Thinking != nil {
-t.Errorf("Thinking should be nil but got %+v", result.Thinking)
-}
-}
-
-// Check max_tokens
-if result.MaxTokens != tt.expectedMaxTokens {
-t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
-}
-
-// Check temperature
-if result.Temperature != tt.expectedTemperature {
-if result.Temperature == nil && tt.expectedTemperature != nil {
-t.Errorf("Temperature should be %v but is nil", *tt.expectedTemperature)
-} else if result.Temperature != nil && tt.expectedTemperature == nil {
-t.Errorf("Temperature should be nil but is %v", *result.Temperature)
-} else if result.Temperature != nil && tt.expectedTemperature != nil && *result.Temperature != *tt.expectedTemperature {
-t.Errorf("Temperature = %v, want %v", *result.Temperature, *tt.expectedTemperature)
-}
-}
-})
-}
-}
-
-// TestConvertResponsesRequestToAnthropic_ReasoningEffort tests reasoning in Responses API
 func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 	tests := []struct {
-name              string
-reasoning         *core.Reasoning
-maxOutputTokens   *int
-expectedThinking  bool
-expectedBudget    int
-expectedMaxTokens int
-}{
-{
-name:              "no reasoning",
-reasoning:         nil,
-maxOutputTokens:   intPtr(1000),
-expectedThinking:  false,
-expectedMaxTokens: 1000,
-},
-{
-name:              "empty effort",
-reasoning:         &core.Reasoning{Effort: ""},
-maxOutputTokens:   intPtr(1000),
-expectedThinking:  false,
-expectedMaxTokens: 1000,
-},
-{
-name:              "low effort bumps max tokens",
-reasoning:         &core.Reasoning{Effort: "low"},
-maxOutputTokens:   intPtr(1000),
-expectedThinking:  true,
-expectedBudget:    5000,
-expectedMaxTokens: 5000, // Bumped from 1000
-},
-{
-name:              "high effort with sufficient tokens",
-reasoning:         &core.Reasoning{Effort: "high"},
-maxOutputTokens:   intPtr(25000),
-expectedThinking:  true,
-expectedBudget:    20000,
-expectedMaxTokens: 25000,
-},
+		name              string
+		model             string
+		reasoning         *core.Reasoning
+		maxOutputTokens   *int
+		setTemperature    bool
+		expectedThinkType string
+		expectedBudget    int
+		expectedEffort    string
+		expectedMaxTokens int
+		expectNilTemp     bool
+	}{
+		{
+			name:              "no reasoning",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         nil,
+			maxOutputTokens:   intPtr(1000),
+			expectedMaxTokens: 1000,
+		},
+		{
+			name:              "empty effort",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: ""},
+			maxOutputTokens:   intPtr(1000),
+			expectedMaxTokens: 1000,
+		},
+		{
+			name:              "legacy model - low effort bumps max tokens",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "low"},
+			maxOutputTokens:   intPtr(1000),
+			expectedThinkType: "enabled",
+			expectedBudget:    5000,
+			expectedMaxTokens: 6024,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - high effort with sufficient tokens",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxOutputTokens:   intPtr(25000),
+			expectedThinkType: "enabled",
+			expectedBudget:    20000,
+			expectedMaxTokens: 25000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "legacy model - removes temperature",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxOutputTokens:   intPtr(15000),
+			setTemperature:    true,
+			expectedThinkType: "enabled",
+			expectedBudget:    10000,
+			expectedMaxTokens: 15000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - adaptive thinking",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxOutputTokens:   intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "high",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - does not bump max_tokens",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "high"},
+			maxOutputTokens:   intPtr(1000),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "high",
+			expectedMaxTokens: 1000,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - removes temperature",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxOutputTokens:   intPtr(4096),
+			setTemperature:    true,
+			expectedThinkType: "adaptive",
+			expectedEffort:    "medium",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+		{
+			name:              "4.6 model - invalid effort normalizes to low",
+			model:             "claude-opus-4-6",
+			reasoning:         &core.Reasoning{Effort: "extreme"},
+			maxOutputTokens:   intPtr(4096),
+			expectedThinkType: "adaptive",
+			expectedEffort:    "low",
+			expectedMaxTokens: 4096,
+			expectNilTemp:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := &core.ResponsesRequest{
+				Model:           tt.model,
+				Input:           "test input",
+				MaxOutputTokens: tt.maxOutputTokens,
+				Reasoning:       tt.reasoning,
+			}
+			if tt.setTemperature {
+				temp := 0.7
+				req.Temperature = &temp
+			}
+
+			result := convertResponsesRequestToAnthropic(req)
+
+			if tt.expectedThinkType == "" {
+				if result.Thinking != nil {
+					t.Errorf("Thinking should be nil but got %+v", result.Thinking)
+				}
+				if result.OutputConfig != nil {
+					t.Errorf("OutputConfig should be nil but got %+v", result.OutputConfig)
+				}
+			} else {
+				if result.Thinking == nil {
+					t.Fatal("Thinking should not be nil")
+				}
+				if result.Thinking.Type != tt.expectedThinkType {
+					t.Errorf("Thinking.Type = %q, want %q", result.Thinking.Type, tt.expectedThinkType)
+				}
+				if tt.expectedThinkType == "enabled" {
+					if result.Thinking.BudgetTokens != tt.expectedBudget {
+						t.Errorf("BudgetTokens = %d, want %d", result.Thinking.BudgetTokens, tt.expectedBudget)
+					}
+				}
+				if tt.expectedThinkType == "adaptive" {
+					if result.OutputConfig == nil {
+						t.Fatal("OutputConfig should not be nil for adaptive thinking")
+					}
+					if result.OutputConfig.Effort != tt.expectedEffort {
+						t.Errorf("OutputConfig.Effort = %q, want %q", result.OutputConfig.Effort, tt.expectedEffort)
+					}
+				}
+			}
+
+			if result.MaxTokens != tt.expectedMaxTokens {
+				t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
+			}
+
+			if tt.expectNilTemp && result.Temperature != nil {
+				t.Errorf("Temperature should be nil but is %v", *result.Temperature)
+			}
+		})
+	}
 }
 
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-req := &core.ResponsesRequest{
-Model:            "claude-3-5-sonnet-20241022",
-Input:            "test input",
-MaxOutputTokens:  tt.maxOutputTokens,
-Reasoning:        tt.reasoning,
+func TestIsAdaptiveThinkingModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"claude-opus-4-6", true},
+		{"claude-opus-4-6-20260301", true},
+		{"claude-sonnet-4-6", true},
+		{"claude-sonnet-4-6-20260301", true},
+		{"claude-haiku-4-6", false},
+		{"claude-haiku-4-6-20260501", false},
+		{"claude-3-5-sonnet-20241022", false},
+		{"claude-opus-4-5-20251101", false},
+		{"claude-4-60", false},
+		{"claude-opus-4-6x", false},
+		{"claude-opus-4-65", false},
+		{"something-claude-opus-4-6", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := isAdaptiveThinkingModel(tt.model); got != tt.expected {
+				t.Errorf("isAdaptiveThinkingModel(%q) = %v, want %v", tt.model, got, tt.expected)
+			}
+		})
+	}
 }
 
-result := convertResponsesRequestToAnthropic(req)
-
-if tt.expectedThinking {
-if result.Thinking == nil {
-t.Error("Thinking should be enabled but is nil")
-} else {
-if result.Thinking.BudgetTokens != tt.expectedBudget {
-t.Errorf("Thinking.BudgetTokens = %d, want %d", result.Thinking.BudgetTokens, tt.expectedBudget)
-}
-}
-} else {
-if result.Thinking != nil {
-t.Errorf("Thinking should be nil but got %+v", result.Thinking)
-}
-}
-
-if result.MaxTokens != tt.expectedMaxTokens {
-t.Errorf("MaxTokens = %d, want %d", result.MaxTokens, tt.expectedMaxTokens)
-}
-})
-}
-}
-
-// Helper function to create int pointer
 func intPtr(i int) *int {
-return &i
+	return &i
+}
+
+func float64Ptr(f float64) *float64 {
+	return &f
 }
