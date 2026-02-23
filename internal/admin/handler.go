@@ -2,7 +2,6 @@
 package admin
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -129,57 +128,7 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 		return handleError(c, err)
 	}
 
-	// Only fall back to per-model cost calculation when the reader returned no persisted costs
-	// (i.e. all data predates the cost-column migration).
-	if summary.TotalCost == nil {
-		h.calculateCosts(c.Request().Context(), summary, params)
-	}
-
 	return c.JSON(http.StatusOK, summary)
-}
-
-// calculateCosts enriches a UsageSummary with estimated costs by looking up
-// per-model token usage and matching it against registry pricing metadata.
-// Best-effort: if any data is unavailable, cost fields remain nil.
-func (h *Handler) calculateCosts(ctx context.Context, summary *usage.UsageSummary, params usage.UsageQueryParams) {
-	if h.usageReader == nil || h.registry == nil {
-		return
-	}
-
-	modelUsages, err := h.usageReader.GetUsageByModel(ctx, params)
-	if err != nil {
-		return
-	}
-
-	var totalInputCost, totalOutputCost float64
-	var hasPricing bool
-
-	for _, mu := range modelUsages {
-		meta := h.registry.GetModelMetadata(mu.Model)
-		if (meta == nil || meta.Pricing == nil) && mu.Provider != "" {
-			meta = h.registry.ResolveMetadata(mu.Provider, mu.Model)
-		}
-		if meta == nil || meta.Pricing == nil {
-			continue
-		}
-
-		inputCost, outputCost, _ := usage.CalculateCost(int(mu.InputTokens), int(mu.OutputTokens), meta.Pricing)
-		if inputCost != nil {
-			totalInputCost += *inputCost
-			hasPricing = true
-		}
-		if outputCost != nil {
-			totalOutputCost += *outputCost
-			hasPricing = true
-		}
-	}
-
-	if hasPricing {
-		summary.TotalInputCost = &totalInputCost
-		summary.TotalOutputCost = &totalOutputCost
-		total := totalInputCost + totalOutputCost
-		summary.TotalCost = &total
-	}
 }
 
 // DailyUsage handles GET /admin/api/v1/usage/daily
@@ -203,6 +152,72 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, daily)
+}
+
+// UsageByModel handles GET /admin/api/v1/usage/models
+func (h *Handler) UsageByModel(c echo.Context) error {
+	if h.usageReader == nil {
+		return c.JSON(http.StatusOK, []usage.ModelUsage{})
+	}
+
+	params, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	models, err := h.usageReader.GetUsageByModel(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if models == nil {
+		models = []usage.ModelUsage{}
+	}
+
+	return c.JSON(http.StatusOK, models)
+}
+
+// UsageLog handles GET /admin/api/v1/usage/log
+func (h *Handler) UsageLog(c echo.Context) error {
+	if h.usageReader == nil {
+		return c.JSON(http.StatusOK, usage.UsageLogResult{
+			Entries: []usage.UsageLogEntry{},
+		})
+	}
+
+	baseParams, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	params := usage.UsageLogParams{
+		UsageQueryParams: baseParams,
+		Model:            c.QueryParam("model"),
+		Provider:         c.QueryParam("provider"),
+		Search:           c.QueryParam("search"),
+	}
+
+	if l := c.QueryParam("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			params.Limit = parsed
+		}
+	}
+	if o := c.QueryParam("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			params.Offset = parsed
+		}
+	}
+
+	result, err := h.usageReader.GetUsageLog(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if result.Entries == nil {
+		result.Entries = []usage.UsageLogEntry{}
+	}
+
+	return c.JSON(http.StatusOK, result)
 }
 
 // ListModels handles GET /admin/api/v1/models

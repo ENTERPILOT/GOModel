@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -125,6 +126,10 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 		}},
 		{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
 		{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+		{Key: "input_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$input_cost", 0}}}}}},
+		{Key: "output_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$output_cost", 0}}}}}},
+		{Key: "total_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+		{Key: "has_costs", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
 	}}})
 
 	cursor, err := r.collection.Aggregate(ctx, pipeline)
@@ -140,18 +145,28 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 				Model    string `bson:"model"`
 				Provider string `bson:"provider"`
 			} `bson:"_id"`
-			InputTokens  int64 `bson:"input_tokens"`
-			OutputTokens int64 `bson:"output_tokens"`
+			InputTokens  int64   `bson:"input_tokens"`
+			OutputTokens int64   `bson:"output_tokens"`
+			InputCost    float64 `bson:"input_cost"`
+			OutputCost   float64 `bson:"output_cost"`
+			TotalCost    float64 `bson:"total_cost"`
+			HasCosts     int     `bson:"has_costs"`
 		}
 		if err := cursor.Decode(&row); err != nil {
 			return nil, fmt.Errorf("failed to decode usage by model row: %w", err)
 		}
-		result = append(result, ModelUsage{
+		m := ModelUsage{
 			Model:        row.ID.Model,
 			Provider:     row.ID.Provider,
 			InputTokens:  row.InputTokens,
 			OutputTokens: row.OutputTokens,
-		})
+		}
+		if row.HasCosts > 0 {
+			m.InputCost = &row.InputCost
+			m.OutputCost = &row.OutputCost
+			m.TotalCost = &row.TotalCost
+		}
+		result = append(result, m)
 	}
 
 	if err := cursor.Err(); err != nil {
@@ -159,6 +174,140 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 	}
 
 	return result, nil
+}
+
+func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := params.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	matchFilters := bson.D{}
+
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
+			{Key: "$gte", Value: params.StartDate.UTC()},
+			{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
+		}})
+	} else if !startZero {
+		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
+			{Key: "$gte", Value: params.StartDate.UTC()},
+		}})
+	}
+
+	if params.Model != "" {
+		matchFilters = append(matchFilters, bson.E{Key: "model", Value: params.Model})
+	}
+	if params.Provider != "" {
+		matchFilters = append(matchFilters, bson.E{Key: "provider", Value: params.Provider})
+	}
+	if params.Search != "" {
+		regex := bson.D{{Key: "$regex", Value: params.Search}, {Key: "$options", Value: "i"}}
+		matchFilters = append(matchFilters, bson.E{Key: "$or", Value: bson.A{
+			bson.D{{Key: "model", Value: regex}},
+			bson.D{{Key: "provider", Value: regex}},
+			bson.D{{Key: "request_id", Value: regex}},
+			bson.D{{Key: "provider_id", Value: regex}},
+		}})
+	}
+
+	pipeline := bson.A{}
+	if len(matchFilters) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$facet", Value: bson.D{
+		{Key: "data", Value: bson.A{
+			bson.D{{Key: "$sort", Value: bson.D{{Key: "timestamp", Value: -1}}}},
+			bson.D{{Key: "$skip", Value: offset}},
+			bson.D{{Key: "$limit", Value: limit}},
+		}},
+		{Key: "total", Value: bson.A{
+			bson.D{{Key: "$count", Value: "count"}},
+		}},
+	}}})
+
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate usage log: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var facetResult struct {
+		Data []struct {
+			ID                     string    `bson:"_id"`
+			RequestID              string    `bson:"request_id"`
+			ProviderID             string    `bson:"provider_id"`
+			Timestamp              time.Time `bson:"timestamp"`
+			Model                  string    `bson:"model"`
+			Provider               string    `bson:"provider"`
+			Endpoint               string    `bson:"endpoint"`
+			InputTokens            int       `bson:"input_tokens"`
+			OutputTokens           int       `bson:"output_tokens"`
+			TotalTokens            int       `bson:"total_tokens"`
+			InputCost              *float64  `bson:"input_cost"`
+			OutputCost             *float64  `bson:"output_cost"`
+			TotalCost              *float64       `bson:"total_cost"`
+			RawData                map[string]any `bson:"raw_data"`
+			CostsCalculationCaveat string         `bson:"costs_calculation_caveat"`
+		} `bson:"data"`
+		Total []struct {
+			Count int `bson:"count"`
+		} `bson:"total"`
+	}
+
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&facetResult); err != nil {
+			return nil, fmt.Errorf("failed to decode usage log facet result: %w", err)
+		}
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage log cursor: %w", err)
+	}
+
+	total := 0
+	if len(facetResult.Total) > 0 {
+		total = facetResult.Total[0].Count
+	}
+
+	entries := make([]UsageLogEntry, 0, len(facetResult.Data))
+	for _, row := range facetResult.Data {
+		entries = append(entries, UsageLogEntry{
+			ID:                     row.ID,
+			RequestID:              row.RequestID,
+			ProviderID:             row.ProviderID,
+			Timestamp:              row.Timestamp,
+			Model:                  row.Model,
+			Provider:               row.Provider,
+			Endpoint:               row.Endpoint,
+			InputTokens:            row.InputTokens,
+			OutputTokens:           row.OutputTokens,
+			TotalTokens:            row.TotalTokens,
+			InputCost:              row.InputCost,
+			OutputCost:             row.OutputCost,
+			TotalCost:              row.TotalCost,
+			RawData:                row.RawData,
+			CostsCalculationCaveat: row.CostsCalculationCaveat,
+		})
+	}
+
+	return &UsageLogResult{
+		Entries: entries,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
 }
 
 func mongoDateFormat(interval string) string {

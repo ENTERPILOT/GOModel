@@ -152,6 +152,8 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		adminAPI := e.Group("/admin/api/v1")
 		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
 		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
+		adminAPI.GET("/usage/models", cfg.AdminHandler.UsageByModel)
+		adminAPI.GET("/usage/log", cfg.AdminHandler.UsageLog)
 		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
 		adminAPI.GET("/models/categories", cfg.AdminHandler.ListCategories)
 	}

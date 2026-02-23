@@ -859,6 +859,204 @@ td.col-price {
     font-size: 14px;
 }
 
+/* Usage Mode Toggle */
+.usage-mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.usage-mode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 5px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.usage-mode-btn:hover {
+    color: var(--text);
+}
+
+.usage-mode-btn.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Donut Chart Section */
+.donut-section {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.donut-section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.donut-container {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+
+.donut-chart-wrap {
+    position: relative;
+    width: 240px;
+    height: 240px;
+    flex-shrink: 0;
+}
+
+.donut-legend {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.donut-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.donut-legend-color {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.donut-legend-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+}
+
+.donut-legend-value {
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+/* Usage Log Section */
+.usage-log-section {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+}
+
+.usage-log-section h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 16px;
+}
+
+.usage-log-toolbar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.usage-log-toolbar .filter-input {
+    flex: 1;
+    max-width: none;
+}
+
+.usage-log-select {
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+    min-width: 140px;
+}
+
+.usage-log-select:focus {
+    border-color: var(--accent);
+}
+
+.usage-ts {
+    white-space: nowrap;
+    font-size: 12px;
+}
+
+/* Caveat warning icon */
+.caveat-icon {
+    color: var(--warning);
+    cursor: help;
+    font-size: 14px;
+    margin-left: 4px;
+}
+
+/* Pagination */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0 0;
+}
+
+.pagination-info {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.pagination-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.pagination-btn {
+    padding: 6px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--bg-surface-hover);
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .sidebar { width: 60px; }
@@ -899,6 +1097,31 @@ td.col-price {
 
     /* Interval picker mobile */
     .interval-btn {
+        padding: 4px 8px;
+        font-size: 11px;
+    }
+
+    /* Usage page mobile */
+    .donut-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .donut-chart-wrap {
+        width: 100%;
+        max-width: 240px;
+        margin: 0 auto;
+    }
+    .usage-log-toolbar {
+        flex-direction: column;
+    }
+    .usage-log-select {
+        min-width: 0;
+    }
+    .usage-log-table {
+        display: block;
+        overflow-x: auto;
+    }
+    .usage-mode-btn {
         padding: 4px 8px;
         font-size: 11px;
     }

@@ -37,6 +37,15 @@ function dashboard() {
         // Chart
         chart: null,
 
+        // Usage page state
+        usageMode: 'tokens',
+        modelUsage: [],
+        usageLog: { entries: [], total: 0, limit: 50, offset: 0 },
+        usageLogSearch: '',
+        usageLogModel: '',
+        usageLogProvider: '',
+        usageDonutChart: null,
+
         init() {
             this.apiKey = localStorage.getItem('gomodel_api_key') || '';
             this.theme = localStorage.getItem('gomodel_theme') || 'system';
@@ -46,14 +55,15 @@ function dashboard() {
             // Parse initial page from URL path
             const path = window.location.pathname.replace(/\/$/, '');
             const slug = path.split('/').pop();
-            this.page = (slug === 'models') ? 'models' : 'overview';
+            this.page = (slug === 'models') ? 'models' : (slug === 'usage') ? 'usage' : 'overview';
 
             // Handle browser back/forward
             window.addEventListener('popstate', () => {
                 const p = window.location.pathname.replace(/\/$/, '');
                 const s = p.split('/').pop();
-                this.page = (s === 'models') ? 'models' : 'overview';
+                this.page = (s === 'models') ? 'models' : (s === 'usage') ? 'usage' : 'overview';
                 if (this.page === 'overview') this.renderChart();
+                if (this.page === 'usage') { this.fetchUsagePage(); }
             });
 
             // Re-render chart when system theme changes (only matters in 'system' mode)
@@ -294,6 +304,7 @@ function dashboard() {
             this.page = page;
             history.pushState(null, '', '/admin/dashboard/' + page);
             if (page === 'overview') this.renderChart();
+            if (page === 'usage') { this.fetchUsagePage(); }
         },
 
         setTheme(t) {
@@ -301,6 +312,7 @@ function dashboard() {
             localStorage.setItem('gomodel_theme', t);
             this.applyTheme();
             this.renderChart();
+            this.renderDonutChart();
         },
 
         toggleTheme() {
@@ -398,6 +410,7 @@ function dashboard() {
                 this.summary = await summaryRes.json();
                 this.daily = await dailyRes.json();
                 this.renderChart();
+                if (this.page === 'usage') this.fetchUsagePage();
             } catch (e) {
                 console.error('Failed to fetch usage:', e);
             }
@@ -576,6 +589,20 @@ function dashboard() {
             return '$' + v.toFixed(4);
         },
 
+        formatCostTooltip(entry) {
+            let lines = [];
+            lines.push('Input: ' + this.formatCost(entry.input_cost));
+            lines.push('Output: ' + this.formatCost(entry.output_cost));
+            if (entry.raw_data) {
+                lines.push('');
+                for (const [key, value] of Object.entries(entry.raw_data)) {
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    lines.push(label + ': ' + this.formatNumber(value));
+                }
+            }
+            return lines.join('\n');
+        },
+
         formatPrice(v) {
             if (v == null || v === undefined) return '\u2014';
             return '$' + v.toFixed(2);
@@ -590,6 +617,206 @@ function dashboard() {
         categoryCount(cat) {
             const entry = this.categories.find(c => c.category === cat);
             return entry ? entry.count : 0;
+        },
+
+        // Usage page methods
+        _usageQueryStr() {
+            if (this.customStartDate && this.customEndDate) {
+                return 'start_date=' + this._formatDate(this.customStartDate) +
+                       '&end_date=' + this._formatDate(this.customEndDate);
+            }
+            return 'days=' + this.days;
+        },
+
+        async fetchUsagePage() {
+            await Promise.all([this.fetchModelUsage(), this.fetchUsageLog(false)]);
+            this.renderDonutChart();
+        },
+
+        async fetchModelUsage() {
+            try {
+                const res = await fetch('/admin/api/v1/usage/models?' + this._usageQueryStr(), { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'usage models')) {
+                    this.modelUsage = [];
+                    return;
+                }
+                this.modelUsage = await res.json();
+            } catch (e) {
+                console.error('Failed to fetch model usage:', e);
+                this.modelUsage = [];
+            }
+        },
+
+        async fetchUsageLog(resetOffset) {
+            try {
+                if (resetOffset) this.usageLog.offset = 0;
+                let qs = this._usageQueryStr();
+                qs += '&limit=' + this.usageLog.limit + '&offset=' + this.usageLog.offset;
+                if (this.usageLogSearch) qs += '&search=' + encodeURIComponent(this.usageLogSearch);
+                if (this.usageLogModel) qs += '&model=' + encodeURIComponent(this.usageLogModel);
+                if (this.usageLogProvider) qs += '&provider=' + encodeURIComponent(this.usageLogProvider);
+
+                const res = await fetch('/admin/api/v1/usage/log?' + qs, { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'usage log')) {
+                    this.usageLog = { entries: [], total: 0, limit: 50, offset: 0 };
+                    return;
+                }
+                this.usageLog = await res.json();
+                if (!this.usageLog.entries) this.usageLog.entries = [];
+            } catch (e) {
+                console.error('Failed to fetch usage log:', e);
+                this.usageLog = { entries: [], total: 0, limit: 50, offset: 0 };
+            }
+        },
+
+        toggleUsageMode(mode) {
+            this.usageMode = mode;
+            this.renderDonutChart();
+        },
+
+        usageLogNextPage() {
+            if (this.usageLog.offset + this.usageLog.limit < this.usageLog.total) {
+                this.usageLog.offset += this.usageLog.limit;
+                this.fetchUsageLog(false);
+            }
+        },
+
+        usageLogPrevPage() {
+            if (this.usageLog.offset > 0) {
+                this.usageLog.offset = Math.max(0, this.usageLog.offset - this.usageLog.limit);
+                this.fetchUsageLog(false);
+            }
+        },
+
+        usageLogModelOptions() {
+            const set = new Set();
+            this.modelUsage.forEach(m => set.add(m.model));
+            return [...set].sort();
+        },
+
+        usageLogProviderOptions() {
+            const set = new Set();
+            this.modelUsage.forEach(m => set.add(m.provider));
+            return [...set].sort();
+        },
+
+        formatTokensShort(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return String(n);
+        },
+
+        formatTimestamp(ts) {
+            if (!ts) return '-';
+            const d = new Date(ts);
+            return d.getFullYear() + '-' +
+                String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                String(d.getDate()).padStart(2, '0') + ' ' +
+                String(d.getHours()).padStart(2, '0') + ':' +
+                String(d.getMinutes()).padStart(2, '0') + ':' +
+                String(d.getSeconds()).padStart(2, '0');
+        },
+
+        _donutColors() {
+            return [
+                '#b8956e', '#34d399', '#60a5fa', '#f472b6', '#a78bfa',
+                '#fbbf24', '#fb923c', '#4ade80', '#38bdf8', '#e879f9',
+                '#818cf8'
+            ];
+        },
+
+        _donutData() {
+            const sorted = [...this.modelUsage].sort((a, b) => {
+                if (this.usageMode === 'costs') {
+                    return ((b.total_cost || 0) - (a.total_cost || 0));
+                }
+                return ((b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens));
+            });
+
+            const top = sorted.slice(0, 10);
+            const rest = sorted.slice(10);
+
+            const labels = top.map(m => m.model);
+            const values = top.map(m => {
+                if (this.usageMode === 'costs') return m.total_cost || 0;
+                return m.input_tokens + m.output_tokens;
+            });
+
+            if (rest.length > 0) {
+                labels.push('Other');
+                let otherVal = 0;
+                rest.forEach(m => {
+                    if (this.usageMode === 'costs') otherVal += (m.total_cost || 0);
+                    else otherVal += m.input_tokens + m.output_tokens;
+                });
+                values.push(otherVal);
+            }
+
+            return { labels, values };
+        },
+
+        donutLegendItems() {
+            const { labels, values } = this._donutData();
+            const colors = this._donutColors();
+            return labels.map((label, i) => ({
+                label,
+                color: colors[i % colors.length],
+                value: this.usageMode === 'costs' ? '$' + values[i].toFixed(4) : this.formatTokensShort(values[i])
+            }));
+        },
+
+        renderDonutChart() {
+            this.$nextTick(() => {
+                if (this.usageDonutChart) {
+                    this.usageDonutChart.destroy();
+                    this.usageDonutChart = null;
+                }
+
+                if (this.modelUsage.length === 0) return;
+
+                const canvas = document.getElementById('usageDonutChart');
+                if (!canvas || canvas.offsetWidth === 0) return;
+
+                const colors = this.chartColors();
+                const { labels, values } = this._donutData();
+                const palette = this._donutColors();
+
+                this.usageDonutChart = new Chart(canvas, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            backgroundColor: palette.slice(0, labels.length),
+                            borderColor: 'transparent',
+                            borderWidth: 0
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 0 },
+                        cutout: '60%',
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: colors.tooltipBg,
+                                borderColor: colors.tooltipBorder,
+                                borderWidth: 1,
+                                titleColor: colors.tooltipText,
+                                bodyColor: colors.tooltipText,
+                                callbacks: {
+                                    label: (c) => {
+                                        const val = c.parsed;
+                                        if (this.usageMode === 'costs') return c.label + ': $' + val.toFixed(4);
+                                        return c.label + ': ' + this.formatTokensShort(val);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            });
         }
     };
 }

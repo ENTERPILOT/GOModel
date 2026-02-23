@@ -2,6 +2,7 @@ package usage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,16 +62,18 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+
 	if !startZero && !endZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2 GROUP BY model, provider`
 		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
 	} else if !startZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1 GROUP BY model, provider`
 		args = append(args, params.StartDate.UTC())
 	} else {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM "usage" GROUP BY model, provider`
 	}
 
@@ -83,7 +86,7 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	result := make([]ModelUsage, 0)
 	for rows.Next() {
 		var m ModelUsage
-		if err := rows.Scan(&m.Model, &m.Provider, &m.InputTokens, &m.OutputTokens); err != nil {
+		if err := rows.Scan(&m.Model, &m.Provider, &m.InputTokens, &m.OutputTokens, &m.InputCost, &m.OutputCost, &m.TotalCost); err != nil {
 			return nil, fmt.Errorf("failed to scan usage by model row: %w", err)
 		}
 		result = append(result, m)
@@ -94,6 +97,109 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	}
 
 	return result, nil
+}
+
+func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
+	limit := params.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := params.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
+		args = append(args, params.StartDate.UTC())
+		argIdx++
+		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", argIdx))
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
+		argIdx++
+	} else if !startZero {
+		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
+		args = append(args, params.StartDate.UTC())
+		argIdx++
+	}
+
+	if params.Model != "" {
+		conditions = append(conditions, fmt.Sprintf("model = $%d", argIdx))
+		args = append(args, params.Model)
+		argIdx++
+	}
+	if params.Provider != "" {
+		conditions = append(conditions, fmt.Sprintf("provider = $%d", argIdx))
+		args = append(args, params.Provider)
+		argIdx++
+	}
+	if params.Search != "" {
+		s := "%" + params.Search + "%"
+		conditions = append(conditions, fmt.Sprintf("(model ILIKE $%d OR provider ILIKE $%d OR request_id ILIKE $%d OR provider_id ILIKE $%d)", argIdx, argIdx, argIdx, argIdx))
+		args = append(args, s)
+		argIdx++
+	}
+
+	where := ""
+	if len(conditions) > 0 {
+		where = " WHERE " + conditions[0]
+		for _, c := range conditions[1:] {
+			where += " AND " + c
+		}
+	}
+
+	// Count total
+	var total int
+	countQuery := `SELECT COUNT(*) FROM "usage"` + where
+	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count usage log entries: %w", err)
+	}
+
+	// Fetch page
+	dataQuery := fmt.Sprintf(`SELECT id, request_id, provider_id, timestamp, model, provider, endpoint,
+		input_tokens, output_tokens, total_tokens, input_cost, output_cost, total_cost, raw_data, COALESCE(costs_calculation_caveat, '')
+		FROM "usage"%s ORDER BY timestamp DESC LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1)
+	dataArgs := append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query usage log: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]UsageLogEntry, 0)
+	for rows.Next() {
+		var e UsageLogEntry
+		var rawDataJSON *string
+		if err := rows.Scan(&e.ID, &e.RequestID, &e.ProviderID, &e.Timestamp, &e.Model, &e.Provider, &e.Endpoint,
+			&e.InputTokens, &e.OutputTokens, &e.TotalTokens, &e.InputCost, &e.OutputCost, &e.TotalCost, &rawDataJSON, &e.CostsCalculationCaveat); err != nil {
+			return nil, fmt.Errorf("failed to scan usage log row: %w", err)
+		}
+		if rawDataJSON != nil && *rawDataJSON != "" {
+			_ = json.Unmarshal([]byte(*rawDataJSON), &e.RawData)
+		}
+		entries = append(entries, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage log rows: %w", err)
+	}
+
+	return &UsageLogResult{
+		Entries: entries,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
 }
 
 func pgGroupExpr(interval string) string {
