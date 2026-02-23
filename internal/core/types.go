@@ -65,12 +65,30 @@ type Choice struct {
 	Index        int     `json:"index"`
 }
 
+// PromptTokensDetails holds extended input token breakdown (OpenAI/xAI).
+type PromptTokensDetails struct {
+	CachedTokens int `json:"cached_tokens"`
+	AudioTokens  int `json:"audio_tokens"`
+	TextTokens   int `json:"text_tokens"`
+	ImageTokens  int `json:"image_tokens"`
+}
+
+// CompletionTokensDetails holds extended output token breakdown (OpenAI/xAI).
+type CompletionTokensDetails struct {
+	ReasoningTokens          int `json:"reasoning_tokens"`
+	AudioTokens              int `json:"audio_tokens"`
+	AcceptedPredictionTokens int `json:"accepted_prediction_tokens"`
+	RejectedPredictionTokens int `json:"rejected_prediction_tokens"`
+}
+
 // Usage represents token usage information
 type Usage struct {
-	PromptTokens     int            `json:"prompt_tokens"`
-	CompletionTokens int            `json:"completion_tokens"`
-	TotalTokens      int            `json:"total_tokens"`
-	RawUsage         map[string]any `json:"raw_usage,omitempty"`
+	PromptTokens            int                      `json:"prompt_tokens"`
+	CompletionTokens        int                      `json:"completion_tokens"`
+	TotalTokens             int                      `json:"total_tokens"`
+	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
+	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
+	RawUsage                map[string]any            `json:"raw_usage,omitempty"`
 }
 
 // Model represents a single model in the models list

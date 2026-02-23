@@ -614,6 +614,94 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	}
 }
 
+func TestConvertFromAnthropicResponse_WithCacheFields(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_cache",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{Type: "text", Text: "Hello!"},
+		},
+		StopReason: "end_turn",
+		Usage: anthropicUsage{
+			InputTokens:              100,
+			OutputTokens:             20,
+			CacheCreationInputTokens: 50,
+			CacheReadInputTokens:     30,
+		},
+	}
+
+	result := convertFromAnthropicResponse(resp)
+
+	if result.Usage.RawUsage == nil {
+		t.Fatal("expected RawUsage to be set")
+	}
+	if result.Usage.RawUsage["cache_creation_input_tokens"] != 50 {
+		t.Errorf("RawUsage[cache_creation_input_tokens] = %v, want 50", result.Usage.RawUsage["cache_creation_input_tokens"])
+	}
+	if result.Usage.RawUsage["cache_read_input_tokens"] != 30 {
+		t.Errorf("RawUsage[cache_read_input_tokens] = %v, want 30", result.Usage.RawUsage["cache_read_input_tokens"])
+	}
+}
+
+func TestConvertFromAnthropicResponse_NoCacheFields(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_nocache",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{Type: "text", Text: "Hello!"},
+		},
+		StopReason: "end_turn",
+		Usage: anthropicUsage{
+			InputTokens:  100,
+			OutputTokens: 20,
+		},
+	}
+
+	result := convertFromAnthropicResponse(resp)
+
+	if result.Usage.RawUsage != nil {
+		t.Errorf("expected RawUsage to be nil when no cache fields, got %v", result.Usage.RawUsage)
+	}
+}
+
+func TestConvertAnthropicResponseToResponses_WithCacheFields(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_cache_resp",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{Type: "text", Text: "Hello!"},
+		},
+		StopReason: "end_turn",
+		Usage: anthropicUsage{
+			InputTokens:              100,
+			OutputTokens:             20,
+			CacheCreationInputTokens: 40,
+			CacheReadInputTokens:     60,
+		},
+	}
+
+	result := convertAnthropicResponseToResponses(resp, "claude-sonnet-4-5-20250929")
+
+	if result.Usage == nil {
+		t.Fatal("Usage should not be nil")
+	}
+	if result.Usage.RawUsage == nil {
+		t.Fatal("expected RawUsage to be set")
+	}
+	if result.Usage.RawUsage["cache_creation_input_tokens"] != 40 {
+		t.Errorf("RawUsage[cache_creation_input_tokens] = %v, want 40", result.Usage.RawUsage["cache_creation_input_tokens"])
+	}
+	if result.Usage.RawUsage["cache_read_input_tokens"] != 60 {
+		t.Errorf("RawUsage[cache_read_input_tokens] = %v, want 60", result.Usage.RawUsage["cache_read_input_tokens"])
+	}
+}
+
 func TestConvertFromAnthropicResponse_WithThinkingBlocks(t *testing.T) {
 	tests := []struct {
 		name         string

@@ -29,6 +29,45 @@ func CalculateCost(inputTokens, outputTokens int, pricing *core.ModelPricing) (i
 	return
 }
 
+// buildRawUsageFromDetails merges typed token detail fields into a RawUsage map.
+// Keys use the same "prompt_" / "completion_" prefix convention as stream_wrapper.go,
+// which cost.go providerMappings already consume.
+func buildRawUsageFromDetails(ptd *core.PromptTokensDetails, ctd *core.CompletionTokensDetails) map[string]any {
+	raw := make(map[string]any)
+	if ptd != nil {
+		if ptd.CachedTokens > 0 {
+			raw["prompt_cached_tokens"] = ptd.CachedTokens
+		}
+		if ptd.AudioTokens > 0 {
+			raw["prompt_audio_tokens"] = ptd.AudioTokens
+		}
+		if ptd.TextTokens > 0 {
+			raw["prompt_text_tokens"] = ptd.TextTokens
+		}
+		if ptd.ImageTokens > 0 {
+			raw["prompt_image_tokens"] = ptd.ImageTokens
+		}
+	}
+	if ctd != nil {
+		if ctd.ReasoningTokens > 0 {
+			raw["completion_reasoning_tokens"] = ctd.ReasoningTokens
+		}
+		if ctd.AudioTokens > 0 {
+			raw["completion_audio_tokens"] = ctd.AudioTokens
+		}
+		if ctd.AcceptedPredictionTokens > 0 {
+			raw["completion_accepted_prediction_tokens"] = ctd.AcceptedPredictionTokens
+		}
+		if ctd.RejectedPredictionTokens > 0 {
+			raw["completion_rejected_prediction_tokens"] = ctd.RejectedPredictionTokens
+		}
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
+}
+
 // ExtractFromChatResponse extracts usage data from a ChatResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
 // If pricing is provided, granular cost fields are calculated.
@@ -53,6 +92,12 @@ func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpo
 	// Preserve raw extended usage data if available (defensive copy to avoid races)
 	if len(resp.Usage.RawUsage) > 0 {
 		entry.RawData = cloneRawData(resp.Usage.RawUsage)
+	}
+
+	// Merge typed detail fields into RawData (non-streaming path).
+	// Only fill from details when RawUsage wasn't already set by the provider.
+	if entry.RawData == nil {
+		entry.RawData = buildRawUsageFromDetails(resp.Usage.PromptTokensDetails, resp.Usage.CompletionTokensDetails)
 	}
 
 	// Calculate granular costs if pricing is provided
@@ -107,6 +152,11 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provi
 		// Preserve raw extended usage data if available (defensive copy to avoid races)
 		if len(resp.Usage.RawUsage) > 0 {
 			entry.RawData = cloneRawData(resp.Usage.RawUsage)
+		}
+
+		// Merge typed detail fields into RawData (non-streaming path).
+		if entry.RawData == nil {
+			entry.RawData = buildRawUsageFromDetails(resp.Usage.PromptTokensDetails, resp.Usage.CompletionTokensDetails)
 		}
 	}
 
