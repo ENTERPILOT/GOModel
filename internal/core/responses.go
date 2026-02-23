@@ -4,7 +4,7 @@ package core
 // This is the OpenAI-compatible /v1/responses endpoint.
 type ResponsesRequest struct {
 	Model           string            `json:"model"`
-	Input           interface{}       `json:"input"` // Can be string or []ResponsesInputItem
+	Input           interface{}       `json:"input" swaggertype:"object"` // Can be string or []ResponsesInputItem
 	Instructions    string            `json:"instructions,omitempty"`
 	Tools           []map[string]any  `json:"tools,omitempty"`
 	Temperature     *float64          `json:"temperature,omitempty"`

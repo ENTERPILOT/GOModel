@@ -567,7 +567,8 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "input": {
-                    "description": "Can be string or []ResponsesInputItem"
+                    "description": "Can be string or []ResponsesInputItem",
+                    "type": "object"
                 },
                 "instructions": {
                     "type": "string"
