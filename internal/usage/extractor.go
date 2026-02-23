@@ -31,7 +31,7 @@ func CalculateCost(inputTokens, outputTokens int, pricing *core.ModelPricing) (i
 
 // ExtractFromChatResponse extracts usage data from a ChatResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
-// If pricing is provided, cost fields are calculated.
+// If pricing is provided, granular cost fields are calculated.
 func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
 	if resp == nil {
 		return nil
@@ -55,9 +55,13 @@ func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpo
 		entry.RawData = cloneRawData(resp.Usage.RawUsage)
 	}
 
-	// Calculate costs if pricing is provided
+	// Calculate granular costs if pricing is provided
 	if len(pricing) > 0 && pricing[0] != nil {
-		entry.InputCost, entry.OutputCost, entry.TotalCost = CalculateCost(entry.InputTokens, entry.OutputTokens, pricing[0])
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		entry.InputCost = costResult.InputCost
+		entry.OutputCost = costResult.OutputCost
+		entry.TotalCost = costResult.TotalCost
+		entry.CostsCalculationCaveat = costResult.Caveat
 	}
 
 	return entry
@@ -106,9 +110,13 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provi
 		}
 	}
 
-	// Calculate costs if pricing is provided
+	// Calculate granular costs if pricing is provided
 	if len(pricing) > 0 && pricing[0] != nil {
-		entry.InputCost, entry.OutputCost, entry.TotalCost = CalculateCost(entry.InputTokens, entry.OutputTokens, pricing[0])
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		entry.InputCost = costResult.InputCost
+		entry.OutputCost = costResult.OutputCost
+		entry.TotalCost = costResult.TotalCost
+		entry.CostsCalculationCaveat = costResult.Caveat
 	}
 
 	return entry
@@ -142,9 +150,13 @@ func ExtractFromSSEUsage(
 		entry.RawData = cloneRawData(rawData)
 	}
 
-	// Calculate costs if pricing is provided
+	// Calculate granular costs if pricing is provided
 	if len(pricing) > 0 && pricing[0] != nil {
-		entry.InputCost, entry.OutputCost, entry.TotalCost = CalculateCost(entry.InputTokens, entry.OutputTokens, pricing[0])
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		entry.InputCost = costResult.InputCost
+		entry.OutputCost = costResult.OutputCost
+		entry.TotalCost = costResult.TotalCost
+		entry.CostsCalculationCaveat = costResult.Caveat
 	}
 
 	return entry

@@ -561,6 +561,23 @@ func (r *ModelRegistry) GetModelMetadata(modelID string) *core.ModelMetadata {
 	return nil
 }
 
+// ResolvePricing returns the pricing metadata for a model, trying the registry first
+// and falling back to a reverse-index lookup via the model list.
+// Returns nil if no pricing is available.
+func (r *ModelRegistry) ResolvePricing(model, providerType string) *core.ModelPricing {
+	meta := r.GetModelMetadata(model)
+	if meta != nil && meta.Pricing != nil {
+		return meta.Pricing
+	}
+	if providerType != "" {
+		meta = r.ResolveMetadata(providerType, model)
+		if meta != nil && meta.Pricing != nil {
+			return meta.Pricing
+		}
+	}
+	return nil
+}
+
 // snapshotProviderTypes returns a copy of the providerTypes map for use outside the lock.
 func (r *ModelRegistry) snapshotProviderTypes() map[core.Provider]string {
 	r.mu.RLock()

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+
+	"gomodel/internal/core"
 )
 
 // StreamUsageWrapper wraps an io.ReadCloser to capture usage data from SSE streams.
@@ -12,25 +14,27 @@ import (
 // final SSE event (typically contains usage data in OpenAI-compatible APIs).
 type StreamUsageWrapper struct {
 	io.ReadCloser
-	logger    LoggerInterface
-	buffer    bytes.Buffer // rolling buffer for usage extraction
-	model     string
-	provider  string
-	requestID string
-	endpoint  string
-	closed    bool
+	logger          LoggerInterface
+	pricingResolver PricingResolver
+	buffer          bytes.Buffer // rolling buffer for usage extraction
+	model           string
+	provider        string
+	requestID       string
+	endpoint        string
+	closed          bool
 }
 
 // NewStreamUsageWrapper creates a wrapper around a stream to capture usage data.
 // When the stream is closed, it parses the final usage data and logs the entry.
-func NewStreamUsageWrapper(stream io.ReadCloser, logger LoggerInterface, model, provider, requestID, endpoint string) *StreamUsageWrapper {
+func NewStreamUsageWrapper(stream io.ReadCloser, logger LoggerInterface, model, provider, requestID, endpoint string, pricingResolver PricingResolver) *StreamUsageWrapper {
 	return &StreamUsageWrapper{
-		ReadCloser: stream,
-		logger:     logger,
-		model:      model,
-		provider:   provider,
-		requestID:  requestID,
-		endpoint:   endpoint,
+		ReadCloser:      stream,
+		logger:          logger,
+		pricingResolver: pricingResolver,
+		model:           model,
+		provider:        provider,
+		requestID:       requestID,
+		endpoint:        endpoint,
 	}
 }
 
@@ -201,11 +205,21 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 		if len(rawData) == 0 {
 			rawData = nil
 		}
+
+		// Resolve pricing for cost calculation
+		var pricingArgs []*core.ModelPricing
+		if w.pricingResolver != nil {
+			if p := w.pricingResolver.ResolvePricing(model, w.provider); p != nil {
+				pricingArgs = append(pricingArgs, p)
+			}
+		}
+
 		return ExtractFromSSEUsage(
 			providerID,
 			inputTokens, outputTokens, totalTokens,
 			rawData,
 			w.requestID, model, w.provider, w.endpoint,
+			pricingArgs...,
 		)
 	}
 
@@ -214,11 +228,11 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 
 // WrapStreamForUsage wraps a stream with usage tracking if enabled.
 // This is a convenience function for use in handlers.
-func WrapStreamForUsage(stream io.ReadCloser, logger LoggerInterface, model, provider, requestID, endpoint string) io.ReadCloser {
+func WrapStreamForUsage(stream io.ReadCloser, logger LoggerInterface, model, provider, requestID, endpoint string, pricingResolver PricingResolver) io.ReadCloser {
 	if logger == nil || !logger.Config().Enabled {
 		return stream
 	}
-	return NewStreamUsageWrapper(stream, logger, model, provider, requestID, endpoint)
+	return NewStreamUsageWrapper(stream, logger, model, provider, requestID, endpoint, pricingResolver)
 }
 
 // IsModelInteractionPath returns true if the path is an AI model endpoint

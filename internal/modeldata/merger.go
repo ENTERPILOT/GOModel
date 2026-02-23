@@ -99,6 +99,7 @@ func convertPricing(p *PricingEntry) *core.ModelPricing {
 		AudioInputPerMtok:      p.AudioInputPerMtok,
 		AudioOutputPerMtok:     p.AudioOutputPerMtok,
 		PerImage:               p.PerImage,
+		InputPerImage:          p.InputPerImage,
 		PerSecondInput:         p.PerSecondInput,
 		PerSecondOutput:        p.PerSecondOutput,
 		PerCharacterInput:      p.PerCharacterInput,

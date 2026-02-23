@@ -26,22 +26,25 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+
 	if !startZero && !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM usage WHERE timestamp >= ? AND timestamp < ?`
 		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
 	} else if !startZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM usage WHERE timestamp >= ?`
 		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
 	} else {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM usage`
 	}
 
 	summary := &UsageSummary{}
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
 		&summary.TotalRequests, &summary.TotalInput, &summary.TotalOutput, &summary.TotalTokens,
+		&summary.TotalInputCost, &summary.TotalOutputCost, &summary.TotalCost,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query usage summary: %w", err)

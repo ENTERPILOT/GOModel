@@ -15,17 +15,19 @@ import (
 
 // Handler holds the HTTP handlers
 type Handler struct {
-	provider    core.RoutableProvider
-	logger      auditlog.LoggerInterface
-	usageLogger usage.LoggerInterface
+	provider        core.RoutableProvider
+	logger          auditlog.LoggerInterface
+	usageLogger     usage.LoggerInterface
+	pricingResolver usage.PricingResolver
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
-func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface) *Handler {
+func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface, pricingResolver usage.PricingResolver) *Handler {
 	return &Handler{
-		provider:    provider,
-		logger:      logger,
-		usageLogger: usageLogger,
+		provider:        provider,
+		logger:          logger,
+		usageLogger:     usageLogger,
+		pricingResolver: pricingResolver,
 	}
 }
 
@@ -54,7 +56,7 @@ func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string
 	// Wrap with usage tracking if enabled
 	requestID := c.Request().Header.Get("X-Request-ID")
 	endpoint := c.Request().URL.Path
-	wrappedStream = usage.WrapStreamForUsage(wrappedStream, h.usageLogger, model, provider, requestID, endpoint)
+	wrappedStream = usage.WrapStreamForUsage(wrappedStream, h.usageLogger, model, provider, requestID, endpoint, h.pricingResolver)
 
 	defer func() {
 		_ = wrappedStream.Close() //nolint:errcheck
@@ -119,7 +121,11 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 
 	// Track usage if enabled (reuses requestID from context enrichment above)
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
-		usageEntry := usage.ExtractFromChatResponse(resp, requestID, providerType, "/v1/chat/completions")
+		var pricing *core.ModelPricing
+		if h.pricingResolver != nil {
+			pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
+		}
+		usageEntry := usage.ExtractFromChatResponse(resp, requestID, providerType, "/v1/chat/completions", pricing)
 		if usageEntry != nil {
 			h.usageLogger.Write(usageEntry)
 		}
@@ -192,7 +198,11 @@ func (h *Handler) Responses(c echo.Context) error {
 
 	// Track usage if enabled (reuses requestID from context enrichment above)
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
-		usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, providerType, "/v1/responses")
+		var pricing *core.ModelPricing
+		if h.pricingResolver != nil {
+			pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
+		}
+		usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, providerType, "/v1/responses", pricing)
 		if usageEntry != nil {
 			h.usageLogger.Write(usageEntry)
 		}

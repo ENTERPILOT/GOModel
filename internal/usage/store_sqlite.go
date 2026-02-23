@@ -12,11 +12,11 @@ import (
 )
 
 // SQLite has a default limit of 999 bindable parameters per query (SQLITE_MAX_VARIABLE_NUMBER).
-// With 11 columns per usage entry, we can safely insert up to 90 entries per batch (90 * 11 = 990).
+// With 15 columns per usage entry, we can safely insert up to 66 entries per batch (66 * 15 = 990).
 const (
 	maxSQLiteParams      = 999
-	columnsPerUsageEntry = 11
-	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 90 entries
+	columnsPerUsageEntry = 15
+	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 66 entries
 )
 
 // SQLiteStore implements UsageStore for SQLite databases.
@@ -53,6 +53,22 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create usage table: %w", err)
+	}
+
+	// Add cost columns (idempotent: SQLite lacks IF NOT EXISTS for ALTER TABLE ADD COLUMN)
+	costMigrations := []string{
+		"ALTER TABLE usage ADD COLUMN input_cost REAL",
+		"ALTER TABLE usage ADD COLUMN output_cost REAL",
+		"ALTER TABLE usage ADD COLUMN total_cost REAL",
+		"ALTER TABLE usage ADD COLUMN costs_calculation_caveat TEXT DEFAULT ''",
+	}
+	for _, migration := range costMigrations {
+		if _, err := db.Exec(migration); err != nil {
+			// "duplicate column name" means the column already exists — safe to ignore
+			if !strings.Contains(err.Error(), "duplicate column") {
+				return nil, fmt.Errorf("failed to run migration %q: %w", migration, err)
+			}
+		}
 	}
 
 	// Create indexes for common queries
@@ -103,7 +119,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*UsageEntry) err
 		values := make([]interface{}, 0, len(chunk)*columnsPerUsageEntry)
 
 		for j, e := range chunk {
-			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 			rawDataJSON := marshalRawData(e.RawData, e.ID)
 
@@ -125,11 +141,16 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*UsageEntry) err
 				e.OutputTokens,
 				e.TotalTokens,
 				rawDataValue,
+				e.InputCost,
+				e.OutputCost,
+				e.TotalCost,
+				e.CostsCalculationCaveat,
 			)
 		}
 
 		query := `INSERT OR IGNORE INTO usage (id, request_id, provider_id, timestamp, model, provider,
-			endpoint, input_tokens, output_tokens, total_tokens, raw_data) VALUES ` +
+			endpoint, input_tokens, output_tokens, total_tokens, raw_data,
+			input_cost, output_cost, total_cost, costs_calculation_caveat) VALUES ` +
 			strings.Join(placeholders, ",")
 
 		_, err := s.db.ExecContext(ctx, query, values...)

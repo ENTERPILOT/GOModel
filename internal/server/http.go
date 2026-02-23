@@ -32,6 +32,7 @@ type Config struct {
 	BodySizeLimit            string                   // Max request body size (e.g., "10M", "1024K")
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
+	PricingResolver          usage.PricingResolver    // Optional: Resolves pricing for cost calculation
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
 	AdminEndpointsEnabled    bool                     // Whether admin API endpoints are enabled
 	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
@@ -47,12 +48,14 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// Get loggers from config (may be nil)
 	var auditLogger auditlog.LoggerInterface
 	var usageLogger usage.LoggerInterface
+	var pricingResolver usage.PricingResolver
 	if cfg != nil {
 		auditLogger = cfg.AuditLogger
 		usageLogger = cfg.UsageLogger
+		pricingResolver = cfg.PricingResolver
 	}
 
-	handler := NewHandler(provider, auditLogger, usageLogger)
+	handler := NewHandler(provider, auditLogger, usageLogger, pricingResolver)
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}

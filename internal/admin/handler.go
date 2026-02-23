@@ -129,7 +129,11 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 		return handleError(c, err)
 	}
 
-	h.calculateCosts(c.Request().Context(), summary, params)
+	// Only fall back to per-model cost calculation when the reader returned no persisted costs
+	// (i.e. all data predates the cost-column migration).
+	if summary.TotalCost == nil {
+		h.calculateCosts(c.Request().Context(), summary, params)
+	}
 
 	return c.JSON(http.StatusOK, summary)
 }

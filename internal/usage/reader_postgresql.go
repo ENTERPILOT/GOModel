@@ -27,22 +27,25 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+
 	if !startZero && !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2`
 		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
 	} else if !startZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1`
 		args = append(args, params.StartDate.UTC())
 	} else {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage"`
 	}
 
 	summary := &UsageSummary{}
 	err := r.pool.QueryRow(ctx, query, args...).Scan(
 		&summary.TotalRequests, &summary.TotalInput, &summary.TotalOutput, &summary.TotalTokens,
+		&summary.TotalInputCost, &summary.TotalOutputCost, &summary.TotalCost,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query usage summary: %w", err)

@@ -50,6 +50,10 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 		{Key: "total_input", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
 		{Key: "total_output", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
 		{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
+		{Key: "total_input_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$input_cost", 0}}}}}},
+		{Key: "total_output_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$output_cost", 0}}}}}},
+		{Key: "total_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+		{Key: "has_costs", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
 	}}})
 
 	cursor, err := r.collection.Aggregate(ctx, pipeline)
@@ -61,10 +65,14 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 	summary := &UsageSummary{}
 	if cursor.Next(ctx) {
 		var result struct {
-			TotalRequests int   `bson:"total_requests"`
-			TotalInput    int64 `bson:"total_input"`
-			TotalOutput   int64 `bson:"total_output"`
-			TotalTokens   int64 `bson:"total_tokens"`
+			TotalRequests   int     `bson:"total_requests"`
+			TotalInput      int64   `bson:"total_input"`
+			TotalOutput     int64   `bson:"total_output"`
+			TotalTokens     int64   `bson:"total_tokens"`
+			TotalInputCost  float64 `bson:"total_input_cost"`
+			TotalOutputCost float64 `bson:"total_output_cost"`
+			TotalCost       float64 `bson:"total_cost"`
+			HasCosts        int     `bson:"has_costs"`
 		}
 		if err := cursor.Decode(&result); err != nil {
 			return nil, fmt.Errorf("failed to decode usage summary: %w", err)
@@ -73,6 +81,11 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 		summary.TotalInput = result.TotalInput
 		summary.TotalOutput = result.TotalOutput
 		summary.TotalTokens = result.TotalTokens
+		if result.HasCosts > 0 {
+			summary.TotalInputCost = &result.TotalInputCost
+			summary.TotalOutputCost = &result.TotalOutputCost
+			summary.TotalCost = &result.TotalCost
+		}
 	}
 
 	if err := cursor.Err(); err != nil {

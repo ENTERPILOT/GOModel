@@ -171,6 +171,7 @@ type ModelPricing struct {
 	AudioInputPerMtok      *float64            `json:"audio_input_per_mtok,omitempty"`
 	AudioOutputPerMtok     *float64            `json:"audio_output_per_mtok,omitempty"`
 	PerImage               *float64            `json:"per_image,omitempty"`
+	InputPerImage          *float64            `json:"input_per_image,omitempty"`
 	PerSecondInput         *float64            `json:"per_second_input,omitempty"`
 	PerSecondOutput        *float64            `json:"per_second_output,omitempty"`
 	PerCharacterInput      *float64            `json:"per_character_input,omitempty"`

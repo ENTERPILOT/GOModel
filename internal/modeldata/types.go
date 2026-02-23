@@ -117,6 +117,7 @@ type PricingEntry struct {
 	AudioInputPerMtok      *float64      `json:"audio_input_per_mtok"`
 	AudioOutputPerMtok     *float64      `json:"audio_output_per_mtok"`
 	PerImage               *float64      `json:"per_image"`
+	InputPerImage          *float64      `json:"input_per_image"`
 	PerSecondInput         *float64      `json:"per_second_input"`
 	PerSecondOutput        *float64      `json:"per_second_output"`
 	PerCharacterInput      *float64      `json:"per_character_input"`

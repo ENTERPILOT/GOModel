@@ -130,6 +130,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		BodySizeLimit:            appCfg.Server.BodySizeLimit,
 		AuditLogger:              auditResult.Logger,
 		UsageLogger:              usageResult.Logger,
+		PricingResolver:          providerResult.Registry,
 		LogOnlyModelInteractions: appCfg.Logging.OnlyModelInteractions,
 	}
 
