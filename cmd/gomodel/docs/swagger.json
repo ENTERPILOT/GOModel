@@ -34,6 +34,12 @@
                                 "$ref": "#/definitions/providers.ModelWithProvider"
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
                     }
                 }
             }
@@ -93,6 +99,12 @@
                         "schema": {
                             "$ref": "#/definitions/core.GatewayError"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
                     }
                 }
             }
@@ -140,6 +152,12 @@
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/core.GatewayError"
                         }

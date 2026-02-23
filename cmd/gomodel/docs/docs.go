@@ -38,6 +38,12 @@ const docTemplate = `{
                                 "$ref": "#/definitions/providers.ModelWithProvider"
                             }
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
                     }
                 }
             }
@@ -97,6 +103,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/core.GatewayError"
                         }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
                     }
                 }
             }
@@ -144,6 +156,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/core.GatewayError"
                         }

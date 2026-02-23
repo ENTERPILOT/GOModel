@@ -39,14 +39,13 @@ type Config struct {
 	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
 	AdminHandler             *admin.Handler           // Admin API handler (nil if disabled)
 	DashboardHandler         *dashboard.Handler       // Dashboard UI handler (nil if disabled)
+	SwaggerEnabled           bool                     // Whether to expose the Swagger UI at /swagger/index.html
 }
 
 // New creates a new HTTP server
 func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.HideBanner = true
-
-	e.GET("/swagger/*", echoswagger.WrapHandler)
 
 	// Get loggers from config (may be nil)
 	var auditLogger auditlog.LoggerInterface
@@ -139,6 +138,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 
 	// Public routes
 	e.GET("/health", handler.Health)
+	if cfg != nil && cfg.SwaggerEnabled {
+		e.GET("/swagger/*", echoswagger.WrapHandler)
+	}
 	if cfg != nil && cfg.MetricsEnabled {
 		e.GET(metricsPath, echo.WrapHandler(promhttp.Handler()))
 	}

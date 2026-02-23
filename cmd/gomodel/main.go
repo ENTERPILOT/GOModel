@@ -27,8 +27,6 @@ import (
 
 	"github.com/lmittmann/tint"
 	"golang.org/x/term"
-
-	_ "gomodel/cmd/gomodel/docs" // generated swagger docs
 )
 
 // @title          GOModel API
@@ -111,8 +109,6 @@ func main() {
 	}()
 
 	addr := ":" + result.Config.Server.Port
-	docs.SwaggerInfo.Host = strings.TrimPrefix(addr, ":")
-	docs.SwaggerInfo.Schemes = []string{"http"}
 	if err := application.Start(addr); err != nil {
 		slog.Error("application failed", "error", err)
 		os.Exit(1)

@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api
+.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api swagger
 
 # Get version info
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -53,6 +53,13 @@ record-api:
 	go run ./cmd/recordapi -provider=openai -endpoint=models \
 		-output=tests/contract/testdata/openai/models.json
 	@echo "Done! Golden files saved to tests/contract/testdata/"
+
+# Generate Swagger docs (requires swag: go install github.com/swaggo/swag/cmd/swag@latest)
+swagger:
+	cd cmd/gomodel && swag init --generalInfo main.go \
+		--dir .,../../internal/server,../../internal/admin,../../internal/usage,../../internal/providers,../../internal/core \
+		--output docs \
+		--outputTypes go,json
 
 # Run linter
 lint:
