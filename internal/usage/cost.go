@@ -192,7 +192,7 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 	if hasOutput {
 		result.OutputCost = &outputCost
 	}
-	if hasInput && hasOutput {
+	if hasInput || hasOutput {
 		total := inputCost + outputCost
 		result.TotalCost = &total
 	}

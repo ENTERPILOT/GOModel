@@ -30,7 +30,7 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
-	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
 
 	if !startZero && !endZero {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
@@ -69,7 +69,7 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
-	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
 
 	if !startZero && !endZero {
 		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
@@ -166,9 +166,9 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 
 	// Fetch page
 	dataQuery := fmt.Sprintf(`SELECT id, request_id, provider_id, timestamp, model, provider, endpoint,
-		input_tokens, output_tokens, total_tokens, input_cost, output_cost, total_cost, raw_data, COALESCE(costs_calculation_caveat, '')
+		input_tokens, output_tokens, total_tokens, COALESCE(input_cost, 0), COALESCE(output_cost, 0), COALESCE(total_cost, 0), raw_data, COALESCE(costs_calculation_caveat, '')
 		FROM "usage"%s ORDER BY timestamp DESC LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1)
-	dataArgs := append(args, limit, offset)
+	dataArgs := append(append([]interface{}(nil), args...), limit, offset)
 
 	rows, err := r.pool.Query(ctx, dataQuery, dataArgs...)
 	if err != nil {

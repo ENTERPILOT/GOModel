@@ -289,8 +289,15 @@ func (h *Handler) ListModels(c echo.Context) error {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
 	}
 
+	cat := core.ModelCategory(c.QueryParam("category"))
+	if cat != "" && cat != core.CategoryAll {
+		if !isValidCategory(cat) {
+			return handleError(c, core.NewInvalidRequestError("invalid category: "+string(cat), nil))
+		}
+	}
+
 	var models []providers.ModelWithProvider
-	if cat := core.ModelCategory(c.QueryParam("category")); cat != "" && cat != core.CategoryAll {
+	if cat != "" && cat != core.CategoryAll {
 		models = h.registry.ListModelsWithProviderByCategory(cat)
 	} else {
 		models = h.registry.ListModelsWithProvider()
@@ -301,6 +308,16 @@ func (h *Handler) ListModels(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, models)
+}
+
+// isValidCategory returns true if cat is a recognized model category.
+func isValidCategory(cat core.ModelCategory) bool {
+	for _, c := range core.AllCategories() {
+		if c == cat {
+			return true
+		}
+	}
+	return false
 }
 
 // ListCategories handles GET /admin/api/v1/models/categories

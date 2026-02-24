@@ -593,7 +593,9 @@ func (r *ModelRegistry) snapshotProviderTypes() map[core.Provider]string {
 	return m
 }
 
-// registryAccessor implements modeldata.ModelInfoAccessor for a snapshot of models.
+// registryAccessor implements modeldata.ModelInfoAccessor.
+// The models map may be either a snapshot (Initialize, LoadFromCache) or the live
+// registry map (EnrichModels, which holds the write lock for the entire operation).
 type registryAccessor struct {
 	models        map[string]*ModelInfo
 	providerTypes map[core.Provider]string

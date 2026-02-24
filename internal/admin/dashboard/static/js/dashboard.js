@@ -690,13 +690,13 @@ function dashboard() {
 
         usageLogModelOptions() {
             const set = new Set();
-            this.modelUsage.forEach(m => set.add(m.model));
+            this.modelUsage.forEach(m => { set.add(m.model); });
             return [...set].sort();
         },
 
         usageLogProviderOptions() {
             const set = new Set();
-            this.modelUsage.forEach(m => set.add(m.provider));
+            this.modelUsage.forEach(m => { set.add(m.provider); });
             return [...set].sort();
         },
 

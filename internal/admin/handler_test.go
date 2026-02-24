@@ -673,6 +673,39 @@ func TestListModels_WithCategoryFilter(t *testing.T) {
 	})
 }
 
+func TestListModels_InvalidCategory(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	mock := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+	c, rec := newHandlerContext("/admin/api/v1/models?category=bogus_category")
+
+	if err := h.ListModels(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !containsString(body, "invalid_request_error") {
+		t.Errorf("expected invalid_request_error in body, got: %s", body)
+	}
+	if !containsString(body, "invalid category") {
+		t.Errorf("expected 'invalid category' in body, got: %s", body)
+	}
+}
+
 // --- ListCategories handler tests ---
 
 func TestListCategories_NilRegistry(t *testing.T) {

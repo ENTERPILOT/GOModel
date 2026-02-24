@@ -30,7 +30,7 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
-	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
 
 	if !startZero && !endZero {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
@@ -69,7 +69,7 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
-	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
 
 	if !startZero && !endZero {
 		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
@@ -156,9 +156,9 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 
 	// Fetch page
 	dataQuery := `SELECT id, request_id, provider_id, timestamp, model, provider, endpoint,
-		input_tokens, output_tokens, total_tokens, input_cost, output_cost, total_cost, raw_data, costs_calculation_caveat
+		input_tokens, output_tokens, total_tokens, COALESCE(input_cost, 0), COALESCE(output_cost, 0), COALESCE(total_cost, 0), raw_data, COALESCE(costs_calculation_caveat, '')
 		FROM usage` + where + ` ORDER BY timestamp DESC LIMIT ? OFFSET ?`
-	dataArgs := append(args, limit, offset)
+	dataArgs := append(append([]interface{}(nil), args...), limit, offset)
 
 	rows, err := r.db.QueryContext(ctx, dataQuery, dataArgs...)
 	if err != nil {
@@ -182,6 +182,8 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 			e.Timestamp = t
 		} else if t, err := time.Parse("2006-01-02T15:04:05Z", ts); err == nil {
 			e.Timestamp = t
+		} else {
+			slog.Warn("failed to parse timestamp", "request_id", e.RequestID, "raw_timestamp", ts)
 		}
 		if rawDataJSON != nil && *rawDataJSON != "" {
 			if err := json.Unmarshal([]byte(*rawDataJSON), &e.RawData); err != nil {

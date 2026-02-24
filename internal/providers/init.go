@@ -45,8 +45,10 @@ func (r *InitResult) Close() error {
 // 2. Cache initialization (local or Redis based on config)
 // 3. Provider instantiation and registration
 // 4. Async model loading (from cache first, then network refresh)
-// 5. Background refresh scheduling (interval from cfg.Cache.RefreshInterval)
-// 6. Router creation
+// 5. Best-effort background model-list fetch (goroutine with ~45s timeout that
+//    calls modeldata.Fetch, registry.EnrichModels, and SaveToCache)
+// 6. Background refresh scheduling (interval from cfg.Cache.RefreshInterval)
+// 7. Router creation
 //
 // The caller must call InitResult.Close() during shutdown.
 func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFactory) (*InitResult, error) {

@@ -336,6 +336,36 @@ func TestCalculateGranularCost_ReasoningModelNoCaveat(t *testing.T) {
 	assertCostNear(t, "OutputCost", result.OutputCost, 0.0088)
 }
 
+func TestCalculateGranularCost_InputOnlyPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok: ptr(3.0),
+		// OutputPerMtok is nil — no output pricing
+	}
+	result := CalculateGranularCost(1_000_000, 500_000, nil, "openai", pricing)
+
+	assertCostNear(t, "InputCost", result.InputCost, 3.0)
+	if result.OutputCost != nil {
+		t.Fatalf("expected nil OutputCost, got %f", *result.OutputCost)
+	}
+	// TotalCost should still be set (input-only)
+	assertCostNear(t, "TotalCost", result.TotalCost, 3.0)
+}
+
+func TestCalculateGranularCost_OutputOnlyPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		// InputPerMtok is nil — no input pricing
+		OutputPerMtok: ptr(15.0),
+	}
+	result := CalculateGranularCost(1_000_000, 500_000, nil, "openai", pricing)
+
+	if result.InputCost != nil {
+		t.Fatalf("expected nil InputCost, got %f", *result.InputCost)
+	}
+	assertCostNear(t, "OutputCost", result.OutputCost, 7.5)
+	// TotalCost should still be set (output-only)
+	assertCostNear(t, "TotalCost", result.TotalCost, 7.5)
+}
+
 func assertCostNear(t *testing.T, name string, got *float64, want float64) {
 	t.Helper()
 	if got == nil {
