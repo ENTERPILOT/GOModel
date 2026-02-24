@@ -202,7 +202,7 @@ func initializeProviders(providerMap map[string]ProviderConfig, factory *Provide
 		if checker, ok := p.(core.AvailabilityChecker); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := checker.CheckAvailability(ctx); err != nil {
-				slog.Info("provider not available, skipping",
+				slog.Warn("provider not available, skipping",
 					"name", name,
 					"type", pCfg.Type,
 					"reason", err.Error())
