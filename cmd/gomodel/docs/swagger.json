@@ -563,8 +563,9 @@
             "type": "object",
             "properties": {
                 "input": {
-                    "description": "Can be string or []ResponsesInputItem",
-                    "type": "object"
+                    "description": "string or []ResponsesInputItem — see docs for array form",
+                    "type": "string",
+                    "example": "Tell me a joke"
                 },
                 "instructions": {
                     "type": "string"
