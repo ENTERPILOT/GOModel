@@ -609,9 +609,12 @@ func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
 	}
 
 	if rec.Code != http.StatusOK {
-		t.Errorf("expected status 200, got %d", rec.Code)
+		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
 
+	if provider.capturedResponsesReq == nil {
+		t.Fatalf("expected capturedResponsesReq to be set, got nil")
+	}
 	if provider.capturedResponsesReq.StreamOptions != nil {
 		t.Errorf("Responses streaming should NOT have StreamOptions injected, got: %+v", provider.capturedResponsesReq.StreamOptions)
 	}
