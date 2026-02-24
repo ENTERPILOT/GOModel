@@ -837,7 +837,8 @@ function dashboard() {
                                 }
                             },
                             y: {
-                                grid: { color: colors.grid, drawBorder: false },
+                                grid: { color: colors.grid },
+                                border: { display: false },
                                 ticks: {
                                     color: colors.text,
                                     font: { size: 11, family: "'SF Mono', Menlo, Consolas, monospace" },
