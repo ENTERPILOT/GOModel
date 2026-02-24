@@ -340,6 +340,98 @@ func TestExtractFromResponsesResponse_WithDetails(t *testing.T) {
 	}
 }
 
+func f64Ptr(v float64) *float64 { return &v }
+
+func TestExtractFromChatResponse_WithPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:  f64Ptr(3.0),  // $3 per million input tokens
+		OutputPerMtok: f64Ptr(15.0), // $15 per million output tokens
+	}
+
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-priced",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     1000,
+			CompletionTokens: 500,
+			TotalTokens:      1500,
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-priced", "openai", "/v1/chat/completions", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil {
+		t.Fatal("expected InputCost to be non-nil")
+	}
+	if entry.OutputCost == nil {
+		t.Fatal("expected OutputCost to be non-nil")
+	}
+	if entry.TotalCost == nil {
+		t.Fatal("expected TotalCost to be non-nil")
+	}
+
+	// 1000 tokens / 1M * $3 = $0.003
+	wantInput := 1000.0 / 1_000_000.0 * 3.0
+	if *entry.InputCost != wantInput {
+		t.Errorf("InputCost = %f, want %f", *entry.InputCost, wantInput)
+	}
+	// 500 tokens / 1M * $15 = $0.0075
+	wantOutput := 500.0 / 1_000_000.0 * 15.0
+	if *entry.OutputCost != wantOutput {
+		t.Errorf("OutputCost = %f, want %f", *entry.OutputCost, wantOutput)
+	}
+	wantTotal := wantInput + wantOutput
+	if *entry.TotalCost != wantTotal {
+		t.Errorf("TotalCost = %f, want %f", *entry.TotalCost, wantTotal)
+	}
+}
+
+func TestExtractFromResponsesResponse_WithPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:  f64Ptr(2.5),
+		OutputPerMtok: f64Ptr(10.0),
+	}
+
+	resp := &core.ResponsesResponse{
+		ID:    "resp-priced",
+		Model: "gpt-4o",
+		Usage: &core.ResponsesUsage{
+			InputTokens:  2000,
+			OutputTokens: 800,
+			TotalTokens:  2800,
+		},
+	}
+
+	entry := ExtractFromResponsesResponse(resp, "req-resp-priced", "openai", "/v1/responses", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil {
+		t.Fatal("expected InputCost to be non-nil")
+	}
+	if entry.OutputCost == nil {
+		t.Fatal("expected OutputCost to be non-nil")
+	}
+	if entry.TotalCost == nil {
+		t.Fatal("expected TotalCost to be non-nil")
+	}
+
+	wantInput := 2000.0 / 1_000_000.0 * 2.5
+	if *entry.InputCost != wantInput {
+		t.Errorf("InputCost = %f, want %f", *entry.InputCost, wantInput)
+	}
+	wantOutput := 800.0 / 1_000_000.0 * 10.0
+	if *entry.OutputCost != wantOutput {
+		t.Errorf("OutputCost = %f, want %f", *entry.OutputCost, wantOutput)
+	}
+	wantTotal := wantInput + wantOutput
+	if *entry.TotalCost != wantTotal {
+		t.Errorf("TotalCost = %f, want %f", *entry.TotalCost, wantTotal)
+	}
+}
+
 func TestExtractFromSSEUsage(t *testing.T) {
 	entry := ExtractFromSSEUsage(
 		"chatcmpl-789",

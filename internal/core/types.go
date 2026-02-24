@@ -96,7 +96,9 @@ type Model struct {
 	ID       string         `json:"id"`
 	Object   string         `json:"object"`
 	OwnedBy  string         `json:"owned_by"`
-	Created  int64          `json:"created"`
+	Created int64 `json:"created"`
+	// Metadata holds optional enrichment data (display name, pricing, capabilities, etc.).
+	// May be nil if the model was not found in the external registry.
 	Metadata *ModelMetadata `json:"metadata,omitempty"`
 }
 
