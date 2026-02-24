@@ -38,6 +38,10 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1`
 		args = append(args, params.StartDate.UTC())
+	} else if !endZero {
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
+			FROM "usage" WHERE timestamp < $1`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
 	} else {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage"`
@@ -72,6 +76,10 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1 GROUP BY model, provider`
 		args = append(args, params.StartDate.UTC())
+	} else if !endZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage" WHERE timestamp < $1 GROUP BY model, provider`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
 	} else {
 		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM "usage" GROUP BY model, provider`
@@ -100,17 +108,7 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 }
 
 func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
-	limit := params.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
-	offset := params.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
 	var conditions []string
 	var args []interface{}
@@ -129,6 +127,10 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 	} else if !startZero {
 		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
 		args = append(args, params.StartDate.UTC())
+		argIdx++
+	} else if !endZero {
+		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", argIdx))
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
 		argIdx++
 	}
 
@@ -149,13 +151,7 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 		argIdx++
 	}
 
-	where := ""
-	if len(conditions) > 0 {
-		where = " WHERE " + conditions[0]
-		for _, c := range conditions[1:] {
-			where += " AND " + c
-		}
-	}
+	where := buildWhereClause(conditions)
 
 	// Count total
 	var total int
@@ -234,6 +230,9 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 	} else if !startZero {
 		where = ` WHERE timestamp >= $1`
 		args = append(args, params.StartDate.UTC())
+	} else if !endZero {
+		where = ` WHERE timestamp < $1`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
 	}
 
 	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)

@@ -35,7 +35,7 @@ func TestEnrich_MatchedAndUnmatched(t *testing.T) {
 				DisplayName:   "GPT-4o",
 				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(2.50),
 					OutputPerMtok: ptr(10.00),
@@ -93,7 +93,7 @@ func TestEnrich_ReverseCustomModelIDLookup(t *testing.T) {
 				DisplayName:   "GPT-4o",
 				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(2.50),
 					OutputPerMtok: ptr(10.00),

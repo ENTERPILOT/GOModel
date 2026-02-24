@@ -2,6 +2,12 @@
 // AI model metadata registry (models.json) for enriching GoModel's model data.
 package modeldata
 
+import (
+	"strings"
+
+	"gomodel/internal/core"
+)
+
 
 // ModelList represents the top-level structure of models.json.
 type ModelList struct {
@@ -27,14 +33,7 @@ func (l *ModelList) buildReverseIndex() {
 			continue
 		}
 		// compositeKey is "providerType/modelID"
-		// Extract provider type from the composite key
-		slashIdx := -1
-		for i, ch := range compositeKey {
-			if ch == '/' {
-				slashIdx = i
-				break
-			}
-		}
+		slashIdx := strings.IndexByte(compositeKey, '/')
 		if slashIdx < 0 {
 			continue
 		}
@@ -87,50 +86,21 @@ type ModelEntry struct {
 	OutputVectorSize     *int                      `json:"output_vector_size"`
 	Parameters           map[string]ParameterSpec  `json:"parameters"`
 	Rankings             map[string]RankingEntry   `json:"rankings"`
-	Pricing              *PricingEntry             `json:"pricing"`
+	Pricing              *core.ModelPricing        `json:"pricing"`
 }
 
 // ProviderModelEntry represents a provider-specific model override.
 type ProviderModelEntry struct {
-	ModelRef        string          `json:"model_ref"`
-	CustomModelID   *string         `json:"custom_model_id"`
-	Enabled         bool            `json:"enabled"`
-	Pricing         *PricingEntry   `json:"pricing"`
+	ModelRef        string             `json:"model_ref"`
+	CustomModelID   *string            `json:"custom_model_id"`
+	Enabled         bool               `json:"enabled"`
+	Pricing         *core.ModelPricing `json:"pricing"`
 	ContextWindow   *int            `json:"context_window"`
 	MaxOutputTokens *int            `json:"max_output_tokens"`
 	Capabilities    map[string]bool `json:"capabilities"`
 	RateLimits      *RateLimits     `json:"rate_limits"`
 	Endpoints       []string        `json:"endpoints"`
 	Regions         []string        `json:"regions"`
-}
-
-// PricingEntry represents pricing information from the registry.
-type PricingEntry struct {
-	Currency               string        `json:"currency"`
-	InputPerMtok           *float64      `json:"input_per_mtok"`
-	OutputPerMtok          *float64      `json:"output_per_mtok"`
-	CachedInputPerMtok     *float64      `json:"cached_input_per_mtok"`
-	CacheWritePerMtok      *float64      `json:"cache_write_per_mtok"`
-	ReasoningOutputPerMtok *float64      `json:"reasoning_output_per_mtok"`
-	BatchInputPerMtok      *float64      `json:"batch_input_per_mtok"`
-	BatchOutputPerMtok     *float64      `json:"batch_output_per_mtok"`
-	AudioInputPerMtok      *float64      `json:"audio_input_per_mtok"`
-	AudioOutputPerMtok     *float64      `json:"audio_output_per_mtok"`
-	PerImage               *float64      `json:"per_image"`
-	InputPerImage          *float64      `json:"input_per_image"`
-	PerSecondInput         *float64      `json:"per_second_input"`
-	PerSecondOutput        *float64      `json:"per_second_output"`
-	PerCharacterInput      *float64      `json:"per_character_input"`
-	PerRequest             *float64      `json:"per_request"`
-	PerPage                *float64      `json:"per_page"`
-	Tiers                  []PricingTier `json:"tiers"`
-}
-
-// PricingTier represents a volume-based pricing tier.
-type PricingTier struct {
-	UpToMtok      *float64 `json:"up_to_mtok"`
-	InputPerMtok  *float64 `json:"input_per_mtok"`
-	OutputPerMtok *float64 `json:"output_per_mtok"`
 }
 
 // ParameterSpec describes a model parameter's constraints.

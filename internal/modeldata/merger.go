@@ -63,7 +63,7 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 		meta.ContextWindow = model.ContextWindow
 		meta.MaxOutputTokens = model.MaxOutputTokens
 		meta.Capabilities = model.Capabilities
-		meta.Pricing = convertPricing(model.Pricing)
+		meta.Pricing = model.Pricing
 	}
 
 	// Apply provider_model overrides (non-nil fields win)
@@ -75,52 +75,9 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 			meta.MaxOutputTokens = pm.MaxOutputTokens
 		}
 		if pm.Pricing != nil {
-			meta.Pricing = convertPricing(pm.Pricing)
+			meta.Pricing = pm.Pricing
 		}
 	}
 
 	return meta
-}
-
-// convertPricing maps a registry PricingEntry to the core ModelPricing type.
-func convertPricing(p *PricingEntry) *core.ModelPricing {
-	if p == nil {
-		return nil
-	}
-	return &core.ModelPricing{
-		Currency:               p.Currency,
-		InputPerMtok:           p.InputPerMtok,
-		OutputPerMtok:          p.OutputPerMtok,
-		CachedInputPerMtok:     p.CachedInputPerMtok,
-		CacheWritePerMtok:      p.CacheWritePerMtok,
-		ReasoningOutputPerMtok: p.ReasoningOutputPerMtok,
-		BatchInputPerMtok:      p.BatchInputPerMtok,
-		BatchOutputPerMtok:     p.BatchOutputPerMtok,
-		AudioInputPerMtok:      p.AudioInputPerMtok,
-		AudioOutputPerMtok:     p.AudioOutputPerMtok,
-		PerImage:               p.PerImage,
-		InputPerImage:          p.InputPerImage,
-		PerSecondInput:         p.PerSecondInput,
-		PerSecondOutput:        p.PerSecondOutput,
-		PerCharacterInput:      p.PerCharacterInput,
-		PerRequest:             p.PerRequest,
-		PerPage:                p.PerPage,
-		Tiers:                  convertPricingTiers(p.Tiers),
-	}
-}
-
-// convertPricingTiers maps registry PricingTier entries to core ModelPricingTier.
-func convertPricingTiers(tiers []PricingTier) []core.ModelPricingTier {
-	if len(tiers) == 0 {
-		return nil
-	}
-	result := make([]core.ModelPricingTier, len(tiers))
-	for i, t := range tiers {
-		result[i] = core.ModelPricingTier{
-			UpToMtok:      t.UpToMtok,
-			InputPerMtok:  t.InputPerMtok,
-			OutputPerMtok: t.OutputPerMtok,
-		}
-	}
-	return result
 }

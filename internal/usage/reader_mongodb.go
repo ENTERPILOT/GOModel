@@ -177,17 +177,7 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 }
 
 func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
-	limit := params.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
-	offset := params.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
 	matchFilters := bson.D{}
 
@@ -202,6 +192,10 @@ func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) 
 	} else if !startZero {
 		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
 			{Key: "$gte", Value: params.StartDate.UTC()},
+		}})
+	} else if !endZero {
+		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
+			{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
 		}})
 	}
 

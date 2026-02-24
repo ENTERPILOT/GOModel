@@ -65,6 +65,19 @@ var providerMappings = map[string][]tokenCostMapping{
 	},
 }
 
+// extendedFieldSet is derived from providerMappings and contains all RawData keys
+// that providers may report. Used by stream_wrapper.go to extract extended fields
+// from SSE usage data without maintaining a separate hard-coded list.
+var extendedFieldSet = func() map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, mappings := range providerMappings {
+		for _, m := range mappings {
+			set[m.rawDataKey] = struct{}{}
+		}
+	}
+	return set
+}()
+
 // CalculateGranularCost computes input, output, and total costs from token counts,
 // raw provider-specific data, and pricing information. It accounts for cached tokens,
 // reasoning tokens, audio tokens, and other provider-specific token types.

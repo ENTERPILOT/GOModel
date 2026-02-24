@@ -38,6 +38,10 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM usage WHERE timestamp >= ?`
 		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
+	} else if !endZero {
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
+			FROM usage WHERE timestamp < ?`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
 	} else {
 		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM usage`
@@ -72,6 +76,10 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM usage WHERE timestamp >= ? GROUP BY model, provider`
 		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
+	} else if !endZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM usage WHERE timestamp < ? GROUP BY model, provider`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
 	} else {
 		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM usage GROUP BY model, provider`
@@ -100,17 +108,7 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 }
 
 func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
-	limit := params.Limit
-	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		limit = 200
-	}
-	offset := params.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
 	var conditions []string
 	var args []interface{}
@@ -124,6 +122,9 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 	} else if !startZero {
 		conditions = append(conditions, "timestamp >= ?")
 		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
+	} else if !endZero {
+		conditions = append(conditions, "timestamp < ?")
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
 	}
 
 	if params.Model != "" {
@@ -140,13 +141,7 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 		args = append(args, s, s, s, s)
 	}
 
-	where := ""
-	if len(conditions) > 0 {
-		where = " WHERE " + conditions[0]
-		for _, c := range conditions[1:] {
-			where += " AND " + c
-		}
-	}
+	where := buildWhereClause(conditions)
 
 	// Count total
 	var total int
@@ -237,6 +232,9 @@ func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParam
 	} else if !startZero {
 		where = ` WHERE timestamp >= ?`
 		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
+	} else if !endZero {
+		where = ` WHERE timestamp < ?`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
 	}
 
 	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)

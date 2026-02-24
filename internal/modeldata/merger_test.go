@@ -1,7 +1,6 @@
 package modeldata
 
 import (
-	"math"
 	"testing"
 
 	"gomodel/internal/core"
@@ -43,7 +42,7 @@ func TestResolve_DirectModelMatch(t *testing.T) {
 					"streaming":        true,
 					"vision":           true,
 				},
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(2.50),
 					OutputPerMtok: ptr(10.00),
@@ -104,7 +103,7 @@ func TestResolve_ProviderModelOverride(t *testing.T) {
 				Modes:           []string{"chat"},
 				ContextWindow:   ptr(128000),
 				MaxOutputTokens: ptr(16384),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(2.50),
 					OutputPerMtok: ptr(10.00),
@@ -116,7 +115,7 @@ func TestResolve_ProviderModelOverride(t *testing.T) {
 				ModelRef:      "gpt-4o",
 				Enabled:       true,
 				ContextWindow: ptr(64000),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(5.00),
 					OutputPerMtok: ptr(15.00),
@@ -159,7 +158,7 @@ func TestResolve_ProviderModelWithoutBaseModel(t *testing.T) {
 				ModelRef:      "nonexistent",
 				Enabled:       true,
 				ContextWindow: ptr(32000),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(1.00),
 					OutputPerMtok: ptr(2.00),
@@ -198,124 +197,6 @@ func TestResolve_NilPricing(t *testing.T) {
 	}
 	if meta.Pricing != nil {
 		t.Error("expected nil pricing for model without pricing")
-	}
-}
-
-func TestConvertPricing_Nil(t *testing.T) {
-	p := convertPricing(nil)
-	if p != nil {
-		t.Error("expected nil for nil input")
-	}
-}
-
-func TestConvertPricing_WithCachedInput(t *testing.T) {
-	p := convertPricing(&PricingEntry{
-		Currency:           "USD",
-		InputPerMtok:       ptr(2.50),
-		OutputPerMtok:      ptr(10.00),
-		CachedInputPerMtok: ptr(1.25),
-	})
-	if p == nil {
-		t.Fatal("expected non-nil pricing")
-	}
-	if p.CachedInputPerMtok == nil || *p.CachedInputPerMtok != 1.25 {
-		t.Errorf("CachedInputPerMtok = %v, want 1.25", p.CachedInputPerMtok)
-	}
-}
-
-func TestConvertPricing_AllFields(t *testing.T) {
-	p := convertPricing(&PricingEntry{
-		Currency:               "USD",
-		InputPerMtok:           ptr(2.50),
-		OutputPerMtok:          ptr(10.00),
-		CachedInputPerMtok:     ptr(1.25),
-		CacheWritePerMtok:      ptr(3.75),
-		ReasoningOutputPerMtok: ptr(60.00),
-		BatchInputPerMtok:      ptr(1.25),
-		BatchOutputPerMtok:     ptr(5.00),
-		AudioInputPerMtok:      ptr(100.00),
-		AudioOutputPerMtok:     ptr(200.00),
-		PerImage:               ptr(0.04),
-		PerSecondInput:         ptr(0.006),
-		PerSecondOutput:        ptr(0.012),
-		PerCharacterInput:      ptr(0.000015),
-		PerRequest:             ptr(0.001),
-		PerPage:                ptr(0.005),
-	})
-	if p == nil {
-		t.Fatal("expected non-nil pricing")
-	}
-
-	checks := []struct {
-		name string
-		got  *float64
-		want float64
-	}{
-		{"InputPerMtok", p.InputPerMtok, 2.50},
-		{"OutputPerMtok", p.OutputPerMtok, 10.00},
-		{"CachedInputPerMtok", p.CachedInputPerMtok, 1.25},
-		{"CacheWritePerMtok", p.CacheWritePerMtok, 3.75},
-		{"ReasoningOutputPerMtok", p.ReasoningOutputPerMtok, 60.00},
-		{"BatchInputPerMtok", p.BatchInputPerMtok, 1.25},
-		{"BatchOutputPerMtok", p.BatchOutputPerMtok, 5.00},
-		{"AudioInputPerMtok", p.AudioInputPerMtok, 100.00},
-		{"AudioOutputPerMtok", p.AudioOutputPerMtok, 200.00},
-		{"PerImage", p.PerImage, 0.04},
-		{"PerSecondInput", p.PerSecondInput, 0.006},
-		{"PerSecondOutput", p.PerSecondOutput, 0.012},
-		{"PerCharacterInput", p.PerCharacterInput, 0.000015},
-		{"PerRequest", p.PerRequest, 0.001},
-		{"PerPage", p.PerPage, 0.005},
-	}
-
-	for _, c := range checks {
-		if c.got == nil {
-			t.Errorf("%s: got nil, want %f", c.name, c.want)
-		} else if math.Abs(*c.got-c.want) > 1e-9 {
-			t.Errorf("%s: got %f, want %f", c.name, *c.got, c.want)
-		}
-	}
-
-	if p.Currency != "USD" {
-		t.Errorf("Currency = %s, want USD", p.Currency)
-	}
-}
-
-func TestConvertPricing_WithTiers(t *testing.T) {
-	p := convertPricing(&PricingEntry{
-		Currency:      "USD",
-		InputPerMtok:  ptr(2.50),
-		OutputPerMtok: ptr(10.00),
-		Tiers: []PricingTier{
-			{UpToMtok: ptr(1.0), InputPerMtok: ptr(2.50), OutputPerMtok: ptr(10.00)},
-			{UpToMtok: nil, InputPerMtok: ptr(1.25), OutputPerMtok: ptr(5.00)},
-		},
-	})
-	if p == nil {
-		t.Fatal("expected non-nil pricing")
-	}
-	if len(p.Tiers) != 2 {
-		t.Fatalf("Tiers len = %d, want 2", len(p.Tiers))
-	}
-	if p.Tiers[0].UpToMtok == nil || *p.Tiers[0].UpToMtok != 1.0 {
-		t.Errorf("Tiers[0].UpToMtok = %v, want 1.0", p.Tiers[0].UpToMtok)
-	}
-	if p.Tiers[1].UpToMtok != nil {
-		t.Errorf("Tiers[1].UpToMtok = %v, want nil", p.Tiers[1].UpToMtok)
-	}
-	if *p.Tiers[1].InputPerMtok != 1.25 {
-		t.Errorf("Tiers[1].InputPerMtok = %f, want 1.25", *p.Tiers[1].InputPerMtok)
-	}
-}
-
-func TestConvertPricingTiers_Empty(t *testing.T) {
-	result := convertPricingTiers(nil)
-	if result != nil {
-		t.Error("expected nil for nil tiers")
-	}
-	result = convertPricingTiers([]PricingTier{})
-	if result != nil {
-		t.Error("expected nil for empty tiers")
 	}
 }
 
@@ -387,7 +268,7 @@ func TestResolve_ThreeLayerMerge(t *testing.T) {
 					"function_calling": true,
 					"vision":           true,
 				},
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:           "USD",
 					InputPerMtok:       ptr(3.00),
 					OutputPerMtok:      ptr(15.00),
@@ -400,7 +281,7 @@ func TestResolve_ThreeLayerMerge(t *testing.T) {
 				ModelRef:        "claude-sonnet-4-20250514",
 				Enabled:         true,
 				MaxOutputTokens: ptr(8192),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:           "USD",
 					InputPerMtok:       ptr(3.00),
 					OutputPerMtok:      ptr(15.00),
@@ -440,7 +321,7 @@ func TestResolve_ReverseCustomModelIDLookup(t *testing.T) {
 				DisplayName:   "GPT-4o",
 				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(2.50),
 					OutputPerMtok: ptr(10.00),
@@ -504,7 +385,7 @@ func TestResolve_ReverseIndexWithProviderModelOverride(t *testing.T) {
 				DisplayName:   "GPT-4o",
 				Modes:         []string{"chat"},
 				ContextWindow: ptr(128000),
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(2.50),
 					OutputPerMtok: ptr(10.00),
@@ -516,7 +397,7 @@ func TestResolve_ReverseIndexWithProviderModelOverride(t *testing.T) {
 				ModelRef:      "gpt-4o",
 				CustomModelID: ptr("gpt-4o-2024-08-06"),
 				Enabled:       true,
-				Pricing: &PricingEntry{
+				Pricing: &core.ModelPricing{
 					Currency:      "USD",
 					InputPerMtok:  ptr(3.00),
 					OutputPerMtok: ptr(12.00),
@@ -540,113 +421,5 @@ func TestResolve_ReverseIndexWithProviderModelOverride(t *testing.T) {
 	}
 	if *meta.Pricing.OutputPerMtok != 12.00 {
 		t.Errorf("OutputPerMtok = %f, want 12.00 (provider override)", *meta.Pricing.OutputPerMtok)
-	}
-}
-
-func TestCalculateCost(t *testing.T) {
-	tests := []struct {
-		name        string
-		input       int
-		output      int
-		pricing     *core.ModelPricing
-		wantInput   *float64
-		wantOutput  *float64
-		wantTotal   *float64
-	}{
-		{
-			name:    "nil pricing",
-			input:   1000,
-			output:  500,
-			pricing: nil,
-		},
-		{
-			name:   "basic pricing",
-			input:  1000000,
-			output: 500000,
-			pricing: &core.ModelPricing{
-				Currency:      "USD",
-				InputPerMtok:  ptr(2.50),
-				OutputPerMtok: ptr(10.00),
-			},
-			wantInput:  ptr(2.50),
-			wantOutput: ptr(5.00),
-			wantTotal:  ptr(7.50),
-		},
-		{
-			name:   "zero tokens",
-			input:  0,
-			output: 0,
-			pricing: &core.ModelPricing{
-				Currency:      "USD",
-				InputPerMtok:  ptr(2.50),
-				OutputPerMtok: ptr(10.00),
-			},
-			wantInput:  ptr(0.0),
-			wantOutput: ptr(0.0),
-			wantTotal:  ptr(0.0),
-		},
-		{
-			name:   "partial pricing (input only)",
-			input:  1000000,
-			output: 500000,
-			pricing: &core.ModelPricing{
-				Currency:     "USD",
-				InputPerMtok: ptr(2.50),
-			},
-			wantInput: ptr(2.50),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// CalculateCost is in the usage package, but we test the logic inline
-			in, out, total := calculateCostHelper(tt.input, tt.output, tt.pricing)
-
-			assertPtrFloat(t, "input", in, tt.wantInput)
-			assertPtrFloat(t, "output", out, tt.wantOutput)
-			assertPtrFloat(t, "total", total, tt.wantTotal)
-		})
-	}
-}
-
-// calculateCostHelper intentionally mirrors usage.CalculateCost for testing within
-// this package. It is duplicated here (rather than imported) to avoid import cycles
-// between modeldata and usage. The canonical implementation lives in
-// usage.CalculateCost — keep both in sync when changing cost calculation logic.
-func calculateCostHelper(inputTokens, outputTokens int, pricing *core.ModelPricing) (input, output, total *float64) {
-	if pricing == nil {
-		return nil, nil, nil
-	}
-	if pricing.InputPerMtok != nil {
-		v := float64(inputTokens) * *pricing.InputPerMtok / 1_000_000
-		input = &v
-	}
-	if pricing.OutputPerMtok != nil {
-		v := float64(outputTokens) * *pricing.OutputPerMtok / 1_000_000
-		output = &v
-	}
-	if input != nil && output != nil {
-		v := *input + *output
-		total = &v
-	}
-	return
-}
-
-func assertPtrFloat(t *testing.T, name string, got, want *float64) {
-	t.Helper()
-	if got == nil && want == nil {
-		return
-	}
-	if got == nil {
-		t.Errorf("%s: got nil, want %f", name, *want)
-		return
-	}
-	if want == nil {
-		t.Errorf("%s: got %f, want nil", name, *got)
-		return
-	}
-	const eps = 1e-9
-	if math.Abs(*got-*want) > eps {
-		t.Errorf("%s: got %f, want %f", name, *got, *want)
 	}
 }

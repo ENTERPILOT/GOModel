@@ -8,27 +8,6 @@ import (
 	"gomodel/internal/core"
 )
 
-// CalculateCost computes input, output, and total costs from token counts and pricing.
-// Returns nil pointers when pricing info is unavailable.
-func CalculateCost(inputTokens, outputTokens int, pricing *core.ModelPricing) (input, output, total *float64) {
-	if pricing == nil {
-		return nil, nil, nil
-	}
-	if pricing.InputPerMtok != nil {
-		v := float64(inputTokens) * *pricing.InputPerMtok / 1_000_000
-		input = &v
-	}
-	if pricing.OutputPerMtok != nil {
-		v := float64(outputTokens) * *pricing.OutputPerMtok / 1_000_000
-		output = &v
-	}
-	if input != nil && output != nil {
-		v := *input + *output
-		total = &v
-	}
-	return
-}
-
 // buildRawUsageFromDetails merges typed token detail fields into a RawUsage map.
 // Keys use the same "prompt_" / "completion_" prefix convention as stream_wrapper.go,
 // which cost.go providerMappings already consume.

@@ -171,14 +171,9 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 		totalTokens = int(v)
 	}
 
-	// Extract extended usage data (provider-specific)
-	extendedFields := []string{
-		"cached_tokens", "reasoning_tokens", // OpenAI
-		"cache_creation_input_tokens", "cache_read_input_tokens", // Anthropic
-		"thought_tokens", "tool_use_tokens", // Gemini
-		"image_tokens", // xAI
-	}
-	for _, field := range extendedFields {
+	// Extract extended usage data (provider-specific) using the field set
+	// derived from providerMappings in cost.go (single source of truth).
+	for field := range extendedFieldSet {
 		if v, ok := usageMap[field].(float64); ok && v > 0 {
 			rawData[field] = int(v)
 		}
