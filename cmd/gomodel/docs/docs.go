@@ -48,6 +48,39 @@ const docTemplate = `{
                 }
             }
         },
+        "/admin/api/v1/models/categories": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List model categories with counts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/providers.CategoryCount"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/usage/daily": {
             "get": {
                 "security": [
@@ -95,6 +128,151 @@ const docTemplate = `{
                             "type": "array",
                             "items": {
                                 "$ref": "#/definitions/usage.DailyUsage"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/usage/log": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get paginated usage log entries",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by model name",
+                        "name": "model",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by provider",
+                        "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search across model, provider, request_id, provider_id",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/usage.UsageLogResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/usage/models": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get usage breakdown by model",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/usage.ModelUsage"
                             }
                         }
                     },
@@ -425,6 +603,23 @@ const docTemplate = `{
                 }
             }
         },
+        "core.CompletionTokensDetails": {
+            "type": "object",
+            "properties": {
+                "accepted_prediction_tokens": {
+                    "type": "integer"
+                },
+                "audio_tokens": {
+                    "type": "integer"
+                },
+                "reasoning_tokens": {
+                    "type": "integer"
+                },
+                "rejected_prediction_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
         "core.ErrorType": {
             "type": "string",
             "enum": [
@@ -479,11 +674,158 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "metadata": {
+                    "$ref": "#/definitions/core.ModelMetadata"
+                },
                 "object": {
                     "type": "string"
                 },
                 "owned_by": {
                     "type": "string"
+                }
+            }
+        },
+        "core.ModelCategory": {
+            "type": "string",
+            "enum": [
+                "all",
+                "text_generation",
+                "embedding",
+                "image",
+                "audio",
+                "video",
+                "utility"
+            ],
+            "x-enum-varnames": [
+                "CategoryAll",
+                "CategoryTextGeneration",
+                "CategoryEmbedding",
+                "CategoryImage",
+                "CategoryAudio",
+                "CategoryVideo",
+                "CategoryUtility"
+            ]
+        },
+        "core.ModelMetadata": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "boolean"
+                    }
+                },
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/core.ModelCategory"
+                    }
+                },
+                "context_window": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "display_name": {
+                    "type": "string"
+                },
+                "family": {
+                    "type": "string"
+                },
+                "max_output_tokens": {
+                    "type": "integer"
+                },
+                "modes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "pricing": {
+                    "$ref": "#/definitions/core.ModelPricing"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "core.ModelPricing": {
+            "type": "object",
+            "properties": {
+                "audio_input_per_mtok": {
+                    "type": "number"
+                },
+                "audio_output_per_mtok": {
+                    "type": "number"
+                },
+                "batch_input_per_mtok": {
+                    "type": "number"
+                },
+                "batch_output_per_mtok": {
+                    "type": "number"
+                },
+                "cache_write_per_mtok": {
+                    "type": "number"
+                },
+                "cached_input_per_mtok": {
+                    "type": "number"
+                },
+                "currency": {
+                    "type": "string"
+                },
+                "input_per_image": {
+                    "type": "number"
+                },
+                "input_per_mtok": {
+                    "type": "number"
+                },
+                "output_per_mtok": {
+                    "type": "number"
+                },
+                "per_character_input": {
+                    "type": "number"
+                },
+                "per_image": {
+                    "type": "number"
+                },
+                "per_page": {
+                    "type": "number"
+                },
+                "per_request": {
+                    "type": "number"
+                },
+                "per_second_input": {
+                    "type": "number"
+                },
+                "per_second_output": {
+                    "type": "number"
+                },
+                "reasoning_output_per_mtok": {
+                    "type": "number"
+                },
+                "tiers": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/core.ModelPricingTier"
+                    }
+                }
+            }
+        },
+        "core.ModelPricingTier": {
+            "type": "object",
+            "properties": {
+                "input_per_mtok": {
+                    "type": "number"
+                },
+                "output_per_mtok": {
+                    "type": "number"
+                },
+                "up_to_mtok": {
+                    "type": "number"
                 }
             }
         },
@@ -498,6 +840,23 @@ const docTemplate = `{
                 },
                 "object": {
                     "type": "string"
+                }
+            }
+        },
+        "core.PromptTokensDetails": {
+            "type": "object",
+            "properties": {
+                "audio_tokens": {
+                    "type": "integer"
+                },
+                "cached_tokens": {
+                    "type": "integer"
+                },
+                "image_tokens": {
+                    "type": "integer"
+                },
+                "text_tokens": {
+                    "type": "integer"
                 }
             }
         },
@@ -647,11 +1006,17 @@ const docTemplate = `{
         "core.ResponsesUsage": {
             "type": "object",
             "properties": {
+                "completion_tokens_details": {
+                    "$ref": "#/definitions/core.CompletionTokensDetails"
+                },
                 "input_tokens": {
                     "type": "integer"
                 },
                 "output_tokens": {
                     "type": "integer"
+                },
+                "prompt_tokens_details": {
+                    "$ref": "#/definitions/core.PromptTokensDetails"
                 },
                 "raw_usage": {
                     "type": "object",
@@ -677,8 +1042,14 @@ const docTemplate = `{
                 "completion_tokens": {
                     "type": "integer"
                 },
+                "completion_tokens_details": {
+                    "$ref": "#/definitions/core.CompletionTokensDetails"
+                },
                 "prompt_tokens": {
                     "type": "integer"
+                },
+                "prompt_tokens_details": {
+                    "$ref": "#/definitions/core.PromptTokensDetails"
                 },
                 "raw_usage": {
                     "type": "object",
@@ -686,6 +1057,20 @@ const docTemplate = `{
                 },
                 "total_tokens": {
                     "type": "integer"
+                }
+            }
+        },
+        "providers.CategoryCount": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "$ref": "#/definitions/core.ModelCategory"
+                },
+                "count": {
+                    "type": "integer"
+                },
+                "display_name": {
+                    "type": "string"
                 }
             }
         },
@@ -720,11 +1105,117 @@ const docTemplate = `{
                 }
             }
         },
+        "usage.ModelUsage": {
+            "type": "object",
+            "properties": {
+                "input_cost": {
+                    "type": "number"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "output_cost": {
+                    "type": "number"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "total_cost": {
+                    "type": "number"
+                }
+            }
+        },
+        "usage.UsageLogEntry": {
+            "type": "object",
+            "properties": {
+                "costs_calculation_caveat": {
+                    "type": "string"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "input_cost": {
+                    "type": "number"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "output_cost": {
+                    "type": "number"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "provider_id": {
+                    "type": "string"
+                },
+                "raw_data": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "total_cost": {
+                    "type": "number"
+                },
+                "total_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "usage.UsageLogResult": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usage.UsageLogEntry"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "usage.UsageSummary": {
             "type": "object",
             "properties": {
+                "total_cost": {
+                    "type": "number"
+                },
+                "total_input_cost": {
+                    "type": "number"
+                },
                 "total_input_tokens": {
                     "type": "integer"
+                },
+                "total_output_cost": {
+                    "type": "number"
                 },
                 "total_output_tokens": {
                     "type": "integer"

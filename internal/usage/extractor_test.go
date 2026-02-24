@@ -200,6 +200,238 @@ func TestExtractFromResponsesResponse(t *testing.T) {
 	}
 }
 
+func TestExtractFromChatResponse_WithPromptTokensDetails(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-details",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     200,
+			CompletionTokens: 100,
+			TotalTokens:      300,
+			PromptTokensDetails: &core.PromptTokensDetails{
+				CachedTokens: 150,
+			},
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-details", "openai", "/v1/chat/completions")
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.RawData == nil {
+		t.Fatal("expected RawData to be set from PromptTokensDetails")
+	}
+	if entry.RawData["prompt_cached_tokens"] != 150 {
+		t.Errorf("RawData[prompt_cached_tokens] = %v, want 150", entry.RawData["prompt_cached_tokens"])
+	}
+}
+
+func TestExtractFromChatResponse_WithCompletionTokensDetails(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-reasoning",
+		Model: "o1-preview",
+		Usage: core.Usage{
+			PromptTokens:     100,
+			CompletionTokens: 200,
+			TotalTokens:      300,
+			CompletionTokensDetails: &core.CompletionTokensDetails{
+				ReasoningTokens: 64,
+			},
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-reason", "openai", "/v1/chat/completions")
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.RawData == nil {
+		t.Fatal("expected RawData to be set from CompletionTokensDetails")
+	}
+	if entry.RawData["completion_reasoning_tokens"] != 64 {
+		t.Errorf("RawData[completion_reasoning_tokens] = %v, want 64", entry.RawData["completion_reasoning_tokens"])
+	}
+}
+
+func TestExtractFromChatResponse_ZeroDetails(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-zero",
+		Model: "gpt-4",
+		Usage: core.Usage{
+			PromptTokens:     100,
+			CompletionTokens: 50,
+			TotalTokens:      150,
+			PromptTokensDetails: &core.PromptTokensDetails{
+				CachedTokens: 0,
+			},
+			CompletionTokensDetails: &core.CompletionTokensDetails{
+				ReasoningTokens: 0,
+			},
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-zero", "openai", "/v1/chat/completions")
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.RawData != nil {
+		t.Errorf("expected RawData to be nil for zero-value details, got %v", entry.RawData)
+	}
+}
+
+func TestExtractFromChatResponse_RawUsageTakesPrecedenceOverDetails(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-precedence",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     200,
+			CompletionTokens: 100,
+			TotalTokens:      300,
+			PromptTokensDetails: &core.PromptTokensDetails{
+				CachedTokens: 150,
+			},
+			RawUsage: map[string]any{
+				"cached_tokens": 99,
+			},
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-precedence", "openai", "/v1/chat/completions")
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	// RawUsage should take precedence - details should NOT overwrite
+	if entry.RawData["cached_tokens"] != 99 {
+		t.Errorf("RawData[cached_tokens] = %v, want 99 (from RawUsage)", entry.RawData["cached_tokens"])
+	}
+	if _, exists := entry.RawData["prompt_cached_tokens"]; exists {
+		t.Error("details should not be merged when RawUsage is already set")
+	}
+}
+
+func TestExtractFromResponsesResponse_WithDetails(t *testing.T) {
+	resp := &core.ResponsesResponse{
+		ID:    "resp-details",
+		Model: "gpt-4o",
+		Usage: &core.ResponsesUsage{
+			InputTokens:  200,
+			OutputTokens: 100,
+			TotalTokens:  300,
+			PromptTokensDetails: &core.PromptTokensDetails{
+				CachedTokens: 80,
+			},
+			CompletionTokensDetails: &core.CompletionTokensDetails{
+				ReasoningTokens: 30,
+			},
+		},
+	}
+
+	entry := ExtractFromResponsesResponse(resp, "req-resp-details", "openai", "/v1/responses")
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.RawData == nil {
+		t.Fatal("expected RawData to be set from details")
+	}
+	if entry.RawData["prompt_cached_tokens"] != 80 {
+		t.Errorf("RawData[prompt_cached_tokens] = %v, want 80", entry.RawData["prompt_cached_tokens"])
+	}
+	if entry.RawData["completion_reasoning_tokens"] != 30 {
+		t.Errorf("RawData[completion_reasoning_tokens] = %v, want 30", entry.RawData["completion_reasoning_tokens"])
+	}
+}
+
+func f64Ptr(v float64) *float64 { return &v }
+
+func TestExtractFromChatResponse_WithPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:  f64Ptr(3.0),  // $3 per million input tokens
+		OutputPerMtok: f64Ptr(15.0), // $15 per million output tokens
+	}
+
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-priced",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     1000,
+			CompletionTokens: 500,
+			TotalTokens:      1500,
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-priced", "openai", "/v1/chat/completions", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil {
+		t.Fatal("expected InputCost to be non-nil")
+	}
+	if entry.OutputCost == nil {
+		t.Fatal("expected OutputCost to be non-nil")
+	}
+	if entry.TotalCost == nil {
+		t.Fatal("expected TotalCost to be non-nil")
+	}
+
+	// 1000 tokens / 1M * $3 = $0.003
+	wantInput := 1000.0 / 1_000_000.0 * 3.0
+	if *entry.InputCost != wantInput {
+		t.Errorf("InputCost = %f, want %f", *entry.InputCost, wantInput)
+	}
+	// 500 tokens / 1M * $15 = $0.0075
+	wantOutput := 500.0 / 1_000_000.0 * 15.0
+	if *entry.OutputCost != wantOutput {
+		t.Errorf("OutputCost = %f, want %f", *entry.OutputCost, wantOutput)
+	}
+	wantTotal := wantInput + wantOutput
+	if *entry.TotalCost != wantTotal {
+		t.Errorf("TotalCost = %f, want %f", *entry.TotalCost, wantTotal)
+	}
+}
+
+func TestExtractFromResponsesResponse_WithPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:  f64Ptr(2.5),
+		OutputPerMtok: f64Ptr(10.0),
+	}
+
+	resp := &core.ResponsesResponse{
+		ID:    "resp-priced",
+		Model: "gpt-4o",
+		Usage: &core.ResponsesUsage{
+			InputTokens:  2000,
+			OutputTokens: 800,
+			TotalTokens:  2800,
+		},
+	}
+
+	entry := ExtractFromResponsesResponse(resp, "req-resp-priced", "openai", "/v1/responses", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil {
+		t.Fatal("expected InputCost to be non-nil")
+	}
+	if entry.OutputCost == nil {
+		t.Fatal("expected OutputCost to be non-nil")
+	}
+	if entry.TotalCost == nil {
+		t.Fatal("expected TotalCost to be non-nil")
+	}
+
+	wantInput := 2000.0 / 1_000_000.0 * 2.5
+	if *entry.InputCost != wantInput {
+		t.Errorf("InputCost = %f, want %f", *entry.InputCost, wantInput)
+	}
+	wantOutput := 800.0 / 1_000_000.0 * 10.0
+	if *entry.OutputCost != wantOutput {
+		t.Errorf("OutputCost = %f, want %f", *entry.OutputCost, wantOutput)
+	}
+	wantTotal := wantInput + wantOutput
+	if *entry.TotalCost != wantTotal {
+		t.Errorf("TotalCost = %f, want %f", *entry.TotalCost, wantTotal)
+	}
+}
+
 func TestExtractFromSSEUsage(t *testing.T) {
 	entry := ExtractFromSSEUsage(
 		"chatcmpl-789",

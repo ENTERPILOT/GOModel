@@ -260,6 +260,15 @@ type CacheConfig struct {
 
 	// Redis configuration (only used when Type is "redis")
 	Redis RedisConfig `yaml:"redis"`
+
+	// ModelList configuration for the external model metadata registry
+	ModelList ModelListConfig `yaml:"model_list"`
+}
+
+// ModelListConfig holds configuration for fetching the external model metadata registry.
+type ModelListConfig struct {
+	// URL is the HTTP(S) URL to fetch models.json from (empty = disabled)
+	URL string `yaml:"url" env:"MODEL_LIST_URL"`
 }
 
 // RedisConfig holds Redis-specific configuration
@@ -348,6 +357,9 @@ func buildDefaultConfig() *Config {
 			Redis: RedisConfig{
 				Key: "gomodel:models",
 				TTL: 86400,
+			},
+			ModelList: ModelListConfig{
+				URL: "https://raw.githubusercontent.com/ENTERPILOT/ai-model-list/refs/heads/main/models.json",
 			},
 		},
 		Storage: StorageConfig{

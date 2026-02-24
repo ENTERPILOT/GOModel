@@ -2,7 +2,9 @@ package usage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -20,6 +22,7 @@ func NewPostgreSQLReader(pool *pgxpool.Pool) (*PostgreSQLReader, error) {
 	return &PostgreSQLReader{pool: pool}, nil
 }
 
+// GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	var query string
 	var args []interface{}
@@ -27,28 +30,178 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 	startZero := params.StartDate.IsZero()
 	endZero := params.EndDate.IsZero()
 
+	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
+
 	if !startZero && !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2`
 		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
 	} else if !startZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage" WHERE timestamp >= $1`
 		args = append(args, params.StartDate.UTC())
+	} else if !endZero {
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
+			FROM "usage" WHERE timestamp < $1`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
 	} else {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
+		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM "usage"`
 	}
 
 	summary := &UsageSummary{}
 	err := r.pool.QueryRow(ctx, query, args...).Scan(
 		&summary.TotalRequests, &summary.TotalInput, &summary.TotalOutput, &summary.TotalTokens,
+		&summary.TotalInputCost, &summary.TotalOutputCost, &summary.TotalCost,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query usage summary: %w", err)
 	}
 
 	return summary, nil
+}
+
+// GetUsageByModel returns token and cost totals grouped by model and provider.
+func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
+	var query string
+	var args []interface{}
+
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
+
+	if !startZero && !endZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2 GROUP BY model, provider`
+		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
+	} else if !startZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage" WHERE timestamp >= $1 GROUP BY model, provider`
+		args = append(args, params.StartDate.UTC())
+	} else if !endZero {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage" WHERE timestamp < $1 GROUP BY model, provider`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
+	} else {
+		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage" GROUP BY model, provider`
+	}
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query usage by model: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]ModelUsage, 0)
+	for rows.Next() {
+		var m ModelUsage
+		if err := rows.Scan(&m.Model, &m.Provider, &m.InputTokens, &m.OutputTokens, &m.InputCost, &m.OutputCost, &m.TotalCost); err != nil {
+			return nil, fmt.Errorf("failed to scan usage by model row: %w", err)
+		}
+		result = append(result, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage by model rows: %w", err)
+	}
+
+	return result, nil
+}
+
+// GetUsageLog returns a paginated list of individual usage log entries.
+func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
+	limit, offset := clampLimitOffset(params.Limit, params.Offset)
+
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
+		args = append(args, params.StartDate.UTC())
+		argIdx++
+		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", argIdx))
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
+		argIdx++
+	} else if !startZero {
+		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
+		args = append(args, params.StartDate.UTC())
+		argIdx++
+	} else if !endZero {
+		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", argIdx))
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
+		argIdx++
+	}
+
+	if params.Model != "" {
+		conditions = append(conditions, fmt.Sprintf("model = $%d", argIdx))
+		args = append(args, params.Model)
+		argIdx++
+	}
+	if params.Provider != "" {
+		conditions = append(conditions, fmt.Sprintf("provider = $%d", argIdx))
+		args = append(args, params.Provider)
+		argIdx++
+	}
+	if params.Search != "" {
+		s := "%" + escapeLikeWildcards(params.Search) + "%"
+		conditions = append(conditions, fmt.Sprintf("(model ILIKE $%d ESCAPE '\\' OR provider ILIKE $%d ESCAPE '\\' OR request_id ILIKE $%d ESCAPE '\\' OR provider_id ILIKE $%d ESCAPE '\\')", argIdx, argIdx, argIdx, argIdx))
+		args = append(args, s)
+		argIdx++
+	}
+
+	where := buildWhereClause(conditions)
+
+	// Count total
+	var total int
+	countQuery := `SELECT COUNT(*) FROM "usage"` + where
+	if err := r.pool.QueryRow(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, fmt.Errorf("failed to count usage log entries: %w", err)
+	}
+
+	// Fetch page
+	dataQuery := fmt.Sprintf(`SELECT id, request_id, provider_id, timestamp, model, provider, endpoint,
+		input_tokens, output_tokens, total_tokens, COALESCE(input_cost, 0), COALESCE(output_cost, 0), COALESCE(total_cost, 0), raw_data, COALESCE(costs_calculation_caveat, '')
+		FROM "usage"%s ORDER BY timestamp DESC LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1)
+	dataArgs := append(append([]interface{}(nil), args...), limit, offset)
+
+	rows, err := r.pool.Query(ctx, dataQuery, dataArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query usage log: %w", err)
+	}
+	defer rows.Close()
+
+	entries := make([]UsageLogEntry, 0)
+	for rows.Next() {
+		var e UsageLogEntry
+		var rawDataJSON *string
+		if err := rows.Scan(&e.ID, &e.RequestID, &e.ProviderID, &e.Timestamp, &e.Model, &e.Provider, &e.Endpoint,
+			&e.InputTokens, &e.OutputTokens, &e.TotalTokens, &e.InputCost, &e.OutputCost, &e.TotalCost, &rawDataJSON, &e.CostsCalculationCaveat); err != nil {
+			return nil, fmt.Errorf("failed to scan usage log row: %w", err)
+		}
+		if rawDataJSON != nil && *rawDataJSON != "" {
+			if err := json.Unmarshal([]byte(*rawDataJSON), &e.RawData); err != nil {
+				slog.Warn("failed to unmarshal raw_data JSON", "request_id", e.RequestID, "error", err)
+			}
+		}
+		entries = append(entries, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage log rows: %w", err)
+	}
+
+	return &UsageLogResult{
+		Entries: entries,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
 }
 
 func pgGroupExpr(interval string) string {
@@ -64,6 +217,7 @@ func pgGroupExpr(interval string) string {
 	}
 }
 
+// GetDailyUsage returns usage statistics grouped by time period (daily, weekly, monthly, yearly).
 func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
 	interval := params.Interval
 	if interval == "" {
@@ -83,6 +237,9 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 	} else if !startZero {
 		where = ` WHERE timestamp >= $1`
 		args = append(args, params.StartDate.UTC())
+	} else if !endZero {
+		where = ` WHERE timestamp < $1`
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
 	}
 
 	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)

@@ -25,9 +25,11 @@ function dashboard() {
         interval: 'daily',
 
         // Data
-        summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0 },
+        summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, total_input_cost: null, total_output_cost: null, total_cost: null },
         daily: [],
         models: [],
+        categories: [],
+        activeCategory: 'all',
 
         // Filters
         modelFilter: '',
@@ -35,23 +37,44 @@ function dashboard() {
         // Chart
         chart: null,
 
+        // Usage page state
+        usageMode: 'tokens',
+        modelUsage: [],
+        usageLog: { entries: [], total: 0, limit: 50, offset: 0 },
+        usageLogSearch: '',
+        usageLogModel: '',
+        usageLogProvider: '',
+        usageBarChart: null,
+
+        _parseRoute(pathname) {
+            const path = pathname.replace(/\/$/, '');
+            const rest = path.replace('/admin/dashboard', '').replace(/^\//, '');
+            const parts = rest.split('/');
+            const page = (['overview', 'usage', 'models'].includes(parts[0])) ? parts[0] : 'overview';
+            const sub = parts[1] || null;
+            return { page, sub };
+        },
+
         init() {
             this.apiKey = localStorage.getItem('gomodel_api_key') || '';
             this.theme = localStorage.getItem('gomodel_theme') || 'system';
             this.sidebarCollapsed = localStorage.getItem('gomodel_sidebar_collapsed') === 'true';
             this.applyTheme();
 
-            // Parse initial page from URL path
-            const path = window.location.pathname.replace(/\/$/, '');
-            const slug = path.split('/').pop();
-            this.page = (slug === 'models') ? 'models' : 'overview';
+            // Parse initial page and sub-path from URL
+            const { page, sub } = this._parseRoute(window.location.pathname);
+            this.page = page;
+            if (page === 'usage' && sub === 'costs') this.usageMode = 'costs';
 
             // Handle browser back/forward
             window.addEventListener('popstate', () => {
-                const p = window.location.pathname.replace(/\/$/, '');
-                const s = p.split('/').pop();
-                this.page = (s === 'models') ? 'models' : 'overview';
-                if (this.page === 'overview') this.renderChart();
+                const { page: p, sub: s } = this._parseRoute(window.location.pathname);
+                this.page = p;
+                if (p === 'usage') {
+                    this.usageMode = s === 'costs' ? 'costs' : 'tokens';
+                    this.fetchUsagePage();
+                }
+                if (p === 'overview') this.renderChart();
             });
 
             // Re-render chart when system theme changes (only matters in 'system' mode)
@@ -290,8 +313,10 @@ function dashboard() {
 
         navigate(page) {
             this.page = page;
+            if (page === 'usage') this.usageMode = 'tokens';
             history.pushState(null, '', '/admin/dashboard/' + page);
             if (page === 'overview') this.renderChart();
+            if (page === 'usage') { this.fetchUsagePage(); }
         },
 
         setTheme(t) {
@@ -299,6 +324,7 @@ function dashboard() {
             localStorage.setItem('gomodel_theme', t);
             this.applyTheme();
             this.renderChart();
+            this.renderBarChart();
         },
 
         toggleTheme() {
@@ -349,7 +375,7 @@ function dashboard() {
             this.loading = true;
             this.authError = false;
             this.needsAuth = false;
-            await Promise.all([this.fetchUsage(), this.fetchModels()]);
+            await Promise.all([this.fetchUsage(), this.fetchModels(), this.fetchCategories()]);
             this.loading = false;
         },
 
@@ -396,6 +422,7 @@ function dashboard() {
                 this.summary = await summaryRes.json();
                 this.daily = await dailyRes.json();
                 this.renderChart();
+                if (this.page === 'usage') this.fetchUsagePage();
             } catch (e) {
                 console.error('Failed to fetch usage:', e);
             }
@@ -403,7 +430,11 @@ function dashboard() {
 
         async fetchModels() {
             try {
-                const res = await fetch('/admin/api/v1/models', { headers: this.headers() });
+                let url = '/admin/api/v1/models';
+                if (this.activeCategory && this.activeCategory !== 'all') {
+                    url += '?category=' + encodeURIComponent(this.activeCategory);
+                }
+                const res = await fetch(url, { headers: this.headers() });
                 if (!this.handleFetchResponse(res, 'models')) {
                     this.models = [];
                     return;
@@ -413,6 +444,26 @@ function dashboard() {
                 console.error('Failed to fetch models:', e);
                 this.models = [];
             }
+        },
+
+        async fetchCategories() {
+            try {
+                const res = await fetch('/admin/api/v1/models/categories', { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'categories')) {
+                    this.categories = [];
+                    return;
+                }
+                this.categories = await res.json();
+            } catch (e) {
+                console.error('Failed to fetch categories:', e);
+                this.categories = [];
+            }
+        },
+
+        selectCategory(cat) {
+            this.activeCategory = cat;
+            this.modelFilter = '';
+            this.fetchModels();
         },
 
         fillMissingDays(daily) {
@@ -437,7 +488,8 @@ function dashboard() {
             return result;
         },
 
-        renderChart() {
+        renderChart(retries) {
+            if (retries === undefined) retries = 3;
             this.$nextTick(() => {
                 if (this.chart) {
                     this.chart.destroy();
@@ -445,9 +497,15 @@ function dashboard() {
                 }
 
                 if (this.daily.length === 0) return;
+                if (this.page !== 'overview') return;
 
                 const canvas = document.getElementById('usageChart');
-                if (!canvas || canvas.offsetWidth === 0) return;
+                if (!canvas || canvas.offsetWidth === 0) {
+                    if (retries > 0) {
+                        setTimeout(() => this.renderChart(retries - 1), 100);
+                    }
+                    return;
+                }
 
                 const colors = this.chartColors();
                 const filled = this.fillMissingDays(this.daily);
@@ -463,8 +521,8 @@ function dashboard() {
                             {
                                 label: 'Input Tokens',
                                 data: inputData,
-                                borderColor: '#b8956e',
-                                backgroundColor: 'rgba(184, 149, 110, 0.1)',
+                                borderColor: '#c2845a',
+                                backgroundColor: 'rgba(194, 132, 90, 0.1)',
                                 fill: true,
                                 tension: 0.3,
                                 pointRadius: 3,
@@ -473,8 +531,8 @@ function dashboard() {
                             {
                                 label: 'Output Tokens',
                                 data: outputData,
-                                borderColor: '#34d399',
-                                backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                                borderColor: '#7a9e7e',
+                                backgroundColor: 'rgba(122, 158, 126, 0.1)',
                                 fill: true,
                                 tension: 0.3,
                                 pointRadius: 3,
@@ -534,13 +592,283 @@ function dashboard() {
             return this.models.filter(m =>
                 (m.model?.id ?? '').toLowerCase().includes(f) ||
                 (m.provider_type ?? '').toLowerCase().includes(f) ||
-                (m.model?.owned_by ?? '').toLowerCase().includes(f)
+                (m.model?.owned_by ?? '').toLowerCase().includes(f) ||
+                (m.model?.metadata?.modes ?? []).join(',').toLowerCase().includes(f) ||
+                (m.model?.metadata?.categories ?? []).join(',').toLowerCase().includes(f)
             );
         },
 
         formatNumber(n) {
             if (n == null || n === undefined) return '-';
             return n.toLocaleString();
+        },
+
+        formatCost(v) {
+            if (v == null || v === undefined) return 'N/A';
+            return '$' + v.toFixed(4);
+        },
+
+        formatCostTooltip(entry) {
+            let lines = [];
+            lines.push('Input: ' + this.formatCost(entry.input_cost));
+            lines.push('Output: ' + this.formatCost(entry.output_cost));
+            if (entry.raw_data) {
+                lines.push('');
+                for (const [key, value] of Object.entries(entry.raw_data)) {
+                    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                    lines.push(label + ': ' + this.formatNumber(value));
+                }
+            }
+            return lines.join('\n');
+        },
+
+        formatPrice(v) {
+            if (v == null || v === undefined) return '\u2014';
+            return '$' + v.toFixed(2);
+        },
+
+        formatPriceFine(v) {
+            if (v == null || v === undefined) return '\u2014';
+            if (v < 0.01) return '$' + v.toFixed(6);
+            return '$' + v.toFixed(4);
+        },
+
+        categoryCount(cat) {
+            const entry = this.categories.find(c => c.category === cat);
+            return entry ? entry.count : 0;
+        },
+
+        // Usage page methods
+        _usageQueryStr() {
+            if (this.customStartDate && this.customEndDate) {
+                return 'start_date=' + this._formatDate(this.customStartDate) +
+                       '&end_date=' + this._formatDate(this.customEndDate);
+            }
+            return 'days=' + this.days;
+        },
+
+        async fetchUsagePage() {
+            await Promise.all([this.fetchModelUsage(), this.fetchUsageLog(true)]);
+            this.renderBarChart();
+        },
+
+        async fetchModelUsage() {
+            try {
+                const res = await fetch('/admin/api/v1/usage/models?' + this._usageQueryStr(), { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'usage models')) {
+                    this.modelUsage = [];
+                    return;
+                }
+                this.modelUsage = await res.json();
+            } catch (e) {
+                console.error('Failed to fetch model usage:', e);
+                this.modelUsage = [];
+            }
+        },
+
+        async fetchUsageLog(resetOffset) {
+            try {
+                if (resetOffset) this.usageLog.offset = 0;
+                let qs = this._usageQueryStr();
+                qs += '&limit=' + this.usageLog.limit + '&offset=' + this.usageLog.offset;
+                if (this.usageLogSearch) qs += '&search=' + encodeURIComponent(this.usageLogSearch);
+                if (this.usageLogModel) qs += '&model=' + encodeURIComponent(this.usageLogModel);
+                if (this.usageLogProvider) qs += '&provider=' + encodeURIComponent(this.usageLogProvider);
+
+                const res = await fetch('/admin/api/v1/usage/log?' + qs, { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'usage log')) {
+                    this.usageLog = { entries: [], total: 0, limit: 50, offset: 0 };
+                    return;
+                }
+                this.usageLog = await res.json();
+                if (!this.usageLog.entries) this.usageLog.entries = [];
+            } catch (e) {
+                console.error('Failed to fetch usage log:', e);
+                this.usageLog = { entries: [], total: 0, limit: 50, offset: 0 };
+            }
+        },
+
+        toggleUsageMode(mode) {
+            this.usageMode = mode;
+            const url = mode === 'costs' ? '/admin/dashboard/usage/costs' : '/admin/dashboard/usage';
+            history.pushState(null, '', url);
+            this.renderBarChart();
+        },
+
+        usageLogNextPage() {
+            if (this.usageLog.offset + this.usageLog.limit < this.usageLog.total) {
+                this.usageLog.offset += this.usageLog.limit;
+                this.fetchUsageLog(false);
+            }
+        },
+
+        usageLogPrevPage() {
+            if (this.usageLog.offset > 0) {
+                this.usageLog.offset = Math.max(0, this.usageLog.offset - this.usageLog.limit);
+                this.fetchUsageLog(false);
+            }
+        },
+
+        usageLogModelOptions() {
+            const set = new Set();
+            this.modelUsage.forEach(m => { set.add(m.model); });
+            return [...set].sort();
+        },
+
+        usageLogProviderOptions() {
+            const set = new Set();
+            this.modelUsage.forEach(m => { set.add(m.provider); });
+            return [...set].sort();
+        },
+
+        formatTokensShort(n) {
+            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+            if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+            return String(n);
+        },
+
+        formatTimestamp(ts) {
+            if (!ts) return '-';
+            const d = new Date(ts);
+            return d.getFullYear() + '-' +
+                String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                String(d.getDate()).padStart(2, '0') + ' ' +
+                String(d.getHours()).padStart(2, '0') + ':' +
+                String(d.getMinutes()).padStart(2, '0') + ':' +
+                String(d.getSeconds()).padStart(2, '0');
+        },
+
+        _barColors() {
+            return [
+                '#c2845a', '#7a9e7e', '#d4a574', '#b8a98e', '#8b9e6b',
+                '#7d8a97', '#c47a5a', '#6b8e6b', '#a09486', '#9b7ea4',
+                '#c49a6c'
+            ];
+        },
+
+        _barData() {
+            const sorted = [...this.modelUsage].sort((a, b) => {
+                if (this.usageMode === 'costs') {
+                    return ((b.total_cost || 0) - (a.total_cost || 0));
+                }
+                return ((b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens));
+            });
+
+            const top = sorted.slice(0, 10);
+            const rest = sorted.slice(10);
+
+            const labels = top.map(m => m.model);
+            const values = top.map(m => {
+                if (this.usageMode === 'costs') return m.total_cost || 0;
+                return m.input_tokens + m.output_tokens;
+            });
+
+            if (rest.length > 0) {
+                labels.push('Other');
+                let otherVal = 0;
+                rest.forEach(m => {
+                    if (this.usageMode === 'costs') otherVal += (m.total_cost || 0);
+                    else otherVal += m.input_tokens + m.output_tokens;
+                });
+                values.push(otherVal);
+            }
+
+            return { labels, values };
+        },
+
+        barLegendItems() {
+            const { labels, values } = this._barData();
+            const colors = this._barColors();
+            return labels.map((label, i) => ({
+                label,
+                color: colors[i % colors.length],
+                value: this.usageMode === 'costs' ? '$' + values[i].toFixed(4) : this.formatTokensShort(values[i])
+            }));
+        },
+
+        renderBarChart(retries) {
+            if (retries === undefined) retries = 3;
+            this.$nextTick(() => {
+                if (this.usageBarChart) {
+                    this.usageBarChart.destroy();
+                    this.usageBarChart = null;
+                }
+
+                if (this.modelUsage.length === 0) return;
+                if (this.page !== 'usage') return;
+
+                const canvas = document.getElementById('usageBarChart');
+                if (!canvas || canvas.offsetWidth === 0) {
+                    if (retries > 0) {
+                        setTimeout(() => this.renderBarChart(retries - 1), 100);
+                    }
+                    return;
+                }
+
+                const colors = this.chartColors();
+                const { labels, values } = this._barData();
+                const palette = this._barColors();
+
+                this.usageBarChart = new Chart(canvas, {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: values,
+                            backgroundColor: labels.map((_, i) => palette[i % palette.length]),
+                            borderColor: 'transparent',
+                            borderWidth: 0,
+                            borderRadius: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: { duration: 0 },
+                        layout: { padding: { top: 8 } },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: {
+                                    color: colors.text,
+                                    font: { size: 11, family: "'SF Mono', Menlo, Consolas, monospace" },
+                                    maxRotation: 45,
+                                    minRotation: 0
+                                }
+                            },
+                            y: {
+                                grid: { color: colors.grid },
+                                border: { display: false },
+                                ticks: {
+                                    color: colors.text,
+                                    font: { size: 11, family: "'SF Mono', Menlo, Consolas, monospace" },
+                                    callback: (v) => {
+                                        if (this.usageMode === 'costs') return '$' + v.toFixed(2);
+                                        return this.formatTokensShort(v);
+                                    }
+                                }
+                            }
+                        },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: colors.tooltipBg,
+                                borderColor: colors.tooltipBorder,
+                                borderWidth: 1,
+                                titleColor: colors.tooltipText,
+                                bodyColor: colors.tooltipText,
+                                callbacks: {
+                                    label: (c) => {
+                                        const val = c.parsed.y;
+                                        if (this.usageMode === 'costs') return '$' + val.toFixed(4);
+                                        return this.formatTokensShort(val);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            });
         }
     };
 }

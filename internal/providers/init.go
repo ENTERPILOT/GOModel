@@ -11,6 +11,7 @@ import (
 	"gomodel/config"
 	"gomodel/internal/cache"
 	"gomodel/internal/core"
+	"gomodel/internal/modeldata"
 )
 
 // InitResult holds the initialized provider infrastructure and cleanup functions.
@@ -44,8 +45,10 @@ func (r *InitResult) Close() error {
 // 2. Cache initialization (local or Redis based on config)
 // 3. Provider instantiation and registration
 // 4. Async model loading (from cache first, then network refresh)
-// 5. Background refresh scheduling (interval from cfg.Cache.RefreshInterval)
-// 6. Router creation
+// 5. Best-effort background model-list fetch (goroutine with ~45s timeout that
+//    calls modeldata.Fetch, registry.EnrichModels, and SaveToCache)
+// 6. Background refresh scheduling (interval from cfg.Cache.RefreshInterval)
+// 7. Router creation
 //
 // The caller must call InitResult.Close() during shutdown.
 func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFactory) (*InitResult, error) {
@@ -84,11 +87,41 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 		"providers", registry.ProviderCount(),
 	)
 
+	// Fetch model list in background (best-effort, non-blocking)
+	modelListURL := result.Config.Cache.ModelList.URL
+	if modelListURL != "" {
+		go func() {
+			fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+			defer cancel()
+
+			list, raw, err := modeldata.Fetch(fetchCtx, modelListURL)
+			if err != nil {
+				slog.Warn("failed to fetch model list", "url", modelListURL, "error", err)
+				return
+			}
+			if list == nil {
+				return
+			}
+
+			registry.SetModelList(list, raw)
+			registry.EnrichModels()
+
+			if err := registry.SaveToCache(fetchCtx); err != nil {
+				slog.Warn("failed to save cache after model list fetch", "error", err)
+			}
+			slog.Info("model list loaded",
+				"models", len(list.Models),
+				"providers", len(list.Providers),
+				"provider_models", len(list.ProviderModels),
+			)
+		}()
+	}
+
 	refreshInterval := time.Duration(result.Config.Cache.RefreshInterval) * time.Second
 	if refreshInterval <= 0 {
 		refreshInterval = time.Hour
 	}
-	stopRefresh := registry.StartBackgroundRefresh(refreshInterval)
+	stopRefresh := registry.StartBackgroundRefresh(refreshInterval, modelListURL)
 
 	router, err := NewRouter(registry)
 	if err != nil {
@@ -171,7 +204,7 @@ func initializeProviders(providerMap map[string]ProviderConfig, factory *Provide
 		if checker, ok := p.(core.AvailabilityChecker); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			if err := checker.CheckAvailability(ctx); err != nil {
-				slog.Info("provider not available, skipping",
+				slog.Warn("provider not available, skipping",
 					"name", name,
 					"type", pCfg.Type,
 					"reason", err.Error())

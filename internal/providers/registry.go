@@ -3,6 +3,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -11,6 +12,7 @@ import (
 
 	"gomodel/internal/cache"
 	"gomodel/internal/core"
+	"gomodel/internal/modeldata"
 )
 
 // ModelInfo holds information about a model and its provider
@@ -30,6 +32,8 @@ type ModelRegistry struct {
 	cache         cache.Cache              // cache backend (local or redis)
 	initialized   bool                     // true when at least one successful network fetch completed
 	initMu        sync.Mutex               // protects initialized flag
+	modelList     *modeldata.ModelList      // parsed model list (nil = not loaded)
+	modelListRaw  json.RawMessage           // raw bytes for cache persistence
 }
 
 // NewModelRegistry creates a new model registry
@@ -116,6 +120,15 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 		return fmt.Errorf("no models available: providers returned empty model lists")
 	}
 
+	// Enrich models with metadata from the model list (if loaded)
+	r.mu.RLock()
+	list := r.modelList
+	r.mu.RUnlock()
+	if list != nil {
+		accessor := &registryAccessor{models: newModels, providerTypes: r.snapshotProviderTypes()}
+		modeldata.Enrich(accessor, list)
+	}
+
 	// Atomically swap the models map
 	r.mu.Lock()
 	r.models = newModels
@@ -188,8 +201,29 @@ func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 		}
 	}
 
+	// Load model list data from cache if available
+	var list *modeldata.ModelList
+	if len(modelCache.ModelListData) > 0 {
+		parsed, parseErr := modeldata.Parse(modelCache.ModelListData)
+		if parseErr != nil {
+			slog.Warn("failed to parse cached model list data", "error", parseErr)
+		} else {
+			list = parsed
+		}
+	}
+
+	// Enrich cached models with model list metadata
+	if list != nil {
+		accessor := &registryAccessor{models: newModels, providerTypes: r.snapshotProviderTypes()}
+		modeldata.Enrich(accessor, list)
+	}
+
 	r.mu.Lock()
 	r.models = newModels
+	if list != nil {
+		r.modelList = list
+		r.modelListRaw = modelCache.ModelListData
+	}
 	r.mu.Unlock()
 
 	slog.Info("loaded models from cache",
@@ -212,6 +246,7 @@ func (r *ModelRegistry) SaveToCache(ctx context.Context) error {
 	for k, v := range r.providerTypes {
 		providerTypes[k] = v
 	}
+	modelListRaw := r.modelListRaw
 	r.mu.RUnlock()
 
 	if cacheBackend == nil {
@@ -220,9 +255,10 @@ func (r *ModelRegistry) SaveToCache(ctx context.Context) error {
 
 	// Build cache structure (map keyed by model ID)
 	modelCache := &cache.ModelCache{
-		Version:   1,
-		UpdatedAt: time.Now().UTC(),
-		Models:    make(map[string]cache.CachedModel, len(models)),
+		Version:       1,
+		UpdatedAt:     time.Now().UTC(),
+		Models:        make(map[string]cache.CachedModel, len(models)),
+		ModelListData: modelListRaw,
 	}
 
 	for modelID, info := range models {
@@ -381,6 +417,95 @@ func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 	return result
 }
 
+// ListModelsWithProviderByCategory returns models filtered by category, sorted by model ID.
+// If category is CategoryAll, returns all models (same as ListModelsWithProvider).
+func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCategory) []ModelWithProvider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	result := make([]ModelWithProvider, 0)
+	for _, info := range r.models {
+		if category != core.CategoryAll {
+			if info.Model.Metadata == nil || !hasCategory(info.Model.Metadata.Categories, category) {
+				continue
+			}
+		}
+		result = append(result, ModelWithProvider{
+			Model:        info.Model,
+			ProviderType: r.providerTypes[info.Provider],
+		})
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Model.ID < result[j].Model.ID
+	})
+
+	return result
+}
+
+// hasCategory returns true if the category slice contains the target category.
+func hasCategory(cats []core.ModelCategory, target core.ModelCategory) bool {
+	for _, c := range cats {
+		if c == target {
+			return true
+		}
+	}
+	return false
+}
+
+// CategoryCount holds a model category and the number of models in it.
+type CategoryCount struct {
+	Category    core.ModelCategory `json:"category"`
+	DisplayName string             `json:"display_name"`
+	Count       int                `json:"count"`
+}
+
+// categoryDisplayNames maps categories to human-readable display names.
+var categoryDisplayNames = map[core.ModelCategory]string{
+	core.CategoryAll:            "All",
+	core.CategoryTextGeneration: "Text Generation",
+	core.CategoryEmbedding:      "Embeddings",
+	core.CategoryImage:          "Image",
+	core.CategoryAudio:          "Audio",
+	core.CategoryVideo:          "Video",
+	core.CategoryUtility:        "Utility",
+}
+
+// GetCategoryCounts returns model counts per category, in display order.
+// A model with multiple categories is counted in each.
+func (r *ModelRegistry) GetCategoryCounts() []CategoryCount {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	counts := make(map[core.ModelCategory]int)
+	for _, info := range r.models {
+		if info.Model.Metadata != nil {
+			for _, cat := range info.Model.Metadata.Categories {
+				counts[cat]++
+			}
+		}
+	}
+
+	allCategories := core.AllCategories()
+	result := make([]CategoryCount, 0, len(allCategories))
+	for _, cat := range allCategories {
+		count := counts[cat]
+		if cat == core.CategoryAll {
+			count = len(r.models)
+		}
+		displayName := categoryDisplayNames[cat]
+		if displayName == "" {
+			displayName = string(cat)
+		}
+		result = append(result, CategoryCount{
+			Category:    cat,
+			DisplayName: displayName,
+			Count:       count,
+		})
+	}
+	return result
+}
+
 // ProviderCount returns the number of registered providers
 func (r *ModelRegistry) ProviderCount() int {
 	r.mu.RLock()
@@ -388,9 +513,120 @@ func (r *ModelRegistry) ProviderCount() int {
 	return len(r.providers)
 }
 
+// SetModelList stores the parsed model list and its raw bytes for cache persistence.
+func (r *ModelRegistry) SetModelList(list *modeldata.ModelList, raw json.RawMessage) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.modelList = list
+	r.modelListRaw = raw
+}
+
+// EnrichModels re-applies model list metadata to all currently registered models.
+// Call this after SetModelList to update existing models with the new metadata.
+// Holds the write lock for the entire operation to prevent races with concurrent
+// readers (e.g. ListModels) that may read Model.Metadata.
+func (r *ModelRegistry) EnrichModels() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.modelList == nil || len(r.models) == 0 {
+		return
+	}
+
+	providerTypes := make(map[core.Provider]string, len(r.providerTypes))
+	for k, v := range r.providerTypes {
+		providerTypes[k] = v
+	}
+
+	accessor := &registryAccessor{models: r.models, providerTypes: providerTypes}
+	modeldata.Enrich(accessor, r.modelList)
+}
+
+// ResolveMetadata resolves metadata for a model directly via the stored model list,
+// bypassing the registry key lookup. This handles cases where the usage DB stores
+// a response model ID (e.g., "gpt-4o-2024-08-06") that differs from the registry
+// key (e.g., "gpt-4o") by using the reverse index in the model list.
+func (r *ModelRegistry) ResolveMetadata(providerType, modelID string) *core.ModelMetadata {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.modelList == nil {
+		return nil
+	}
+	return modeldata.Resolve(r.modelList, providerType, modelID)
+}
+
+// GetModelMetadata returns the metadata for a model, or nil if not found or not enriched.
+func (r *ModelRegistry) GetModelMetadata(modelID string) *core.ModelMetadata {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if info, ok := r.models[modelID]; ok {
+		return info.Model.Metadata
+	}
+	return nil
+}
+
+// ResolvePricing returns the pricing metadata for a model, trying the registry first
+// and falling back to a reverse-index lookup via the model list.
+// Returns nil if no pricing is available.
+func (r *ModelRegistry) ResolvePricing(model, providerType string) *core.ModelPricing {
+	meta := r.GetModelMetadata(model)
+	if meta != nil && meta.Pricing != nil {
+		return meta.Pricing
+	}
+	if providerType != "" {
+		meta = r.ResolveMetadata(providerType, model)
+		if meta != nil && meta.Pricing != nil {
+			return meta.Pricing
+		}
+	}
+	return nil
+}
+
+// snapshotProviderTypes returns a copy of the providerTypes map for use outside the lock.
+func (r *ModelRegistry) snapshotProviderTypes() map[core.Provider]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m := make(map[core.Provider]string, len(r.providerTypes))
+	for k, v := range r.providerTypes {
+		m[k] = v
+	}
+	return m
+}
+
+// registryAccessor implements modeldata.ModelInfoAccessor.
+// The models map may be either a snapshot (Initialize, LoadFromCache) or the live
+// registry map (EnrichModels, which holds the write lock for the entire operation).
+type registryAccessor struct {
+	models        map[string]*ModelInfo
+	providerTypes map[core.Provider]string
+}
+
+func (a *registryAccessor) ModelIDs() []string {
+	ids := make([]string, 0, len(a.models))
+	for id := range a.models {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func (a *registryAccessor) GetProviderType(modelID string) string {
+	info, ok := a.models[modelID]
+	if !ok {
+		return ""
+	}
+	return a.providerTypes[info.Provider]
+}
+
+func (a *registryAccessor) SetMetadata(modelID string, meta *core.ModelMetadata) {
+	if info, ok := a.models[modelID]; ok {
+		info.Model.Metadata = meta
+	}
+}
+
 // StartBackgroundRefresh starts a goroutine that periodically refreshes the model registry.
+// If modelListURL is non-empty, the model list is also re-fetched on each tick.
 // Returns a cancel function to stop the refresh loop.
-func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration) func() {
+func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelListURL string) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -412,9 +648,37 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration) func() {
 					}
 				}
 				refreshCancel()
+
+				// Also refresh model list if configured
+				if modelListURL != "" {
+					r.refreshModelList(modelListURL)
+				}
 			}
 		}
 	}()
 
 	return cancel
+}
+
+// refreshModelList fetches the model list and re-enriches all models.
+func (r *ModelRegistry) refreshModelList(url string) {
+	fetchCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+
+	list, raw, err := modeldata.Fetch(fetchCtx, url)
+	if err != nil {
+		slog.Warn("failed to refresh model list", "url", url, "error", err)
+		return
+	}
+	if list == nil {
+		return
+	}
+
+	r.SetModelList(list, raw)
+	r.EnrichModels()
+
+	if err := r.SaveToCache(fetchCtx); err != nil {
+		slog.Warn("failed to save cache after model list refresh", "error", err)
+	}
+	slog.Debug("model list refreshed", "models", len(list.Models))
 }

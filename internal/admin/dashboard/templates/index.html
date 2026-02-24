@@ -10,95 +10,7 @@
                 <button class="interval-btn" :class="{active: interval==='monthly'}" @click="setInterval('monthly')">Monthly</button>
                 <button class="interval-btn" :class="{active: interval==='yearly'}" @click="setInterval('yearly')">Yearly</button>
             </div>
-            <div class="date-picker" @click.outside="closeDatePicker()" @keydown.escape.window="closeDatePicker()">
-            <button class="date-picker-trigger" @click="toggleDatePicker()">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5 1v2M11 1v2M2 6h12M3 3h10a1 1 0 011 1v9a1 1 0 01-1 1H3a1 1 0 01-1-1V4a1 1 0 011-1z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                <span x-text="dateRangeLabel()">Last 30 days</span>
-                <svg class="date-picker-chevron" :class="{ open: datePickerOpen }" width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M3 4.5l3 3 3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <div class="date-picker-dropdown" x-show="datePickerOpen" x-transition.opacity.duration.150ms>
-                <div class="date-picker-presets">
-                    <button class="preset-btn" :class="{ active: selectedPreset === '3' }" @click="selectPreset('3')">Last 3 days</button>
-                    <button class="preset-btn" :class="{ active: selectedPreset === '7' }" @click="selectPreset('7')">Last 7 days</button>
-                    <button class="preset-btn" :class="{ active: selectedPreset === '14' }" @click="selectPreset('14')">Last 14 days</button>
-                    <button class="preset-btn" :class="{ active: selectedPreset === '30' }" @click="selectPreset('30')">Last 30 days</button>
-                    <button class="preset-btn" :class="{ active: selectedPreset === '90' }" @click="selectPreset('90')">Last 90 days</button>
-                </div>
-                <div class="date-picker-calendars" @mousemove="onCalendarMouseMove($event)" @mouseleave="onCalendarMouseLeave()">
-                    <!-- Left calendar (previous month) -->
-                    <div class="dp-calendar">
-                        <div class="dp-cal-header">
-                            <button class="dp-nav-btn" @click="prevMonth()">
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5L5 7l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
-                            <span class="dp-cal-title" x-text="calendarTitle(-1)"></span>
-                            <span></span>
-                        </div>
-                        <div class="dp-weekdays">
-                            <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
-                        </div>
-                        <div class="dp-days">
-                            <template x-for="day in calendarDays(-1)" :key="day.key">
-                                <button class="dp-day"
-                                    :class="{
-                                        'other-month': !day.current,
-                                        'today': isToday(day),
-                                        'range-start': isRangeStart(day),
-                                        'range-end': isRangeEnd(day),
-                                        'in-range': isInRange(day),
-                                        'disabled': isFutureDay(day)
-                                    }"
-                                    :disabled="isFutureDay(day) || !day.current"
-                                    @click="selectCalendarDay(day)"
-                                    x-text="day.day">
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-                    <!-- Right calendar (current month) -->
-                    <div class="dp-calendar">
-                        <div class="dp-cal-header">
-                            <button class="dp-nav-btn dp-nav-prev-mobile" @click="prevMonth()">
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M8.5 3.5L5 7l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
-                            <span class="dp-cal-title" x-text="calendarTitle(0)"></span>
-                            <button class="dp-nav-btn" @click="nextMonth()" :disabled="isCurrentMonth()">
-                                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M5.5 3.5L9 7l-3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                            </button>
-                        </div>
-                        <div class="dp-weekdays">
-                            <span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span><span>Su</span>
-                        </div>
-                        <div class="dp-days">
-                            <template x-for="day in calendarDays(0)" :key="day.key">
-                                <button class="dp-day"
-                                    :class="{
-                                        'other-month': !day.current,
-                                        'today': isToday(day),
-                                        'range-start': isRangeStart(day),
-                                        'range-end': isRangeEnd(day),
-                                        'in-range': isInRange(day),
-                                        'disabled': isFutureDay(day)
-                                    }"
-                                    :disabled="isFutureDay(day) || !day.current"
-                                    @click="selectCalendarDay(day)"
-                                    x-text="day.day">
-                                </button>
-                            </template>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="dp-cursor-hint" x-show="cursorHint.show" :style="'left:'+cursorHint.x+'px;top:'+cursorHint.y+'px'">
-                <template x-if="selectingDate==='start'">
-                    <svg viewBox="0 0 12 12" fill="none"><path d="M2 2v8M2 6h7M6.5 3.5L9 6 6.5 8.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </template>
-                <template x-if="selectingDate==='end'">
-                    <svg viewBox="0 0 12 12" fill="none"><path d="M10 2v8M3 6h7M5.5 3.5L3 6l2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-                </template>
-                <span x-text="selectionHint()"></span>
-            </div>
-        </div>
+            {{template "date-picker" .}}
         </div>
     </div>
 
@@ -125,6 +37,10 @@
             <div class="card-label">Total Tokens</div>
             <div class="card-value" x-text="formatNumber(summary.total_tokens)">-</div>
         </div>
+        <div class="card">
+            <div class="card-label">Estimated Cost</div>
+            <div class="card-value" x-text="formatCost(summary.total_cost)">-</div>
+        </div>
     </div>
 
     <!-- Usage Chart -->
@@ -134,6 +50,102 @@
             <canvas id="usageChart"></canvas>
         </div>
         <p class="empty-state" x-show="daily.length === 0 && !loading && !authError">No usage data yet.</p>
+    </div>
+</div>
+
+<!-- Usage Page -->
+<div x-show="page==='usage'">
+    <div class="page-header">
+        <h2>Usage Analytics</h2>
+        <div class="page-header-controls">
+            <div class="usage-mode-toggle">
+                <button class="usage-mode-btn" :class="{active: usageMode==='tokens'}" @click="toggleUsageMode('tokens')">Tokens</button>
+                <button class="usage-mode-btn" :class="{active: usageMode==='costs'}" @click="toggleUsageMode('costs')">Costs</button>
+            </div>
+            {{template "date-picker" .}}
+        </div>
+    </div>
+
+    <!-- Auth Error Banner -->
+    <div class="alert alert-warning" x-show="authError">
+        Authentication required. Enter your API key in the sidebar to view data.
+    </div>
+
+    <!-- Usage by Model Chart -->
+    <div class="model-chart-section" x-show="modelUsage.length > 0">
+        <h3 x-text="usageMode === 'tokens' ? 'Token Usage by Model' : 'Cost by Model'"></h3>
+        <div class="bar-chart-wrap">
+            <canvas id="usageBarChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Request Log Section -->
+    <div class="usage-log-section">
+        <h3>Request Log</h3>
+        <div class="usage-log-toolbar">
+            <input type="text" placeholder="Search by request ID, model, provider..." x-model="usageLogSearch" @input.debounce.300ms="fetchUsageLog(true)" class="filter-input">
+            <select x-model="usageLogModel" @change="fetchUsageLog(true)" class="usage-log-select">
+                <option value="">All Models</option>
+                <template x-for="m in usageLogModelOptions()" :key="m">
+                    <option :value="m" x-text="m"></option>
+                </template>
+            </select>
+            <select x-model="usageLogProvider" @change="fetchUsageLog(true)" class="usage-log-select">
+                <option value="">All Providers</option>
+                <template x-for="p in usageLogProviderOptions()" :key="p">
+                    <option :value="p" x-text="p"></option>
+                </template>
+            </select>
+        </div>
+        <div class="table-wrapper" x-show="usageLog.entries.length > 0">
+            <table class="data-table usage-log-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Model</th>
+                        <th>Provider</th>
+                        <th class="col-price" x-text="usageMode === 'costs' ? 'Input Cost' : 'Input'"></th>
+                        <th class="col-price" x-text="usageMode === 'costs' ? 'Output Cost' : 'Output'"></th>
+                        <th class="col-price" x-text="usageMode === 'costs' ? 'Total Cost' : 'Total'"></th>
+                        <th class="col-price" x-show="usageMode === 'tokens'">Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="entry in usageLog.entries" :key="entry.id">
+                        <tr>
+                            <td class="mono usage-ts" x-text="formatTimestamp(entry.timestamp)"></td>
+                            <td class="mono" x-text="entry.model"></td>
+                            <td><span class="provider-badge" x-text="entry.provider"></span></td>
+                            <td class="col-price"
+                                x-text="usageMode === 'costs' ? formatCost(entry.input_cost) : formatNumber(entry.input_tokens)"
+                                :title="usageMode === 'costs' ? formatNumber(entry.input_tokens) + ' tokens' : ''"></td>
+                            <td class="col-price"
+                                x-text="usageMode === 'costs' ? formatCost(entry.output_cost) : formatNumber(entry.output_tokens)"
+                                :title="usageMode === 'costs' ? formatNumber(entry.output_tokens) + ' tokens' : ''"></td>
+                            <td class="col-price">
+                                <span x-text="usageMode === 'costs' ? formatCost(entry.total_cost) : formatNumber(entry.total_tokens)"
+                                      :title="usageMode === 'costs' ? formatNumber(entry.total_tokens) + ' tokens\n' + formatCostTooltip(entry) : ''"></span>
+                                <span class="caveat-icon" x-show="usageMode === 'costs' && entry.costs_calculation_caveat" :title="entry.costs_calculation_caveat">&#9888;</span>
+                            </td>
+                            <td class="col-price" x-show="usageMode === 'tokens'"
+                                :title="formatCostTooltip(entry)">
+                                <span x-text="formatCost(entry.total_cost)"></span>
+                                <span class="caveat-icon" x-show="entry.costs_calculation_caveat" :title="entry.costs_calculation_caveat">&#9888;</span>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <p class="empty-state" x-show="usageLog.entries.length === 0 && !loading && !authError">No usage log entries found.</p>
+        <!-- Pagination -->
+        <div class="pagination" x-show="usageLog.total > 0">
+            <span class="pagination-info" x-text="'Showing ' + (usageLog.offset + 1) + '-' + Math.min(usageLog.offset + usageLog.limit, usageLog.total) + ' of ' + usageLog.total"></span>
+            <div class="pagination-buttons">
+                <button class="pagination-btn" :disabled="usageLog.offset === 0" @click="usageLogPrevPage()">Prev</button>
+                <button class="pagination-btn" :disabled="usageLog.offset + usageLog.limit >= usageLog.total" @click="usageLogNextPage()">Next</button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -151,19 +163,32 @@
         Authentication required. Enter your API key in the sidebar to view data.
     </div>
 
+    <!-- Category Tabs -->
+    <div class="category-tabs" x-show="categories.length > 0">
+        <template x-for="cat in categories" :key="cat.category">
+            <button class="category-tab" :class="{ active: activeCategory === cat.category }" @click="selectCategory(cat.category)">
+                <span x-text="cat.display_name"></span>
+                <span class="tab-count" x-text="cat.count"></span>
+            </button>
+        </template>
+    </div>
+
     <!-- Filter -->
-    <div class="table-toolbar" x-show="models.length > 0">
+    <div class="table-toolbar" x-show="models.length > 0 || modelFilter">
         <input type="text" placeholder="Filter by model, provider, or owner..." x-model="modelFilter" class="filter-input">
     </div>
 
-    <!-- Models Table -->
-    <div class="table-wrapper" x-show="models.length > 0">
+    <!-- Models Table: All / Text Generation -->
+    <div class="table-wrapper" x-show="(models.length > 0 || modelFilter) && (activeCategory === 'all' || activeCategory === 'text_generation')">
         <table class="data-table">
             <thead>
                 <tr>
                     <th>Model ID</th>
                     <th>Provider</th>
-                    <th>Owned By</th>
+                    <th>Modes</th>
+                    <th class="col-price">Input $/MTok</th>
+                    <th class="col-price">Output $/MTok</th>
+                    <th class="col-price" x-show="activeCategory === 'text_generation'">Cached $/MTok</th>
                 </tr>
             </thead>
             <tbody>
@@ -171,12 +196,134 @@
                     <tr>
                         <td class="mono" x-text="m.model.id"></td>
                         <td><span class="provider-badge" x-text="m.provider_type"></span></td>
-                        <td x-text="m.model.owned_by || '-'"></td>
+                        <td x-text="(m.model.metadata?.modes ?? []).join(', ') || '-'"></td>
+                        <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.input_per_mtok)"></td>
+                        <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.output_per_mtok)"></td>
+                        <td class="col-price" x-show="activeCategory === 'text_generation'" x-text="formatPrice(m.model.metadata?.pricing?.cached_input_per_mtok)"></td>
                     </tr>
                 </template>
             </tbody>
         </table>
     </div>
-    <p class="empty-state" x-show="models.length === 0 && !loading && !authError">No models registered.</p>
+
+    <!-- Models Table: Embeddings -->
+    <div class="table-wrapper" x-show="(models.length > 0 || modelFilter) && activeCategory === 'embedding'">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Model ID</th>
+                    <th>Provider</th>
+                    <th class="col-price">Input $/MTok</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="m in filteredModels" :key="m.model.id">
+                    <tr>
+                        <td class="mono" x-text="m.model.id"></td>
+                        <td><span class="provider-badge" x-text="m.provider_type"></span></td>
+                        <td class="col-price" x-text="formatPrice(m.model.metadata?.pricing?.input_per_mtok)"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Models Table: Image -->
+    <div class="table-wrapper" x-show="(models.length > 0 || modelFilter) && activeCategory === 'image'">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Model ID</th>
+                    <th>Provider</th>
+                    <th class="col-price">$/Image</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="m in filteredModels" :key="m.model.id">
+                    <tr>
+                        <td class="mono" x-text="m.model.id"></td>
+                        <td><span class="provider-badge" x-text="m.provider_type"></span></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_image)"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Models Table: Audio -->
+    <div class="table-wrapper" x-show="(models.length > 0 || modelFilter) && activeCategory === 'audio'">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Model ID</th>
+                    <th>Provider</th>
+                    <th class="col-price">$/Second</th>
+                    <th class="col-price">$/Character</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="m in filteredModels" :key="m.model.id">
+                    <tr>
+                        <td class="mono" x-text="m.model.id"></td>
+                        <td><span class="provider-badge" x-text="m.provider_type"></span></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_second_input)"></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_character_input)"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Models Table: Video -->
+    <div class="table-wrapper" x-show="(models.length > 0 || modelFilter) && activeCategory === 'video'">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Model ID</th>
+                    <th>Provider</th>
+                    <th class="col-price">$/Second (In)</th>
+                    <th class="col-price">$/Second (Out)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="m in filteredModels" :key="m.model.id">
+                    <tr>
+                        <td class="mono" x-text="m.model.id"></td>
+                        <td><span class="provider-badge" x-text="m.provider_type"></span></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_second_input)"></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_second_output)"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Models Table: Utility -->
+    <div class="table-wrapper" x-show="(models.length > 0 || modelFilter) && activeCategory === 'utility'">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Model ID</th>
+                    <th>Provider</th>
+                    <th class="col-price">$/Page</th>
+                    <th class="col-price">$/Request</th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="m in filteredModels" :key="m.model.id">
+                    <tr>
+                        <td class="mono" x-text="m.model.id"></td>
+                        <td><span class="provider-badge" x-text="m.provider_type"></span></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_page)"></td>
+                        <td class="col-price" x-text="formatPriceFine(m.model.metadata?.pricing?.per_request)"></td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && (activeCategory === 'all' || !activeCategory)">No models registered.</p>
+    <p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && activeCategory && activeCategory !== 'all'">No models in this category.</p>
+    <p class="empty-state" x-show="models.length > 0 && filteredModels.length === 0 && modelFilter">No models match your filter.</p>
 </div>
 {{end}}

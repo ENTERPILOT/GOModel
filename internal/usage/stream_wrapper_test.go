@@ -47,7 +47,7 @@ data: [DONE]
 `
 	logger := &trackingLogger{enabled: true}
 	stream := io.NopCloser(strings.NewReader(streamData))
-	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions")
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions", nil)
 
 	// Read all data
 	data, err := io.ReadAll(wrapper)
@@ -98,7 +98,7 @@ data: [DONE]
 `
 	logger := &trackingLogger{enabled: true}
 	stream := io.NopCloser(strings.NewReader(streamData))
-	wrapper := NewStreamUsageWrapper(stream, logger, "o1-preview", "openai", "req-456", "/v1/chat/completions")
+	wrapper := NewStreamUsageWrapper(stream, logger, "o1-preview", "openai", "req-456", "/v1/chat/completions", nil)
 
 	_, _ = io.ReadAll(wrapper)
 	_ = wrapper.Close()
@@ -137,7 +137,7 @@ data: [DONE]
 `
 	logger := &trackingLogger{enabled: true}
 	stream := io.NopCloser(strings.NewReader(streamData))
-	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-789", "/v1/chat/completions")
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-789", "/v1/chat/completions", nil)
 
 	_, _ = io.ReadAll(wrapper)
 	_ = wrapper.Close()
@@ -157,7 +157,7 @@ data: [DONE]
 `
 	logger := &trackingLogger{enabled: false} // disabled
 	stream := io.NopCloser(strings.NewReader(streamData))
-	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions")
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions", nil)
 
 	_, _ = io.ReadAll(wrapper)
 	_ = wrapper.Close()
@@ -175,7 +175,7 @@ func TestWrapStreamForUsageDisabled(t *testing.T) {
 	logger := &trackingLogger{enabled: false} // disabled
 	stream := io.NopCloser(strings.NewReader(streamData))
 
-	wrapped := WrapStreamForUsage(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions")
+	wrapped := WrapStreamForUsage(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions", nil)
 
 	// When disabled, should return original stream (not wrapped)
 	// This is determined by checking if wrapped is the same as original
@@ -189,7 +189,7 @@ func TestWrapStreamForUsageNilLogger(t *testing.T) {
 	streamData := "test data"
 	stream := io.NopCloser(strings.NewReader(streamData))
 
-	wrapped := WrapStreamForUsage(stream, nil, "gpt-4", "openai", "req-123", "/v1/chat/completions")
+	wrapped := WrapStreamForUsage(stream, nil, "gpt-4", "openai", "req-123", "/v1/chat/completions", nil)
 
 	// When nil logger, should return original stream
 	data, _ := io.ReadAll(wrapped)
@@ -233,7 +233,7 @@ data: [DONE]
 `
 	logger := &trackingLogger{enabled: true}
 	stream := io.NopCloser(strings.NewReader(streamData))
-	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions")
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-123", "/v1/chat/completions", nil)
 
 	_, _ = io.ReadAll(wrapper)
 

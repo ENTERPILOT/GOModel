@@ -179,7 +179,103 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 	return c.JSON(http.StatusOK, daily)
 }
 
+// UsageByModel handles GET /admin/api/v1/usage/models
+//
+// @Summary      Get usage breakdown by model
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Success      200  {array}   usage.ModelUsage
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/models [get]
+func (h *Handler) UsageByModel(c echo.Context) error {
+	if h.usageReader == nil {
+		return c.JSON(http.StatusOK, []usage.ModelUsage{})
+	}
+
+	params, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	models, err := h.usageReader.GetUsageByModel(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if models == nil {
+		models = []usage.ModelUsage{}
+	}
+
+	return c.JSON(http.StatusOK, models)
+}
+
+// UsageLog handles GET /admin/api/v1/usage/log
+//
+// @Summary      Get paginated usage log entries
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        model       query     string  false  "Filter by model name"
+// @Param        provider    query     string  false  "Filter by provider"
+// @Param        search      query     string  false  "Search across model, provider, request_id, provider_id"
+// @Param        limit       query     int     false  "Page size (default 50, max 200)"
+// @Param        offset      query     int     false  "Offset for pagination"
+// @Success      200  {object}  usage.UsageLogResult
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/log [get]
+func (h *Handler) UsageLog(c echo.Context) error {
+	if h.usageReader == nil {
+		return c.JSON(http.StatusOK, usage.UsageLogResult{
+			Entries: []usage.UsageLogEntry{},
+		})
+	}
+
+	baseParams, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	params := usage.UsageLogParams{
+		UsageQueryParams: baseParams,
+		Model:            c.QueryParam("model"),
+		Provider:         c.QueryParam("provider"),
+		Search:           c.QueryParam("search"),
+	}
+
+	if l := c.QueryParam("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			params.Limit = parsed
+		}
+	}
+	if o := c.QueryParam("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			params.Offset = parsed
+		}
+	}
+
+	result, err := h.usageReader.GetUsageLog(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if result.Entries == nil {
+		result.Entries = []usage.UsageLogEntry{}
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
 // ListModels handles GET /admin/api/v1/models
+// Supports optional ?category= query param for filtering by model category.
 //
 // @Summary      List all registered models with provider info
 // @Tags         admin
@@ -193,10 +289,50 @@ func (h *Handler) ListModels(c echo.Context) error {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
 	}
 
-	models := h.registry.ListModelsWithProvider()
+	cat := core.ModelCategory(c.QueryParam("category"))
+	if cat != "" && cat != core.CategoryAll {
+		if !isValidCategory(cat) {
+			return handleError(c, core.NewInvalidRequestError("invalid category: "+string(cat), nil))
+		}
+	}
+
+	var models []providers.ModelWithProvider
+	if cat != "" && cat != core.CategoryAll {
+		models = h.registry.ListModelsWithProviderByCategory(cat)
+	} else {
+		models = h.registry.ListModelsWithProvider()
+	}
+
 	if models == nil {
 		models = []providers.ModelWithProvider{}
 	}
 
 	return c.JSON(http.StatusOK, models)
+}
+
+// isValidCategory returns true if cat is a recognized model category.
+func isValidCategory(cat core.ModelCategory) bool {
+	for _, c := range core.AllCategories() {
+		if c == cat {
+			return true
+		}
+	}
+	return false
+}
+
+// ListCategories handles GET /admin/api/v1/models/categories
+//
+// @Summary      List model categories with counts
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   providers.CategoryCount
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/models/categories [get]
+func (h *Handler) ListCategories(c echo.Context) error {
+	if h.registry == nil {
+		return c.JSON(http.StatusOK, []providers.CategoryCount{})
+	}
+
+	return c.JSON(http.StatusOK, h.registry.GetCategoryCounts())
 }

@@ -466,7 +466,7 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		refreshCount.Store(0)
 
 		interval := 50 * time.Millisecond
-		cancel := registry.StartBackgroundRefresh(interval)
+		cancel := registry.StartBackgroundRefresh(interval, "")
 		defer cancel()
 
 		time.Sleep(interval*3 + 25*time.Millisecond)
@@ -501,7 +501,7 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		refreshCount.Store(0)
 
 		interval := 50 * time.Millisecond
-		cancel := registry.StartBackgroundRefresh(interval)
+		cancel := registry.StartBackgroundRefresh(interval, "")
 		cancel()
 
 		time.Sleep(interval * 3)
@@ -541,7 +541,7 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		refreshCount.Store(0)
 
 		interval := 50 * time.Millisecond
-		cancel := registry.StartBackgroundRefresh(interval)
+		cancel := registry.StartBackgroundRefresh(interval, "")
 		defer cancel()
 
 		time.Sleep(interval*3 + 25*time.Millisecond)
@@ -551,6 +551,163 @@ func TestStartBackgroundRefresh(t *testing.T) {
 			t.Errorf("expected at least 2 refresh attempts despite errors, got %d", count)
 		}
 	})
+}
+
+func TestListModelsWithProviderByCategory(t *testing.T) {
+	registry := NewModelRegistry()
+	mock := &registryMockProvider{
+		name: "test",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID: "gpt-4o", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Modes:      []string{"chat"},
+						Categories: []core.ModelCategory{core.CategoryTextGeneration},
+					},
+				},
+				{
+					ID: "text-embedding-3-small", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Modes:      []string{"embedding"},
+						Categories: []core.ModelCategory{core.CategoryEmbedding},
+					},
+				},
+				{
+					ID: "dall-e-3", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Modes:      []string{"image_generation"},
+						Categories: []core.ModelCategory{core.CategoryImage},
+					},
+				},
+				{
+					ID: "no-metadata", Object: "model", OwnedBy: "openai",
+				},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	_ = registry.Initialize(context.Background())
+
+	t.Run("FilterTextGeneration", func(t *testing.T) {
+		models := registry.ListModelsWithProviderByCategory(core.CategoryTextGeneration)
+		if len(models) != 1 {
+			t.Fatalf("expected 1 text_generation model, got %d", len(models))
+		}
+		if models[0].Model.ID != "gpt-4o" {
+			t.Errorf("expected gpt-4o, got %s", models[0].Model.ID)
+		}
+	})
+
+	t.Run("FilterEmbedding", func(t *testing.T) {
+		models := registry.ListModelsWithProviderByCategory(core.CategoryEmbedding)
+		if len(models) != 1 {
+			t.Fatalf("expected 1 embedding model, got %d", len(models))
+		}
+		if models[0].Model.ID != "text-embedding-3-small" {
+			t.Errorf("expected text-embedding-3-small, got %s", models[0].Model.ID)
+		}
+	})
+
+	t.Run("FilterImage", func(t *testing.T) {
+		models := registry.ListModelsWithProviderByCategory(core.CategoryImage)
+		if len(models) != 1 {
+			t.Fatalf("expected 1 image model, got %d", len(models))
+		}
+	})
+
+	t.Run("FilterAll", func(t *testing.T) {
+		models := registry.ListModelsWithProviderByCategory(core.CategoryAll)
+		if len(models) != 4 {
+			t.Fatalf("expected 4 models for 'all', got %d", len(models))
+		}
+	})
+
+	t.Run("FilterEmpty", func(t *testing.T) {
+		models := registry.ListModelsWithProviderByCategory(core.CategoryVideo)
+		if len(models) != 0 {
+			t.Fatalf("expected 0 video models, got %d", len(models))
+		}
+	})
+}
+
+func TestGetCategoryCounts(t *testing.T) {
+	registry := NewModelRegistry()
+	mock := &registryMockProvider{
+		name: "test",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID: "gpt-4o", Object: "model",
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryTextGeneration}},
+				},
+				{
+					ID: "gpt-4o-mini", Object: "model",
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryTextGeneration}},
+				},
+				{
+					ID: "text-embedding-3-small", Object: "model",
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryEmbedding}},
+				},
+				{
+					ID: "dall-e-3", Object: "model",
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryImage}},
+				},
+				{
+					ID: "no-metadata", Object: "model",
+				},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	_ = registry.Initialize(context.Background())
+
+	counts := registry.GetCategoryCounts()
+
+	// Should have entries for all categories
+	if len(counts) != len(core.AllCategories()) {
+		t.Fatalf("expected %d category counts, got %d", len(core.AllCategories()), len(counts))
+	}
+
+	// Verify specific counts
+	countMap := make(map[core.ModelCategory]int)
+	for _, c := range counts {
+		countMap[c.Category] = c.Count
+	}
+
+	if countMap[core.CategoryAll] != 5 {
+		t.Errorf("All count = %d, want 5", countMap[core.CategoryAll])
+	}
+	if countMap[core.CategoryTextGeneration] != 2 {
+		t.Errorf("TextGeneration count = %d, want 2", countMap[core.CategoryTextGeneration])
+	}
+	if countMap[core.CategoryEmbedding] != 1 {
+		t.Errorf("Embedding count = %d, want 1", countMap[core.CategoryEmbedding])
+	}
+	if countMap[core.CategoryImage] != 1 {
+		t.Errorf("Image count = %d, want 1", countMap[core.CategoryImage])
+	}
+	if countMap[core.CategoryAudio] != 0 {
+		t.Errorf("Audio count = %d, want 0", countMap[core.CategoryAudio])
+	}
+
+	// Verify ordering matches AllCategories()
+	if counts[0].Category != core.CategoryAll {
+		t.Errorf("first category = %q, want %q", counts[0].Category, core.CategoryAll)
+	}
+	if counts[1].Category != core.CategoryTextGeneration {
+		t.Errorf("second category = %q, want %q", counts[1].Category, core.CategoryTextGeneration)
+	}
+
+	// Verify display names
+	if counts[0].DisplayName != "All" {
+		t.Errorf("All display name = %q, want %q", counts[0].DisplayName, "All")
+	}
+	if counts[1].DisplayName != "Text Generation" {
+		t.Errorf("TextGeneration display name = %q, want %q", counts[1].DisplayName, "Text Generation")
+	}
 }
 
 // Verify ModelRegistry implements core.ModelLookup interface

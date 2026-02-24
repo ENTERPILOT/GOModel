@@ -49,6 +49,19 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		return nil, fmt.Errorf("failed to create usage table: %w", err)
 	}
 
+	// Add cost columns (idempotent via IF NOT EXISTS)
+	costMigrations := []string{
+		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS input_cost DOUBLE PRECISION",
+		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS output_cost DOUBLE PRECISION",
+		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS total_cost DOUBLE PRECISION",
+		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS costs_calculation_caveat TEXT DEFAULT ''",
+	}
+	for _, migration := range costMigrations {
+		if _, err := pool.Exec(ctx, migration); err != nil {
+			return nil, fmt.Errorf("failed to run migration: %w", err)
+		}
+	}
+
 	// Create indexes for common queries
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage(timestamp)",
@@ -102,11 +115,13 @@ func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*UsageE
 
 		_, err := s.pool.Exec(ctx, `
 			INSERT INTO usage (id, request_id, provider_id, timestamp, model, provider,
-				endpoint, input_tokens, output_tokens, total_tokens, raw_data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+				endpoint, input_tokens, output_tokens, total_tokens, raw_data,
+				input_cost, output_cost, total_cost, costs_calculation_caveat)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			ON CONFLICT (id) DO NOTHING
 		`, e.ID, e.RequestID, e.ProviderID, e.Timestamp, e.Model, e.Provider,
-			e.Endpoint, e.InputTokens, e.OutputTokens, e.TotalTokens, rawDataJSON)
+			e.Endpoint, e.InputTokens, e.OutputTokens, e.TotalTokens, rawDataJSON,
+			e.InputCost, e.OutputCost, e.TotalCost, e.CostsCalculationCaveat)
 
 		if err != nil {
 			slog.Warn("failed to insert usage entry", "error", err, "id", e.ID)
@@ -135,11 +150,13 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*UsageE
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO usage (id, request_id, provider_id, timestamp, model, provider,
-				endpoint, input_tokens, output_tokens, total_tokens, raw_data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+				endpoint, input_tokens, output_tokens, total_tokens, raw_data,
+				input_cost, output_cost, total_cost, costs_calculation_caveat)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 			ON CONFLICT (id) DO NOTHING
 		`, e.ID, e.RequestID, e.ProviderID, e.Timestamp, e.Model, e.Provider,
-			e.Endpoint, e.InputTokens, e.OutputTokens, e.TotalTokens, rawDataJSON)
+			e.Endpoint, e.InputTokens, e.OutputTokens, e.TotalTokens, rawDataJSON,
+			e.InputCost, e.OutputCost, e.TotalCost, e.CostsCalculationCaveat)
 
 		if err != nil {
 			slog.Warn("failed to insert usage entry in batch", "error", err, "id", e.ID)

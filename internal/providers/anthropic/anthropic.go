@@ -144,8 +144,10 @@ type anthropicContent struct {
 
 // anthropicUsage represents token usage in Anthropic response
 type anthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
+	InputTokens              int `json:"input_tokens"`
+	OutputTokens             int `json:"output_tokens"`
+	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
 
 // anthropicStreamEvent represents a streaming event from Anthropic
@@ -278,6 +280,17 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 		finishReason = "stop"
 	}
 
+	usage := core.Usage{
+		PromptTokens:     resp.Usage.InputTokens,
+		CompletionTokens: resp.Usage.OutputTokens,
+		TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
+	}
+
+	rawUsage := buildAnthropicRawUsage(resp.Usage)
+	if len(rawUsage) > 0 {
+		usage.RawUsage = rawUsage
+	}
+
 	return &core.ChatResponse{
 		ID:       resp.ID,
 		Object:   "chat.completion",
@@ -294,11 +307,7 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 				FinishReason: finishReason,
 			},
 		},
-		Usage: core.Usage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
-		},
+		Usage: usage,
 	}
 }
 
@@ -655,12 +664,37 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 				},
 			},
 		},
-		Usage: &core.ResponsesUsage{
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
-			TotalTokens:  resp.Usage.InputTokens + resp.Usage.OutputTokens,
-		},
+		Usage: buildAnthropicResponsesUsage(resp.Usage),
 	}
+}
+
+// buildAnthropicRawUsage extracts cache fields from anthropicUsage into a RawData map.
+func buildAnthropicRawUsage(u anthropicUsage) map[string]any {
+	raw := make(map[string]any)
+	if u.CacheCreationInputTokens > 0 {
+		raw["cache_creation_input_tokens"] = u.CacheCreationInputTokens
+	}
+	if u.CacheReadInputTokens > 0 {
+		raw["cache_read_input_tokens"] = u.CacheReadInputTokens
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	return raw
+}
+
+// buildAnthropicResponsesUsage creates a ResponsesUsage from anthropicUsage, including RawUsage.
+func buildAnthropicResponsesUsage(u anthropicUsage) *core.ResponsesUsage {
+	usage := &core.ResponsesUsage{
+		InputTokens:  u.InputTokens,
+		OutputTokens: u.OutputTokens,
+		TotalTokens:  u.InputTokens + u.OutputTokens,
+	}
+	rawUsage := buildAnthropicRawUsage(u)
+	if len(rawUsage) > 0 {
+		usage.RawUsage = rawUsage
+	}
+	return usage
 }
 
 // Responses sends a Responses API request to Anthropic (converted to messages format)
@@ -871,4 +905,3 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 
 	return ""
 }
-

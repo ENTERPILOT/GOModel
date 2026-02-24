@@ -19,10 +19,14 @@ import (
 
 // mockUsageReader implements usage.UsageReader for testing.
 type mockUsageReader struct {
-	summary    *usage.UsageSummary
-	daily      []usage.DailyUsage
-	summaryErr error
-	dailyErr   error
+	summary       *usage.UsageSummary
+	daily         []usage.DailyUsage
+	modelUsage    []usage.ModelUsage
+	usageLog      *usage.UsageLogResult
+	summaryErr    error
+	dailyErr      error
+	modelUsageErr error
+	usageLogErr   error
 }
 
 func (m *mockUsageReader) GetSummary(_ context.Context, _ usage.UsageQueryParams) (*usage.UsageSummary, error) {
@@ -37,6 +41,20 @@ func (m *mockUsageReader) GetDailyUsage(_ context.Context, _ usage.UsageQueryPar
 		return nil, m.dailyErr
 	}
 	return m.daily, nil
+}
+
+func (m *mockUsageReader) GetUsageByModel(_ context.Context, _ usage.UsageQueryParams) ([]usage.ModelUsage, error) {
+	if m.modelUsageErr != nil {
+		return nil, m.modelUsageErr
+	}
+	return m.modelUsage, nil
+}
+
+func (m *mockUsageReader) GetUsageLog(_ context.Context, _ usage.UsageLogParams) (*usage.UsageLogResult, error) {
+	if m.usageLogErr != nil {
+		return nil, m.usageLogErr
+	}
+	return m.usageLog, nil
 }
 
 // handlerMockProvider implements core.Provider for ListModels registry testing.
@@ -162,6 +180,83 @@ func TestUsageSummary_GenericError(t *testing.T) {
 	}
 }
 
+func TestUsageSummary_WithPersistedCosts(t *testing.T) {
+	inputCost := 3.0
+	outputCost := 7.5
+	totalCost := 10.5
+
+	reader := &mockUsageReader{
+		summary: &usage.UsageSummary{
+			TotalRequests:   10,
+			TotalInput:      1_000_000,
+			TotalOutput:     500_000,
+			TotalTokens:     1_500_000,
+			TotalInputCost:  &inputCost,
+			TotalOutputCost: &outputCost,
+			TotalCost:       &totalCost,
+		},
+	}
+
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/summary?days=30")
+
+	if err := h.UsageSummary(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	if cost, ok := result["total_input_cost"].(float64); !ok || cost != 3.0 {
+		t.Errorf("expected total_input_cost 3.0, got %v", result["total_input_cost"])
+	}
+	if cost, ok := result["total_output_cost"].(float64); !ok || cost != 7.5 {
+		t.Errorf("expected total_output_cost 7.5, got %v", result["total_output_cost"])
+	}
+	if cost, ok := result["total_cost"].(float64); !ok || cost != 10.5 {
+		t.Errorf("expected total_cost 10.5, got %v", result["total_cost"])
+	}
+}
+
+func TestUsageSummary_NilCosts(t *testing.T) {
+	reader := &mockUsageReader{
+		summary: &usage.UsageSummary{
+			TotalRequests: 5,
+			TotalInput:    100,
+			TotalOutput:   50,
+			TotalTokens:   150,
+		},
+	}
+
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/summary?days=30")
+
+	if err := h.UsageSummary(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+
+	// Cost fields should be null when reader returns nil costs
+	if result["total_cost"] != nil {
+		t.Errorf("expected total_cost to be null, got %v", result["total_cost"])
+	}
+	if result["total_input_cost"] != nil {
+		t.Errorf("expected total_input_cost to be null, got %v", result["total_input_cost"])
+	}
+	if result["total_output_cost"] != nil {
+		t.Errorf("expected total_output_cost to be null, got %v", result["total_output_cost"])
+	}
+}
+
 // --- DailyUsage handler tests ---
 
 func TestDailyUsage_NilReader(t *testing.T) {
@@ -243,6 +338,173 @@ func TestDailyUsage_Error(t *testing.T) {
 	}
 }
 
+// --- UsageByModel handler tests ---
+
+func TestUsageByModel_NilReader(t *testing.T) {
+	h := NewHandler(nil, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/models")
+
+	if err := h.UsageByModel(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "[]\n" {
+		t.Errorf("expected empty JSON array, got: %q", rec.Body.String())
+	}
+}
+
+func TestUsageByModel_Success(t *testing.T) {
+	cost := 1.5
+	reader := &mockUsageReader{
+		modelUsage: []usage.ModelUsage{
+			{Model: "gpt-4", Provider: "openai", InputTokens: 1000, OutputTokens: 500, TotalCost: &cost},
+		},
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/models?days=30")
+
+	if err := h.UsageByModel(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	var models []usage.ModelUsage
+	if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(models))
+	}
+	if models[0].Model != "gpt-4" {
+		t.Errorf("expected model gpt-4, got %s", models[0].Model)
+	}
+	if models[0].TotalCost == nil || *models[0].TotalCost != 1.5 {
+		t.Errorf("expected total_cost 1.5, got %v", models[0].TotalCost)
+	}
+}
+
+func TestUsageByModel_Error(t *testing.T) {
+	reader := &mockUsageReader{
+		modelUsageErr: errors.New("db failure"),
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/models")
+
+	if err := h.UsageByModel(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// --- UsageLog handler tests ---
+
+func TestUsageLog_NilReader(t *testing.T) {
+	h := NewHandler(nil, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/log")
+
+	if err := h.UsageLog(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var result usage.UsageLogResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(result.Entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(result.Entries))
+	}
+}
+
+func TestUsageLog_Success(t *testing.T) {
+	now := time.Now().UTC()
+	reader := &mockUsageReader{
+		usageLog: &usage.UsageLogResult{
+			Entries: []usage.UsageLogEntry{
+				{ID: "1", RequestID: "req-1", Model: "gpt-4", Provider: "openai", Timestamp: now, InputTokens: 100, OutputTokens: 50, TotalTokens: 150, RawData: map[string]any{"cached_tokens": float64(50)}},
+				{ID: "2", RequestID: "req-2", Model: "claude-3", Provider: "anthropic", Timestamp: now, InputTokens: 200, OutputTokens: 100, TotalTokens: 300},
+			},
+			Total:  2,
+			Limit:  50,
+			Offset: 0,
+		},
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/log?days=30&limit=50&offset=0")
+
+	if err := h.UsageLog(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var result usage.UsageLogResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(result.Entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(result.Entries))
+	}
+	if result.Total != 2 {
+		t.Errorf("expected total 2, got %d", result.Total)
+	}
+	if result.Entries[0].Model != "gpt-4" {
+		t.Errorf("expected first entry model gpt-4, got %s", result.Entries[0].Model)
+	}
+	if result.Entries[0].RawData == nil {
+		t.Fatal("expected raw_data on first entry, got nil")
+	}
+	if ct, ok := result.Entries[0].RawData["cached_tokens"].(float64); !ok || ct != 50 {
+		t.Errorf("expected cached_tokens 50, got %v", result.Entries[0].RawData["cached_tokens"])
+	}
+	if result.Entries[1].RawData != nil {
+		t.Errorf("expected nil raw_data on second entry, got %v", result.Entries[1].RawData)
+	}
+}
+
+func TestUsageLog_Error(t *testing.T) {
+	reader := &mockUsageReader{
+		usageLogErr: core.NewProviderError("test", http.StatusBadGateway, "upstream failed", nil),
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/log")
+
+	if err := h.UsageLog(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("expected 502, got %d", rec.Code)
+	}
+}
+
+func TestUsageLog_WithFilters(t *testing.T) {
+	reader := &mockUsageReader{
+		usageLog: &usage.UsageLogResult{
+			Entries: []usage.UsageLogEntry{},
+			Total:   0,
+			Limit:   10,
+			Offset:  0,
+		},
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/log?model=gpt-4&provider=openai&search=test&limit=10&offset=5")
+
+	if err := h.UsageLog(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+}
+
 // --- ListModels handler tests ---
 
 func TestListModels_NilRegistry(t *testing.T) {
@@ -320,6 +582,194 @@ func TestListModels_EmptyRegistry(t *testing.T) {
 	}
 	if rec.Body.String() != "[]\n" {
 		t.Errorf("expected empty JSON array, got: %q", rec.Body.String())
+	}
+}
+
+// --- ListModels with category filter tests ---
+
+func TestListModels_WithCategoryFilter(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	mock := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID: "gpt-4o", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Modes:      []string{"chat"},
+						Categories: []core.ModelCategory{core.CategoryTextGeneration},
+					},
+				},
+				{
+					ID: "text-embedding-3-small", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Modes:      []string{"embedding"},
+						Categories: []core.ModelCategory{core.CategoryEmbedding},
+					},
+				},
+				{
+					ID: "dall-e-3", Object: "model", OwnedBy: "openai",
+					Metadata: &core.ModelMetadata{
+						Modes:      []string{"image_generation"},
+						Categories: []core.ModelCategory{core.CategoryImage},
+					},
+				},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+
+	t.Run("FilterTextGeneration", func(t *testing.T) {
+		c, rec := newHandlerContext("/admin/api/v1/models?category=text_generation")
+		if err := h.ListModels(c); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200, got %d", rec.Code)
+		}
+		var models []providers.ModelWithProvider
+		if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if len(models) != 1 {
+			t.Fatalf("expected 1 model, got %d", len(models))
+		}
+		if models[0].Model.ID != "gpt-4o" {
+			t.Errorf("expected gpt-4o, got %s", models[0].Model.ID)
+		}
+	})
+
+	t.Run("FilterAll", func(t *testing.T) {
+		c, rec := newHandlerContext("/admin/api/v1/models?category=all")
+		if err := h.ListModels(c); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var models []providers.ModelWithProvider
+		if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if len(models) != 3 {
+			t.Errorf("expected 3 models for 'all', got %d", len(models))
+		}
+	})
+
+	t.Run("NoFilter", func(t *testing.T) {
+		c, rec := newHandlerContext("/admin/api/v1/models")
+		if err := h.ListModels(c); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		var models []providers.ModelWithProvider
+		if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+			t.Fatalf("failed to unmarshal: %v", err)
+		}
+		if len(models) != 3 {
+			t.Errorf("expected 3 models without filter, got %d", len(models))
+		}
+	})
+}
+
+func TestListModels_InvalidCategory(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	mock := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+	c, rec := newHandlerContext("/admin/api/v1/models?category=bogus_category")
+
+	if err := h.ListModels(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !containsString(body, "invalid_request_error") {
+		t.Errorf("expected invalid_request_error in body, got: %s", body)
+	}
+	if !containsString(body, "invalid category") {
+		t.Errorf("expected 'invalid category' in body, got: %s", body)
+	}
+}
+
+// --- ListCategories handler tests ---
+
+func TestListCategories_NilRegistry(t *testing.T) {
+	h := NewHandler(nil, nil)
+	c, rec := newHandlerContext("/admin/api/v1/models/categories")
+
+	if err := h.ListCategories(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "[]\n" {
+		t.Errorf("expected empty JSON array, got: %q", rec.Body.String())
+	}
+}
+
+func TestListCategories_WithModels(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	mock := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{
+					ID: "gpt-4o", Object: "model",
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryTextGeneration}},
+				},
+				{
+					ID: "dall-e-3", Object: "model",
+					Metadata: &core.ModelMetadata{Categories: []core.ModelCategory{core.CategoryImage}},
+				},
+			},
+		},
+	}
+	registry.RegisterProviderWithType(mock, "openai")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+	c, rec := newHandlerContext("/admin/api/v1/models/categories")
+
+	if err := h.ListCategories(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var cats []providers.CategoryCount
+	if err := json.Unmarshal(rec.Body.Bytes(), &cats); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(cats) != 7 {
+		t.Fatalf("expected 7 categories, got %d", len(cats))
+	}
+
+	// Find "all" count
+	for _, cat := range cats {
+		if cat.Category == core.CategoryAll {
+			if cat.Count != 2 {
+				t.Errorf("All count = %d, want 2", cat.Count)
+			}
+		}
 	}
 }
 

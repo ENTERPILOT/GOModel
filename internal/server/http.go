@@ -34,6 +34,7 @@ type Config struct {
 	BodySizeLimit            string                   // Max request body size (e.g., "10M", "1024K")
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
+	PricingResolver          usage.PricingResolver    // Optional: Resolves pricing for cost calculation
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
 	AdminEndpointsEnabled    bool                     // Whether admin API endpoints are enabled
 	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
@@ -50,12 +51,14 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// Get loggers from config (may be nil)
 	var auditLogger auditlog.LoggerInterface
 	var usageLogger usage.LoggerInterface
+	var pricingResolver usage.PricingResolver
 	if cfg != nil {
 		auditLogger = cfg.AuditLogger
 		usageLogger = cfg.UsageLogger
+		pricingResolver = cfg.PricingResolver
 	}
 
-	handler := NewHandler(provider, auditLogger, usageLogger)
+	handler := NewHandler(provider, auditLogger, usageLogger, pricingResolver)
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}
@@ -158,7 +161,10 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		adminAPI := e.Group("/admin/api/v1")
 		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
 		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
+		adminAPI.GET("/usage/models", cfg.AdminHandler.UsageByModel)
+		adminAPI.GET("/usage/log", cfg.AdminHandler.UsageLog)
 		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
+		adminAPI.GET("/models/categories", cfg.AdminHandler.ListCategories)
 	}
 
 	// Admin dashboard UI routes (behind ADMIN_UI_ENABLED flag)

@@ -99,7 +99,7 @@ func TestChatCompletion(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -131,7 +131,7 @@ func TestChatCompletionUnsupportedModel(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "unsupported-model", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -163,7 +163,7 @@ data: [DONE]
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "stream": true, "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -196,7 +196,7 @@ data: [DONE]
 
 func TestHealth(t *testing.T) {
 	e := echo.New()
-	handler := NewHandler(&mockProvider{}, nil, nil)
+	handler := NewHandler(&mockProvider{}, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -238,7 +238,7 @@ func TestListModels(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
@@ -271,7 +271,7 @@ func TestListModelsError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
@@ -301,7 +301,7 @@ func TestHandleError_ProviderError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -334,7 +334,7 @@ func TestHandleError_RateLimitError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -367,7 +367,7 @@ func TestHandleError_InvalidRequestError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -400,7 +400,7 @@ func TestHandleError_AuthenticationError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -433,7 +433,7 @@ func TestHandleError_NotFoundError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -466,7 +466,7 @@ func TestHandleError_StreamingError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "gpt-4o-mini", "stream": true, "messages": [{"role": "user", "content": "Hi"}]}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -495,7 +495,7 @@ func TestChatCompletion_InvalidJSON(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{invalid json}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
@@ -527,7 +527,7 @@ func TestListModels_TypedError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	rec := httptest.NewRecorder()
@@ -594,7 +594,7 @@ func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(provider, nil, usageLog)
+	handler := NewHandler(provider, nil, usageLog, nil)
 
 	// Streaming Responses request should NOT have StreamOptions injected
 	reqBody := `{"model":"gpt-4o-mini","input":"Hello","stream":true}`
@@ -637,7 +637,7 @@ func TestStreamingChatCompletion_InjectsStreamOptions(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(provider, nil, usageLog)
+	handler := NewHandler(provider, nil, usageLog, nil)
 
 	// Streaming ChatCompletion request SHOULD have StreamOptions injected
 	reqBody := `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"Hi"}]}`
