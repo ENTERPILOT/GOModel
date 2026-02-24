@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 
 	"gomodel/internal/core"
 	"gomodel/internal/llmclient"
@@ -84,13 +85,56 @@ func isValidClientRequestID(id string) bool {
 	return true
 }
 
+// isOSeriesModel reports whether the model is an OpenAI o-series model
+// (o1, o3, o4) that requires max_completion_tokens instead of max_tokens
+// and does not support the temperature parameter.
+func isOSeriesModel(model string) bool {
+	m := strings.ToLower(model)
+	// Match o1, o3, o4 families (e.g. o3-mini, o4-mini, o3, o1-preview).
+	// Non-reasoning models like gpt-4o start with "gpt-", not "o".
+	return len(m) >= 2 && m[0] == 'o' && m[1] >= '0' && m[1] <= '9'
+}
+
+// oSeriesChatRequest is the JSON body sent to OpenAI for o-series models.
+// It uses max_completion_tokens (required) instead of max_tokens (rejected).
+type oSeriesChatRequest struct {
+	Model              string              `json:"model"`
+	Messages           []core.Message      `json:"messages"`
+	Stream             bool                `json:"stream,omitempty"`
+	StreamOptions      *core.StreamOptions `json:"stream_options,omitempty"`
+	Reasoning          *core.Reasoning     `json:"reasoning,omitempty"`
+	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
+}
+
+// adaptForOSeries converts a ChatRequest into an oSeriesChatRequest,
+// mapping max_tokens → max_completion_tokens and dropping temperature.
+func adaptForOSeries(req *core.ChatRequest) *oSeriesChatRequest {
+	return &oSeriesChatRequest{
+		Model:               req.Model,
+		Messages:            req.Messages,
+		Stream:              req.Stream,
+		StreamOptions:       req.StreamOptions,
+		Reasoning:           req.Reasoning,
+		MaxCompletionTokens: req.MaxTokens,
+	}
+}
+
+// chatRequestBody returns the appropriate request body for the model.
+// Reasoning models get parameter adaptation; others pass through as-is.
+func chatRequestBody(req *core.ChatRequest) any {
+	if isOSeriesModel(req.Model) {
+		return adaptForOSeries(req)
+	}
+	return req
+}
+
 // ChatCompletion sends a chat completion request to OpenAI
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	var resp core.ChatResponse
 	err := p.client.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req,
+		Body:     chatRequestBody(req),
 	}, &resp)
 	if err != nil {
 		return nil, err
@@ -104,10 +148,11 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	streamReq := req.WithStreaming()
 	return p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req.WithStreaming(),
+		Body:     chatRequestBody(streamReq),
 	})
 }
 
