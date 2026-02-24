@@ -202,7 +202,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "json text/event-stream"
                 ],
                 "tags": [
                     "chat"
@@ -221,7 +221,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "JSON response or SSE stream when stream=true",
                         "schema": {
                             "$ref": "#/definitions/core.ChatResponse"
                         }

@@ -83,10 +83,10 @@ func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string
 // @Summary      Create a chat completion
 // @Tags         chat
 // @Accept       json
-// @Produce      json
+// @Produce      json text/event-stream
 // @Security     BearerAuth
 // @Param        request  body      core.ChatRequest  true  "Chat completion request"
-// @Success      200      {object}  core.ChatResponse
+// @Success      200      {object}  core.ChatResponse  "JSON response or SSE stream when stream=true"
 // @Failure      400      {object}  core.GatewayError
 // @Failure      401      {object}  core.GatewayError
 // @Failure      429      {object}  core.GatewayError
