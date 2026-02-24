@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,6 +90,25 @@ func TestFetch_Timeout(t *testing.T) {
 	_, _, err := Fetch(ctx, server.URL)
 	if err == nil {
 		t.Error("expected error for timeout")
+	}
+}
+
+func TestFetch_OversizedBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Write just over 10 MB
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":"`))
+		_, _ = w.Write([]byte(strings.Repeat("x", 10*1024*1024)))
+		_, _ = w.Write([]byte(`"}`))
+	}))
+	defer server.Close()
+
+	_, _, err := Fetch(context.Background(), server.URL)
+	if err == nil {
+		t.Error("expected error for oversized body")
+	}
+	if err != nil && !strings.Contains(err.Error(), "too large") {
+		t.Errorf("expected 'too large' error, got: %v", err)
 	}
 }
 

@@ -493,9 +493,13 @@ func (r *ModelRegistry) GetCategoryCounts() []CategoryCount {
 		if cat == core.CategoryAll {
 			count = len(r.models)
 		}
+		displayName := categoryDisplayNames[cat]
+		if displayName == "" {
+			displayName = string(cat)
+		}
 		result = append(result, CategoryCount{
 			Category:    cat,
-			DisplayName: categoryDisplayNames[cat],
+			DisplayName: displayName,
 			Count:       count,
 		})
 	}

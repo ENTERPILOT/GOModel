@@ -120,7 +120,11 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 		hasOutput = true
 	}
 
-	// Apply provider-specific mappings
+	// Apply provider-specific mappings.
+	// Track applied pricing field pointers to avoid double-counting when multiple
+	// rawData keys map to the same pricing field (e.g. cached_tokens and prompt_cached_tokens
+	// both map to CachedInputPerMtok).
+	appliedFields := make(map[*float64]bool)
 	if mappings, ok := providerMappings[providerType]; ok {
 		for _, m := range mappings {
 			count := extractInt(rawData, m.rawDataKey)
@@ -133,6 +137,11 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 			if rate == nil {
 				continue // Base rate covers this token type; no adjustment needed
 			}
+
+			if appliedFields[rate] {
+				continue // Already applied via a different rawData key for the same pricing field
+			}
+			appliedFields[rate] = true
 
 			var cost float64
 			switch m.unit {

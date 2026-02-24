@@ -6,7 +6,15 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
+
+// httpClient is a shared HTTP client for model list fetching.
+// The 60-second timeout acts as a safety net; callers should use context
+// deadlines for finer-grained control.
+var httpClient = &http.Client{
+	Timeout: 60 * time.Second,
+}
 
 // Fetch downloads and parses the model list from the given URL.
 // Returns the parsed ModelList, the raw JSON bytes (for caching), and any error.
@@ -17,7 +25,7 @@ func Fetch(ctx context.Context, url string) (*ModelList, []byte, error) {
 		return nil, nil, nil
 	}
 
-	client := &http.Client{}
+	client := httpClient
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

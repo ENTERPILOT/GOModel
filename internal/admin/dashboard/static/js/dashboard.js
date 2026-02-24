@@ -629,7 +629,7 @@ function dashboard() {
         },
 
         async fetchUsagePage() {
-            await Promise.all([this.fetchModelUsage(), this.fetchUsageLog(false)]);
+            await Promise.all([this.fetchModelUsage(), this.fetchUsageLog(true)]);
             this.renderDonutChart();
         },
 
@@ -803,7 +803,7 @@ function dashboard() {
                                 grid: { display: false },
                                 ticks: {
                                     color: colors.text,
-                                    font: { size: 11, family: "'SF Mono', 'Menlo', 'Consolas', monospace" },
+                                    font: { size: 11, family: "'SF Mono', Menlo, Consolas, monospace" },
                                     maxRotation: 45,
                                     minRotation: 0
                                 }
@@ -812,7 +812,7 @@ function dashboard() {
                                 grid: { color: colors.grid, drawBorder: false },
                                 ticks: {
                                     color: colors.text,
-                                    font: { size: 11, family: "'SF Mono', 'Menlo', 'Consolas', monospace" },
+                                    font: { size: 11, family: "'SF Mono', Menlo, Consolas, monospace" },
                                     callback: (v) => {
                                         if (this.usageMode === 'costs') return '$' + v.toFixed(2);
                                         return this.formatTokensShort(v);

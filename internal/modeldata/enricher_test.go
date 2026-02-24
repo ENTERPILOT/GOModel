@@ -124,7 +124,7 @@ func TestEnrich_ReverseCustomModelIDLookup(t *testing.T) {
 	if meta.DisplayName != "GPT-4o" {
 		t.Errorf("DisplayName = %s, want GPT-4o", meta.DisplayName)
 	}
-	if meta.Pricing == nil || *meta.Pricing.InputPerMtok != 2.50 {
+	if meta.Pricing == nil || meta.Pricing.InputPerMtok == nil || *meta.Pricing.InputPerMtok != 2.50 {
 		t.Error("expected pricing from base model via reverse lookup")
 	}
 }

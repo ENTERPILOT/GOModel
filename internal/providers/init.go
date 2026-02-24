@@ -89,7 +89,7 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 	modelListURL := result.Config.Cache.ModelList.URL
 	if modelListURL != "" {
 		go func() {
-			fetchCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+			fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 			defer cancel()
 
 			list, raw, err := modeldata.Fetch(fetchCtx, modelListURL)

@@ -828,7 +828,7 @@ body {
 }
 
 .mono {
-    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
     font-size: 13px;
 }
 
@@ -837,7 +837,7 @@ body {
 }
 
 td.col-price {
-    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
     font-size: 13px;
     color: var(--text-muted);
 }

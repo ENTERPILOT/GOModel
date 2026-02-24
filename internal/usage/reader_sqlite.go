@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -21,6 +22,7 @@ func NewSQLiteReader(db *sql.DB) (*SQLiteReader, error) {
 	return &SQLiteReader{db: db}, nil
 }
 
+// GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	var query string
 	var args []interface{}
@@ -59,6 +61,7 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 	return summary, nil
 }
 
+// GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
 	var query string
 	var args []interface{}
@@ -107,6 +110,7 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 	return result, nil
 }
 
+// GetUsageLog returns a paginated list of individual usage log entries.
 func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
@@ -136,8 +140,8 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 		args = append(args, params.Provider)
 	}
 	if params.Search != "" {
-		conditions = append(conditions, "(model LIKE ? OR provider LIKE ? OR request_id LIKE ? OR provider_id LIKE ?)")
-		s := "%" + params.Search + "%"
+		conditions = append(conditions, "(model LIKE ? ESCAPE '\\' OR provider LIKE ? ESCAPE '\\' OR request_id LIKE ? ESCAPE '\\' OR provider_id LIKE ? ESCAPE '\\')")
+		s := "%" + escapeLikeWildcards(params.Search) + "%"
 		args = append(args, s, s, s, s)
 	}
 
@@ -180,7 +184,9 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 			e.Timestamp = t
 		}
 		if rawDataJSON != nil && *rawDataJSON != "" {
-			_ = json.Unmarshal([]byte(*rawDataJSON), &e.RawData)
+			if err := json.Unmarshal([]byte(*rawDataJSON), &e.RawData); err != nil {
+				slog.Warn("failed to unmarshal raw_data JSON", "request_id", e.RequestID, "error", err)
+			}
 		}
 		if caveat != nil {
 			e.CostsCalculationCaveat = *caveat
@@ -213,6 +219,7 @@ func sqliteGroupExpr(interval string) string {
 	}
 }
 
+// GetDailyUsage returns usage statistics grouped by time period (daily, weekly, monthly, yearly).
 func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
 	interval := params.Interval
 	if interval == "" {

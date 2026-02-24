@@ -33,11 +33,10 @@ func (l *ModelList) buildReverseIndex() {
 			continue
 		}
 		// compositeKey is "providerType/modelID"
-		slashIdx := strings.IndexByte(compositeKey, '/')
-		if slashIdx < 0 {
+		providerType, _, ok := strings.Cut(compositeKey, "/")
+		if !ok {
 			continue
 		}
-		providerType := compositeKey[:slashIdx]
 		actualID := *pm.CustomModelID
 		reverseKey := providerType + "/" + actualID
 		// Only add if the actual ID differs from the key's model portion

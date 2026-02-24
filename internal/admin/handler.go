@@ -180,6 +180,18 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 }
 
 // UsageByModel handles GET /admin/api/v1/usage/models
+//
+// @Summary      Get usage breakdown by model
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Success      200  {array}   usage.ModelUsage
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/models [get]
 func (h *Handler) UsageByModel(c echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, []usage.ModelUsage{})
@@ -203,6 +215,23 @@ func (h *Handler) UsageByModel(c echo.Context) error {
 }
 
 // UsageLog handles GET /admin/api/v1/usage/log
+//
+// @Summary      Get paginated usage log entries
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        model       query     string  false  "Filter by model name"
+// @Param        provider    query     string  false  "Filter by provider"
+// @Param        search      query     string  false  "Search across model, provider, request_id, provider_id"
+// @Param        limit       query     int     false  "Page size (default 50, max 200)"
+// @Param        offset      query     int     false  "Offset for pagination"
+// @Success      200  {object}  usage.UsageLogResult
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/log [get]
 func (h *Handler) UsageLog(c echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, usage.UsageLogResult{
@@ -275,6 +304,14 @@ func (h *Handler) ListModels(c echo.Context) error {
 }
 
 // ListCategories handles GET /admin/api/v1/models/categories
+//
+// @Summary      List model categories with counts
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}   providers.CategoryCount
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/models/categories [get]
 func (h *Handler) ListCategories(c echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.CategoryCount{})

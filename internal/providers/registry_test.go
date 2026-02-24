@@ -667,8 +667,8 @@ func TestGetCategoryCounts(t *testing.T) {
 	counts := registry.GetCategoryCounts()
 
 	// Should have entries for all categories
-	if len(counts) != 7 {
-		t.Fatalf("expected 7 category counts, got %d", len(counts))
+	if len(counts) != len(core.AllCategories()) {
+		t.Fatalf("expected %d category counts, got %d", len(core.AllCategories()), len(counts))
 	}
 
 	// Verify specific counts

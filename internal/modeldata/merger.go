@@ -35,17 +35,35 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 		}
 	}
 
-	// No match at all — try reverse lookup via provider_model_id
+	// No match at all — try reverse lookup via provider_model_id.
+	// Inline the lookup instead of recursing to avoid unbounded recursion
+	// if the reverse index contains cycles or stale entries.
 	if model == nil && pm == nil {
 		if list.providerModelByActualID != nil {
 			reverseKey := providerType + "/" + modelID
 			if compositeKey, ok := list.providerModelByActualID[reverseKey]; ok {
-				return Resolve(list, providerType, compositeKey[len(providerType)+1:])
+				canonicalModelID := compositeKey[len(providerType)+1:]
+				// Look up the provider_model and base model directly
+				if entry, ok := list.ProviderModels[compositeKey]; ok {
+					pm = &entry
+					if baseEntry, ok := list.Models[entry.ModelRef]; ok {
+						model = &baseEntry
+					}
+				} else if baseEntry, ok := list.Models[canonicalModelID]; ok {
+					model = &baseEntry
+				}
 			}
 		}
-		return nil
+		if model == nil && pm == nil {
+			return nil
+		}
 	}
 
+	return buildMetadata(model, pm)
+}
+
+// buildMetadata merges base model fields with provider-model overrides into ModelMetadata.
+func buildMetadata(model *ModelEntry, pm *ProviderModelEntry) *core.ModelMetadata {
 	meta := &core.ModelMetadata{}
 
 	// Apply base model fields
@@ -76,6 +94,9 @@ func Resolve(list *ModelList, providerType string, modelID string) *core.ModelMe
 		}
 		if pm.Pricing != nil {
 			meta.Pricing = pm.Pricing
+		}
+		if pm.Capabilities != nil {
+			meta.Capabilities = pm.Capabilities
 		}
 	}
 

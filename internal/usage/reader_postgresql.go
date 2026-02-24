@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -21,6 +22,7 @@ func NewPostgreSQLReader(pool *pgxpool.Pool) (*PostgreSQLReader, error) {
 	return &PostgreSQLReader{pool: pool}, nil
 }
 
+// GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	var query string
 	var args []interface{}
@@ -59,6 +61,7 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 	return summary, nil
 }
 
+// GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
 	var query string
 	var args []interface{}
@@ -107,6 +110,7 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	return result, nil
 }
 
+// GetUsageLog returns a paginated list of individual usage log entries.
 func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
@@ -145,8 +149,8 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 		argIdx++
 	}
 	if params.Search != "" {
-		s := "%" + params.Search + "%"
-		conditions = append(conditions, fmt.Sprintf("(model ILIKE $%d OR provider ILIKE $%d OR request_id ILIKE $%d OR provider_id ILIKE $%d)", argIdx, argIdx, argIdx, argIdx))
+		s := "%" + escapeLikeWildcards(params.Search) + "%"
+		conditions = append(conditions, fmt.Sprintf("(model ILIKE $%d ESCAPE '\\' OR provider ILIKE $%d ESCAPE '\\' OR request_id ILIKE $%d ESCAPE '\\' OR provider_id ILIKE $%d ESCAPE '\\')", argIdx, argIdx, argIdx, argIdx))
 		args = append(args, s)
 		argIdx++
 	}
@@ -181,7 +185,9 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 			return nil, fmt.Errorf("failed to scan usage log row: %w", err)
 		}
 		if rawDataJSON != nil && *rawDataJSON != "" {
-			_ = json.Unmarshal([]byte(*rawDataJSON), &e.RawData)
+			if err := json.Unmarshal([]byte(*rawDataJSON), &e.RawData); err != nil {
+				slog.Warn("failed to unmarshal raw_data JSON", "request_id", e.RequestID, "error", err)
+			}
 		}
 		entries = append(entries, e)
 	}
@@ -211,6 +217,7 @@ func pgGroupExpr(interval string) string {
 	}
 }
 
+// GetDailyUsage returns usage statistics grouped by time period (daily, weekly, monthly, yearly).
 func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
 	interval := params.Interval
 	if interval == "" {

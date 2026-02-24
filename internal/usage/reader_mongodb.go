@@ -22,6 +22,7 @@ func NewMongoDBReader(database *mongo.Database) (*MongoDBReader, error) {
 	return &MongoDBReader{collection: database.Collection("usage")}, nil
 }
 
+// GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	pipeline := bson.A{}
 
@@ -96,6 +97,7 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 	return summary, nil
 }
 
+// GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
 	pipeline := bson.A{}
 
@@ -176,6 +178,7 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 	return result, nil
 }
 
+// GetUsageLog returns a paginated list of individual usage log entries.
 func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
@@ -317,6 +320,7 @@ func mongoDateFormat(interval string) string {
 	}
 }
 
+// GetDailyUsage returns usage statistics grouped by time period (daily, weekly, monthly, yearly).
 func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryParams) ([]DailyUsage, error) {
 	interval := params.Interval
 	if interval == "" {

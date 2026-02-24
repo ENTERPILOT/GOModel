@@ -1,6 +1,17 @@
 package usage
 
-import "strings"
+import (
+	"strings"
+)
+
+// escapeLikeWildcards escapes SQL LIKE/ILIKE wildcard characters in user input
+// to prevent wildcard injection. Escapes \, %, and _.
+func escapeLikeWildcards(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	s = strings.ReplaceAll(s, `_`, `\_`)
+	return s
+}
 
 // buildWhereClause joins condition strings into a SQL WHERE clause.
 // Returns an empty string when conditions is empty.
