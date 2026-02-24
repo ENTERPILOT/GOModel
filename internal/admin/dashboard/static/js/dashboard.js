@@ -44,7 +44,7 @@ function dashboard() {
         usageLogSearch: '',
         usageLogModel: '',
         usageLogProvider: '',
-        usageDonutChart: null,
+        usageBarChart: null,
 
         _parseRoute(pathname) {
             const path = pathname.replace(/\/$/, '');
@@ -324,7 +324,7 @@ function dashboard() {
             localStorage.setItem('gomodel_theme', t);
             this.applyTheme();
             this.renderChart();
-            this.renderDonutChart();
+            this.renderBarChart();
         },
 
         toggleTheme() {
@@ -649,7 +649,7 @@ function dashboard() {
 
         async fetchUsagePage() {
             await Promise.all([this.fetchModelUsage(), this.fetchUsageLog(true)]);
-            this.renderDonutChart();
+            this.renderBarChart();
         },
 
         async fetchModelUsage() {
@@ -692,7 +692,7 @@ function dashboard() {
             this.usageMode = mode;
             const url = mode === 'costs' ? '/admin/dashboard/usage/costs' : '/admin/dashboard/usage';
             history.pushState(null, '', url);
-            this.renderDonutChart();
+            this.renderBarChart();
         },
 
         usageLogNextPage() {
@@ -738,7 +738,7 @@ function dashboard() {
                 String(d.getSeconds()).padStart(2, '0');
         },
 
-        _donutColors() {
+        _barColors() {
             return [
                 '#c2845a', '#7a9e7e', '#d4a574', '#b8a98e', '#8b9e6b',
                 '#7d8a97', '#c47a5a', '#6b8e6b', '#a09486', '#9b7ea4',
@@ -746,7 +746,7 @@ function dashboard() {
             ];
         },
 
-        _donutData() {
+        _barData() {
             const sorted = [...this.modelUsage].sort((a, b) => {
                 if (this.usageMode === 'costs') {
                     return ((b.total_cost || 0) - (a.total_cost || 0));
@@ -776,9 +776,9 @@ function dashboard() {
             return { labels, values };
         },
 
-        donutLegendItems() {
-            const { labels, values } = this._donutData();
-            const colors = this._donutColors();
+        barLegendItems() {
+            const { labels, values } = this._barData();
+            const colors = this._barColors();
             return labels.map((label, i) => ({
                 label,
                 color: colors[i % colors.length],
@@ -786,30 +786,30 @@ function dashboard() {
             }));
         },
 
-        renderDonutChart(retries) {
+        renderBarChart(retries) {
             if (retries === undefined) retries = 3;
             this.$nextTick(() => {
-                if (this.usageDonutChart) {
-                    this.usageDonutChart.destroy();
-                    this.usageDonutChart = null;
+                if (this.usageBarChart) {
+                    this.usageBarChart.destroy();
+                    this.usageBarChart = null;
                 }
 
                 if (this.modelUsage.length === 0) return;
                 if (this.page !== 'usage') return;
 
-                const canvas = document.getElementById('usageDonutChart');
+                const canvas = document.getElementById('usageBarChart');
                 if (!canvas || canvas.offsetWidth === 0) {
                     if (retries > 0) {
-                        setTimeout(() => this.renderDonutChart(retries - 1), 100);
+                        setTimeout(() => this.renderBarChart(retries - 1), 100);
                     }
                     return;
                 }
 
                 const colors = this.chartColors();
-                const { labels, values } = this._donutData();
-                const palette = this._donutColors();
+                const { labels, values } = this._barData();
+                const palette = this._barColors();
 
-                this.usageDonutChart = new Chart(canvas, {
+                this.usageBarChart = new Chart(canvas, {
                     type: 'bar',
                     data: {
                         labels: labels,

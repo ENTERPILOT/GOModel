@@ -72,10 +72,10 @@
     </div>
 
     <!-- Usage by Model Chart -->
-    <div class="donut-section" x-show="modelUsage.length > 0">
+    <div class="model-chart-section" x-show="modelUsage.length > 0">
         <h3 x-text="usageMode === 'tokens' ? 'Token Usage by Model' : 'Cost by Model'"></h3>
         <div class="bar-chart-wrap">
-            <canvas id="usageDonutChart"></canvas>
+            <canvas id="usageBarChart"></canvas>
         </div>
     </div>
 

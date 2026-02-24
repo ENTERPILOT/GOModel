@@ -896,7 +896,7 @@ td.col-price {
 }
 
 /* Usage by Model Chart Section */
-.donut-section {
+.model-chart-section {
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -904,7 +904,7 @@ td.col-price {
     margin-bottom: 24px;
 }
 
-.donut-section h3 {
+.model-chart-section h3 {
     font-size: 16px;
     font-weight: 600;
     margin-bottom: 16px;
