@@ -56,9 +56,9 @@ record-api:
 
 # Generate Swagger docs (requires swag: go install github.com/swaggo/swag/cmd/swag@latest)
 swagger:
-	cd cmd/gomodel && swag init --generalInfo main.go \
-		--dir .,../../internal/server,../../internal/admin,../../internal/usage,../../internal/providers,../../internal/core \
-		--output docs \
+	swag init --generalInfo main.go \
+		--dir cmd/gomodel,internal \
+		--output cmd/gomodel/docs \
 		--outputTypes go,json
 
 # Run linter
