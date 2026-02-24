@@ -521,8 +521,8 @@ function dashboard() {
                             {
                                 label: 'Input Tokens',
                                 data: inputData,
-                                borderColor: '#b8956e',
-                                backgroundColor: 'rgba(184, 149, 110, 0.1)',
+                                borderColor: '#c2845a',
+                                backgroundColor: 'rgba(194, 132, 90, 0.1)',
                                 fill: true,
                                 tension: 0.3,
                                 pointRadius: 3,
@@ -531,8 +531,8 @@ function dashboard() {
                             {
                                 label: 'Output Tokens',
                                 data: outputData,
-                                borderColor: '#34d399',
-                                backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                                borderColor: '#7a9e7e',
+                                backgroundColor: 'rgba(122, 158, 126, 0.1)',
                                 fill: true,
                                 tension: 0.3,
                                 pointRadius: 3,
