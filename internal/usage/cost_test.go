@@ -129,23 +129,23 @@ func TestCalculateGranularCost_XAI_ImageTokens(t *testing.T) {
 	assertCostNear(t, "InputCost", result.InputCost, 0.35)
 }
 
-func TestCalculateGranularCost_MissingPricingCaveat(t *testing.T) {
+func TestCalculateGranularCost_NilPricingFieldNoCaveat(t *testing.T) {
 	pricing := &core.ModelPricing{
 		InputPerMtok:  ptr(2.50),
 		OutputPerMtok: ptr(10.0),
-		// CachedInputPerMtok is nil
+		// CachedInputPerMtok is nil — base rate already covers cached tokens
 	}
 	rawData := map[string]any{
 		"cached_tokens": 100_000,
 	}
 	result := CalculateGranularCost(500_000, 300_000, rawData, "openai", pricing)
 
-	if result.Caveat == "" {
-		t.Fatal("expected non-empty caveat for missing pricing")
+	if result.Caveat != "" {
+		t.Fatalf("expected no caveat when pricing field is nil (base rate covers it), got %q", result.Caveat)
 	}
-	if result.Caveat != "no pricing for cached_tokens" {
-		t.Fatalf("unexpected caveat: %q", result.Caveat)
-	}
+	// Base costs should still be calculated correctly without the adjustment
+	assertCostNear(t, "InputCost", result.InputCost, 1.25)  // 500k * 2.50/1M
+	assertCostNear(t, "OutputCost", result.OutputCost, 3.0)  // 300k * 10.0/1M
 }
 
 func TestCalculateGranularCost_UnmappedTokenField(t *testing.T) {
@@ -269,6 +269,71 @@ func TestIsTokenField(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCalculateGranularCost_XAI_PrefixedKeys(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:           ptr(2.0),
+		OutputPerMtok:          ptr(10.0),
+		CachedInputPerMtok:     ptr(0.50),
+		ReasoningOutputPerMtok: ptr(15.0),
+	}
+	rawData := map[string]any{
+		"prompt_cached_tokens":          200_000,
+		"completion_reasoning_tokens":   100_000,
+	}
+	result := CalculateGranularCost(500_000, 300_000, rawData, "xai", pricing)
+
+	// Input: 500k * 2.0/1M + 200k * 0.50/1M = 1.0 + 0.10 = 1.10
+	assertCostNear(t, "InputCost", result.InputCost, 1.10)
+	// Output: 300k * 10.0/1M + 100k * 15.0/1M = 3.0 + 1.5 = 4.5
+	assertCostNear(t, "OutputCost", result.OutputCost, 4.5)
+	if result.Caveat != "" {
+		t.Fatalf("expected no caveat for xAI prefixed keys, got %q", result.Caveat)
+	}
+}
+
+func TestCalculateGranularCost_InformationalFieldsNoCaveat(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:  ptr(2.50),
+		OutputPerMtok: ptr(10.0),
+	}
+	rawData := map[string]any{
+		"prompt_text_tokens":                    80_000,
+		"prompt_image_tokens":                   20_000,
+		"completion_accepted_prediction_tokens": 5_000,
+		"completion_rejected_prediction_tokens": 1_000,
+	}
+	result := CalculateGranularCost(100_000, 50_000, rawData, "openai", pricing)
+
+	if result.Caveat != "" {
+		t.Fatalf("expected no caveat for informational fields, got %q", result.Caveat)
+	}
+	assertCostNear(t, "InputCost", result.InputCost, 0.25)  // 100k * 2.50/1M
+	assertCostNear(t, "OutputCost", result.OutputCost, 0.50) // 50k * 10.0/1M
+}
+
+func TestCalculateGranularCost_ReasoningModelNoCaveat(t *testing.T) {
+	// Simulates the exact RawData produced by buildRawUsageFromDetails for o3-mini / grok-3-mini
+	pricing := &core.ModelPricing{
+		InputPerMtok:  ptr(1.10),
+		OutputPerMtok: ptr(4.40),
+		// No CachedInputPerMtok or ReasoningOutputPerMtok — base rate covers all
+	}
+	rawData := map[string]any{
+		"prompt_cached_tokens":          0,
+		"prompt_text_tokens":            500,
+		"completion_reasoning_tokens":   1200,
+	}
+	result := CalculateGranularCost(500, 2000, rawData, "openai", pricing)
+
+	if result.Caveat != "" {
+		t.Fatalf("expected no caveat for reasoning model, got %q", result.Caveat)
+	}
+	// Input: 500 * 1.10/1M = 0.00055
+	assertCostNear(t, "InputCost", result.InputCost, 0.00055)
+	// Output: 2000 * 4.40/1M = 0.0088
+	assertCostNear(t, "OutputCost", result.OutputCost, 0.0088)
 }
 
 func assertCostNear(t *testing.T, name string, got *float64, want float64) {

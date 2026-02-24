@@ -245,22 +245,11 @@
         Authentication required. Enter your API key in the sidebar to view data.
     </div>
 
-    <!-- Donut Chart Section -->
+    <!-- Usage by Model Chart -->
     <div class="donut-section" x-show="modelUsage.length > 0">
         <h3 x-text="usageMode === 'tokens' ? 'Token Usage by Model' : 'Cost by Model'"></h3>
-        <div class="donut-container">
-            <div class="donut-chart-wrap">
-                <canvas id="usageDonutChart"></canvas>
-            </div>
-            <div class="donut-legend">
-                <template x-for="(item, i) in donutLegendItems()" :key="item.label">
-                    <div class="donut-legend-item">
-                        <span class="donut-legend-color" :style="'background:' + item.color"></span>
-                        <span class="donut-legend-label" x-text="item.label"></span>
-                        <span class="donut-legend-value" x-text="item.value"></span>
-                    </div>
-                </template>
-            </div>
+        <div class="bar-chart-wrap">
+            <canvas id="usageDonutChart"></canvas>
         </div>
     </div>
 

@@ -719,9 +719,9 @@ function dashboard() {
 
         _donutColors() {
             return [
-                '#b8956e', '#34d399', '#60a5fa', '#f472b6', '#a78bfa',
-                '#fbbf24', '#fb923c', '#4ade80', '#38bdf8', '#e879f9',
-                '#818cf8'
+                '#c2845a', '#7a9e7e', '#d4a574', '#b8a98e', '#8b9e6b',
+                '#7d8a97', '#c47a5a', '#6b8e6b', '#a09486', '#9b7ea4',
+                '#c49a6c'
             ];
         },
 
@@ -782,21 +782,44 @@ function dashboard() {
                 const palette = this._donutColors();
 
                 this.usageDonutChart = new Chart(canvas, {
-                    type: 'doughnut',
+                    type: 'bar',
                     data: {
                         labels: labels,
                         datasets: [{
                             data: values,
-                            backgroundColor: palette.slice(0, labels.length),
+                            backgroundColor: labels.map((_, i) => palette[i % palette.length]),
                             borderColor: 'transparent',
-                            borderWidth: 0
+                            borderWidth: 0,
+                            borderRadius: 4
                         }]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
                         animation: { duration: 0 },
-                        cutout: '60%',
+                        layout: { padding: { top: 8 } },
+                        scales: {
+                            x: {
+                                grid: { display: false },
+                                ticks: {
+                                    color: colors.text,
+                                    font: { size: 11, family: "'SF Mono', 'Menlo', 'Consolas', monospace" },
+                                    maxRotation: 45,
+                                    minRotation: 0
+                                }
+                            },
+                            y: {
+                                grid: { color: colors.grid, drawBorder: false },
+                                ticks: {
+                                    color: colors.text,
+                                    font: { size: 11, family: "'SF Mono', 'Menlo', 'Consolas', monospace" },
+                                    callback: (v) => {
+                                        if (this.usageMode === 'costs') return '$' + v.toFixed(2);
+                                        return this.formatTokensShort(v);
+                                    }
+                                }
+                            }
+                        },
                         plugins: {
                             legend: { display: false },
                             tooltip: {
@@ -807,9 +830,9 @@ function dashboard() {
                                 bodyColor: colors.tooltipText,
                                 callbacks: {
                                     label: (c) => {
-                                        const val = c.parsed;
-                                        if (this.usageMode === 'costs') return c.label + ': $' + val.toFixed(4);
-                                        return c.label + ': ' + this.formatTokensShort(val);
+                                        const val = c.parsed.y;
+                                        if (this.usageMode === 'costs') return '$' + val.toFixed(4);
+                                        return this.formatTokensShort(val);
                                     }
                                 }
                             }

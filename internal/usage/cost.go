@@ -60,9 +60,21 @@ var providerMappings = map[string][]tokenCostMapping{
 	},
 	"xai": {
 		{rawDataKey: "cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
+		{rawDataKey: "prompt_cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
 		{rawDataKey: "reasoning_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
+		{rawDataKey: "completion_reasoning_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
 		{rawDataKey: "image_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.InputPerImage }, side: sideInput, unit: unitPerItem},
 	},
+}
+
+// informationalFields are token fields that are known breakdowns of the base
+// input/output counts. They never need separate pricing and should not trigger
+// "unmapped token field" caveats.
+var informationalFields = map[string]struct{}{
+	"prompt_text_tokens":                    {},
+	"prompt_image_tokens":                   {},
+	"completion_accepted_prediction_tokens": {},
+	"completion_rejected_prediction_tokens": {},
 }
 
 // extendedFieldSet is derived from providerMappings and contains all RawData keys
@@ -119,8 +131,7 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 
 			rate := m.pricingField(pricing)
 			if rate == nil {
-				caveats = append(caveats, fmt.Sprintf("no pricing for %s", m.rawDataKey))
-				continue
+				continue // Base rate covers this token type; no adjustment needed
 			}
 
 			var cost float64
@@ -146,6 +157,9 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 	for key := range rawData {
 		if mappedKeys[key] {
 			continue
+		}
+		if _, ok := informationalFields[key]; ok {
+			continue // Known breakdown of base counts, not separately priced
 		}
 		if isTokenField(key) {
 			count := extractInt(rawData, key)
