@@ -139,6 +139,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// Public routes
 	e.GET("/health", handler.Health)
 	if cfg != nil && cfg.SwaggerEnabled {
+		authSkipPaths = append(authSkipPaths, "/swagger/*")
 		e.GET("/swagger/*", echoswagger.WrapHandler)
 	}
 	if cfg != nil && cfg.MetricsEnabled {
