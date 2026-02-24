@@ -140,6 +140,27 @@ func TestResponsesStreaming(t *testing.T) {
 		assert.True(t, hasDoneEvent(events), "Should receive done event")
 	})
 
+	t.Run("streaming does not inject stream_options", func(t *testing.T) {
+		// Regression test for GOM-43: streaming Responses API must not include
+		// stream_options.include_usage, which is a Chat Completions-only parameter.
+		// The Responses API returns usage in the response.done event by default.
+		payload := core.ResponsesRequest{
+			Model:  "gpt-4.1",
+			Input:  "Hello",
+			Stream: true,
+		}
+
+		resp := sendResponsesRequest(t, payload)
+		defer closeBody(resp)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode, "Streaming responses should succeed without stream_options")
+		assert.Equal(t, "text/event-stream", resp.Header.Get("Content-Type"))
+
+		events := readResponsesStream(t, resp.Body)
+		require.Greater(t, len(events), 0, "Should receive at least one SSE event")
+		assert.True(t, hasDoneEvent(events), "Should receive done event")
+	})
+
 	t.Run("streaming content", func(t *testing.T) {
 		payload := core.ResponsesRequest{
 			Model:  "gpt-4.1",

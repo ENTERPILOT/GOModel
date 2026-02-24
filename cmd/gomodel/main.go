@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "gomodel/cmd/gomodel/docs"
 	"gomodel/config"
 	"gomodel/internal/app"
 	"gomodel/internal/observability"
@@ -28,6 +29,14 @@ import (
 	"golang.org/x/term"
 )
 
+// @title          GOModel API
+// @version        1.0
+// @description    High-performance AI gateway routing requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in OpenAI-compatible API.
+// @BasePath       /
+// @schemes        http
+// @securityDefinitions.apikey BearerAuth
+// @in             header
+// @name           Authorization
 func main() {
 	versionFlag := flag.Bool("version", false, "Print version information")
 	flag.Parse()

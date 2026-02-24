@@ -216,3 +216,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 | OpenTelemetry | 🚧   | 🚧   |
 
 ✅ Supported  🚧 Coming soon
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=enterpilot/gomodel&type=date&legend=top-left)](https://www.star-history.com/#enterpilot/gomodel&type=date&legend=top-left)

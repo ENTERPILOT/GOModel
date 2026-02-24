@@ -132,6 +132,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		UsageLogger:              usageResult.Logger,
 		PricingResolver:          providerResult.Registry,
 		LogOnlyModelInteractions: appCfg.Logging.OnlyModelInteractions,
+		SwaggerEnabled:           appCfg.Server.SwaggerEnabled,
 	}
 
 	// Initialize admin API and dashboard (behind separate feature flags)
@@ -156,6 +157,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		}
 	} else {
 		slog.Info("admin API disabled")
+	}
+
+	if appCfg.Server.SwaggerEnabled {
+		slog.Info("swagger UI enabled", "path", "/swagger/index.html")
 	}
 
 	app.server = server.New(provider, serverCfg)

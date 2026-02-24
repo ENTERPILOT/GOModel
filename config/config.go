@@ -285,9 +285,10 @@ type RedisConfig struct {
 
 // ServerConfig holds HTTP server configuration
 type ServerConfig struct {
-	Port          string `yaml:"port" env:"PORT"`
-	MasterKey     string `yaml:"master_key" env:"GOMODEL_MASTER_KEY"`   // Optional: Master key for authentication
-	BodySizeLimit string `yaml:"body_size_limit" env:"BODY_SIZE_LIMIT"` // Max request body size (e.g., "10M", "1024K")
+	Port           string `yaml:"port" env:"PORT"`
+	MasterKey      string `yaml:"master_key" env:"GOMODEL_MASTER_KEY"`   // Optional: Master key for authentication
+	BodySizeLimit  string `yaml:"body_size_limit" env:"BODY_SIZE_LIMIT"` // Max request body size (e.g., "10M", "1024K")
+	SwaggerEnabled bool   `yaml:"swagger_enabled" env:"SWAGGER_ENABLED"` // Whether to expose the Swagger UI at /swagger/index.html
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
@@ -348,7 +349,7 @@ type ResilienceConfig struct {
 // buildDefaultConfig returns the single source of truth for all configuration defaults.
 func buildDefaultConfig() *Config {
 	return &Config{
-		Server: ServerConfig{Port: "8080"},
+		Server: ServerConfig{Port: "8080", SwaggerEnabled: true},
 		Cache: CacheConfig{
 			Type:            "local",
 			CacheDir:        ".cache",

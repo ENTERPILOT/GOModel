@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"gomodel/internal/core"
+	"gomodel/internal/usage"
 )
 
 // mockProvider implements core.Provider for testing
@@ -547,5 +548,118 @@ func TestListModels_TypedError(t *testing.T) {
 	}
 	if !strings.Contains(body, "failed to list models") {
 		t.Errorf("response should contain error message, got: %s", body)
+	}
+}
+
+// mockUsageLogger implements usage.LoggerInterface for testing.
+type mockUsageLogger struct {
+	config usage.Config
+}
+
+func (m *mockUsageLogger) Write(_ *usage.UsageEntry) {}
+func (m *mockUsageLogger) Config() usage.Config       { return m.config }
+func (m *mockUsageLogger) Close() error               { return nil }
+
+// capturingProvider is a mockProvider that captures the request passed to StreamResponses/StreamChatCompletion.
+type capturingProvider struct {
+	mockProvider
+	capturedChatReq      *core.ChatRequest
+	capturedResponsesReq *core.ResponsesRequest
+}
+
+func (c *capturingProvider) StreamChatCompletion(_ context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	c.capturedChatReq = req
+	return io.NopCloser(strings.NewReader(c.streamData)), nil
+}
+
+func (c *capturingProvider) StreamResponses(_ context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	c.capturedResponsesReq = req
+	return io.NopCloser(strings.NewReader(c.streamData)), nil
+}
+
+func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
+	streamData := "data: {\"type\":\"response.done\"}\n\ndata: [DONE]\n\n"
+	provider := &capturingProvider{
+		mockProvider: mockProvider{
+			supportedModels: []string{"gpt-4o-mini"},
+			streamData:      streamData,
+		},
+	}
+
+	usageLog := &mockUsageLogger{
+		config: usage.Config{
+			Enabled:                   true,
+			EnforceReturningUsageData: true,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, usageLog)
+
+	// Streaming Responses request should NOT have StreamOptions injected
+	reqBody := `{"model":"gpt-4o-mini","input":"Hello","stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Responses(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	if provider.capturedResponsesReq == nil {
+		t.Fatalf("expected capturedResponsesReq to be set, got nil")
+	}
+	if provider.capturedResponsesReq.StreamOptions != nil {
+		t.Errorf("Responses streaming should NOT have StreamOptions injected, got: %+v", provider.capturedResponsesReq.StreamOptions)
+	}
+}
+
+func TestStreamingChatCompletion_InjectsStreamOptions(t *testing.T) {
+	streamData := "data: {\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\ndata: [DONE]\n\n"
+	provider := &capturingProvider{
+		mockProvider: mockProvider{
+			supportedModels: []string{"gpt-4o-mini"},
+			streamData:      streamData,
+		},
+	}
+
+	usageLog := &mockUsageLogger{
+		config: usage.Config{
+			Enabled:                   true,
+			EnforceReturningUsageData: true,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, usageLog)
+
+	// Streaming ChatCompletion request SHOULD have StreamOptions injected
+	reqBody := `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+
+	if provider.capturedChatReq.StreamOptions == nil {
+		t.Fatal("ChatCompletion streaming should have StreamOptions injected")
+	}
+
+	if !provider.capturedChatReq.StreamOptions.IncludeUsage {
+		t.Error("ChatCompletion streaming should have IncludeUsage=true")
 	}
 }
