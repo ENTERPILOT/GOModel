@@ -6,7 +6,7 @@ Guidance for AI models (like Claude) working with this codebase.
 
 **GOModel** is a high-performance AI gateway in Go that routes requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in LiteLLM replacement.
 
-- **Module:** `gomodel` | **Go:** 1.24.0 | **Repo:** https://github.com/ENTERPILOT/GOModel
+- **Module:** `gomodel` | **Go:** 1.25.0 | **Repo:** https://github.com/ENTERPILOT/GOModel
 - **Stage:** Development—backward compatibility is not a concern
 
 ## Commands
@@ -24,6 +24,7 @@ make lint-fix          # Auto-fix lint issues
 make tidy              # go mod tidy
 make clean             # Remove bin/
 make record-api        # Record API responses for contract tests
+make swagger           # Regenerate Swagger docs
 ```
 
 **Single test:** `go test ./internal/providers -v -run TestName`

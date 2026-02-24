@@ -79,6 +79,19 @@ func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string
 }
 
 // ChatCompletion handles POST /v1/chat/completions
+//
+// @Summary      Create a chat completion
+// @Tags         chat
+// @Accept       json
+// @Produce      json text/event-stream
+// @Security     BearerAuth
+// @Param        request  body      core.ChatRequest  true  "Chat completion request"
+// @Success      200      {object}  core.ChatResponse  "JSON response or SSE stream when stream=true"
+// @Failure      400      {object}  core.GatewayError
+// @Failure      401      {object}  core.GatewayError
+// @Failure      429      {object}  core.GatewayError
+// @Failure      502      {object}  core.GatewayError
+// @Router       /v1/chat/completions [post]
 func (h *Handler) ChatCompletion(c echo.Context) error {
 	var req core.ChatRequest
 	if err := c.Bind(&req); err != nil {
@@ -129,11 +142,26 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 }
 
 // Health handles GET /health
+//
+// @Summary      Health check
+// @Tags         system
+// @Produce      json
+// @Success      200  {object}  map[string]string
+// @Router       /health [get]
 func (h *Handler) Health(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 // ListModels handles GET /v1/models
+//
+// @Summary      List available models
+// @Tags         models
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  core.ModelsResponse
+// @Failure      401  {object}  core.GatewayError
+// @Failure      502  {object}  core.GatewayError
+// @Router       /v1/models [get]
 func (h *Handler) ListModels(c echo.Context) error {
 	// Create context with request ID for provider
 	requestID := c.Request().Header.Get("X-Request-ID")
@@ -148,6 +176,19 @@ func (h *Handler) ListModels(c echo.Context) error {
 }
 
 // Responses handles POST /v1/responses
+//
+// @Summary      Create a model response (Responses API)
+// @Tags         responses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      core.ResponsesRequest  true  "Responses API request"
+// @Success      200      {object}  core.ResponsesResponse
+// @Failure      400      {object}  core.GatewayError
+// @Failure      401      {object}  core.GatewayError
+// @Failure      429      {object}  core.GatewayError
+// @Failure      502      {object}  core.GatewayError
+// @Router       /v1/responses [post]
 func (h *Handler) Responses(c echo.Context) error {
 	var req core.ResponsesRequest
 	if err := c.Bind(&req); err != nil {

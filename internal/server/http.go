@@ -16,6 +16,8 @@ import (
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
+
+	echoswagger "github.com/swaggo/echo-swagger"
 )
 
 // Server wraps the Echo server
@@ -37,6 +39,7 @@ type Config struct {
 	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
 	AdminHandler             *admin.Handler           // Admin API handler (nil if disabled)
 	DashboardHandler         *dashboard.Handler       // Dashboard UI handler (nil if disabled)
+	SwaggerEnabled           bool                     // Whether to expose the Swagger UI at /swagger/index.html
 }
 
 // New creates a new HTTP server
@@ -77,6 +80,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// Admin dashboard pages and static assets skip auth (/* enables prefix matching)
 	if cfg != nil && cfg.AdminUIEnabled && cfg.DashboardHandler != nil {
 		authSkipPaths = append(authSkipPaths, "/admin/dashboard", "/admin/dashboard/*", "/admin/static/*")
+	}
+	if cfg != nil && cfg.SwaggerEnabled {
+		authSkipPaths = append(authSkipPaths, "/swagger/*")
 	}
 
 	// Global middleware stack (order matters)
@@ -135,6 +141,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 
 	// Public routes
 	e.GET("/health", handler.Health)
+	if cfg != nil && cfg.SwaggerEnabled {
+		e.GET("/swagger/*", echoswagger.WrapHandler)
+	}
 	if cfg != nil && cfg.MetricsEnabled {
 		e.GET(metricsPath, echo.WrapHandler(promhttp.Handler()))
 	}

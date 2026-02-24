@@ -113,6 +113,18 @@ func handleError(c echo.Context, err error) error {
 }
 
 // UsageSummary handles GET /admin/api/v1/usage/summary
+//
+// @Summary      Get usage summary
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Success      200  {object}  usage.UsageSummary
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/summary [get]
 func (h *Handler) UsageSummary(c echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, usage.UsageSummary{})
@@ -132,6 +144,19 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 }
 
 // DailyUsage handles GET /admin/api/v1/usage/daily
+//
+// @Summary      Get usage breakdown by period
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        interval    query     string  false  "Grouping interval: daily, weekly, monthly, yearly (default daily)"
+// @Success      200  {array}   usage.DailyUsage
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/daily [get]
 func (h *Handler) DailyUsage(c echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, []usage.DailyUsage{})
@@ -155,6 +180,14 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 }
 
 // ListModels handles GET /admin/api/v1/models
+//
+// @Summary      List all registered models with provider info
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {array}  providers.ModelWithProvider
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/models [get]
 func (h *Handler) ListModels(c echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
