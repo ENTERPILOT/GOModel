@@ -594,7 +594,7 @@ func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(provider, nil, usageLog)
+	handler := NewHandler(provider, nil, usageLog, nil)
 
 	// Streaming Responses request should NOT have StreamOptions injected
 	reqBody := `{"model":"gpt-4o-mini","input":"Hello","stream":true}`
@@ -637,7 +637,7 @@ func TestStreamingChatCompletion_InjectsStreamOptions(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(provider, nil, usageLog)
+	handler := NewHandler(provider, nil, usageLog, nil)
 
 	// Streaming ChatCompletion request SHOULD have StreamOptions injected
 	reqBody := `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"Hi"}]}`

@@ -246,9 +246,7 @@ func (h *Handler) UsageLog(c echo.Context) error {
 }
 
 // ListModels handles GET /admin/api/v1/models
-<<<<<<< feature/pricing-estimation
 // Supports optional ?category= query param for filtering by model category.
-=======
 //
 // @Summary      List all registered models with provider info
 // @Tags         admin
@@ -257,7 +255,6 @@ func (h *Handler) UsageLog(c echo.Context) error {
 // @Success      200  {array}  providers.ModelWithProvider
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/models [get]
->>>>>>> main
 func (h *Handler) ListModels(c echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
