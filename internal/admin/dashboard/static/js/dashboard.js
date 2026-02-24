@@ -476,7 +476,8 @@ function dashboard() {
             return result;
         },
 
-        renderChart() {
+        renderChart(retries) {
+            if (retries === undefined) retries = 3;
             this.$nextTick(() => {
                 if (this.chart) {
                     this.chart.destroy();
@@ -484,9 +485,15 @@ function dashboard() {
                 }
 
                 if (this.daily.length === 0) return;
+                if (this.page !== 'overview') return;
 
                 const canvas = document.getElementById('usageChart');
-                if (!canvas || canvas.offsetWidth === 0) return;
+                if (!canvas || canvas.offsetWidth === 0) {
+                    if (retries > 0) {
+                        setTimeout(() => this.renderChart(retries - 1), 100);
+                    }
+                    return;
+                }
 
                 const colors = this.chartColors();
                 const filled = this.fillMissingDays(this.daily);
@@ -765,7 +772,8 @@ function dashboard() {
             }));
         },
 
-        renderDonutChart() {
+        renderDonutChart(retries) {
+            if (retries === undefined) retries = 3;
             this.$nextTick(() => {
                 if (this.usageDonutChart) {
                     this.usageDonutChart.destroy();
@@ -773,9 +781,15 @@ function dashboard() {
                 }
 
                 if (this.modelUsage.length === 0) return;
+                if (this.page !== 'usage') return;
 
                 const canvas = document.getElementById('usageDonutChart');
-                if (!canvas || canvas.offsetWidth === 0) return;
+                if (!canvas || canvas.offsetWidth === 0) {
+                    if (retries > 0) {
+                        setTimeout(() => this.renderDonutChart(retries - 1), 100);
+                    }
+                    return;
+                }
 
                 const colors = this.chartColors();
                 const { labels, values } = this._donutData();
