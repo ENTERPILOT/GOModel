@@ -751,6 +751,227 @@ func TestResponsesWithContext(t *testing.T) {
 	}
 }
 
+func TestIsOSeriesModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"o3-mini", true},
+		{"o4-mini", true},
+		{"o3", true},
+		{"o4", true},
+		{"o1-preview", true},
+		{"o1-mini", true},
+		{"o3-mini-2025-01-31", true},
+		{"gpt-4o", false},
+		{"gpt-4o-mini", false},
+		{"gpt-4", false},
+		{"gpt-3.5-turbo", false},
+		{"claude-3-opus", false},
+		{"", false},
+		{"o", false},
+		{"openai", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := isOSeriesModel(tt.model); got != tt.expected {
+				t.Errorf("isOSeriesModel(%q) = %v, want %v", tt.model, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestChatCompletion_ReasoningModel_AdaptsParameters(t *testing.T) {
+	maxTokens := 1000
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+
+		// max_tokens must NOT be present
+		if _, ok := raw["max_tokens"]; ok {
+			t.Error("reasoning model request should not contain max_tokens")
+		}
+
+		// max_completion_tokens must be present with the right value
+		mct, ok := raw["max_completion_tokens"]
+		if !ok {
+			t.Fatal("reasoning model request should contain max_completion_tokens")
+		}
+		if int(mct.(float64)) != maxTokens {
+			t.Errorf("max_completion_tokens = %v, want %d", mct, maxTokens)
+		}
+
+		// temperature must NOT be present
+		if _, ok := raw["temperature"]; ok {
+			t.Error("reasoning model request should not contain temperature")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"model": "o3-mini",
+			"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+			"usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	temp := 0.7
+	req := &core.ChatRequest{
+		Model:       "o3-mini",
+		Messages:    []core.Message{{Role: "user", Content: "Hello"}},
+		MaxTokens:   &maxTokens,
+		Temperature: &temp,
+	}
+
+	resp, err := provider.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Model != "o3-mini" {
+		t.Errorf("Model = %q, want %q", resp.Model, "o3-mini")
+	}
+}
+
+func TestChatCompletion_NonReasoningModel_PassesMaxTokens(t *testing.T) {
+	maxTokens := 1000
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+
+		// max_tokens must be present
+		mt, ok := raw["max_tokens"]
+		if !ok {
+			t.Fatal("non-reasoning model request should contain max_tokens")
+		}
+		if int(mt.(float64)) != maxTokens {
+			t.Errorf("max_tokens = %v, want %d", mt, maxTokens)
+		}
+
+		// max_completion_tokens must NOT be present
+		if _, ok := raw["max_completion_tokens"]; ok {
+			t.Error("non-reasoning model request should not contain max_completion_tokens")
+		}
+
+		// temperature must be present
+		if _, ok := raw["temperature"]; !ok {
+			t.Error("non-reasoning model request should contain temperature")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-456",
+			"object": "chat.completion",
+			"model": "gpt-4o",
+			"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+			"usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	temp := 0.7
+	req := &core.ChatRequest{
+		Model:       "gpt-4o",
+		Messages:    []core.Message{{Role: "user", Content: "Hello"}},
+		MaxTokens:   &maxTokens,
+		Temperature: &temp,
+	}
+
+	resp, err := provider.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Model != "gpt-4o" {
+		t.Errorf("Model = %q, want %q", resp.Model, "gpt-4o")
+	}
+}
+
+func TestStreamChatCompletion_ReasoningModel_AdaptsParameters(t *testing.T) {
+	maxTokens := 2000
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+
+		// Must use max_completion_tokens, not max_tokens
+		if _, ok := raw["max_tokens"]; ok {
+			t.Error("streaming reasoning model request should not contain max_tokens")
+		}
+		mct, ok := raw["max_completion_tokens"]
+		if !ok {
+			t.Fatal("streaming reasoning model request should contain max_completion_tokens")
+		}
+		if int(mct.(float64)) != maxTokens {
+			t.Errorf("max_completion_tokens = %v, want %d", mct, maxTokens)
+		}
+
+		// stream must be true
+		if stream, ok := raw["stream"].(bool); !ok || !stream {
+			t.Error("stream should be true")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`data: {"id":"chatcmpl-123","object":"chat.completion.chunk","model":"o4-mini","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
+
+data: [DONE]
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	req := &core.ChatRequest{
+		Model:    "o4-mini",
+		Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		MaxTokens: &maxTokens,
+	}
+
+	body, err := provider.StreamChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	respBody, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	if !strings.Contains(string(respBody), "o4-mini") {
+		t.Error("response should contain o4-mini model")
+	}
+}
+
 func TestIsValidClientRequestID(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -8,6 +8,7 @@ Guidance for AI models (like Claude) working with this codebase.
 
 - **Module:** `gomodel` | **Go:** 1.25.0 | **Repo:** https://github.com/ENTERPILOT/GOModel
 - **Stage:** Development—backward compatibility is not a concern
+- **Design philosophy:** [Postel's Law](https://en.wikipedia.org/wiki/Robustness_principle) (the Robustness Principle) — *"Be conservative in what you send, be liberal in what you accept."* The gateway accepts client requests generously (e.g. `max_tokens` for any model) and adapts them to each provider's specific requirements before forwarding (e.g. translating `max_tokens` → `max_completion_tokens` for OpenAI reasoning models).
 
 ## Commands
 
