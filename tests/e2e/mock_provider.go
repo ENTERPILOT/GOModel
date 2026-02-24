@@ -334,6 +334,11 @@ func (m *MockLLMServer) handleResponsesStreaming(w http.ResponseWriter, req core
 			"status":     "completed",
 			"model":      req.Model,
 			"created_at": time.Now().Unix(),
+			"usage": map[string]interface{}{
+				"input_tokens":  10,
+				"output_tokens": 20,
+				"total_tokens":  30,
+			},
 		},
 	}
 	data, _ = json.Marshal(doneEvent)

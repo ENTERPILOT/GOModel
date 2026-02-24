@@ -5,10 +5,6 @@ const (
 	// BatchFlushThreshold is the number of entries that triggers an immediate flush.
 	// When the batch reaches this size, it's written to storage without waiting for the timer.
 	BatchFlushThreshold = 100
-
-	// SSEBufferSize is the rolling buffer size for extracting usage from SSE streams.
-	// Must be large enough to capture the final usage event containing token counts.
-	SSEBufferSize = 8192
 )
 
 // Context keys for storing usage data in request context.
