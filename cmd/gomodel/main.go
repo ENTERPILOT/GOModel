@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	_ "gomodel/cmd/gomodel/docs"
 	"gomodel/config"
 	"gomodel/internal/app"
 	"gomodel/internal/observability"
