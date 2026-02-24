@@ -24,7 +24,7 @@ make lint-fix          # Auto-fix lint issues
 make tidy              # go mod tidy
 make clean             # Remove bin/
 make record-api        # Record API responses for contract tests
-make swagger           # Regenerate Swagger docs (requires swag CLI)
+make swagger           # Regenerate Swagger docs
 ```
 
 **Single test:** `go test ./internal/providers -v -run TestName`

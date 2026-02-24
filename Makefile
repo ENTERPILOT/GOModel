@@ -54,9 +54,8 @@ record-api:
 		-output=tests/contract/testdata/openai/models.json
 	@echo "Done! Golden files saved to tests/contract/testdata/"
 
-# Generate Swagger docs (requires swag: go install github.com/swaggo/swag/cmd/swag@latest)
 swagger:
-	swag init --generalInfo main.go \
+	go run github.com/swaggo/swag/cmd/swag init --generalInfo main.go \
 		--dir cmd/gomodel,internal \
 		--output cmd/gomodel/docs \
 		--outputTypes go,json
