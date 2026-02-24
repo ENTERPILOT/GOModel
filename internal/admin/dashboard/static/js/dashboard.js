@@ -46,24 +46,35 @@ function dashboard() {
         usageLogProvider: '',
         usageDonutChart: null,
 
+        _parseRoute(pathname) {
+            const path = pathname.replace(/\/$/, '');
+            const rest = path.replace('/admin/dashboard', '').replace(/^\//, '');
+            const parts = rest.split('/');
+            const page = (['overview', 'usage', 'models'].includes(parts[0])) ? parts[0] : 'overview';
+            const sub = parts[1] || null;
+            return { page, sub };
+        },
+
         init() {
             this.apiKey = localStorage.getItem('gomodel_api_key') || '';
             this.theme = localStorage.getItem('gomodel_theme') || 'system';
             this.sidebarCollapsed = localStorage.getItem('gomodel_sidebar_collapsed') === 'true';
             this.applyTheme();
 
-            // Parse initial page from URL path
-            const path = window.location.pathname.replace(/\/$/, '');
-            const slug = path.split('/').pop();
-            this.page = (slug === 'models') ? 'models' : (slug === 'usage') ? 'usage' : 'overview';
+            // Parse initial page and sub-path from URL
+            const { page, sub } = this._parseRoute(window.location.pathname);
+            this.page = page;
+            if (page === 'usage' && sub === 'costs') this.usageMode = 'costs';
 
             // Handle browser back/forward
             window.addEventListener('popstate', () => {
-                const p = window.location.pathname.replace(/\/$/, '');
-                const s = p.split('/').pop();
-                this.page = (s === 'models') ? 'models' : (s === 'usage') ? 'usage' : 'overview';
-                if (this.page === 'overview') this.renderChart();
-                if (this.page === 'usage') { this.fetchUsagePage(); }
+                const { page: p, sub: s } = this._parseRoute(window.location.pathname);
+                this.page = p;
+                if (p === 'usage') {
+                    this.usageMode = s === 'costs' ? 'costs' : 'tokens';
+                    this.fetchUsagePage();
+                }
+                if (p === 'overview') this.renderChart();
             });
 
             // Re-render chart when system theme changes (only matters in 'system' mode)
@@ -302,6 +313,7 @@ function dashboard() {
 
         navigate(page) {
             this.page = page;
+            if (page === 'usage') this.usageMode = 'tokens';
             history.pushState(null, '', '/admin/dashboard/' + page);
             if (page === 'overview') this.renderChart();
             if (page === 'usage') { this.fetchUsagePage(); }
@@ -678,6 +690,8 @@ function dashboard() {
 
         toggleUsageMode(mode) {
             this.usageMode = mode;
+            const url = mode === 'costs' ? '/admin/dashboard/usage/costs' : '/admin/dashboard/usage';
+            history.pushState(null, '', url);
             this.renderDonutChart();
         },
 
