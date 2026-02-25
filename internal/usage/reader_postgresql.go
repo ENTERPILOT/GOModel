@@ -24,30 +24,12 @@ func NewPostgreSQLReader(pool *pgxpool.Pool) (*PostgreSQLReader, error) {
 
 // GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
-	var query string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
+	conditions, args, _ := pgDateRangeConditions(params, 1)
+	where := buildWhereClause(conditions)
 
 	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
-
-	if !startZero && !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2`
-		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
-	} else if !startZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM "usage" WHERE timestamp >= $1`
-		args = append(args, params.StartDate.UTC())
-	} else if !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM "usage" WHERE timestamp < $1`
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
-	} else {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM "usage"`
-	}
+	query := `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
+			FROM "usage"` + where
 
 	summary := &UsageSummary{}
 	err := r.pool.QueryRow(ctx, query, args...).Scan(
@@ -63,30 +45,12 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 
 // GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
-	var query string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
+	conditions, args, _ := pgDateRangeConditions(params, 1)
+	where := buildWhereClause(conditions)
 
 	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
-
-	if !startZero && !endZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM "usage" WHERE timestamp >= $1 AND timestamp < $2 GROUP BY model, provider`
-		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
-	} else if !startZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM "usage" WHERE timestamp >= $1 GROUP BY model, provider`
-		args = append(args, params.StartDate.UTC())
-	} else if !endZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM "usage" WHERE timestamp < $1 GROUP BY model, provider`
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
-	} else {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM "usage" GROUP BY model, provider`
-	}
+	query := `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage"` + where + ` GROUP BY model, provider`
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -114,29 +78,7 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
-	var conditions []string
-	var args []interface{}
-	argIdx := 1
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
-		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
-		args = append(args, params.StartDate.UTC())
-		argIdx++
-		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", argIdx))
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
-		argIdx++
-	} else if !startZero {
-		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", argIdx))
-		args = append(args, params.StartDate.UTC())
-		argIdx++
-	} else if !endZero {
-		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", argIdx))
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
-		argIdx++
-	}
+	conditions, args, argIdx := pgDateRangeConditions(params.UsageQueryParams, 1)
 
 	if params.Model != "" {
 		conditions = append(conditions, fmt.Sprintf("model = $%d", argIdx))
@@ -204,6 +146,23 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 	}, nil
 }
 
+// pgDateRangeConditions returns WHERE conditions and args for a date range.
+// argIdx is the starting $N placeholder index; nextIdx is the next available index.
+func pgDateRangeConditions(params UsageQueryParams, argIdx int) (conditions []string, args []interface{}, nextIdx int) {
+	nextIdx = argIdx
+	if !params.StartDate.IsZero() {
+		conditions = append(conditions, fmt.Sprintf("timestamp >= $%d", nextIdx))
+		args = append(args, params.StartDate.UTC())
+		nextIdx++
+	}
+	if !params.EndDate.IsZero() {
+		conditions = append(conditions, fmt.Sprintf("timestamp < $%d", nextIdx))
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
+		nextIdx++
+	}
+	return conditions, args, nextIdx
+}
+
 func pgGroupExpr(interval string) string {
 	switch interval {
 	case "weekly":
@@ -225,22 +184,8 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 	}
 	groupExpr := pgGroupExpr(interval)
 
-	var where string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
-		where = ` WHERE timestamp >= $1 AND timestamp < $2`
-		args = append(args, params.StartDate.UTC(), params.EndDate.AddDate(0, 0, 1).UTC())
-	} else if !startZero {
-		where = ` WHERE timestamp >= $1`
-		args = append(args, params.StartDate.UTC())
-	} else if !endZero {
-		where = ` WHERE timestamp < $1`
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC())
-	}
+	conditions, args, _ := pgDateRangeConditions(params, 1)
+	where := buildWhereClause(conditions)
 
 	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
 		FROM "usage"%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
