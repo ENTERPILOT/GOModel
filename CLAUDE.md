@@ -62,7 +62,7 @@ Client → Echo Middleware (logger → recover → body limit → audit log → 
 - `internal/observability/metrics.go` — Prometheus metrics via hooks injected at factory level: `gomodel_requests_total`, `gomodel_request_duration_seconds`, `gomodel_requests_in_flight`.
 - `internal/cache/` — Local file or Redis cache backends for model registry.
 
-**Startup:** Config load (defaults → YAML → env vars) → Register providers with factory → Init providers (cache → async model load → background refresh → router) → Init audit logging → Init usage tracking (shares storage if same backend) → Build guardrails pipeline → Create server → Start listening
+**Startup:** Config load (defaults → YAML → env vars) → Register providers with factory → Init providers (cache → async model load → background refresh → router) → Register cost mappings (`RegisterCostMappings`) → Init audit logging → Init usage tracking (shares storage if same backend) → Build guardrails pipeline → Create server → Start listening
 
 **Shutdown (in order):** HTTP server (stop accepting) → Providers (stop refresh + close cache) → Usage tracking (flush buffer) → Audit logging (flush buffer)
 
@@ -107,6 +107,8 @@ helm/                  # Kubernetes Helm charts
 
 1. Create `internal/providers/{name}/` implementing `core.Provider`
 2. Export a `Registration` variable: `var Registration = providers.Registration{Type: "{name}", New: New}`
+   - Optionally add `CostMappings: []core.TokenCostMapping{...}` for provider-specific token cost fields (cached tokens, reasoning tokens, etc.)
+   - Optionally add `InformationalFields: []string{...}` for known token breakdown fields that don't need separate pricing
 3. Register in `cmd/gomodel/main.go` via `factory.Add({name}.Registration)`
 4. Add API key env var to `.env.template` and to `knownProviders` in `config/config.go`
 

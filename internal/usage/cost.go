@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"gomodel/internal/core"
 )
@@ -16,79 +17,52 @@ type CostResult struct {
 	Caveat     string
 }
 
-// costSide indicates whether a token cost contributes to input or output.
-type costSide int
-
-const (
-	sideInput  costSide = iota
-	sideOutput
-)
-
-// costUnit indicates how the pricing field is applied.
-type costUnit int
-
-const (
-	unitPerMtok costUnit = iota // divide token count by 1M, multiply by rate
-	unitPerItem                 // multiply count directly by rate
-)
-
-// tokenCostMapping maps a RawData key to a pricing field and cost side.
-type tokenCostMapping struct {
-	rawDataKey   string
-	pricingField func(p *core.ModelPricing) *float64
-	side         costSide
-	unit         costUnit
+// costRegistry holds provider-specific cost mappings and informational fields,
+// populated at startup via RegisterCostMappings.
+type costRegistry struct {
+	providerMappings    map[string][]core.TokenCostMapping
+	informationalFields map[string]struct{}
+	extendedFieldSet    map[string]struct{}
 }
 
-// providerMappings defines the per-provider RawData key to pricing field mappings.
-var providerMappings = map[string][]tokenCostMapping{
-	"openai": {
-		{rawDataKey: "cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "prompt_cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "reasoning_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
-		{rawDataKey: "completion_reasoning_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
-		{rawDataKey: "prompt_audio_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.AudioInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "completion_audio_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.AudioOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
-	},
-	"anthropic": {
-		{rawDataKey: "cache_read_input_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "cache_creation_input_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CacheWritePerMtok }, side: sideInput, unit: unitPerMtok},
-	},
-	"gemini": {
-		{rawDataKey: "cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "thought_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
-	},
-	"xai": {
-		{rawDataKey: "cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "prompt_cached_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, side: sideInput, unit: unitPerMtok},
-		{rawDataKey: "reasoning_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
-		{rawDataKey: "completion_reasoning_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, side: sideOutput, unit: unitPerMtok},
-		{rawDataKey: "image_tokens", pricingField: func(p *core.ModelPricing) *float64 { return p.InputPerImage }, side: sideInput, unit: unitPerItem},
-	},
+// costRegistryPtr is the package-level registry used by CalculateGranularCost
+// and stream_wrapper.go. Published atomically by RegisterCostMappings.
+var costRegistryPtr atomic.Pointer[costRegistry]
+
+func init() {
+	costRegistryPtr.Store(&costRegistry{
+		providerMappings:    make(map[string][]core.TokenCostMapping),
+		informationalFields: make(map[string]struct{}),
+		extendedFieldSet:    make(map[string]struct{}),
+	})
 }
 
-// informationalFields are token fields that are known breakdowns of the base
-// input/output counts. They never need separate pricing and should not trigger
-// "unmapped token field" caveats.
-var informationalFields = map[string]struct{}{
-	"prompt_text_tokens":                    {},
-	"prompt_image_tokens":                   {},
-	"completion_accepted_prediction_tokens": {},
-	"completion_rejected_prediction_tokens": {},
+// loadCostRegistry returns the current cost registry. Never returns nil.
+func loadCostRegistry() *costRegistry {
+	return costRegistryPtr.Load()
 }
 
-// extendedFieldSet is derived from providerMappings and contains all RawData keys
-// that providers may report. Used by stream_wrapper.go to extract extended fields
-// from SSE usage data without maintaining a separate hard-coded list.
-var extendedFieldSet = func() map[string]struct{} {
-	set := make(map[string]struct{})
-	for _, mappings := range providerMappings {
-		for _, m := range mappings {
-			set[m.rawDataKey] = struct{}{}
+// RegisterCostMappings populates the cost registry with provider-specific mappings
+// and informational fields. Called once at startup after providers are registered.
+func RegisterCostMappings(mappings map[string][]core.TokenCostMapping, informational []string) {
+	reg := &costRegistry{
+		providerMappings:    mappings,
+		informationalFields: make(map[string]struct{}, len(informational)),
+		extendedFieldSet:    make(map[string]struct{}),
+	}
+
+	for _, f := range informational {
+		reg.informationalFields[f] = struct{}{}
+	}
+
+	for _, ms := range mappings {
+		for _, m := range ms {
+			reg.extendedFieldSet[m.RawDataKey] = struct{}{}
 		}
 	}
-	return set
-}()
+
+	costRegistryPtr.Store(reg)
+}
 
 // CalculateGranularCost computes input, output, and total costs from token counts,
 // raw provider-specific data, and pricing information. It accounts for cached tokens,
@@ -100,6 +74,8 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 	if pricing == nil {
 		return CostResult{}
 	}
+
+	reg := loadCostRegistry()
 
 	var inputCost, outputCost float64
 	var hasInput, hasOutput bool
@@ -125,15 +101,15 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 	// rawData keys map to the same pricing field (e.g. cached_tokens and prompt_cached_tokens
 	// both map to CachedInputPerMtok).
 	appliedFields := make(map[*float64]bool)
-	if mappings, ok := providerMappings[providerType]; ok {
+	if mappings, ok := reg.providerMappings[providerType]; ok {
 		for _, m := range mappings {
-			count := extractInt(rawData, m.rawDataKey)
+			count := extractInt(rawData, m.RawDataKey)
 			if count == 0 {
 				continue
 			}
-			mappedKeys[m.rawDataKey] = true
+			mappedKeys[m.RawDataKey] = true
 
-			rate := m.pricingField(pricing)
+			rate := m.PricingField(pricing)
 			if rate == nil {
 				continue // Base rate covers this token type; no adjustment needed
 			}
@@ -144,20 +120,25 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 			appliedFields[rate] = true
 
 			var cost float64
-			switch m.unit {
-			case unitPerMtok:
+			switch m.Unit {
+			case core.CostUnitPerMtok:
 				cost = float64(count) * *rate / 1_000_000
-			case unitPerItem:
+			case core.CostUnitPerItem:
 				cost = float64(count) * *rate
+			default:
+				caveats = append(caveats, fmt.Sprintf("unknown cost unit %d for field %s", int(m.Unit), m.RawDataKey))
+				continue
 			}
 
-			switch m.side {
-			case sideInput:
+			switch m.Side {
+			case core.CostSideInput:
 				inputCost += cost
 				hasInput = true
-			case sideOutput:
+			case core.CostSideOutput:
 				outputCost += cost
 				hasOutput = true
+			default:
+				caveats = append(caveats, fmt.Sprintf("unknown cost side %d for field %s", int(m.Side), m.RawDataKey))
 			}
 		}
 	}
@@ -167,7 +148,7 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 		if mappedKeys[key] {
 			continue
 		}
-		if _, ok := informationalFields[key]; ok {
+		if _, ok := reg.informationalFields[key]; ok {
 			continue // Known breakdown of base counts, not separately priced
 		}
 		if isTokenField(key) {

@@ -3,6 +3,7 @@ package providers
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"gomodel/config"
@@ -21,21 +22,23 @@ type ProviderConstructor func(apiKey string, opts ProviderOptions) core.Provider
 
 // Registration contains metadata for registering a provider with the factory.
 type Registration struct {
-	Type string
-	New  ProviderConstructor
+	Type                string
+	New                 ProviderConstructor
+	CostMappings        []core.TokenCostMapping // optional: provider-specific token cost mappings
+	InformationalFields []string                // optional: known breakdown fields that need no separate pricing
 }
 
 // ProviderFactory manages provider registration and creation.
 type ProviderFactory struct {
-	mu       sync.RWMutex
-	builders map[string]ProviderConstructor
-	hooks    llmclient.Hooks
+	mu            sync.RWMutex
+	registrations map[string]Registration
+	hooks         llmclient.Hooks
 }
 
 // NewProviderFactory creates a new provider factory instance.
 func NewProviderFactory() *ProviderFactory {
 	return &ProviderFactory{
-		builders: make(map[string]ProviderConstructor),
+		registrations: make(map[string]Registration),
 	}
 }
 
@@ -58,13 +61,13 @@ func (f *ProviderFactory) Add(reg Registration) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.builders[reg.Type] = reg.New
+	f.registrations[reg.Type] = reg
 }
 
 // Create instantiates a provider based on its resolved configuration.
 func (f *ProviderFactory) Create(cfg ProviderConfig) (core.Provider, error) {
 	f.mu.RLock()
-	builder, ok := f.builders[cfg.Type]
+	reg, ok := f.registrations[cfg.Type]
 	hooks := f.hooks
 	f.mu.RUnlock()
 
@@ -77,7 +80,7 @@ func (f *ProviderFactory) Create(cfg ProviderConfig) (core.Provider, error) {
 		Resilience: cfg.Resilience,
 	}
 
-	p := builder(cfg.APIKey, opts)
+	p := reg.New(cfg.APIKey, opts)
 
 	if cfg.BaseURL != "" {
 		if setter, ok := p.(interface{ SetBaseURL(string) }); ok {
@@ -93,9 +96,34 @@ func (f *ProviderFactory) RegisteredTypes() []string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	types := make([]string, 0, len(f.builders))
-	for t := range f.builders {
+	types := make([]string, 0, len(f.registrations))
+	for t := range f.registrations {
 		types = append(types, t)
 	}
 	return types
+}
+
+// CostRegistry returns aggregated cost mappings and informational fields from all
+// registered providers. The returned map is keyed by provider type.
+func (f *ProviderFactory) CostRegistry() (mappings map[string][]core.TokenCostMapping, informationalFields []string) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	mappings = make(map[string][]core.TokenCostMapping)
+	seen := make(map[string]struct{})
+
+	for _, reg := range f.registrations {
+		if len(reg.CostMappings) > 0 {
+			mappings[reg.Type] = reg.CostMappings
+		}
+		for _, field := range reg.InformationalFields {
+			if _, ok := seen[field]; !ok {
+				seen[field] = struct{}{}
+				informationalFields = append(informationalFields, field)
+			}
+		}
+	}
+
+	sort.Strings(informationalFields)
+	return mappings, informationalFields
 }

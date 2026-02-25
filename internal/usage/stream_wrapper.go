@@ -233,7 +233,7 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 
 	// Extract extended usage data (provider-specific) using the field set
 	// derived from providerMappings in cost.go (single source of truth).
-	for field := range extendedFieldSet {
+	for field := range loadCostRegistry().extendedFieldSet {
 		if v, ok := usageMap[field].(float64); ok && v > 0 {
 			rawData[field] = int(v)
 		}
