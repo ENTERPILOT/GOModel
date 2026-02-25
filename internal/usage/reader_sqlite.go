@@ -24,30 +24,12 @@ func NewSQLiteReader(db *sql.DB) (*SQLiteReader, error) {
 
 // GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
-	var query string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
+	conditions, args := sqliteDateRangeConditions(params)
+	where := buildWhereClause(conditions)
 
 	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
-
-	if !startZero && !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM usage WHERE timestamp >= ? AND timestamp < ?`
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	} else if !startZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM usage WHERE timestamp >= ?`
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
-	} else if !endZero {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM usage WHERE timestamp < ?`
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	} else {
-		query = `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
-			FROM usage`
-	}
+	query := `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
+			FROM usage` + where
 
 	summary := &UsageSummary{}
 	err := r.db.QueryRowContext(ctx, query, args...).Scan(
@@ -63,30 +45,12 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 
 // GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
-	var query string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
+	conditions, args := sqliteDateRangeConditions(params)
+	where := buildWhereClause(conditions)
 
 	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
-
-	if !startZero && !endZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM usage WHERE timestamp >= ? AND timestamp < ? GROUP BY model, provider`
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	} else if !startZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM usage WHERE timestamp >= ? GROUP BY model, provider`
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
-	} else if !endZero {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM usage WHERE timestamp < ? GROUP BY model, provider`
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	} else {
-		query = `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM usage GROUP BY model, provider`
-	}
+	query := `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM usage` + where + ` GROUP BY model, provider`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -114,22 +78,7 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
-	var conditions []string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
-		conditions = append(conditions, "timestamp >= ?", "timestamp < ?")
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	} else if !startZero {
-		conditions = append(conditions, "timestamp >= ?")
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
-	} else if !endZero {
-		conditions = append(conditions, "timestamp < ?")
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	}
+	conditions, args := sqliteDateRangeConditions(params.UsageQueryParams)
 
 	if params.Model != "" {
 		conditions = append(conditions, "model = ?")
@@ -208,6 +157,20 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 	}, nil
 }
 
+// sqliteDateRangeConditions returns WHERE conditions and args for a date range.
+// Dates are formatted as "2006-01-02" strings for SQLite text comparison.
+func sqliteDateRangeConditions(params UsageQueryParams) (conditions []string, args []interface{}) {
+	if !params.StartDate.IsZero() {
+		conditions = append(conditions, "timestamp >= ?")
+		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
+	}
+	if !params.EndDate.IsZero() {
+		conditions = append(conditions, "timestamp < ?")
+		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
+	}
+	return conditions, args
+}
+
 func sqliteGroupExpr(interval string) string {
 	switch interval {
 	case "weekly":
@@ -229,22 +192,8 @@ func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParam
 	}
 	groupExpr := sqliteGroupExpr(interval)
 
-	var where string
-	var args []interface{}
-
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
-		where = ` WHERE timestamp >= ? AND timestamp < ?`
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"), params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	} else if !startZero {
-		where = ` WHERE timestamp >= ?`
-		args = append(args, params.StartDate.UTC().Format("2006-01-02"))
-	} else if !endZero {
-		where = ` WHERE timestamp < ?`
-		args = append(args, params.EndDate.AddDate(0, 0, 1).UTC().Format("2006-01-02"))
-	}
+	conditions, args := sqliteDateRangeConditions(params)
+	where := buildWhereClause(conditions)
 
 	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)
 		FROM usage%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
