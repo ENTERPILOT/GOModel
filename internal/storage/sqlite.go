@@ -34,15 +34,24 @@ func NewSQLite(cfg SQLiteConfig) (Storage, error) {
 		return nil, fmt.Errorf("failed to open SQLite database: %w", err)
 	}
 
-	// Allow multiple readers to operate concurrently. WAL mode handles this natively.
-	// We keep a modest pool to prevent file descriptor exhaustion.
-	db.SetMaxOpenConns(16)
-	db.SetMaxIdleConns(4)
+	// Serialize all SQLite access through a single connection.
+	// SQLite only permits one writer at a time. With multiple open connections,
+	// concurrent flush loops (audit log + usage tracking) cause SQLITE_BUSY errors.
+	// A single connection lets database/sql queue callers in Go, eliminating contention.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to ping SQLite database: %w", err)
+	}
+
+	// Set busy_timeout explicitly as defense-in-depth. The DSN parameter may not be
+	// honored reliably by the pure-Go driver across pooled connections.
+	if _, err := db.Exec("PRAGMA busy_timeout = 5000"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to set busy_timeout pragma: %w", err)
 	}
 
 	return &sqliteStorage{db: db}, nil
