@@ -9,14 +9,21 @@ import (
 	"gomodel/internal/core"
 )
 
+// maxEventBufferRemainder is a safety valve for the event buffer remainder.
+// If an incomplete event exceeds this size, it's discarded to prevent unbounded memory growth.
+const maxEventBufferRemainder = 256 * 1024 // 256KB
+
 // StreamUsageWrapper wraps an io.ReadCloser to capture usage data from SSE streams.
-// It buffers the last portion of the stream to extract token usage from the
-// final SSE event (typically contains usage data in OpenAI-compatible APIs).
+// It incrementally parses SSE events as they arrive (on each \n\n boundary),
+// extracting and caching usage data immediately when found. This handles
+// arbitrarily large events like the Responses API's response.completed which includes
+// the full response object alongside usage data.
 type StreamUsageWrapper struct {
 	io.ReadCloser
 	logger          LoggerInterface
 	pricingResolver PricingResolver
-	buffer          bytes.Buffer // rolling buffer for usage extraction
+	eventBuffer     bytes.Buffer // accumulates raw bytes until \n\n found
+	cachedEntry     *UsageEntry  // stores extracted usage from latest event containing it
 	model           string
 	provider        string
 	requestID       string
@@ -25,7 +32,7 @@ type StreamUsageWrapper struct {
 }
 
 // NewStreamUsageWrapper creates a wrapper around a stream to capture usage data.
-// When the stream is closed, it parses the final usage data and logs the entry.
+// When the stream is closed, it logs the cached usage entry if one was found.
 func NewStreamUsageWrapper(stream io.ReadCloser, logger LoggerInterface, model, provider, requestID, endpoint string, pricingResolver PricingResolver) *StreamUsageWrapper {
 	return &StreamUsageWrapper{
 		ReadCloser:      stream,
@@ -38,58 +45,111 @@ func NewStreamUsageWrapper(stream io.ReadCloser, logger LoggerInterface, model, 
 	}
 }
 
-// Read implements io.Reader and buffers recent data to find usage.
+// Read implements io.Reader. It reads from the underlying stream and incrementally
+// parses complete SSE events to extract usage data as they arrive.
 func (w *StreamUsageWrapper) Read(p []byte) (n int, err error) {
 	n, err = w.ReadCloser.Read(p)
 	if n > 0 {
-		// Buffer recent data to parse final usage event
-		if _, errBuf := w.buffer.Write(p[:n]); errBuf != nil {
-			return n, errBuf
-		}
-		// Keep only last SSEBufferSize bytes to find usage
-		if w.buffer.Len() > SSEBufferSize {
-			// Discard old data, keep recent
-			data := w.buffer.Bytes()
-			w.buffer.Reset()
-			if _, errBuf := w.buffer.Write(data[len(data)-SSEBufferSize:]); errBuf != nil {
-				return n, errBuf
-			}
-		}
+		w.eventBuffer.Write(p[:n])
+		w.processCompleteEvents()
 	}
 	return n, err
 }
 
-// Close implements io.Closer, parses usage data, and logs the entry.
+// processCompleteEvents scans the event buffer for complete SSE events (delimited by \n\n),
+// extracts usage from each, and keeps only the unprocessed remainder.
+func (w *StreamUsageWrapper) processCompleteEvents() {
+	data := w.eventBuffer.Bytes()
+
+	// Find the last complete event boundary
+	lastBoundary := bytes.LastIndex(data, []byte("\n\n"))
+	if lastBoundary < 0 {
+		// No complete event yet — apply safety valve on remainder size.
+		// Trim to keep only the newest bytes so partial events are preserved.
+		if w.eventBuffer.Len() > maxEventBufferRemainder {
+			tail := w.eventBuffer.Bytes()
+			start := len(tail) - maxEventBufferRemainder
+			w.eventBuffer.Reset()
+			w.eventBuffer.Write(tail[start:])
+		}
+		return
+	}
+
+	// Split into complete events and remainder
+	completeData := data[:lastBoundary]
+	remainder := data[lastBoundary+2:] // skip the \n\n
+
+	// Process each complete event
+	events := bytes.Split(completeData, []byte("\n\n"))
+	for _, event := range events {
+		if len(event) == 0 || bytes.Contains(event, []byte("[DONE]")) {
+			continue
+		}
+
+		// Find data line(s) in this event
+		lines := bytes.Split(event, []byte("\n"))
+		for _, line := range lines {
+			trimmed := line
+			// Skip "event:" lines
+			if bytes.HasPrefix(trimmed, []byte("event:")) {
+				continue
+			}
+			if bytes.HasPrefix(trimmed, []byte("data: ")) {
+				jsonData := bytes.TrimPrefix(trimmed, []byte("data: "))
+				entry := w.extractUsageFromJSON(jsonData)
+				if entry != nil {
+					w.cachedEntry = entry
+				}
+			}
+		}
+	}
+
+	// Keep only the remainder
+	w.eventBuffer.Reset()
+	if len(remainder) > 0 {
+		// Safety valve on remainder size — trim to keep newest bytes
+		if len(remainder) > maxEventBufferRemainder {
+			remainder = remainder[len(remainder)-maxEventBufferRemainder:]
+		}
+		w.eventBuffer.Write(remainder)
+	}
+}
+
+// Close implements io.Closer. It processes any remaining buffer data,
+// logs the cached usage entry if found, and closes the underlying stream.
 func (w *StreamUsageWrapper) Close() error {
 	if w.closed {
 		return nil
 	}
 	w.closed = true
 
-	// Parse final usage from buffered SSE data
-	entry := w.parseUsageFromSSE(w.buffer.Bytes())
-	if entry != nil && w.logger != nil {
-		w.logger.Write(entry)
+	// Process any remaining data in the buffer as a final attempt
+	if w.eventBuffer.Len() > 0 {
+		entry := w.parseRemainingBuffer(w.eventBuffer.Bytes())
+		if entry != nil {
+			w.cachedEntry = entry
+		}
+	}
+
+	// Log the cached entry
+	if w.cachedEntry != nil && w.logger != nil {
+		w.logger.Write(w.cachedEntry)
 	}
 
 	return w.ReadCloser.Close()
 }
 
-// parseUsageFromSSE extracts usage data from SSE stream buffer.
-// OpenAI and compatible APIs include usage in the final event before [DONE].
-func (w *StreamUsageWrapper) parseUsageFromSSE(data []byte) *UsageEntry {
-	// Split into SSE events
+// parseRemainingBuffer is a fallback parser for any unterminated data left in the buffer
+// at Close time. It splits on \n\n and searches for usage data.
+func (w *StreamUsageWrapper) parseRemainingBuffer(data []byte) *UsageEntry {
 	events := bytes.Split(data, []byte("\n\n"))
 
-	// Search from the end for usage data
 	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
-		// Skip empty events and [DONE]
 		if len(event) == 0 || bytes.Contains(event, []byte("[DONE]")) {
 			continue
 		}
 
-		// Find data line
 		lines := bytes.Split(event, []byte("\n"))
 		for _, line := range lines {
 			if bytes.HasPrefix(line, []byte("data: ")) {
@@ -126,9 +186,9 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 	usageRaw, ok := chunk["usage"]
 
 	// If not found at top level, check for Responses API format:
-	// {"type": "response.done", "response": {"id": "...", "usage": {...}}}
+	// {"type": "response.completed", "response": {"id": "...", "usage": {...}}}
 	if !ok {
-		if eventType, _ := chunk["type"].(string); eventType == "response.done" {
+		if eventType, _ := chunk["type"].(string); eventType == "response.completed" || eventType == "response.done" {
 			if response, respOk := chunk["response"].(map[string]interface{}); respOk {
 				usageRaw, ok = response["usage"]
 				// Extract provider ID and model from response object

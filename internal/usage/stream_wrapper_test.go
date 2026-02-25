@@ -246,3 +246,177 @@ data: [DONE]
 		t.Errorf("expected 1 entry (not 2 from double close), got %d", len(entries))
 	}
 }
+
+func TestStreamUsageWrapperResponsesAPI(t *testing.T) {
+	// Responses API format with event: prefixes and response.completed containing nested response.usage
+	streamData := `event: response.created
+data: {"type":"response.created","response":{"id":"resp-123","object":"response","status":"in_progress","model":"gpt-5"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"Hello"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":" world!"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp-123","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_001","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello world!"}]}],"usage":{"input_tokens":15,"output_tokens":8,"total_tokens":23}}}
+
+data: [DONE]
+
+`
+	logger := &trackingLogger{enabled: true}
+	stream := io.NopCloser(strings.NewReader(streamData))
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-5", "openai", "req-resp-1", "/v1/responses", nil)
+
+	data, err := io.ReadAll(wrapper)
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+
+	if string(data) != streamData {
+		t.Errorf("data mismatch: got %d bytes, want %d bytes", len(data), len(streamData))
+	}
+
+	if err := wrapper.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	entries := logger.getEntries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+
+	entry := entries[0]
+	if entry.InputTokens != 15 {
+		t.Errorf("InputTokens = %d, want 15", entry.InputTokens)
+	}
+	if entry.OutputTokens != 8 {
+		t.Errorf("OutputTokens = %d, want 8", entry.OutputTokens)
+	}
+	if entry.TotalTokens != 23 {
+		t.Errorf("TotalTokens = %d, want 23", entry.TotalTokens)
+	}
+	if entry.ProviderID != "resp-123" {
+		t.Errorf("ProviderID = %s, want resp-123", entry.ProviderID)
+	}
+	if entry.Model != "gpt-5" {
+		t.Errorf("Model = %s, want gpt-5", entry.Model)
+	}
+}
+
+func TestStreamUsageWrapperLargeResponsesDone(t *testing.T) {
+	// Regression test: response.completed event >8KB should not lose usage data.
+	// The old rolling 8KB buffer would truncate the beginning of this event.
+
+	// Build a large output content to push the response.completed event well over 8KB
+	largeText := strings.Repeat("This is a long response from the model. ", 300) // ~12KB of text
+
+	streamData := `event: response.created
+data: {"type":"response.created","response":{"id":"resp-large","object":"response","status":"in_progress","model":"gpt-5"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"start"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp-large","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_001","type":"message","role":"assistant","content":[{"type":"output_text","text":"` + largeText + `"}]}],"usage":{"input_tokens":100,"output_tokens":500,"total_tokens":600}}}
+
+data: [DONE]
+
+`
+
+	// Verify the response.completed event is actually >8KB
+	doneEventStart := strings.Index(streamData, `data: {"type":"response.completed"`)
+	doneEventEnd := strings.Index(streamData[doneEventStart:], "\n\n")
+	doneEventSize := doneEventEnd
+	if doneEventSize <= 8192 {
+		t.Fatalf("test setup error: response.completed event is only %d bytes, need >8192", doneEventSize)
+	}
+
+	logger := &trackingLogger{enabled: true}
+	stream := io.NopCloser(strings.NewReader(streamData))
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-5", "openai", "req-large", "/v1/responses", nil)
+
+	data, err := io.ReadAll(wrapper)
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+
+	if string(data) != streamData {
+		t.Errorf("data mismatch: got %d bytes, want %d bytes", len(data), len(streamData))
+	}
+
+	if err := wrapper.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	entries := logger.getEntries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d (usage was lost from large response.completed event)", len(entries))
+	}
+
+	entry := entries[0]
+	if entry.InputTokens != 100 {
+		t.Errorf("InputTokens = %d, want 100", entry.InputTokens)
+	}
+	if entry.OutputTokens != 500 {
+		t.Errorf("OutputTokens = %d, want 500", entry.OutputTokens)
+	}
+	if entry.TotalTokens != 600 {
+		t.Errorf("TotalTokens = %d, want 600", entry.TotalTokens)
+	}
+	if entry.ProviderID != "resp-large" {
+		t.Errorf("ProviderID = %s, want resp-large", entry.ProviderID)
+	}
+}
+
+func TestStreamUsageWrapperSmallReads(t *testing.T) {
+	// Fragmented reads (7-byte chunks) to verify cross-boundary event detection
+	streamData := `data: {"id":"chatcmpl-frag","object":"chat.completion.chunk","model":"gpt-4","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}
+
+data: [DONE]
+
+`
+	logger := &trackingLogger{enabled: true}
+	stream := io.NopCloser(strings.NewReader(streamData))
+	wrapper := NewStreamUsageWrapper(stream, logger, "gpt-4", "openai", "req-frag", "/v1/chat/completions", nil)
+
+	// Read in small chunks of 7 bytes
+	buf := make([]byte, 7)
+	var allData []byte
+	for {
+		n, err := wrapper.Read(buf)
+		if n > 0 {
+			allData = append(allData, buf[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Read error: %v", err)
+		}
+	}
+
+	if string(allData) != streamData {
+		t.Errorf("data mismatch: got %d bytes, want %d bytes", len(allData), len(streamData))
+	}
+
+	if err := wrapper.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+
+	entries := logger.getEntries()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+
+	entry := entries[0]
+	if entry.InputTokens != 5 {
+		t.Errorf("InputTokens = %d, want 5", entry.InputTokens)
+	}
+	if entry.OutputTokens != 3 {
+		t.Errorf("OutputTokens = %d, want 3", entry.OutputTokens)
+	}
+	if entry.TotalTokens != 8 {
+		t.Errorf("TotalTokens = %d, want 8", entry.TotalTokens)
+	}
+}

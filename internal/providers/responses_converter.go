@@ -24,7 +24,7 @@ type OpenAIResponsesStreamConverter struct {
 	closed      bool
 	sentCreate  bool
 	sentDone    bool
-	cachedUsage map[string]interface{} // Stores usage from final chunk for inclusion in response.done
+	cachedUsage map[string]interface{} // Stores usage from final chunk for inclusion in response.completed
 }
 
 // NewOpenAIResponsesStreamConverter creates a new converter that transforms
@@ -118,15 +118,15 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 							responseData["usage"] = sc.cachedUsage
 						}
 						doneEvent := map[string]interface{}{
-							"type":     "response.done",
+							"type":     "response.completed",
 							"response": responseData,
 						}
 						jsonData, err := json.Marshal(doneEvent)
 						if err != nil {
-							slog.Error("failed to marshal response.done event", "error", err, "response_id", sc.responseID)
+							slog.Error("failed to marshal response.completed event", "error", err, "response_id", sc.responseID)
 							continue
 						}
-						doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+						doneMsg := fmt.Sprintf("event: response.completed\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 						sc.buffer = append(sc.buffer, []byte(doneMsg)...)
 					}
 					continue
@@ -184,14 +184,14 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 					responseData["usage"] = sc.cachedUsage
 				}
 				doneEvent := map[string]interface{}{
-					"type":     "response.done",
+					"type":     "response.completed",
 					"response": responseData,
 				}
 				jsonData, err := json.Marshal(doneEvent)
 				if err != nil {
-					slog.Error("failed to marshal final response.done event", "error", err, "response_id", sc.responseID)
+					slog.Error("failed to marshal final response.completed event", "error", err, "response_id", sc.responseID)
 				} else {
-					doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+					doneMsg := fmt.Sprintf("event: response.completed\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 					sc.buffer = append(sc.buffer, []byte(doneMsg)...)
 				}
 			}

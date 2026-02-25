@@ -640,8 +640,8 @@ data: {"type":"response.output_text.delta","delta":"Hello"}
 event: response.output_text.delta
 data: {"type":"response.output_text.delta","delta":"!"}
 
-event: response.done
-data: {"type":"response.done","response":{"id":"resp_123","object":"response","status":"completed","model":"grok-2"}}
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_123","object":"response","status":"completed","model":"grok-2"}}
 
 data: [DONE]
 `,

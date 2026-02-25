@@ -578,7 +578,7 @@ func (c *capturingProvider) StreamResponses(_ context.Context, req *core.Respons
 }
 
 func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
-	streamData := "data: {\"type\":\"response.done\"}\n\ndata: [DONE]\n\n"
+	streamData := "data: {\"type\":\"response.completed\"}\n\ndata: [DONE]\n\n"
 	provider := &capturingProvider{
 		mockProvider: mockProvider{
 			supportedModels: []string{"gpt-4o-mini"},

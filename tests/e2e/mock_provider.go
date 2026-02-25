@@ -325,19 +325,24 @@ func (m *MockLLMServer) handleResponsesStreaming(w http.ResponseWriter, req core
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Send response.done event
+	// Send response.completed event
 	doneEvent := map[string]interface{}{
-		"type": "response.done",
+		"type": "response.completed",
 		"response": map[string]interface{}{
 			"id":         responseID,
 			"object":     "response",
 			"status":     "completed",
 			"model":      req.Model,
 			"created_at": time.Now().Unix(),
+			"usage": map[string]interface{}{
+				"input_tokens":  10,
+				"output_tokens": 20,
+				"total_tokens":  30,
+			},
 		},
 	}
 	data, _ = json.Marshal(doneEvent)
-	_, _ = fmt.Fprintf(w, "event: response.done\ndata: %s\n\n", data)
+	_, _ = fmt.Fprintf(w, "event: response.completed\ndata: %s\n\n", data)
 	flusher.Flush()
 
 	// Send [DONE] marker
