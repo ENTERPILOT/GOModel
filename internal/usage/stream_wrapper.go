@@ -64,9 +64,13 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 	// Find the last complete event boundary
 	lastBoundary := bytes.LastIndex(data, []byte("\n\n"))
 	if lastBoundary < 0 {
-		// No complete event yet — apply safety valve on remainder size
+		// No complete event yet — apply safety valve on remainder size.
+		// Trim to keep only the newest bytes so partial events are preserved.
 		if w.eventBuffer.Len() > maxEventBufferRemainder {
+			tail := w.eventBuffer.Bytes()
+			start := len(tail) - maxEventBufferRemainder
 			w.eventBuffer.Reset()
+			w.eventBuffer.Write(tail[start:])
 		}
 		return
 	}
@@ -103,10 +107,11 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 	// Keep only the remainder
 	w.eventBuffer.Reset()
 	if len(remainder) > 0 {
-		// Safety valve on remainder size
-		if len(remainder) <= maxEventBufferRemainder {
-			w.eventBuffer.Write(remainder)
+		// Safety valve on remainder size — trim to keep newest bytes
+		if len(remainder) > maxEventBufferRemainder {
+			remainder = remainder[len(remainder)-maxEventBufferRemainder:]
 		}
+		w.eventBuffer.Write(remainder)
 	}
 }
 
