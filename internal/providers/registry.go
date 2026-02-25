@@ -34,6 +34,12 @@ type ModelRegistry struct {
 	initMu        sync.Mutex               // protects initialized flag
 	modelList     *modeldata.ModelList      // parsed model list (nil = not loaded)
 	modelListRaw  json.RawMessage           // raw bytes for cache persistence
+
+	// Cached sorted slices, rebuilt lazily after models change.
+	// nil means cache needs rebuilding. Protected by mu.
+	sortedModels             []core.Model
+	sortedModelsWithProvider []ModelWithProvider
+	categoryCache            map[core.ModelCategory][]ModelWithProvider
 }
 
 // NewModelRegistry creates a new model registry
@@ -50,6 +56,14 @@ func (r *ModelRegistry) SetCache(c cache.Cache) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cache = c
+}
+
+// invalidateSortedCaches clears cached sorted slices so they are rebuilt lazily.
+// Must be called while holding the write lock (r.mu.Lock).
+func (r *ModelRegistry) invalidateSortedCaches() {
+	r.sortedModels = nil
+	r.sortedModelsWithProvider = nil
+	r.categoryCache = nil
 }
 
 // RegisterProvider adds a provider to the registry
@@ -129,9 +143,10 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 		modeldata.Enrich(accessor, list)
 	}
 
-	// Atomically swap the models map
+	// Atomically swap the models map and invalidate sorted caches
 	r.mu.Lock()
 	r.models = newModels
+	r.invalidateSortedCaches()
 	r.mu.Unlock()
 
 	// Mark as initialized
@@ -220,6 +235,7 @@ func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 
 	r.mu.Lock()
 	r.models = newModels
+	r.invalidateSortedCaches()
 	if list != nil {
 		r.modelList = list
 		r.modelListRaw = modelCache.ModelListData
@@ -353,21 +369,31 @@ func (r *ModelRegistry) Supports(model string) bool {
 }
 
 // ListModels returns all models in the registry, sorted by model ID for consistent ordering.
+// The sorted slice is cached and rebuilt only when the underlying models change.
+// Returns a defensive copy so callers cannot mutate the internal cache.
 func (r *ModelRegistry) ListModels() []core.Model {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	if cached := r.sortedModels; cached != nil {
+		r.mu.RUnlock()
+		return append([]core.Model(nil), cached...)
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// Double-check: another goroutine may have built it while we waited for the lock.
+	if r.sortedModels != nil {
+		return append([]core.Model(nil), r.sortedModels...)
+	}
 
 	models := make([]core.Model, 0, len(r.models))
 	for _, info := range r.models {
 		models = append(models, info.Model)
 	}
+	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 
-	// Sort by model ID for consistent ordering across calls
-	sort.Slice(models, func(i, j int) bool {
-		return models[i].ID < models[j].ID
-	})
-
-	return models
+	r.sortedModels = models
+	return append([]core.Model(nil), models...)
 }
 
 // ModelCount returns the number of registered models
@@ -398,9 +424,21 @@ type ModelWithProvider struct {
 }
 
 // ListModelsWithProvider returns all models with their provider types, sorted by model ID.
+// The sorted slice is cached and rebuilt only when the underlying models change.
+// Returns a defensive copy so callers cannot mutate the internal cache.
 func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	if cached := r.sortedModelsWithProvider; cached != nil {
+		r.mu.RUnlock()
+		return append([]ModelWithProvider(nil), cached...)
+	}
+	r.mu.RUnlock()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sortedModelsWithProvider != nil {
+		return append([]ModelWithProvider(nil), r.sortedModelsWithProvider...)
+	}
 
 	result := make([]ModelWithProvider, 0, len(r.models))
 	for _, info := range r.models {
@@ -409,37 +447,71 @@ func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 			ProviderType: r.providerTypes[info.Provider],
 		})
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Model.ID < result[j].Model.ID })
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Model.ID < result[j].Model.ID
-	})
+	r.sortedModelsWithProvider = result
+	return append([]ModelWithProvider(nil), result...)
+}
 
-	return result
+// cacheableCategory reports whether category is a known value that should be cached.
+// CategoryAll is handled separately (delegates to ListModelsWithProvider).
+var cacheableCategories = map[core.ModelCategory]struct{}{
+	core.CategoryTextGeneration: {},
+	core.CategoryEmbedding:      {},
+	core.CategoryImage:          {},
+	core.CategoryAudio:          {},
+	core.CategoryVideo:          {},
+	core.CategoryUtility:        {},
 }
 
 // ListModelsWithProviderByCategory returns models filtered by category, sorted by model ID.
 // If category is CategoryAll, returns all models (same as ListModelsWithProvider).
+// Results for known categories are cached and rebuilt only when the underlying models change.
+// Returns a defensive copy so callers cannot mutate the internal cache.
 func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCategory) []ModelWithProvider {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	if category == core.CategoryAll {
+		return r.ListModelsWithProvider()
+	}
+
+	_, cacheable := cacheableCategories[category]
+
+	if cacheable {
+		r.mu.RLock()
+		if r.categoryCache != nil {
+			if cached, ok := r.categoryCache[category]; ok {
+				r.mu.RUnlock()
+				return append([]ModelWithProvider(nil), cached...)
+			}
+		}
+		r.mu.RUnlock()
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if cacheable && r.categoryCache != nil {
+		if cached, ok := r.categoryCache[category]; ok {
+			return append([]ModelWithProvider(nil), cached...)
+		}
+	}
 
 	result := make([]ModelWithProvider, 0)
 	for _, info := range r.models {
-		if category != core.CategoryAll {
-			if info.Model.Metadata == nil || !hasCategory(info.Model.Metadata.Categories, category) {
-				continue
-			}
+		if info.Model.Metadata == nil || !hasCategory(info.Model.Metadata.Categories, category) {
+			continue
 		}
 		result = append(result, ModelWithProvider{
 			Model:        info.Model,
 			ProviderType: r.providerTypes[info.Provider],
 		})
 	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Model.ID < result[j].Model.ID })
 
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].Model.ID < result[j].Model.ID
-	})
-
+	if cacheable {
+		if r.categoryCache == nil {
+			r.categoryCache = make(map[core.ModelCategory][]ModelWithProvider)
+		}
+		r.categoryCache[category] = result
+	}
 	return result
 }
 
@@ -540,6 +612,7 @@ func (r *ModelRegistry) EnrichModels() {
 
 	accessor := &registryAccessor{models: r.models, providerTypes: providerTypes}
 	modeldata.Enrich(accessor, r.modelList)
+	r.invalidateSortedCaches()
 }
 
 // ResolveMetadata resolves metadata for a model directly via the stored model list,
