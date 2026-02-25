@@ -17,6 +17,7 @@ type Logger struct {
 	buffer        chan *LogEntry
 	done          chan struct{}
 	wg            sync.WaitGroup
+	writes        sync.WaitGroup // tracks in-flight Write calls
 	flushInterval time.Duration
 	closed        atomic.Bool
 }
@@ -58,6 +59,15 @@ func (l *Logger) Write(entry *LogEntry) {
 		return
 	}
 
+	// Track this write to prevent Close from closing buffer while we're sending
+	l.writes.Add(1)
+	defer l.writes.Done()
+
+	// Double-check after registering - Close() may have set closed between first check and Add(1)
+	if l.closed.Load() {
+		return
+	}
+
 	select {
 	case l.buffer <- entry:
 		// Entry queued successfully
@@ -81,7 +91,16 @@ func (l *Logger) Config() Config {
 
 // Close stops the logger and flushes remaining entries.
 // This should be called during graceful shutdown.
+// Close is idempotent - calling it multiple times is safe.
 func (l *Logger) Close() error {
+	// Make Close idempotent - if already closed, return immediately
+	if l.closed.Swap(true) {
+		return nil
+	}
+
+	// Wait for any in-flight Write calls to complete
+	l.writes.Wait()
+
 	// Signal the flush loop to stop
 	close(l.done)
 
@@ -119,9 +138,8 @@ func (l *Logger) flushLoop() {
 			}
 
 		case <-l.done:
-			// Shutdown: mark as closed so Write() stops sending
-			l.closed.Store(true)
-			// Drain remaining entries from buffer using non-blocking loop.
+			// Shutdown: drain remaining entries from buffer using non-blocking loop.
+			// Note: l.closed is already set by Close() before sending on l.done.
 			// We do NOT close(l.buffer) — closing is unnecessary since flushLoop
 			// exits via l.done, and closing creates a race with concurrent Write() calls.
 			for {
