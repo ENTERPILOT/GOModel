@@ -105,21 +105,19 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 		}
 	}
 
-	// Keep only the remainder
-	w.eventBuffer.Reset()
-	if len(remainder) > 0 {
-		// Safety valve on remainder size — trim to keep newest bytes
-		if len(remainder) > maxEventBufferRemainder {
-			remainder = remainder[len(remainder)-maxEventBufferRemainder:]
-		}
-		// Prevent capacity leak: if the buffer grew much larger than needed
-		// (e.g. from a single large SSE event), replace it with a right-sized one
-		// instead of reusing the oversized backing array.
-		if w.eventBuffer.Cap() > maxEventBufferRemainder*2 {
-			w.eventBuffer = *bytes.NewBuffer(remainder)
-		} else {
-			w.eventBuffer.Write(remainder)
-		}
+	// Keep only the remainder, preventing capacity leaks from oversized buffers.
+	// remainder is a sub-slice of w.eventBuffer's backing array, so we must copy
+	// it before replacing the buffer to avoid retaining the old oversized array.
+	if len(remainder) > maxEventBufferRemainder {
+		remainder = remainder[len(remainder)-maxEventBufferRemainder:]
+	}
+	if w.eventBuffer.Cap() > maxEventBufferRemainder*2 {
+		copied := make([]byte, len(remainder))
+		copy(copied, remainder)
+		w.eventBuffer = *bytes.NewBuffer(copied)
+	} else {
+		w.eventBuffer.Reset()
+		w.eventBuffer.Write(remainder)
 	}
 }
 
