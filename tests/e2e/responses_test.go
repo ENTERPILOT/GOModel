@@ -143,7 +143,7 @@ func TestResponsesStreaming(t *testing.T) {
 	t.Run("streaming does not inject stream_options", func(t *testing.T) {
 		// Regression test for GOM-43: streaming Responses API must not include
 		// stream_options.include_usage, which is a Chat Completions-only parameter.
-		// The Responses API returns usage in the response.done event by default.
+		// The Responses API returns usage in the response.completed event by default.
 		payload := core.ResponsesRequest{
 			Model:  "gpt-4.1",
 			Input:  "Hello",

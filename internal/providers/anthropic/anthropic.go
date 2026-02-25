@@ -741,7 +741,7 @@ type responsesStreamConverter struct {
 	buffer      []byte
 	closed      bool
 	sentDone    bool
-	cachedUsage *anthropicUsage // Stores usage from message_delta for inclusion in response.done
+	cachedUsage *anthropicUsage // Stores usage from message_delta for inclusion in response.completed
 }
 
 func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
@@ -791,17 +791,17 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 						}
 					}
 					doneEvent := map[string]interface{}{
-						"type":     "response.done",
+						"type":     "response.completed",
 						"response": responseData,
 					}
 					jsonData, marshalErr := json.Marshal(doneEvent)
 					if marshalErr != nil {
-						slog.Error("failed to marshal response.done event", "error", marshalErr, "response_id", sc.responseID)
+						slog.Error("failed to marshal response.completed event", "error", marshalErr, "response_id", sc.responseID)
 						sc.closed = true
 						_ = sc.body.Close() //nolint:errcheck
 						return 0, io.EOF
 					}
-					doneMsg := fmt.Sprintf("event: response.done\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+					doneMsg := fmt.Sprintf("event: response.completed\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 					n = copy(p, doneMsg)
 					if n < len(doneMsg) {
 						sc.buffer = append(sc.buffer, []byte(doneMsg)[n:]...)
@@ -892,7 +892,7 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		}
 
 	case "message_delta":
-		// Capture usage data for inclusion in response.done
+		// Capture usage data for inclusion in response.completed
 		if event.Usage != nil {
 			sc.cachedUsage = event.Usage
 		}

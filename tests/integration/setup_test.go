@@ -477,9 +477,9 @@ func handleResponsesStream(w http.ResponseWriter, model string) {
 		flusher.Flush()
 	}
 
-	// Send response.done event with usage
+	// Send response.completed event with usage
 	doneEvent := map[string]interface{}{
-		"type": "response.done",
+		"type": "response.completed",
 		"response": map[string]interface{}{
 			"id":         "resp-test-stream",
 			"object":     "response",
@@ -494,7 +494,7 @@ func handleResponsesStream(w http.ResponseWriter, model string) {
 		},
 	}
 	data, _ = json.Marshal(doneEvent)
-	_, _ = fmt.Fprintf(w, "event: response.done\ndata: %s\n\n", data)
+	_, _ = fmt.Fprintf(w, "event: response.completed\ndata: %s\n\n", data)
 	flusher.Flush()
 }
 

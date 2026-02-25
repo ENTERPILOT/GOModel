@@ -221,7 +221,7 @@ func (w *StreamLogWrapper) parseResponsesAPIEvent(event map[string]interface{}) 
 	eventType, _ := event["type"].(string)
 
 	switch eventType {
-	case "response.created", "response.done":
+	case "response.created", "response.completed", "response.done":
 		// Extract response metadata
 		if resp, ok := event["response"].(map[string]interface{}); ok {
 			if id, ok := resp["id"].(string); ok {

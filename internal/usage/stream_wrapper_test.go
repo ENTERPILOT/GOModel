@@ -248,7 +248,7 @@ data: [DONE]
 }
 
 func TestStreamUsageWrapperResponsesAPI(t *testing.T) {
-	// Responses API format with event: prefixes and response.done containing nested response.usage
+	// Responses API format with event: prefixes and response.completed containing nested response.usage
 	streamData := `event: response.created
 data: {"type":"response.created","response":{"id":"resp-123","object":"response","status":"in_progress","model":"gpt-5"}}
 
@@ -258,8 +258,8 @@ data: {"type":"response.output_text.delta","delta":"Hello"}
 event: response.output_text.delta
 data: {"type":"response.output_text.delta","delta":" world!"}
 
-event: response.done
-data: {"type":"response.done","response":{"id":"resp-123","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_001","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello world!"}]}],"usage":{"input_tokens":15,"output_tokens":8,"total_tokens":23}}}
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp-123","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_001","type":"message","role":"assistant","content":[{"type":"output_text","text":"Hello world!"}]}],"usage":{"input_tokens":15,"output_tokens":8,"total_tokens":23}}}
 
 data: [DONE]
 
@@ -305,10 +305,10 @@ data: [DONE]
 }
 
 func TestStreamUsageWrapperLargeResponsesDone(t *testing.T) {
-	// Regression test: response.done event >8KB should not lose usage data.
+	// Regression test: response.completed event >8KB should not lose usage data.
 	// The old rolling 8KB buffer would truncate the beginning of this event.
 
-	// Build a large output content to push the response.done event well over 8KB
+	// Build a large output content to push the response.completed event well over 8KB
 	largeText := strings.Repeat("This is a long response from the model. ", 300) // ~12KB of text
 
 	streamData := `event: response.created
@@ -317,19 +317,19 @@ data: {"type":"response.created","response":{"id":"resp-large","object":"respons
 event: response.output_text.delta
 data: {"type":"response.output_text.delta","delta":"start"}
 
-event: response.done
-data: {"type":"response.done","response":{"id":"resp-large","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_001","type":"message","role":"assistant","content":[{"type":"output_text","text":"` + largeText + `"}]}],"usage":{"input_tokens":100,"output_tokens":500,"total_tokens":600}}}
+event: response.completed
+data: {"type":"response.completed","response":{"id":"resp-large","object":"response","status":"completed","model":"gpt-5","output":[{"id":"msg_001","type":"message","role":"assistant","content":[{"type":"output_text","text":"` + largeText + `"}]}],"usage":{"input_tokens":100,"output_tokens":500,"total_tokens":600}}}
 
 data: [DONE]
 
 `
 
-	// Verify the response.done event is actually >8KB
-	doneEventStart := strings.Index(streamData, `data: {"type":"response.done"`)
+	// Verify the response.completed event is actually >8KB
+	doneEventStart := strings.Index(streamData, `data: {"type":"response.completed"`)
 	doneEventEnd := strings.Index(streamData[doneEventStart:], "\n\n")
 	doneEventSize := doneEventEnd
 	if doneEventSize <= 8192 {
-		t.Fatalf("test setup error: response.done event is only %d bytes, need >8192", doneEventSize)
+		t.Fatalf("test setup error: response.completed event is only %d bytes, need >8192", doneEventSize)
 	}
 
 	logger := &trackingLogger{enabled: true}
@@ -351,7 +351,7 @@ data: [DONE]
 
 	entries := logger.getEntries()
 	if len(entries) != 1 {
-		t.Fatalf("expected 1 entry, got %d (usage was lost from large response.done event)", len(entries))
+		t.Fatalf("expected 1 entry, got %d (usage was lost from large response.completed event)", len(entries))
 	}
 
 	entry := entries[0]

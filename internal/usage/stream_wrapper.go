@@ -16,7 +16,7 @@ const maxEventBufferRemainder = 256 * 1024 // 256KB
 // StreamUsageWrapper wraps an io.ReadCloser to capture usage data from SSE streams.
 // It incrementally parses SSE events as they arrive (on each \n\n boundary),
 // extracting and caching usage data immediately when found. This handles
-// arbitrarily large events like the Responses API's response.done which includes
+// arbitrarily large events like the Responses API's response.completed which includes
 // the full response object alongside usage data.
 type StreamUsageWrapper struct {
 	io.ReadCloser
@@ -181,9 +181,9 @@ func (w *StreamUsageWrapper) extractUsageFromJSON(data []byte) *UsageEntry {
 	usageRaw, ok := chunk["usage"]
 
 	// If not found at top level, check for Responses API format:
-	// {"type": "response.done", "response": {"id": "...", "usage": {...}}}
+	// {"type": "response.completed", "response": {"id": "...", "usage": {...}}}
 	if !ok {
-		if eventType, _ := chunk["type"].(string); eventType == "response.done" {
+		if eventType, _ := chunk["type"].(string); eventType == "response.completed" || eventType == "response.done" {
 			if response, respOk := chunk["response"].(map[string]interface{}); respOk {
 				usageRaw, ok = response["usage"]
 				// Extract provider ID and model from response object

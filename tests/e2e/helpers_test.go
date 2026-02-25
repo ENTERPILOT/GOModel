@@ -203,7 +203,7 @@ func extractResponsesStreamContent(events []ResponsesStreamEvent) string {
 // hasDoneEvent checks if the stream contains a done event.
 func hasDoneEvent(events []ResponsesStreamEvent) bool {
 	for _, event := range events {
-		if event.Type == "response.done" || event.Done {
+		if event.Type == "response.completed" || event.Type == "response.done" || event.Done {
 			return true
 		}
 	}

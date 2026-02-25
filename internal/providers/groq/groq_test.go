@@ -920,8 +920,8 @@ data: [DONE]
 	if !strings.Contains(result, " world") {
 		t.Error("stream should contain ' world' content")
 	}
-	if !strings.Contains(result, "response.done") {
-		t.Error("stream should contain response.done event")
+	if !strings.Contains(result, "response.completed") {
+		t.Error("stream should contain response.completed event")
 	}
 	if !strings.Contains(result, "[DONE]") {
 		t.Error("stream should contain [DONE] marker")
