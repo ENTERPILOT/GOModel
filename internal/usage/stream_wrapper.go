@@ -69,8 +69,9 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 		if w.eventBuffer.Len() > maxEventBufferRemainder {
 			tail := w.eventBuffer.Bytes()
 			start := len(tail) - maxEventBufferRemainder
-			w.eventBuffer.Reset()
-			w.eventBuffer.Write(tail[start:])
+			trimmed := make([]byte, maxEventBufferRemainder)
+			copy(trimmed, tail[start:])
+			w.eventBuffer = *bytes.NewBuffer(trimmed)
 		}
 		return
 	}
@@ -111,7 +112,14 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 		if len(remainder) > maxEventBufferRemainder {
 			remainder = remainder[len(remainder)-maxEventBufferRemainder:]
 		}
-		w.eventBuffer.Write(remainder)
+		// Prevent capacity leak: if the buffer grew much larger than needed
+		// (e.g. from a single large SSE event), replace it with a right-sized one
+		// instead of reusing the oversized backing array.
+		if w.eventBuffer.Cap() > maxEventBufferRemainder*2 {
+			w.eventBuffer = *bytes.NewBuffer(remainder)
+		} else {
+			w.eventBuffer.Write(remainder)
+		}
 	}
 }
 
