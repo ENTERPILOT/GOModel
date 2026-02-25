@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"gomodel/internal/core"
 )
@@ -24,12 +25,21 @@ type costRegistry struct {
 	extendedFieldSet    map[string]struct{}
 }
 
-// defaultCostRegistry is the package-level registry used by CalculateGranularCost
-// and stream_wrapper.go. Populated by RegisterCostMappings at startup.
-var defaultCostRegistry = &costRegistry{
-	providerMappings:    make(map[string][]core.TokenCostMapping),
-	informationalFields: make(map[string]struct{}),
-	extendedFieldSet:    make(map[string]struct{}),
+// costRegistryPtr is the package-level registry used by CalculateGranularCost
+// and stream_wrapper.go. Published atomically by RegisterCostMappings.
+var costRegistryPtr atomic.Pointer[costRegistry]
+
+func init() {
+	costRegistryPtr.Store(&costRegistry{
+		providerMappings:    make(map[string][]core.TokenCostMapping),
+		informationalFields: make(map[string]struct{}),
+		extendedFieldSet:    make(map[string]struct{}),
+	})
+}
+
+// loadCostRegistry returns the current cost registry. Never returns nil.
+func loadCostRegistry() *costRegistry {
+	return costRegistryPtr.Load()
 }
 
 // RegisterCostMappings populates the cost registry with provider-specific mappings
@@ -51,7 +61,7 @@ func RegisterCostMappings(mappings map[string][]core.TokenCostMapping, informati
 		}
 	}
 
-	defaultCostRegistry = reg
+	costRegistryPtr.Store(reg)
 }
 
 // CalculateGranularCost computes input, output, and total costs from token counts,
@@ -65,7 +75,7 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 		return CostResult{}
 	}
 
-	reg := defaultCostRegistry
+	reg := loadCostRegistry()
 
 	var inputCost, outputCost float64
 	var hasInput, hasOutput bool
@@ -115,6 +125,9 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 				cost = float64(count) * *rate / 1_000_000
 			case core.CostUnitPerItem:
 				cost = float64(count) * *rate
+			default:
+				caveats = append(caveats, fmt.Sprintf("unknown cost unit %d for field %s", int(m.Unit), m.RawDataKey))
+				continue
 			}
 
 			switch m.Side {
@@ -124,6 +137,8 @@ func CalculateGranularCost(inputTokens, outputTokens int, rawData map[string]any
 			case core.CostSideOutput:
 				outputCost += cost
 				hasOutput = true
+			default:
+				caveats = append(caveats, fmt.Sprintf("unknown cost side %d for field %s", int(m.Side), m.RawDataKey))
 			}
 		}
 	}

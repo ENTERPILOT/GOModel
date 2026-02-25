@@ -502,11 +502,18 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 			}
 			// Include usage data if present (OpenAI format)
 			if event.Usage != nil {
-				chunk["usage"] = map[string]interface{}{
+				usageMap := map[string]interface{}{
 					"prompt_tokens":     event.Usage.InputTokens,
 					"completion_tokens": event.Usage.OutputTokens,
 					"total_tokens":      event.Usage.InputTokens + event.Usage.OutputTokens,
 				}
+				if event.Usage.CacheReadInputTokens > 0 {
+					usageMap["cache_read_input_tokens"] = event.Usage.CacheReadInputTokens
+				}
+				if event.Usage.CacheCreationInputTokens > 0 {
+					usageMap["cache_creation_input_tokens"] = event.Usage.CacheCreationInputTokens
+				}
+				chunk["usage"] = usageMap
 			}
 			jsonData, err := json.Marshal(chunk)
 			if err != nil {
@@ -788,11 +795,18 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 					}
 					// Include usage data if captured from message_delta
 					if sc.cachedUsage != nil {
-						responseData["usage"] = map[string]interface{}{
+						usageMap := map[string]interface{}{
 							"input_tokens":  sc.cachedUsage.InputTokens,
 							"output_tokens": sc.cachedUsage.OutputTokens,
 							"total_tokens":  sc.cachedUsage.InputTokens + sc.cachedUsage.OutputTokens,
 						}
+						if sc.cachedUsage.CacheReadInputTokens > 0 {
+							usageMap["cache_read_input_tokens"] = sc.cachedUsage.CacheReadInputTokens
+						}
+						if sc.cachedUsage.CacheCreationInputTokens > 0 {
+							usageMap["cache_creation_input_tokens"] = sc.cachedUsage.CacheCreationInputTokens
+						}
+						responseData["usage"] = usageMap
 					}
 					doneEvent := map[string]interface{}{
 						"type":     "response.completed",

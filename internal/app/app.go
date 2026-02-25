@@ -216,8 +216,9 @@ func (a *App) Start(addr string) error {
 // Shutdown gracefully shuts down all components in the correct order.
 // It ensures proper cleanup of resources:
 // 1. HTTP server (stop accepting new requests)
-// 2. Background refresh goroutine and cache
-// 3. Audit logging
+// 2. Providers (stop background refresh goroutine and close cache)
+// 3. Usage tracking (flush pending entries)
+// 4. Audit logging (flush pending logs)
 //
 // Safe to call multiple times; subsequent calls are no-ops.
 func (a *App) Shutdown(ctx context.Context) error {

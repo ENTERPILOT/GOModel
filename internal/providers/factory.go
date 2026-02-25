@@ -3,6 +3,7 @@ package providers
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"gomodel/config"
@@ -123,5 +124,6 @@ func (f *ProviderFactory) CostRegistry() (mappings map[string][]core.TokenCostMa
 		}
 	}
 
+	sort.Strings(informationalFields)
 	return mappings, informationalFields
 }
