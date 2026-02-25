@@ -15,6 +15,13 @@ import (
 var Registration = providers.Registration{
 	Type: "xai",
 	New:  New,
+	CostMappings: []core.TokenCostMapping{
+		{RawDataKey: "cached_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "prompt_cached_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "reasoning_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "completion_reasoning_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "image_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.InputPerImage }, Side: core.CostSideInput, Unit: core.CostUnitPerItem},
+	},
 }
 
 const (

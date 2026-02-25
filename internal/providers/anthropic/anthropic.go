@@ -24,6 +24,10 @@ import (
 var Registration = providers.Registration{
 	Type: "anthropic",
 	New:  New,
+	CostMappings: []core.TokenCostMapping{
+		{RawDataKey: "cache_read_input_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "cache_creation_input_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CacheWritePerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+	},
 }
 
 const (

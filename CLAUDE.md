@@ -107,6 +107,8 @@ helm/                  # Kubernetes Helm charts
 
 1. Create `internal/providers/{name}/` implementing `core.Provider`
 2. Export a `Registration` variable: `var Registration = providers.Registration{Type: "{name}", New: New}`
+   - Optionally add `CostMappings: []core.TokenCostMapping{...}` for provider-specific token cost fields (cached tokens, reasoning tokens, etc.)
+   - Optionally add `InformationalFields: []string{...}` for known token breakdown fields that don't need separate pricing
 3. Register in `cmd/gomodel/main.go` via `factory.Add({name}.Registration)`
 4. Add API key env var to `.env.template` and to `knownProviders` in `config/config.go`
 

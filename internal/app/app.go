@@ -72,6 +72,10 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.providers = providerResult
 
+	// Register provider cost mappings for usage tracking
+	costMappings, informationalFields := cfg.Factory.CostRegistry()
+	usage.RegisterCostMappings(costMappings, informationalFields)
+
 	// Initialize audit logging
 	auditResult, err := auditlog.New(ctx, appCfg)
 	if err != nil {

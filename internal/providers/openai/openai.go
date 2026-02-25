@@ -16,6 +16,20 @@ import (
 var Registration = providers.Registration{
 	Type: "openai",
 	New:  New,
+	CostMappings: []core.TokenCostMapping{
+		{RawDataKey: "cached_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "prompt_cached_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "reasoning_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "completion_reasoning_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "prompt_audio_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.AudioInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
+		{RawDataKey: "completion_audio_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.AudioOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
+	},
+	InformationalFields: []string{
+		"prompt_text_tokens",
+		"prompt_image_tokens",
+		"completion_accepted_prediction_tokens",
+		"completion_rejected_prediction_tokens",
+	},
 }
 
 const (
