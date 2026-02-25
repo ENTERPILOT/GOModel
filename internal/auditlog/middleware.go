@@ -81,23 +81,37 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			}
 
 			// Capture request body if enabled
-			if cfg.LogBodies && req.Body != nil && req.ContentLength > 0 {
-				// Skip body capture if too large to prevent memory exhaustion
+			if cfg.LogBodies && req.Body != nil {
 				if req.ContentLength > MaxBodyCapture {
+					// Known-large body: skip reading, flag it
 					entry.Data.RequestBodyTooBigToHandle = true
 				} else {
-					bodyBytes, err := io.ReadAll(req.Body)
+					// Read up to MaxBodyCapture+1 to detect overflow safely.
+					// Uses io.LimitReader to enforce the cap regardless of
+					// Content-Length (handles chunked/unknown-length requests).
+					limitedReader := io.LimitReader(req.Body, MaxBodyCapture+1)
+					bodyBytes, err := io.ReadAll(limitedReader)
 					if err == nil {
-						// Parse JSON to interface{} for native BSON storage in MongoDB
-						var parsed interface{}
-						if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
-							entry.Data.RequestBody = parsed
-						} else {
-							// Fallback: store as valid UTF-8 string if not valid JSON
-							entry.Data.RequestBody = toValidUTF8String(bodyBytes)
+						if int64(len(bodyBytes)) > MaxBodyCapture {
+							entry.Data.RequestBodyTooBigToHandle = true
+							// Reconstruct full body for downstream: read bytes + unread remainder
+							origBody := req.Body
+							req.Body = &combinedReadCloser{
+								Reader: io.MultiReader(bytes.NewReader(bodyBytes), origBody),
+								rc:     origBody,
+							}
+						} else if len(bodyBytes) > 0 {
+							// Parse JSON to interface{} for native BSON storage in MongoDB
+							var parsed interface{}
+							if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
+								entry.Data.RequestBody = parsed
+							} else {
+								// Fallback: store as valid UTF-8 string if not valid JSON
+								entry.Data.RequestBody = toValidUTF8String(bodyBytes)
+							}
+							// Restore the body for the handler
+							req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 						}
-						// Restore the body for the handler
-						req.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 					}
 				}
 			}
@@ -180,6 +194,17 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 	}
 }
 
+// combinedReadCloser delegates Read to an io.Reader and Close to an io.ReadCloser.
+// Used to reconstruct a request body that preserves the original closer.
+type combinedReadCloser struct {
+	io.Reader
+	rc io.ReadCloser
+}
+
+func (c *combinedReadCloser) Close() error {
+	return c.rc.Close()
+}
+
 // responseBodyCapture wraps http.ResponseWriter to capture the response body.
 // It implements http.Flusher and http.Hijacker by delegating to the underlying
 // ResponseWriter if it supports those interfaces.
@@ -191,10 +216,16 @@ type responseBodyCapture struct {
 
 func (r *responseBodyCapture) Write(b []byte) (int, error) {
 	// Write to the capture buffer (limit to MaxBodyCapture to avoid memory issues)
-	if r.body.Len() < int(MaxBodyCapture) {
-		r.body.Write(b)
-		// Check if we just hit the limit
-		if r.body.Len() >= int(MaxBodyCapture) {
+	if !r.truncated {
+		remaining := int(MaxBodyCapture) - r.body.Len()
+		if remaining > 0 {
+			if len(b) <= remaining {
+				r.body.Write(b)
+			} else {
+				r.body.Write(b[:remaining])
+				r.truncated = true
+			}
+		} else {
 			r.truncated = true
 		}
 	}
