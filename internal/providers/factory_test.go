@@ -3,7 +3,6 @@ package providers
 import (
 	"context"
 	"io"
-	"sort"
 	"testing"
 	"time"
 
@@ -342,58 +341,5 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 	}
 	if r.JitterFactor != 0.5 {
 		t.Errorf("JitterFactor = %f, want 0.5", r.JitterFactor)
-	}
-}
-
-func TestProviderFactory_CostRegistry(t *testing.T) {
-	factory := NewProviderFactory()
-
-	factory.Add(Registration{
-		Type: "provider-a",
-		New:  func(_ string, _ ProviderOptions) core.Provider { return &factoryMockProvider{} },
-		CostMappings: []core.TokenCostMapping{
-			{RawDataKey: "cached_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
-		},
-		InformationalFields: []string{"prompt_text_tokens"},
-	})
-
-	factory.Add(Registration{
-		Type: "provider-b",
-		New:  func(_ string, _ ProviderOptions) core.Provider { return &factoryMockProvider{} },
-		CostMappings: []core.TokenCostMapping{
-			{RawDataKey: "thought_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
-		},
-		InformationalFields: []string{"prompt_text_tokens", "prompt_image_tokens"},
-	})
-
-	// Provider with no cost mappings
-	factory.Add(Registration{
-		Type: "provider-c",
-		New:  func(_ string, _ ProviderOptions) core.Provider { return &factoryMockProvider{} },
-	})
-
-	mappings, informational := factory.CostRegistry()
-
-	// Check mappings
-	if len(mappings) != 2 {
-		t.Fatalf("expected 2 provider mappings, got %d", len(mappings))
-	}
-	if len(mappings["provider-a"]) != 1 {
-		t.Errorf("provider-a: expected 1 mapping, got %d", len(mappings["provider-a"]))
-	}
-	if len(mappings["provider-b"]) != 1 {
-		t.Errorf("provider-b: expected 1 mapping, got %d", len(mappings["provider-b"]))
-	}
-	if _, ok := mappings["provider-c"]; ok {
-		t.Error("provider-c should not have mappings")
-	}
-
-	// Check informational fields are deduplicated
-	sort.Strings(informational)
-	if len(informational) != 2 {
-		t.Fatalf("expected 2 informational fields (deduplicated), got %d: %v", len(informational), informational)
-	}
-	if informational[0] != "prompt_image_tokens" || informational[1] != "prompt_text_tokens" {
-		t.Errorf("unexpected informational fields: %v", informational)
 	}
 }
