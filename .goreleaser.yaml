@@ -24,13 +24,15 @@ builds:
       - -X gomodel/internal/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
-    # this name template makes the archive look like: gomodel_1.0.0_linux_amd64.tar.gz
+  - formats: ['tar.gz']
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
       {{- .Os }}_
       {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: ['zip']
 
 checksum:
   name_template: "checksums.txt"
@@ -39,10 +41,25 @@ snapshot:
   version_template: "{{ .Tag }}-next"
 
 changelog:
+  use: github
   sort: asc
+  abbrev: -1
   filters:
     exclude:
       - "^docs:"
+      - "^doc:"
+      - "^Docs:"
       - "^test:"
-      - "^refactor:"
       - "^tests:"
+      - "^refactor:"
+      - "^ci:"
+      - "^chore:"
+      - "^build:"
+      - "^style:"
+      - "^perf:"
+      - "^Revert"
+      - "^Merge"
+
+release:
+  footer: |
+    **Full Changelog**: https://github.com/ENTERPILOT/GOModel/compare/{{ .PreviousTag }}...{{ .Tag }}
