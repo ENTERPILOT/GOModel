@@ -1,4 +1,4 @@
-.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api swagger
+.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api swagger install-tools
 
 # Get version info
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -9,6 +9,11 @@ DATE ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X "gomodel/internal/version.Version=$(VERSION)" \
            -X "gomodel/internal/version.Commit=$(COMMIT)" \
            -X "gomodel/internal/version.Date=$(DATE)"
+
+install-tools:
+	@which golangci-lint > /dev/null || (echo "Installing golangci-lint..." && go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+	@which pre-commit > /dev/null || (echo "Installing pre-commit..." && pip install pre-commit)
+	@echo "All tools are ready"
 
 build:
 	go build -ldflags '$(LDFLAGS)' -o bin/gomodel ./cmd/gomodel
