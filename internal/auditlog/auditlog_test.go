@@ -733,6 +733,17 @@ func TestResponseBodyCapture_Write_MultipleChunksOverflow(t *testing.T) {
 	}
 }
 
+// trackingReadCloser wraps an io.Reader and tracks whether Close was called.
+type trackingReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (t *trackingReadCloser) Close() error {
+	t.closed = true
+	return nil
+}
+
 // discardWriter implements http.ResponseWriter but discards all output.
 type discardWriter struct{}
 
@@ -806,6 +817,46 @@ func TestLimitedReaderRequestBodyCapture(t *testing.T) {
 		}
 		if entry.Data.RequestBody != nil {
 			t.Error("body content should not be logged when over limit")
+		}
+	})
+
+	t.Run("overflow path propagates Close to original body", func(t *testing.T) {
+		largeBody := strings.Repeat("x", int(MaxBodyCapture)+100)
+		tracker := &trackingReadCloser{Reader: strings.NewReader(largeBody)}
+		req, _ := http.NewRequest("POST", "/v1/chat/completions", tracker)
+		req.ContentLength = -1
+
+		// Drive the overflow reconstruction path
+		limitedReader := io.LimitReader(req.Body, MaxBodyCapture+1)
+		bodyBytes, err := io.ReadAll(limitedReader)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+		if int64(len(bodyBytes)) <= MaxBodyCapture {
+			t.Fatal("body should exceed limit")
+		}
+
+		origBody := req.Body
+		req.Body = &combinedReadCloser{
+			Reader: io.MultiReader(bytes.NewReader(bodyBytes), origBody),
+			rc:     origBody,
+		}
+
+		// Read full body from reconstructed reader
+		downstream, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("downstream read error: %v", err)
+		}
+		if len(downstream) != len(largeBody) {
+			t.Errorf("downstream body length mismatch: expected %d, got %d", len(largeBody), len(downstream))
+		}
+
+		// Close and verify propagation
+		if err := req.Body.Close(); err != nil {
+			t.Fatalf("unexpected close error: %v", err)
+		}
+		if !tracker.closed {
+			t.Error("expected Close to propagate to original body")
 		}
 	})
 

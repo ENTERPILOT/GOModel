@@ -95,7 +95,11 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 						if int64(len(bodyBytes)) > MaxBodyCapture {
 							entry.Data.RequestBodyTooBigToHandle = true
 							// Reconstruct full body for downstream: read bytes + unread remainder
-							req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), req.Body))
+							origBody := req.Body
+							req.Body = &combinedReadCloser{
+								Reader: io.MultiReader(bytes.NewReader(bodyBytes), origBody),
+								rc:     origBody,
+							}
 						} else if len(bodyBytes) > 0 {
 							// Parse JSON to interface{} for native BSON storage in MongoDB
 							var parsed interface{}
@@ -188,6 +192,17 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			return err
 		}
 	}
+}
+
+// combinedReadCloser delegates Read to an io.Reader and Close to an io.ReadCloser.
+// Used to reconstruct a request body that preserves the original closer.
+type combinedReadCloser struct {
+	io.Reader
+	rc io.ReadCloser
+}
+
+func (c *combinedReadCloser) Close() error {
+	return c.rc.Close()
 }
 
 // responseBodyCapture wraps http.ResponseWriter to capture the response body.
