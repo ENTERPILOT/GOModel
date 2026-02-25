@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -666,6 +667,160 @@ func TestDecompressBodyInvalidData(t *testing.T) {
 	if !bytes.Equal(result, invalidData) {
 		t.Error("expected original data to be returned on failure")
 	}
+}
+
+func TestResponseBodyCapture_Write_SingleLargeChunk(t *testing.T) {
+	// A single Write call larger than MaxBodyCapture should be capped
+	capture := &responseBodyCapture{
+		ResponseWriter: &discardWriter{},
+		body:           &bytes.Buffer{},
+	}
+
+	// Write a chunk larger than MaxBodyCapture in one call
+	largeData := bytes.Repeat([]byte("x"), int(MaxBodyCapture)+1024)
+	n, err := capture.Write(largeData)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != len(largeData) {
+		t.Errorf("expected %d bytes written to underlying writer, got %d", len(largeData), n)
+	}
+
+	// Buffer should be capped at exactly MaxBodyCapture
+	if capture.body.Len() != int(MaxBodyCapture) {
+		t.Errorf("expected buffer size %d, got %d", MaxBodyCapture, capture.body.Len())
+	}
+	if !capture.truncated {
+		t.Error("expected truncated flag to be set")
+	}
+}
+
+func TestResponseBodyCapture_Write_MultipleChunksOverflow(t *testing.T) {
+	capture := &responseBodyCapture{
+		ResponseWriter: &discardWriter{},
+		body:           &bytes.Buffer{},
+	}
+
+	// Write chunks that collectively exceed MaxBodyCapture
+	chunkSize := int(MaxBodyCapture) / 2
+	chunk := bytes.Repeat([]byte("a"), chunkSize)
+
+	// First chunk: should fit entirely
+	_, _ = capture.Write(chunk)
+	if capture.truncated {
+		t.Error("should not be truncated after first chunk")
+	}
+	if capture.body.Len() != chunkSize {
+		t.Errorf("expected buffer size %d, got %d", chunkSize, capture.body.Len())
+	}
+
+	// Second chunk: fits exactly (no data lost, so truncated remains false)
+	_, _ = capture.Write(chunk)
+	if capture.truncated {
+		t.Error("should not be truncated when buffer is exactly at limit")
+	}
+	if capture.body.Len() != int(MaxBodyCapture) {
+		t.Errorf("expected buffer at %d, got %d", MaxBodyCapture, capture.body.Len())
+	}
+
+	// Third chunk: entirely skipped, truncated flag set
+	_, _ = capture.Write(chunk)
+	if !capture.truncated {
+		t.Error("should be truncated after third chunk is rejected")
+	}
+	if capture.body.Len() != int(MaxBodyCapture) {
+		t.Errorf("expected buffer still at %d after third chunk, got %d", MaxBodyCapture, capture.body.Len())
+	}
+}
+
+// discardWriter implements http.ResponseWriter but discards all output.
+type discardWriter struct{}
+
+func (d *discardWriter) Header() http.Header        { return http.Header{} }
+func (d *discardWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (d *discardWriter) WriteHeader(int)             {}
+
+func TestLimitedReaderRequestBodyCapture(t *testing.T) {
+	t.Run("chunked request body under limit is captured", func(t *testing.T) {
+		body := `{"model":"gpt-4","messages":[]}`
+		req, _ := http.NewRequest("POST", "/v1/chat/completions", strings.NewReader(body))
+		req.ContentLength = -1 // Simulate chunked encoding
+
+		entry := &LogEntry{Data: &LogData{}}
+		// Simulate the middleware body capture logic
+		limitedReader := io.LimitReader(req.Body, MaxBodyCapture+1)
+		bodyBytes, err := io.ReadAll(limitedReader)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		if int64(len(bodyBytes)) > MaxBodyCapture {
+			t.Fatal("body should be under limit")
+		}
+
+		var parsed interface{}
+		if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
+			entry.Data.RequestBody = parsed
+		}
+
+		if entry.Data.RequestBody == nil {
+			t.Error("expected request body to be captured for chunked request")
+		}
+		if entry.Data.RequestBodyTooBigToHandle {
+			t.Error("should not be marked as too big")
+		}
+	})
+
+	t.Run("chunked request body over limit sets flag and preserves downstream body", func(t *testing.T) {
+		// Create a body larger than MaxBodyCapture
+		largeBody := strings.Repeat("x", int(MaxBodyCapture)+100)
+		req, _ := http.NewRequest("POST", "/v1/chat/completions", strings.NewReader(largeBody))
+		req.ContentLength = -1 // Simulate chunked encoding
+
+		entry := &LogEntry{Data: &LogData{}}
+
+		limitedReader := io.LimitReader(req.Body, MaxBodyCapture+1)
+		bodyBytes, err := io.ReadAll(limitedReader)
+		if err != nil {
+			t.Fatalf("unexpected read error: %v", err)
+		}
+
+		if int64(len(bodyBytes)) <= MaxBodyCapture {
+			t.Fatal("body should exceed limit")
+		}
+
+		entry.Data.RequestBodyTooBigToHandle = true
+		// Reconstruct body for downstream
+		req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), req.Body))
+
+		// Verify downstream can read the full body
+		downstream, err := io.ReadAll(req.Body)
+		if err != nil {
+			t.Fatalf("downstream read error: %v", err)
+		}
+		if len(downstream) != len(largeBody) {
+			t.Errorf("downstream body length mismatch: expected %d, got %d", len(largeBody), len(downstream))
+		}
+		if !entry.Data.RequestBodyTooBigToHandle {
+			t.Error("expected RequestBodyTooBigToHandle flag to be set")
+		}
+		if entry.Data.RequestBody != nil {
+			t.Error("body content should not be logged when over limit")
+		}
+	})
+
+	t.Run("io.LimitReader caps memory allocation", func(t *testing.T) {
+		// Verify that io.LimitReader prevents reading more than MaxBodyCapture+1 bytes
+		largeBody := strings.Repeat("z", int(MaxBodyCapture)*3)
+		reader := io.LimitReader(strings.NewReader(largeBody), MaxBodyCapture+1)
+		data, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if int64(len(data)) != MaxBodyCapture+1 {
+			t.Errorf("expected exactly %d bytes, got %d", MaxBodyCapture+1, len(data))
+		}
+	})
 }
 
 func TestDecompressBodyEmptyInput(t *testing.T) {
