@@ -72,10 +72,6 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.providers = providerResult
 
-	// Register provider cost mappings for usage tracking
-	costMappings, informationalFields := cfg.Factory.CostRegistry()
-	usage.RegisterCostMappings(costMappings, informationalFields)
-
 	// Initialize audit logging
 	auditResult, err := auditlog.New(ctx, appCfg)
 	if err != nil {
@@ -216,9 +212,8 @@ func (a *App) Start(addr string) error {
 // Shutdown gracefully shuts down all components in the correct order.
 // It ensures proper cleanup of resources:
 // 1. HTTP server (stop accepting new requests)
-// 2. Providers (stop background refresh goroutine and close cache)
-// 3. Usage tracking (flush pending entries)
-// 4. Audit logging (flush pending logs)
+// 2. Background refresh goroutine and cache
+// 3. Audit logging
 //
 // Safe to call multiple times; subsequent calls are no-ops.
 func (a *App) Shutdown(ctx context.Context) error {

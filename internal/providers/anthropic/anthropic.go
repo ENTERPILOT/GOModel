@@ -24,10 +24,6 @@ import (
 var Registration = providers.Registration{
 	Type: "anthropic",
 	New:  New,
-	CostMappings: []core.TokenCostMapping{
-		{RawDataKey: "cache_read_input_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
-		{RawDataKey: "cache_creation_input_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CacheWritePerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
-	},
 }
 
 const (
@@ -502,13 +498,11 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 			}
 			// Include usage data if present (OpenAI format)
 			if event.Usage != nil {
-				usageMap := map[string]interface{}{
+				chunk["usage"] = map[string]interface{}{
 					"prompt_tokens":     event.Usage.InputTokens,
 					"completion_tokens": event.Usage.OutputTokens,
 					"total_tokens":      event.Usage.InputTokens + event.Usage.OutputTokens,
 				}
-				appendCacheFields(usageMap, event.Usage)
-				chunk["usage"] = usageMap
 			}
 			jsonData, err := json.Marshal(chunk)
 			if err != nil {
@@ -674,16 +668,6 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 	}
 }
 
-// appendCacheFields adds non-zero cache token fields from anthropicUsage to the given map.
-func appendCacheFields(m map[string]interface{}, u *anthropicUsage) {
-	if u.CacheReadInputTokens > 0 {
-		m["cache_read_input_tokens"] = u.CacheReadInputTokens
-	}
-	if u.CacheCreationInputTokens > 0 {
-		m["cache_creation_input_tokens"] = u.CacheCreationInputTokens
-	}
-}
-
 // buildAnthropicRawUsage extracts cache fields from anthropicUsage into a RawData map.
 func buildAnthropicRawUsage(u anthropicUsage) map[string]any {
 	raw := make(map[string]any)
@@ -800,13 +784,11 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 					}
 					// Include usage data if captured from message_delta
 					if sc.cachedUsage != nil {
-						usageMap := map[string]interface{}{
+						responseData["usage"] = map[string]interface{}{
 							"input_tokens":  sc.cachedUsage.InputTokens,
 							"output_tokens": sc.cachedUsage.OutputTokens,
 							"total_tokens":  sc.cachedUsage.InputTokens + sc.cachedUsage.OutputTokens,
 						}
-						appendCacheFields(usageMap, sc.cachedUsage)
-						responseData["usage"] = usageMap
 					}
 					doneEvent := map[string]interface{}{
 						"type":     "response.completed",

@@ -19,10 +19,6 @@ import (
 var Registration = providers.Registration{
 	Type: "gemini",
 	New:  New,
-	CostMappings: []core.TokenCostMapping{
-		{RawDataKey: "cached_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.CachedInputPerMtok }, Side: core.CostSideInput, Unit: core.CostUnitPerMtok},
-		{RawDataKey: "thought_tokens", PricingField: func(p *core.ModelPricing) *float64 { return p.ReasoningOutputPerMtok }, Side: core.CostSideOutput, Unit: core.CostUnitPerMtok},
-	},
 }
 
 const (
