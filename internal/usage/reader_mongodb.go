@@ -26,23 +26,9 @@ func NewMongoDBReader(database *mongo.Database) (*MongoDBReader, error) {
 func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	pipeline := bson.A{}
 
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
+	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{
-				{Key: "$gte", Value: params.StartDate.UTC()},
-				{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
-			}},
-		}}})
-	} else if !startZero {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
-		}}})
-	} else if !endZero {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}},
+			{Key: "timestamp", Value: tsFilter},
 		}}})
 	}
 
@@ -101,23 +87,9 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
 	pipeline := bson.A{}
 
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
+	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{
-				{Key: "$gte", Value: params.StartDate.UTC()},
-				{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
-			}},
-		}}})
-	} else if !startZero {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
-		}}})
-	} else if !endZero {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}},
+			{Key: "timestamp", Value: tsFilter},
 		}}})
 	}
 
@@ -184,22 +156,8 @@ func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) 
 
 	matchFilters := bson.D{}
 
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
-			{Key: "$gte", Value: params.StartDate.UTC()},
-			{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
-		}})
-	} else if !startZero {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
-			{Key: "$gte", Value: params.StartDate.UTC()},
-		}})
-	} else if !endZero {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: bson.D{
-			{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
-		}})
+	if tsFilter := mongoDateRangeFilter(params.UsageQueryParams); tsFilter != nil {
+		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
 	}
 
 	if params.Model != "" {
@@ -307,6 +265,24 @@ func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) 
 	}, nil
 }
 
+// mongoDateRangeFilter returns a bson.D timestamp filter for the given date range.
+// Returns nil if no date filtering is needed.
+func mongoDateRangeFilter(params UsageQueryParams) bson.D {
+	startZero := params.StartDate.IsZero()
+	endZero := params.EndDate.IsZero()
+
+	if !startZero && !endZero {
+		return bson.D{{Key: "$gte", Value: params.StartDate.UTC()}, {Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}
+	}
+	if !startZero {
+		return bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}
+	}
+	if !endZero {
+		return bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}
+	}
+	return nil
+}
+
 func mongoDateFormat(interval string) string {
 	switch interval {
 	case "weekly":
@@ -329,23 +305,9 @@ func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryPara
 
 	pipeline := bson.A{}
 
-	startZero := params.StartDate.IsZero()
-	endZero := params.EndDate.IsZero()
-
-	if !startZero && !endZero {
+	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{
-				{Key: "$gte", Value: params.StartDate.UTC()},
-				{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()},
-			}},
-		}}})
-	} else if !startZero {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$gte", Value: params.StartDate.UTC()}}},
-		}}})
-	} else if !endZero {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{
-			{Key: "timestamp", Value: bson.D{{Key: "$lt", Value: params.EndDate.AddDate(0, 0, 1).UTC()}}},
+			{Key: "timestamp", Value: tsFilter},
 		}}})
 	}
 
