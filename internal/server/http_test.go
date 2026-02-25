@@ -12,6 +12,47 @@ import (
 	_ "gomodel/cmd/gomodel/docs"
 )
 
+func TestRequestIDMiddleware(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, nil)
+
+	t.Run("generates request ID when missing", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		rec := httptest.NewRecorder()
+
+		srv.ServeHTTP(rec, req)
+
+		got := rec.Header().Get("X-Request-ID")
+		if got == "" {
+			t.Fatal("expected X-Request-ID in response header, got empty")
+		}
+		// Validate UUID format (8-4-4-4-12 hex digits)
+		if len(got) != 36 {
+			t.Errorf("expected UUID (36 chars), got %q (%d chars)", got, len(got))
+		}
+	})
+
+	t.Run("preserves existing request ID", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/health", nil)
+		req.Header.Set("X-Request-ID", "my-custom-id")
+		rec := httptest.NewRecorder()
+
+		srv.ServeHTTP(rec, req)
+
+		// Request header must not be overwritten
+		got := req.Header.Get("X-Request-ID")
+		if got != "my-custom-id" {
+			t.Errorf("expected request header to be preserved as %q, got %q", "my-custom-id", got)
+		}
+
+		// Response header must echo the client-provided ID back
+		respID := rec.Header().Get("X-Request-ID")
+		if respID != "my-custom-id" {
+			t.Errorf("expected response header X-Request-ID to be %q, got %q", "my-custom-id", respID)
+		}
+	})
+}
+
 func TestMetricsEndpoint(t *testing.T) {
 	tests := []struct {
 		name           string
