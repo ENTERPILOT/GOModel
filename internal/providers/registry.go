@@ -370,11 +370,12 @@ func (r *ModelRegistry) Supports(model string) bool {
 
 // ListModels returns all models in the registry, sorted by model ID for consistent ordering.
 // The sorted slice is cached and rebuilt only when the underlying models change.
+// Returns a defensive copy so callers cannot mutate the internal cache.
 func (r *ModelRegistry) ListModels() []core.Model {
 	r.mu.RLock()
 	if cached := r.sortedModels; cached != nil {
 		r.mu.RUnlock()
-		return cached
+		return append([]core.Model(nil), cached...)
 	}
 	r.mu.RUnlock()
 
@@ -382,7 +383,7 @@ func (r *ModelRegistry) ListModels() []core.Model {
 	defer r.mu.Unlock()
 	// Double-check: another goroutine may have built it while we waited for the lock.
 	if r.sortedModels != nil {
-		return r.sortedModels
+		return append([]core.Model(nil), r.sortedModels...)
 	}
 
 	models := make([]core.Model, 0, len(r.models))
@@ -392,7 +393,7 @@ func (r *ModelRegistry) ListModels() []core.Model {
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 
 	r.sortedModels = models
-	return models
+	return append([]core.Model(nil), models...)
 }
 
 // ModelCount returns the number of registered models
@@ -424,18 +425,19 @@ type ModelWithProvider struct {
 
 // ListModelsWithProvider returns all models with their provider types, sorted by model ID.
 // The sorted slice is cached and rebuilt only when the underlying models change.
+// Returns a defensive copy so callers cannot mutate the internal cache.
 func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 	r.mu.RLock()
 	if cached := r.sortedModelsWithProvider; cached != nil {
 		r.mu.RUnlock()
-		return cached
+		return append([]ModelWithProvider(nil), cached...)
 	}
 	r.mu.RUnlock()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.sortedModelsWithProvider != nil {
-		return r.sortedModelsWithProvider
+		return append([]ModelWithProvider(nil), r.sortedModelsWithProvider...)
 	}
 
 	result := make([]ModelWithProvider, 0, len(r.models))
@@ -448,31 +450,47 @@ func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 	sort.Slice(result, func(i, j int) bool { return result[i].Model.ID < result[j].Model.ID })
 
 	r.sortedModelsWithProvider = result
-	return result
+	return append([]ModelWithProvider(nil), result...)
+}
+
+// cacheableCategory reports whether category is a known value that should be cached.
+// CategoryAll is handled separately (delegates to ListModelsWithProvider).
+var cacheableCategories = map[core.ModelCategory]struct{}{
+	core.CategoryTextGeneration: {},
+	core.CategoryEmbedding:      {},
+	core.CategoryImage:          {},
+	core.CategoryAudio:          {},
+	core.CategoryVideo:          {},
+	core.CategoryUtility:        {},
 }
 
 // ListModelsWithProviderByCategory returns models filtered by category, sorted by model ID.
 // If category is CategoryAll, returns all models (same as ListModelsWithProvider).
-// Results are cached per category and rebuilt only when the underlying models change.
+// Results for known categories are cached and rebuilt only when the underlying models change.
+// Returns a defensive copy so callers cannot mutate the internal cache.
 func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCategory) []ModelWithProvider {
 	if category == core.CategoryAll {
 		return r.ListModelsWithProvider()
 	}
 
-	r.mu.RLock()
-	if r.categoryCache != nil {
-		if cached, ok := r.categoryCache[category]; ok {
-			r.mu.RUnlock()
-			return cached
+	_, cacheable := cacheableCategories[category]
+
+	if cacheable {
+		r.mu.RLock()
+		if r.categoryCache != nil {
+			if cached, ok := r.categoryCache[category]; ok {
+				r.mu.RUnlock()
+				return append([]ModelWithProvider(nil), cached...)
+			}
 		}
+		r.mu.RUnlock()
 	}
-	r.mu.RUnlock()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.categoryCache != nil {
+	if cacheable && r.categoryCache != nil {
 		if cached, ok := r.categoryCache[category]; ok {
-			return cached
+			return append([]ModelWithProvider(nil), cached...)
 		}
 	}
 
@@ -488,10 +506,12 @@ func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCate
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Model.ID < result[j].Model.ID })
 
-	if r.categoryCache == nil {
-		r.categoryCache = make(map[core.ModelCategory][]ModelWithProvider)
+	if cacheable {
+		if r.categoryCache == nil {
+			r.categoryCache = make(map[core.ModelCategory][]ModelWithProvider)
+		}
+		r.categoryCache[category] = result
 	}
-	r.categoryCache[category] = result
 	return result
 }
 
