@@ -69,8 +69,17 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 		if w.eventBuffer.Len() > maxEventBufferRemainder {
 			tail := w.eventBuffer.Bytes()
 			start := len(tail) - maxEventBufferRemainder
-			w.eventBuffer.Reset()
-			w.eventBuffer.Write(tail[start:])
+			// If the underlying capacity has grown too large, allocate a new buffer,
+			// otherwise reuse the existing backing array to avoid unnecessary allocs.
+			if cap(tail) > maxEventBufferRemainder*2 {
+				trimmed := make([]byte, maxEventBufferRemainder)
+				copy(trimmed, tail[start:])
+				w.eventBuffer = *bytes.NewBuffer(trimmed)
+			} else {
+				copy(tail[:maxEventBufferRemainder], tail[start:])
+				w.eventBuffer.Reset()
+				w.eventBuffer.Write(tail[:maxEventBufferRemainder])
+			}
 		}
 		return
 	}
@@ -104,13 +113,18 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 		}
 	}
 
-	// Keep only the remainder
-	w.eventBuffer.Reset()
-	if len(remainder) > 0 {
-		// Safety valve on remainder size — trim to keep newest bytes
-		if len(remainder) > maxEventBufferRemainder {
-			remainder = remainder[len(remainder)-maxEventBufferRemainder:]
-		}
+	// Keep only the remainder, preventing capacity leaks from oversized buffers.
+	// remainder is a sub-slice of w.eventBuffer's backing array, so we must copy
+	// it before replacing the buffer to avoid retaining the old oversized array.
+	if len(remainder) > maxEventBufferRemainder {
+		remainder = remainder[len(remainder)-maxEventBufferRemainder:]
+	}
+	if w.eventBuffer.Cap() > maxEventBufferRemainder*2 {
+		copied := make([]byte, len(remainder))
+		copy(copied, remainder)
+		w.eventBuffer = *bytes.NewBuffer(copied)
+	} else {
+		w.eventBuffer.Reset()
 		w.eventBuffer.Write(remainder)
 	}
 }
