@@ -34,10 +34,10 @@ func NewSQLite(cfg SQLiteConfig) (Storage, error) {
 		return nil, fmt.Errorf("failed to open SQLite database: %w", err)
 	}
 
-	// Use a single connection to serialize all database access.
-	// This prevents "database is locked" errors at the cost of no concurrent reads.
-	db.SetMaxOpenConns(1)
-	db.SetMaxIdleConns(1)
+	// Allow multiple readers to operate concurrently. WAL mode handles this natively.
+	// We keep a modest pool to prevent file descriptor exhaustion.
+	db.SetMaxOpenConns(16)
+	db.SetMaxIdleConns(4)
 
 	// Verify connection
 	if err := db.Ping(); err != nil {

@@ -138,13 +138,19 @@ func (l *Logger) flushLoop() {
 			}
 
 		case <-l.done:
-			// Shutdown: close buffer to stop accepting entries
-			// Note: l.closed is already set by Close() before sending on l.done
-			close(l.buffer)
-			// Drain remaining entries from buffer
-			for entry := range l.buffer {
-				batch = append(batch, entry)
+			// Shutdown: drain remaining entries from buffer using non-blocking loop.
+			// Note: l.closed is already set by Close() before sending on l.done.
+			// We do NOT close(l.buffer) — closing is unnecessary since flushLoop
+			// exits via l.done, and closing creates a race with concurrent Write() calls.
+			for {
+				select {
+				case entry := <-l.buffer:
+					batch = append(batch, entry)
+				default:
+					goto drainComplete
+				}
 			}
+		drainComplete:
 			// Final flush
 			if len(batch) > 0 {
 				l.flushBatch(batch)
