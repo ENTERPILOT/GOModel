@@ -47,6 +47,8 @@ changelog:
   filters:
     exclude:
       - "^docs:"
+      - "^doc:"
+      - "^Docs:"
       - "^test:"
       - "^tests:"
       - "^refactor:"
@@ -54,6 +56,9 @@ changelog:
       - "^chore:"
       - "^build:"
       - "^style:"
+      - "^perf:"
+      - "^Revert"
+      - "^Merge"
 
 release:
   footer: |
