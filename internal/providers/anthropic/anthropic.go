@@ -507,12 +507,7 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 					"completion_tokens": event.Usage.OutputTokens,
 					"total_tokens":      event.Usage.InputTokens + event.Usage.OutputTokens,
 				}
-				if event.Usage.CacheReadInputTokens > 0 {
-					usageMap["cache_read_input_tokens"] = event.Usage.CacheReadInputTokens
-				}
-				if event.Usage.CacheCreationInputTokens > 0 {
-					usageMap["cache_creation_input_tokens"] = event.Usage.CacheCreationInputTokens
-				}
+				appendCacheFields(usageMap, event.Usage)
 				chunk["usage"] = usageMap
 			}
 			jsonData, err := json.Marshal(chunk)
@@ -679,6 +674,16 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 	}
 }
 
+// appendCacheFields adds non-zero cache token fields from anthropicUsage to the given map.
+func appendCacheFields(m map[string]interface{}, u *anthropicUsage) {
+	if u.CacheReadInputTokens > 0 {
+		m["cache_read_input_tokens"] = u.CacheReadInputTokens
+	}
+	if u.CacheCreationInputTokens > 0 {
+		m["cache_creation_input_tokens"] = u.CacheCreationInputTokens
+	}
+}
+
 // buildAnthropicRawUsage extracts cache fields from anthropicUsage into a RawData map.
 func buildAnthropicRawUsage(u anthropicUsage) map[string]any {
 	raw := make(map[string]any)
@@ -800,12 +805,7 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 							"output_tokens": sc.cachedUsage.OutputTokens,
 							"total_tokens":  sc.cachedUsage.InputTokens + sc.cachedUsage.OutputTokens,
 						}
-						if sc.cachedUsage.CacheReadInputTokens > 0 {
-							usageMap["cache_read_input_tokens"] = sc.cachedUsage.CacheReadInputTokens
-						}
-						if sc.cachedUsage.CacheCreationInputTokens > 0 {
-							usageMap["cache_creation_input_tokens"] = sc.cachedUsage.CacheCreationInputTokens
-						}
+						appendCacheFields(usageMap, sc.cachedUsage)
 						responseData["usage"] = usageMap
 					}
 					doneEvent := map[string]interface{}{

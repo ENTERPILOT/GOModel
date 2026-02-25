@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"gomodel/internal/core"
+	"gomodel/internal/providers"
 	"gomodel/internal/providers/anthropic"
 	"gomodel/internal/providers/gemini"
 	"gomodel/internal/providers/openai"
@@ -12,14 +12,16 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// Register cost mappings from the authoritative provider Registration vars
-	// so tests use the single source of truth rather than duplicated data.
-	RegisterCostMappings(map[string][]core.TokenCostMapping{
-		openai.Registration.Type:    openai.Registration.CostMappings,
-		anthropic.Registration.Type: anthropic.Registration.CostMappings,
-		gemini.Registration.Type:    gemini.Registration.CostMappings,
-		xai.Registration.Type:       xai.Registration.CostMappings,
-	}, openai.Registration.InformationalFields)
+	// Build cost mappings and informational fields the same way production does:
+	// register all providers into a factory and use CostRegistry to aggregate.
+	factory := providers.NewProviderFactory()
+	factory.Add(openai.Registration)
+	factory.Add(anthropic.Registration)
+	factory.Add(gemini.Registration)
+	factory.Add(xai.Registration)
+
+	costMappings, informationalFields := factory.CostRegistry()
+	RegisterCostMappings(costMappings, informationalFields)
 
 	os.Exit(m.Run())
 }
