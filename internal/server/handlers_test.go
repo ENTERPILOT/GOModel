@@ -548,7 +548,7 @@ func TestEmbeddings(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "text-embedding-3-small", "input": "hello world"}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
@@ -580,7 +580,7 @@ func TestEmbeddings_UnsupportedModel(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "unknown-embed", "input": "hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
@@ -602,7 +602,7 @@ func TestEmbeddings_MissingModel(t *testing.T) {
 	mock := &mockProvider{supportedModels: []string{"text-embedding-3-small"}}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"input": "hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
@@ -629,7 +629,7 @@ func TestEmbeddings_InvalidJSON(t *testing.T) {
 	mock := &mockProvider{supportedModels: []string{"text-embedding-3-small"}}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{bad json}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
@@ -654,7 +654,7 @@ func TestEmbeddings_ProviderReturnsError(t *testing.T) {
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{"model": "text-embedding-3-small", "input": "hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))

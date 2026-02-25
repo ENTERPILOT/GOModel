@@ -9,7 +9,7 @@ make install-tools
 ```
 
 This installs:
-- [golangci-lint](https://golangci-lint.run/welcome/install/) — required for `make lint`
+- [golangci-lint v2](https://golangci-lint.run/welcome/install/) — required for `make lint`
 - [pre-commit](https://pre-commit.com/) — required for git hook setup
 
 After installing tools, set up the pre-commit hooks:
@@ -28,7 +28,7 @@ make test-all      # All tests
 
 ## Linting
 
-Requires [golangci-lint](https://golangci-lint.run/welcome/install/)
+Requires [golangci-lint v2](https://golangci-lint.run/welcome/install/)
 
 ```bash
 make lint          # Check code quality
