@@ -3,13 +3,14 @@ package storage
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
 
 func TestSQLiteConcurrentWriteSafety(t *testing.T) {
-	store, err := NewSQLite(SQLiteConfig{Path: t.TempDir() + "/test.db"})
+	store, err := NewSQLite(SQLiteConfig{Path: filepath.Join(t.TempDir(), "test.db")})
 	if err != nil {
 		t.Fatalf("failed to create SQLite storage: %v", err)
 	}
