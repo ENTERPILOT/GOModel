@@ -714,6 +714,12 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 	return convertAnthropicResponseToResponses(&anthropicResp, req.Model), nil
 }
 
+// Embeddings returns an error because Anthropic does not natively support embeddings.
+// Voyage AI (Anthropic's recommended embedding provider) may be added in the future.
+func (p *Provider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, core.NewInvalidRequestError("anthropic does not support embeddings — consider using Voyage AI", nil)
+}
+
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	anthropicReq := convertResponsesRequestToAnthropic(req)

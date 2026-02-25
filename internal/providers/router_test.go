@@ -56,6 +56,7 @@ type mockProvider struct {
 	name              string
 	chatResponse      *core.ChatResponse
 	responsesResponse *core.ResponsesResponse
+	embeddingResponse *core.EmbeddingResponse
 	err               error
 }
 
@@ -89,6 +90,13 @@ func (m *mockProvider) StreamResponses(_ context.Context, _ *core.ResponsesReque
 		return nil, m.err
 	}
 	return io.NopCloser(nil), nil
+}
+
+func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.embeddingResponse, nil
 }
 
 func TestNewRouter(t *testing.T) {
@@ -305,6 +313,72 @@ func TestRouterGetProviderType(t *testing.T) {
 				t.Errorf("GetProviderType(%q) = %q, want %q", tt.model, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestRouterEmbeddings(t *testing.T) {
+	expectedResp := &core.EmbeddingResponse{
+		Object:   "list",
+		Model:    "text-embedding-3-small",
+		Provider: "openai",
+		Data: []core.EmbeddingData{
+			{Object: "embedding", Embedding: []float64{0.1, 0.2}, Index: 0},
+		},
+	}
+	provider := &mockProvider{name: "openai", embeddingResponse: expectedResp}
+
+	lookup := newMockLookup()
+	lookup.addModel("text-embedding-3-small", provider, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	t.Run("routes correctly", func(t *testing.T) {
+		req := &core.EmbeddingRequest{Model: "text-embedding-3-small", Input: "hello"}
+		resp, err := router.Embeddings(context.Background(), req)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if resp != expectedResp {
+			t.Errorf("got %v, want %v", resp, expectedResp)
+		}
+	})
+
+	t.Run("unknown model returns error", func(t *testing.T) {
+		req := &core.EmbeddingRequest{Model: "unknown"}
+		_, err := router.Embeddings(context.Background(), req)
+		if err == nil {
+			t.Error("expected error for unknown model")
+		}
+	})
+}
+
+func TestRouterEmbeddings_EmptyLookup(t *testing.T) {
+	lookup := newMockLookup()
+	router, _ := NewRouter(lookup)
+
+	_, err := router.Embeddings(context.Background(), &core.EmbeddingRequest{Model: "any"})
+	if !errors.Is(err, ErrRegistryNotInitialized) {
+		t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+	}
+}
+
+func TestRouterEmbeddings_ProviderError(t *testing.T) {
+	providerErr := core.NewInvalidRequestError("anthropic does not support embeddings", nil)
+	provider := &mockProvider{name: "anthropic", err: providerErr}
+
+	lookup := newMockLookup()
+	lookup.addModel("claude-3-5-sonnet", provider, "anthropic")
+
+	router, _ := NewRouter(lookup)
+
+	req := &core.EmbeddingRequest{Model: "claude-3-5-sonnet"}
+	_, err := router.Embeddings(context.Background(), req)
+	if err == nil {
+		t.Error("expected error from provider")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Errorf("expected GatewayError, got %T: %v", err, err)
 	}
 }
 

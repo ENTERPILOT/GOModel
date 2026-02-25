@@ -114,6 +114,18 @@ func (r *Router) StreamResponses(ctx context.Context, req *core.ResponsesRequest
 	return provider.StreamResponses(ctx, req)
 }
 
+// Embeddings routes the embeddings request to the appropriate provider.
+func (r *Router) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	provider := r.lookup.GetProvider(req.Model)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	}
+	return provider.Embeddings(ctx, req)
+}
+
 // GetProviderType returns the provider type string for the given model.
 // Returns empty string if the model is not found.
 func (r *Router) GetProviderType(model string) string {

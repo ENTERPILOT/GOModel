@@ -78,6 +78,10 @@ func (m *handlerMockProvider) StreamResponses(_ context.Context, _ *core.Respons
 	return nil, nil
 }
 
+func (m *handlerMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, core.NewInvalidRequestError("not supported", nil)
+}
+
 func newHandlerContext(path string) (echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, path, nil)

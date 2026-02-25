@@ -195,3 +195,18 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 		Body:     req.WithStreaming(),
 	})
 }
+
+// Embeddings sends an embeddings request to OpenAI
+func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	var resp core.EmbeddingResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/embeddings",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "openai"
+	return &resp, nil
+}

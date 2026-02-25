@@ -45,6 +45,10 @@ func (m *factoryMockProvider) StreamResponses(ctx context.Context, req *core.Res
 	return nil, nil
 }
 
+func (m *factoryMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, core.NewInvalidRequestError("not supported", nil)
+}
+
 func TestProviderFactory_Register(t *testing.T) {
 	factory := NewProviderFactory()
 

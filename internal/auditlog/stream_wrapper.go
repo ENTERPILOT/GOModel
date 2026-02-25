@@ -426,6 +426,7 @@ func IsModelInteractionPath(path string) bool {
 	modelPaths := []string{
 		"/v1/chat/completions",
 		"/v1/responses",
+		"/v1/embeddings",
 	}
 	for _, p := range modelPaths {
 		if strings.HasPrefix(path, p) {

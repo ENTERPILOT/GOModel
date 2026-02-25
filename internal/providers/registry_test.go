@@ -64,6 +64,10 @@ func (m *registryMockProvider) StreamResponses(_ context.Context, _ *core.Respon
 	return io.NopCloser(nil), nil
 }
 
+func (m *registryMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, core.NewInvalidRequestError("not supported", nil)
+}
+
 func TestModelRegistry(t *testing.T) {
 	t.Run("RegisterProvider", func(t *testing.T) {
 		registry := NewModelRegistry()

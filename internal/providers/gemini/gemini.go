@@ -180,7 +180,15 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 			}
 		}
 
-		if supportsGenerate && strings.HasPrefix(modelID, "gemini-") {
+		supportsEmbed := false
+		for _, method := range gm.SupportedMethods {
+			if method == "embedContent" {
+				supportsEmbed = true
+				break
+			}
+		}
+
+		if (supportsGenerate || supportsEmbed) && strings.HasPrefix(modelID, "gemini-") {
 			models = append(models, core.Model{
 				ID:      modelID,
 				Object:  "model",
@@ -199,6 +207,21 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 // Responses sends a Responses API request to Gemini (converted to chat format)
 func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
 	return providers.ResponsesViaChat(ctx, p, req)
+}
+
+// Embeddings sends an embeddings request to Gemini via its OpenAI-compatible endpoint
+func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	var resp core.EmbeddingResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/embeddings",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "gemini"
+	return &resp, nil
 }
 
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)

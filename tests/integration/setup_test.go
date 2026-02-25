@@ -560,3 +560,8 @@ func (p *TestProvider) Responses(ctx context.Context, req *core.ResponsesRequest
 func (p *TestProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return forwardStreamingResponsesRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req)
 }
+
+// Embeddings returns an error (test provider does not support embeddings).
+func (p *TestProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, core.NewInvalidRequestError("test provider does not support embeddings", nil)
+}

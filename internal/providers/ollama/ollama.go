@@ -19,18 +19,25 @@ var Registration = providers.Registration{
 }
 
 const (
-	defaultBaseURL = "http://localhost:11434/v1"
+	defaultBaseURL       = "http://localhost:11434/v1"
+	defaultNativeBaseURL = "http://localhost:11434"
 )
 
 // Provider implements the core.Provider interface for Ollama
 type Provider struct {
-	client *llmclient.Client
-	apiKey string // Accepted but ignored by Ollama
+	client        *llmclient.Client
+	apiKey        string // Accepted but ignored by Ollama
+	hooks         llmclient.Hooks
+	nativeBaseURL string
 }
 
 // New creates a new Ollama provider.
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
-	p := &Provider{apiKey: apiKey}
+	p := &Provider{
+		apiKey:        apiKey,
+		hooks:         opts.Hooks,
+		nativeBaseURL: defaultNativeBaseURL,
+	}
 	cfg := llmclient.Config{
 		ProviderName: "ollama",
 		BaseURL:      defaultBaseURL,
@@ -131,4 +138,58 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return providers.StreamResponsesViaChat(ctx, p, req, "ollama")
+}
+
+type ollamaEmbedRequest struct {
+	Model string `json:"model"`
+	Input any    `json:"input"`
+}
+
+type ollamaEmbedResponse struct {
+	Model          string      `json:"model"`
+	Embeddings     [][]float64 `json:"embeddings"`
+	PromptEvalCount int        `json:"prompt_eval_count"`
+}
+
+// Embeddings sends an embeddings request to Ollama via its native /api/embed endpoint.
+// Converts between OpenAI embedding format and Ollama's native format.
+func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	nativeCfg := llmclient.DefaultConfig("ollama", p.nativeBaseURL)
+	nativeCfg.Hooks = p.hooks
+	nativeClient := llmclient.New(nativeCfg, p.setHeaders)
+
+	ollamaReq := ollamaEmbedRequest{
+		Model: req.Model,
+		Input: req.Input,
+	}
+
+	var ollamaResp ollamaEmbedResponse
+	err := nativeClient.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/api/embed",
+		Body:     ollamaReq,
+	}, &ollamaResp)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]core.EmbeddingData, len(ollamaResp.Embeddings))
+	for i, emb := range ollamaResp.Embeddings {
+		data[i] = core.EmbeddingData{
+			Object:    "embedding",
+			Embedding: emb,
+			Index:     i,
+		}
+	}
+
+	return &core.EmbeddingResponse{
+		Object:   "list",
+		Data:     data,
+		Model:    ollamaResp.Model,
+		Provider: "ollama",
+		Usage: core.EmbeddingUsage{
+			PromptTokens: ollamaResp.PromptEvalCount,
+			TotalTokens:  ollamaResp.PromptEvalCount,
+		},
+	}, nil
 }

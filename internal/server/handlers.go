@@ -245,6 +245,42 @@ func (h *Handler) Responses(c echo.Context) error {
 	return c.JSON(http.StatusOK, resp)
 }
 
+// Embeddings handles POST /v1/embeddings
+func (h *Handler) Embeddings(c echo.Context) error {
+	var req core.EmbeddingRequest
+	if err := c.Bind(&req); err != nil {
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
+	}
+
+	if req.Model == "" {
+		return handleError(c, core.NewInvalidRequestError("model is required", nil))
+	}
+
+	if !h.provider.Supports(req.Model) {
+		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
+	}
+
+	providerType := h.provider.GetProviderType(req.Model)
+	auditlog.EnrichEntry(c, req.Model, providerType)
+
+	requestID := c.Request().Header.Get("X-Request-ID")
+	ctx := core.WithRequestID(c.Request().Context(), requestID)
+
+	resp, err := h.provider.Embeddings(ctx, &req)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
+		usageEntry := usage.ExtractFromEmbeddingResponse(resp, requestID, providerType, "/v1/embeddings")
+		if usageEntry != nil {
+			h.usageLogger.Write(usageEntry)
+		}
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
 // handleError converts gateway errors to appropriate HTTP responses
 func handleError(c echo.Context, err error) error {
 	var gatewayErr *core.GatewayError
