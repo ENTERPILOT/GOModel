@@ -7,6 +7,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -131,6 +132,20 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		bodySizeLimit = cfg.BodySizeLimit
 	}
 	e.Use(middleware.BodyLimit(bodySizeLimit))
+
+	// Request ID middleware (always active — ensures every request has a unique ID
+	// for usage tracking, audit logging, and response correlation)
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			id := c.Request().Header.Get("X-Request-ID")
+			if id == "" {
+				id = uuid.NewString()
+				c.Request().Header.Set("X-Request-ID", id)
+			}
+			c.Response().Header().Set("X-Request-ID", id)
+			return next(c)
+		}
+	})
 
 	// Audit logging middleware (before authentication to capture all requests)
 	if cfg != nil && cfg.AuditLogger != nil && cfg.AuditLogger.Config().Enabled {

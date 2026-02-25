@@ -45,17 +45,8 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			start := time.Now()
 			req := c.Request()
 
-			// Generate request ID if not present
+			// Read request ID (always set by the request ID middleware in http.go)
 			requestID := req.Header.Get("X-Request-ID")
-			if requestID == "" {
-				requestID = uuid.NewString()
-			}
-
-			// Set request ID in both request and response headers
-			// Request header: for internal components to read consistently
-			// Response header: for clients to receive in the response
-			req.Header.Set("X-Request-ID", requestID)
-			c.Response().Header().Set("X-Request-ID", requestID)
 
 			// Create initial log entry
 			entry := &LogEntry{
