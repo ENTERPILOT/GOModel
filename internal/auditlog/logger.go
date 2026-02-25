@@ -119,13 +119,20 @@ func (l *Logger) flushLoop() {
 			}
 
 		case <-l.done:
-			// Shutdown: mark as closed before closing buffer to prevent Write() panics
+			// Shutdown: mark as closed so Write() stops sending
 			l.closed.Store(true)
-			close(l.buffer)
-			// Drain remaining entries from buffer
-			for entry := range l.buffer {
-				batch = append(batch, entry)
+			// Drain remaining entries from buffer using non-blocking loop.
+			// We do NOT close(l.buffer) — closing is unnecessary since flushLoop
+			// exits via l.done, and closing creates a race with concurrent Write() calls.
+			for {
+				select {
+				case entry := <-l.buffer:
+					batch = append(batch, entry)
+				default:
+					goto drainComplete
+				}
 			}
+		drainComplete:
 			// Final flush
 			if len(batch) > 0 {
 				l.flushBatch(batch)
