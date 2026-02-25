@@ -69,9 +69,17 @@ func (w *StreamUsageWrapper) processCompleteEvents() {
 		if w.eventBuffer.Len() > maxEventBufferRemainder {
 			tail := w.eventBuffer.Bytes()
 			start := len(tail) - maxEventBufferRemainder
-			trimmed := make([]byte, maxEventBufferRemainder)
-			copy(trimmed, tail[start:])
-			w.eventBuffer = *bytes.NewBuffer(trimmed)
+			// If the underlying capacity has grown too large, allocate a new buffer,
+			// otherwise reuse the existing backing array to avoid unnecessary allocs.
+			if cap(tail) > maxEventBufferRemainder*2 {
+				trimmed := make([]byte, maxEventBufferRemainder)
+				copy(trimmed, tail[start:])
+				w.eventBuffer = *bytes.NewBuffer(trimmed)
+			} else {
+				copy(tail[:maxEventBufferRemainder], tail[start:])
+				w.eventBuffer.Reset()
+				w.eventBuffer.Write(tail[:maxEventBufferRemainder])
+			}
 		}
 		return
 	}
