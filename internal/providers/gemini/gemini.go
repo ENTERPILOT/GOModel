@@ -190,7 +190,6 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 		isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
 		if (supportsGenerate || supportsEmbed) && isOpenAICompatModel {
 			models = append(models, core.Model{
-			models = append(models, core.Model{
 				ID:      modelID,
 				Object:  "model",
 				OwnedBy: "google",
