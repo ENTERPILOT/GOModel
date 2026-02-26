@@ -182,10 +182,15 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 		}
 	}
 
+	model := ollamaResp.Model
+	if model == "" {
+		model = req.Model
+	}
+
 	return &core.EmbeddingResponse{
 		Object:   "list",
 		Data:     data,
-		Model:    ollamaResp.Model,
+		Model:    model,
 		Provider: "ollama",
 		Usage: core.EmbeddingUsage{
 			PromptTokens: ollamaResp.PromptEvalCount,

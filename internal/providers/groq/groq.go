@@ -130,6 +130,9 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 	if err != nil {
 		return nil, err
 	}
+	if resp.Model == "" {
+		resp.Model = req.Model
+	}
 	resp.Provider = "groq"
 	return &resp, nil
 }
