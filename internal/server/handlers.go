@@ -232,7 +232,11 @@ func (h *Handler) Embeddings(c echo.Context) error {
 	}
 
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
-		usageEntry := usage.ExtractFromEmbeddingResponse(resp, requestID, providerType, "/v1/embeddings")
+		var pricing *core.ModelPricing
+		if h.pricingResolver != nil {
+			pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
+		}
+		usageEntry := usage.ExtractFromEmbeddingResponse(resp, requestID, providerType, "/v1/embeddings", pricing)
 		if usageEntry != nil {
 			h.usageLogger.Write(usageEntry)
 		}
