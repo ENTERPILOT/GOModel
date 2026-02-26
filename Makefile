@@ -1,4 +1,6 @@
-.PHONY: build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api swagger install-tools
+.PHONY: all build run clean tidy test test-e2e test-integration test-contract test-all lint lint-fix record-api swagger install-tools
+
+all: build
 
 # Get version info
 VERSION ?= $(shell git describe --tags --always --dirty)
