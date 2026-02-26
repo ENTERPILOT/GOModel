@@ -157,6 +157,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		e.Use(AuthMiddleware(cfg.MasterKey, authSkipPaths))
 	}
 
+	// Model validation (skips non-model paths via IsModelInteractionPath)
+	e.Use(ModelValidation(provider))
+
 	// Public routes
 	e.GET("/health", handler.Health)
 	if cfg != nil && cfg.SwaggerEnabled {

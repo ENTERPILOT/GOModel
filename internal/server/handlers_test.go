@@ -137,30 +137,6 @@ func TestChatCompletion(t *testing.T) {
 	}
 }
 
-func TestChatCompletionUnsupportedModel(t *testing.T) {
-	mock := &mockProvider{
-		supportedModels: []string{"gpt-4o-mini"},
-	}
-
-	e := echo.New()
-	handler := NewHandler(mock, nil, nil, nil)
-
-	reqBody := `{"model": "unsupported-model", "messages": [{"role": "user", "content": "Hi"}]}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	err := handler.ChatCompletion(c)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-}
-
 func TestChatCompletionStreaming(t *testing.T) {
 	streamData := `data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1234567890,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"Hello"},"finish_reason":null}]}
 
@@ -571,57 +547,6 @@ func TestEmbeddings(t *testing.T) {
 	}
 	if !strings.Contains(body, "embedding") {
 		t.Errorf("response missing embedding data, got: %s", body)
-	}
-}
-
-func TestEmbeddings_UnsupportedModel(t *testing.T) {
-	mock := &mockProvider{
-		supportedModels: []string{"text-embedding-3-small"},
-	}
-
-	e := echo.New()
-	handler := NewHandler(mock, nil, nil, nil)
-
-	reqBody := `{"model": "unknown-embed", "input": "hello"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	err := handler.Embeddings(c)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-}
-
-func TestEmbeddings_MissingModel(t *testing.T) {
-	mock := &mockProvider{supportedModels: []string{"text-embedding-3-small"}}
-
-	e := echo.New()
-	handler := NewHandler(mock, nil, nil, nil)
-
-	reqBody := `{"input": "hello"}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	err := handler.Embeddings(c)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
-	}
-
-	body := rec.Body.String()
-	if !strings.Contains(body, "model is required") {
-		t.Errorf("expected 'model is required' error, got: %s", body)
 	}
 }
 
