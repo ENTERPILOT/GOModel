@@ -19,8 +19,9 @@ var Registration = providers.Registration{
 }
 
 const (
-	defaultBaseURL       = "http://localhost:11434/v1"
-	defaultNativeBaseURL = "http://localhost:11434"
+	defaultRootURL       = "http://localhost:11434"
+	defaultBaseURL       = defaultRootURL + "/v1"
+	defaultNativeBaseURL = defaultRootURL
 )
 
 // Provider implements the core.Provider interface for Ollama
