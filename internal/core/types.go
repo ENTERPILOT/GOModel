@@ -230,12 +230,14 @@ type EmbeddingResponse struct {
 	Usage    EmbeddingUsage  `json:"usage"`
 }
 
+// EmbeddingData represents a single embedding data point.
 type EmbeddingData struct {
 	Object    string    `json:"object"`
 	Embedding []float64 `json:"embedding"`
 	Index     int       `json:"index"`
 }
 
+// EmbeddingUsage represents token usage information for embeddings.
 type EmbeddingUsage struct {
 	PromptTokens int `json:"prompt_tokens"`
 	TotalTokens  int `json:"total_tokens"`
