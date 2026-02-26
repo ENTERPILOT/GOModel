@@ -104,7 +104,7 @@ Example model identifiers are illustrative and subject to change; consult provid
   </tr>
 </table>
 
-✅ Supported  🚧 Coming soon  ❌ Unsupported  — Not applicable
+✅ Supported  🚧 Coming soon  ❌ Unsupported
 
 ---
 
