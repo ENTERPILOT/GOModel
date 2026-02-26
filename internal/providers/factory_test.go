@@ -46,7 +46,7 @@ func (m *factoryMockProvider) StreamResponses(ctx context.Context, req *core.Res
 }
 
 func (m *factoryMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
-	return nil, core.NewInvalidRequestError("not supported", nil)
+	return &core.EmbeddingResponse{}, nil
 }
 
 func TestProviderFactory_Register(t *testing.T) {
@@ -345,5 +345,46 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 	}
 	if r.JitterFactor != 0.5 {
 		t.Errorf("JitterFactor = %f, want 0.5", r.JitterFactor)
+	}
+}
+
+func TestProviderFactory_Create_SetsProviderName(t *testing.T) {
+	factory := NewProviderFactory()
+	factory.Add(Registration{
+		Type: "testprovider",
+		New: func(_ string, _ ProviderOptions) core.Provider {
+			return &factoryMockProvider{}
+		},
+	})
+
+	provider, err := factory.Create(ProviderConfig{Type: "testprovider", APIKey: "key"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	ctx := context.Background()
+
+	chatResp, err := provider.ChatCompletion(ctx, &core.ChatRequest{Model: "m"})
+	if err != nil {
+		t.Fatalf("ChatCompletion error: %v", err)
+	}
+	if chatResp.Provider != "testprovider" {
+		t.Errorf("ChatCompletion Provider = %q, want %q", chatResp.Provider, "testprovider")
+	}
+
+	respResp, err := provider.Responses(ctx, &core.ResponsesRequest{Model: "m", Input: "hi"})
+	if err != nil {
+		t.Fatalf("Responses error: %v", err)
+	}
+	if respResp.Provider != "testprovider" {
+		t.Errorf("Responses Provider = %q, want %q", respResp.Provider, "testprovider")
+	}
+
+	embedResp, err := provider.Embeddings(ctx, &core.EmbeddingRequest{Model: "m", Input: "hi"})
+	if err != nil {
+		t.Fatalf("Embeddings error: %v", err)
+	}
+	if embedResp.Provider != "testprovider" {
+		t.Errorf("Embeddings Provider = %q, want %q", embedResp.Provider, "testprovider")
 	}
 }

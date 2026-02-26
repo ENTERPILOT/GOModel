@@ -292,11 +292,10 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	}
 
 	return &core.ChatResponse{
-		ID:       resp.ID,
-		Object:   "chat.completion",
-		Model:    resp.Model,
-		Provider: "anthropic",
-		Created:  time.Now().Unix(),
+		ID:      resp.ID,
+		Object:  "chat.completion",
+		Model:   resp.Model,
+		Created: time.Now().Unix(),
 		Choices: []core.Choice{
 			{
 				Index: 0,
@@ -647,7 +646,6 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		Object:    "response",
 		CreatedAt: time.Now().Unix(),
 		Model:     model,
-		Provider:  "anthropic",
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{

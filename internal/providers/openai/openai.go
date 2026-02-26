@@ -139,7 +139,6 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "openai"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -180,7 +179,6 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "openai"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -210,6 +208,5 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
-	resp.Provider = "openai"
 	return &resp, nil
 }

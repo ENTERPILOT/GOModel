@@ -102,7 +102,6 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "ollama"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -191,8 +190,7 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 	return &core.EmbeddingResponse{
 		Object:   "list",
 		Data:     data,
-		Model:    model,
-		Provider: "ollama",
+		Model: model,
 		Usage: core.EmbeddingUsage{
 			PromptTokens: ollamaResp.PromptEvalCount,
 			TotalTokens:  ollamaResp.PromptEvalCount,
