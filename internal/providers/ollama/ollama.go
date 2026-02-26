@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"gomodel/internal/core"
@@ -26,27 +27,31 @@ const (
 
 // Provider implements the core.Provider interface for Ollama
 type Provider struct {
-	client        *llmclient.Client
-	apiKey        string // Accepted but ignored by Ollama
-	hooks         llmclient.Hooks
-	nativeBaseURL string
+	client       *llmclient.Client
+	nativeClient *llmclient.Client
+	apiKey       string // Accepted but ignored by Ollama
 }
 
 // New creates a new Ollama provider.
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
-	p := &Provider{
-		apiKey:        apiKey,
-		hooks:         opts.Hooks,
-		nativeBaseURL: defaultNativeBaseURL,
-	}
+	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.Config{
-		ProviderName: "ollama",
-		BaseURL:      defaultBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "ollama",
+		BaseURL:        defaultBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
+
+	nativeCfg := llmclient.Config{
+		ProviderName:   "ollama",
+		BaseURL:        defaultNativeBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
+		CircuitBreaker: opts.Resilience.CircuitBreaker,
+	}
+	p.nativeClient = llmclient.New(nativeCfg, p.setHeaders)
 	return p
 }
 
@@ -60,12 +65,18 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 	cfg := llmclient.DefaultConfig("ollama", defaultBaseURL)
 	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
+
+	nativeCfg := llmclient.DefaultConfig("ollama", defaultNativeBaseURL)
+	nativeCfg.Hooks = hooks
+	p.nativeClient = llmclient.NewWithHTTPClient(httpClient, nativeCfg, p.setHeaders)
 	return p
 }
 
-// SetBaseURL allows configuring a custom base URL for the provider
+// SetBaseURL allows configuring a custom base URL for the provider.
+// Also updates the native client by deriving the root URL (stripping /v1 suffix).
 func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
+	p.nativeClient.SetBaseURL(strings.TrimSuffix(url, "/v1"))
 }
 
 // CheckAvailability verifies that Ollama is running and accessible.
@@ -154,17 +165,13 @@ type ollamaEmbedResponse struct {
 // Embeddings sends an embeddings request to Ollama via its native /api/embed endpoint.
 // Converts between OpenAI embedding format and Ollama's native format.
 func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
-	nativeCfg := llmclient.DefaultConfig("ollama", p.nativeBaseURL)
-	nativeCfg.Hooks = p.hooks
-	nativeClient := llmclient.New(nativeCfg, p.setHeaders)
-
 	ollamaReq := ollamaEmbedRequest{
 		Model: req.Model,
 		Input: req.Input,
 	}
 
 	var ollamaResp ollamaEmbedResponse
-	err := nativeClient.Do(ctx, llmclient.Request{
+	err := p.nativeClient.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/api/embed",
 		Body:     ollamaReq,

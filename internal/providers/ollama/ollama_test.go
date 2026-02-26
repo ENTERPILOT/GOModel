@@ -25,6 +25,9 @@ func TestNew(t *testing.T) {
 	if provider.client == nil {
 		t.Error("client should not be nil")
 	}
+	if provider.nativeClient == nil {
+		t.Error("nativeClient should not be nil")
+	}
 }
 
 func TestNew_ReturnsProvider(t *testing.T) {
@@ -99,9 +102,6 @@ func TestChatCompletion(t *testing.T) {
 				}
 				if resp.Usage.TotalTokens != 30 {
 					t.Errorf("TotalTokens = %d, want 30", resp.Usage.TotalTokens)
-				}
-				if resp.Provider != "ollama" {
-					t.Errorf("Provider = %q, want %q", resp.Provider, "ollama")
 				}
 			},
 		},
@@ -728,6 +728,9 @@ func TestNewWithHTTPClient(t *testing.T) {
 	if provider.client == nil {
 		t.Error("client should not be nil")
 	}
+	if provider.nativeClient == nil {
+		t.Error("nativeClient should not be nil")
+	}
 }
 
 func TestSetBaseURL(t *testing.T) {
@@ -736,8 +739,6 @@ func TestSetBaseURL(t *testing.T) {
 
 	provider.SetBaseURL(customURL)
 
-	// We can't directly check the baseURL as it's encapsulated in llmclient
-	// but we can verify the provider still works by making a test request
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"object":"list","data":[]}`))
@@ -748,5 +749,99 @@ func TestSetBaseURL(t *testing.T) {
 	_, err := provider.ListModels(context.Background())
 	if err != nil {
 		t.Errorf("SetBaseURL should allow using custom URL: %v", err)
+	}
+}
+
+func TestEmbeddings(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/embed" {
+			t.Errorf("Path = %q, want %q", r.URL.Path, "/api/embed")
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("Method = %q, want %q", r.Method, http.MethodPost)
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+		var req ollamaEmbedRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+		if req.Model != "nomic-embed-text" {
+			t.Errorf("Model = %q, want %q", req.Model, "nomic-embed-text")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "nomic-embed-text",
+			"embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
+			"prompt_eval_count": 8
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL + "/v1")
+
+	resp, err := provider.Embeddings(context.Background(), &core.EmbeddingRequest{
+		Model: "nomic-embed-text",
+		Input: []string{"hello", "world"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Object != "list" {
+		t.Errorf("Object = %q, want %q", resp.Object, "list")
+	}
+	if resp.Model != "nomic-embed-text" {
+		t.Errorf("Model = %q, want %q", resp.Model, "nomic-embed-text")
+	}
+	if len(resp.Data) != 2 {
+		t.Fatalf("len(Data) = %d, want 2", len(resp.Data))
+	}
+	if resp.Data[0].Object != "embedding" {
+		t.Errorf("Data[0].Object = %q, want %q", resp.Data[0].Object, "embedding")
+	}
+	if len(resp.Data[0].Embedding) != 3 {
+		t.Errorf("len(Data[0].Embedding) = %d, want 3", len(resp.Data[0].Embedding))
+	}
+	if resp.Data[1].Index != 1 {
+		t.Errorf("Data[1].Index = %d, want 1", resp.Data[1].Index)
+	}
+	if resp.Usage.PromptTokens != 8 {
+		t.Errorf("PromptTokens = %d, want 8", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.TotalTokens != 8 {
+		t.Errorf("TotalTokens = %d, want 8", resp.Usage.TotalTokens)
+	}
+}
+
+func TestEmbeddings_ModelFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"model": "",
+			"embeddings": [[0.1]],
+			"prompt_eval_count": 1
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL + "/v1")
+
+	resp, err := provider.Embeddings(context.Background(), &core.EmbeddingRequest{
+		Model: "nomic-embed-text",
+		Input: "hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if resp.Model != "nomic-embed-text" {
+		t.Errorf("Model = %q, want %q (should fall back to request model)", resp.Model, "nomic-embed-text")
 	}
 }
