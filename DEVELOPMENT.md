@@ -60,11 +60,3 @@ Override the auto-detection with `LOG_FORMAT`:
 LOG_FORMAT=text make run   # force text output
 LOG_FORMAT=json make run   # force JSON output
 ```
-
-## Pre-commit
-
-Set up the git hooks after running `make install-tools`:
-
-```bash
-pre-commit install
-```
