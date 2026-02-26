@@ -16,6 +16,8 @@ type contextKey string
 
 const providerTypeKey contextKey = "providerType"
 
+// ModelValidation validates model-interaction requests, enriches audit metadata,
+// and propagates request-scoped values needed by downstream handlers.
 func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -57,6 +59,7 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 	}
 }
 
+// GetProviderType returns the provider type set by ModelValidation for this request.
 func GetProviderType(c echo.Context) string {
 	if v, ok := c.Get(string(providerTypeKey)).(string); ok {
 		return v
@@ -64,6 +67,7 @@ func GetProviderType(c echo.Context) string {
 	return ""
 }
 
+// ModelCtx returns the request context and resolved provider type.
 func ModelCtx(c echo.Context) (context.Context, string) {
 	return c.Request().Context(), GetProviderType(c)
 }
