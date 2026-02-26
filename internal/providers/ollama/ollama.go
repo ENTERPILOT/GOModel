@@ -76,7 +76,9 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 // Also updates the native client by deriving the root URL (stripping /v1 suffix).
 func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
-	p.nativeClient.SetBaseURL(strings.TrimSuffix(url, "/v1"))
+	normalized := strings.TrimRight(url, "/")
+	normalized = strings.TrimSuffix(normalized, "/v1")
+	p.nativeClient.SetBaseURL(normalized)
 }
 
 // CheckAvailability verifies that Ollama is running and accessible.

@@ -752,6 +752,31 @@ func TestSetBaseURL(t *testing.T) {
 	}
 }
 
+func TestSetBaseURL_TrailingSlash(t *testing.T) {
+	var nativePath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nativePath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"model":"nomic-embed-text","embeddings":[[0.1,0.2]]}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL + "/v1/")
+
+	_, err := provider.Embeddings(context.Background(), &core.EmbeddingRequest{
+		Model: "nomic-embed-text",
+		Input: "hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if nativePath != "/api/embed" {
+		t.Errorf("native client path = %q, want /api/embed (trailing slash not normalized)", nativePath)
+	}
+}
+
 func TestEmbeddings(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/embed" {
