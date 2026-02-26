@@ -76,7 +76,7 @@ Example model identifiers are illustrative and subject to change; consult provid
     <td>Anthropic</td>
     <td><code>ANTHROPIC_API_KEY</code></td>
     <td><code>claude&#8209;sonnet&#8209;4&#8209;20250514</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>—</td><td>🚧</td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>❌</td><td>🚧</td>
   </tr>
   <tr>
     <td>Google&nbsp;Gemini</td>
@@ -100,11 +100,11 @@ Example model identifiers are illustrative and subject to change; consult provid
     <td>Ollama</td>
     <td><code>OLLAMA_BASE_URL</code></td>
     <td><code>llama3.2</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>—</td><td>—</td><td>🚧</td><td>✅</td><td>🚧</td>
+    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>✅</td><td>🚧</td>
   </tr>
 </table>
 
-✅ Supported  🚧 Coming soon  — Not applicable
+✅ Supported  🚧 Coming soon  ❌ Unsupported  — Not applicable
 
 ---
 
