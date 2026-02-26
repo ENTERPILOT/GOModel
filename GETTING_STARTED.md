@@ -415,6 +415,44 @@ curl http://localhost:8080/v1/responses \
   }'
 ```
 
+### Embeddings
+
+#### Basic Embedding
+
+```bash
+curl http://localhost:8080/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-3-small",
+    "input": "The quick brown fox jumps over the lazy dog."
+  }'
+```
+
+#### Batch Embedding (multiple inputs)
+
+```bash
+curl http://localhost:8080/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-3-small",
+    "input": ["First sentence", "Second sentence", "Third sentence"]
+  }'
+```
+
+#### With Custom Dimensions
+
+```bash
+curl http://localhost:8080/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-3-large",
+    "input": "Hello world",
+    "dimensions": 512
+  }'
+```
+
+Supported by: OpenAI, Gemini, Groq, xAI, Ollama. Anthropic does not support embeddings natively.
+
 ### List Available Models
 
 ```bash
@@ -486,6 +524,13 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
+
+# Embeddings
+embedding = client.embeddings.create(
+    model="text-embedding-3-small",
+    input="Hello world"
+)
+print(embedding.data[0].embedding[:5])  # first 5 dimensions
 ```
 
 ### Node.js
@@ -516,6 +561,13 @@ for await (const chunk of stream) {
     process.stdout.write(chunk.choices[0].delta.content);
   }
 }
+
+// Embeddings
+const embedding = await client.embeddings.create({
+  model: "text-embedding-3-small",
+  input: "Hello world",
+});
+console.log(embedding.data[0].embedding.slice(0, 5)); // first 5 dimensions
 ```
 
 ---
@@ -565,4 +617,5 @@ for await (const chunk of stream) {
 4. **System messages**: Anthropic's system message format is handled automatically. Gemini uses Google's OpenAI-compatible endpoint, which also handles system messages natively.
 5. **Max tokens**: Anthropic requires `max_tokens` to be set. If not provided, the gateway defaults to 4096. OpenAI and Gemini treat it as optional.
 6. **Responses API**: The `/v1/responses` endpoint provides a unified interface across all providers. Providers that do not natively support the Responses API convert requests internally.
+7. **Embeddings**: The `/v1/embeddings` endpoint is supported by OpenAI, Gemini, Groq, xAI, and Ollama. Anthropic does not offer embeddings natively.
 
