@@ -208,8 +208,8 @@ func TestAdminAPI_ModelsEndpoint_E2E(t *testing.T) {
 	var models []providers.ModelWithProvider
 	require.NoError(t, json.Unmarshal(body, &models))
 
-	// TestProvider returns 3 models
-	assert.Len(t, models, 3)
+	// TestProvider returns 5 models (3 chat + 2 embedding)
+	assert.Len(t, models, 5)
 
 	// Should be sorted by model ID
 	for i := 1; i < len(models); i++ {
