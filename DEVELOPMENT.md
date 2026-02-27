@@ -21,9 +21,12 @@ pre-commit install
 ## Testing
 
 ```bash
-make test          # Unit tests
-make test-e2e      # End-to-end tests (requires -tags=e2e; uses in-process mock servers, no Docker)
-make test-all      # All tests
+make test              # Unit tests
+make test-e2e          # End-to-end tests (in-process mock servers, no Docker)
+make test-integration  # Integration tests (requires Docker for testcontainers)
+make test-contract     # Contract tests (golden file validation)
+make test-all          # All tests (unit + e2e + integration + contract)
+make record-api        # Record API responses for contract golden files
 ```
 
 ## Linting
