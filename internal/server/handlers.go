@@ -249,10 +249,12 @@ func (h *Handler) Embeddings(c echo.Context) error {
 func handleError(c echo.Context, err error) error {
 	var gatewayErr *core.GatewayError
 	if errors.As(err, &gatewayErr) {
+		auditlog.EnrichEntryWithError(c, string(gatewayErr.Type), gatewayErr.Message)
 		return c.JSON(gatewayErr.HTTPStatusCode(), gatewayErr.ToJSON())
 	}
 
 	// Fallback for unexpected errors
+	auditlog.EnrichEntryWithError(c, "internal_error", "an unexpected error occurred")
 	return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 		"error": map[string]interface{}{
 			"type":    "internal_error",
