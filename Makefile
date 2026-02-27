@@ -67,16 +67,8 @@ record-api:
 		-output=tests/contract/testdata/openai/embeddings_base64.json
 	@echo "Recording Gemini embeddings..."
 	go run ./cmd/recordapi -provider=gemini -endpoint=embeddings \
-		-model=text-embedding-004 \
+		-model=gemini-embedding-001 \
 		-output=tests/contract/testdata/gemini/embeddings.json
-	@echo "Recording Groq embeddings..."
-	go run ./cmd/recordapi -provider=groq -endpoint=embeddings \
-		-model=nomic-embed-text-v1.5 \
-		-output=tests/contract/testdata/groq/embeddings.json
-	@echo "Recording xAI embeddings..."
-	go run ./cmd/recordapi -provider=xai -endpoint=embeddings \
-		-model=v1 \
-		-output=tests/contract/testdata/xai/embeddings.json
 	@echo "Done! Golden files saved to tests/contract/testdata/"
 
 swagger:
