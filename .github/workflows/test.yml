@@ -85,6 +85,27 @@ jobs:
       - name: Run integration tests
         run: go test -v -tags=integration -timeout=10m ./tests/integration/...
 
+  test-contract:
+    name: Contract Tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run contract tests
+        id: contract
+        run: go test -v -tags=contract -timeout=5m ./tests/contract/...
+
+      - name: Warn on contract test failure
+        if: steps.contract.outcome == 'failure'
+        run: echo "::warning::Contract tests failed — golden files may be outdated. Run 'make record-api' to update."
+
   docs-validate:
     name: Docs Validation
     runs-on: ubuntu-latest
@@ -103,7 +124,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test-unit, test-e2e, integration]
+    needs: [lint, test-unit, test-e2e, integration, test-contract]
     steps:
       - uses: actions/checkout@v6
 
