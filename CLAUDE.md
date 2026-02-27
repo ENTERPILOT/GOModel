@@ -144,6 +144,14 @@ STORAGE_TYPE=postgresql POSTGRES_URL=postgres://gomodel:gomodel@localhost:5432/g
 STORAGE_TYPE=mongodb MONGODB_URL=mongodb://localhost:27017/gomodel go run ./cmd/gomodel
 ```
 
+## Test Generation Requirements
+
+When making changes, ensure the corresponding test layers are updated:
+
+- **New endpoint:** Add E2E tests (`tests/e2e/`), add `recordapi` endpoint config (`cmd/recordapi/main.go`), add contract tests for each provider that supports the endpoint (`tests/contract/`)
+- **New provider:** Add contract tests (`tests/contract/{provider}_test.go`), add provider config to `recordapi`, add `record-api` Makefile targets
+- **New parameters:** Add E2E parameter tests. If the response structure changes, add contract tests with new golden files.
+
 ## Configuration Reference
 
 Full reference: `.env.template` and `config/config.yaml`

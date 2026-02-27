@@ -296,6 +296,68 @@ func TestResponsesMultimodal(t *testing.T) {
 	assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest)
 }
 
+func TestResponsesResponseFormat(t *testing.T) {
+	payload := core.ResponsesRequest{
+		Model: "gpt-4.1",
+		Input: "Hello",
+	}
+
+	resp := sendResponsesRequest(t, payload)
+	defer closeBody(resp)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var respBody core.ResponsesResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&respBody))
+
+	assert.NotEmpty(t, respBody.ID)
+	assert.Equal(t, "response", respBody.Object)
+	assert.Equal(t, "completed", respBody.Status)
+	assert.Equal(t, "gpt-4.1", respBody.Model)
+	require.NotEmpty(t, respBody.Output)
+
+	output := respBody.Output[0]
+	assert.Equal(t, "message", output.Type)
+	assert.Equal(t, "assistant", output.Role)
+	assert.NotEmpty(t, output.Content)
+}
+
+func TestResponsesPreviousResponseID(t *testing.T) {
+	// previous_response_id is an accepted parameter; the mock may ignore it
+	payload := map[string]interface{}{
+		"model":                "gpt-4.1",
+		"input":                "Follow up question",
+		"previous_response_id": "resp_fake_12345",
+	}
+
+	resp := sendRawResponsesRequest(t, payload)
+	defer closeBody(resp)
+
+	// Should be accepted (OK) or rejected (400) — not a server error
+	assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest,
+		"Expected OK or BadRequest, got %d", resp.StatusCode)
+}
+
+func TestResponsesTimeout(t *testing.T) {
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	payload := core.ResponsesRequest{
+		Model: "gpt-4.1",
+		Input: "Quick test",
+	}
+
+	body, _ := json.Marshal(payload)
+	start := time.Now()
+	resp, err := client.Post(gatewayURL+responsesPath, "application/json", strings.NewReader(string(body)))
+	elapsed := time.Since(start)
+
+	require.NoError(t, err)
+	defer closeBody(resp)
+
+	assert.Less(t, elapsed, 5*time.Second)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
 func TestResponsesConcurrency(t *testing.T) {
 	const numRequests = 5
 

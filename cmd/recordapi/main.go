@@ -92,11 +92,28 @@ var endpointConfigs = map[string]struct {
 		path:   "/v1/models",
 		method: http.MethodGet,
 	},
+	"embeddings": {
+		path:   "/v1/embeddings",
+		method: http.MethodPost,
+		requestBody: map[string]interface{}{
+			"model": "text-embedding-3-small",
+			"input": "Hello, World!",
+		},
+	},
+	"embeddings_base64": {
+		path:   "/v1/embeddings",
+		method: http.MethodPost,
+		requestBody: map[string]interface{}{
+			"model":           "text-embedding-3-small",
+			"input":           "Hello, World!",
+			"encoding_format": "base64",
+		},
+	},
 }
 
 func main() {
 	provider := flag.String("provider", "openai", "Provider to test (openai, anthropic, gemini, groq, xai)")
-	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models)")
+	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models, embeddings, embeddings_base64)")
 	output := flag.String("output", "", "Output file path (required)")
 	model := flag.String("model", "", "Override model in request")
 	flag.Parse()

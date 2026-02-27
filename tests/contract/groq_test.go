@@ -117,6 +117,27 @@ func TestGroq_ChatWithParams(t *testing.T) {
 	})
 }
 
+func TestGroq_Embeddings(t *testing.T) {
+	if !goldenFileExists(t, "groq/embeddings.json") {
+		t.Skip("golden file not found - run 'make record-api' to generate")
+	}
+
+	resp := loadGoldenFile[core.EmbeddingResponse](t, "groq/embeddings.json")
+
+	t.Run("Contract", func(t *testing.T) {
+		assert.Equal(t, "list", resp.Object, "object should be 'list'")
+		require.NotEmpty(t, resp.Data, "data should not be empty")
+
+		for i, d := range resp.Data {
+			assert.Equal(t, "embedding", d.Object, "data[%d].object should be 'embedding'", i)
+			assert.NotEmpty(t, d.Embedding, "data[%d].embedding should not be empty", i)
+		}
+
+		assert.GreaterOrEqual(t, resp.Usage.PromptTokens, 0, "prompt_tokens should be >= 0")
+		assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0, "total_tokens should be >= 0")
+	})
+}
+
 func TestGroq_ChatWithTools(t *testing.T) {
 	if !goldenFileExists(t, "groq/chat_with_tools.json") {
 		t.Skip("golden file not found - run 'make record-api' to generate")

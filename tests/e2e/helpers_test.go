@@ -21,6 +21,7 @@ import (
 const (
 	chatCompletionsPath = "/v1/chat/completions"
 	responsesPath       = "/v1/responses"
+	embeddingsPath      = "/v1/embeddings"
 	modelsPath          = "/v1/models"
 	healthPath          = "/health"
 )
@@ -47,6 +48,18 @@ func sendResponsesRequest(t *testing.T, payload core.ResponsesRequest) *http.Res
 func sendRawResponsesRequest(t *testing.T, payload interface{}) *http.Response {
 	t.Helper()
 	return sendJSONRequest(t, gatewayURL+responsesPath, payload)
+}
+
+// sendEmbeddingsRequest sends an embeddings request and returns the response.
+func sendEmbeddingsRequest(t *testing.T, payload core.EmbeddingRequest) *http.Response {
+	t.Helper()
+	return sendJSONRequest(t, gatewayURL+embeddingsPath, payload)
+}
+
+// sendRawEmbeddingsRequest sends a raw embeddings request (for testing invalid payloads).
+func sendRawEmbeddingsRequest(t *testing.T, payload interface{}) *http.Response {
+	t.Helper()
+	return sendJSONRequest(t, gatewayURL+embeddingsPath, payload)
 }
 
 // sendJSONRequest sends a JSON POST request and returns the response.

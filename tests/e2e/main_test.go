@@ -163,6 +163,8 @@ func (p *TestProvider) ListModels(ctx context.Context) (*core.ModelsResponse, er
 			{ID: "gpt-4.1", Object: "model", OwnedBy: "openai"},
 			{ID: "gpt-4", Object: "model", OwnedBy: "openai"},
 			{ID: "gpt-3.5-turbo", Object: "model", OwnedBy: "openai"},
+			{ID: "text-embedding-3-small", Object: "model", OwnedBy: "openai"},
+			{ID: "text-embedding-3-large", Object: "model", OwnedBy: "openai"},
 		},
 	}, nil
 }
@@ -177,6 +179,7 @@ func (p *TestProvider) StreamResponses(ctx context.Context, req *core.ResponsesR
 	return forwardResponsesStreamRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req)
 }
 
-func (p *TestProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
-	return nil, core.NewInvalidRequestError("test provider does not support embeddings", nil)
+// Embeddings forwards the request to the mock server.
+func (p *TestProvider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return forwardEmbeddingsRequest(ctx, p.httpClient, p.baseURL, p.apiKey, req)
 }

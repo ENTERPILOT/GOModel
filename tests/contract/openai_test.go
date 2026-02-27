@@ -3,6 +3,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -217,5 +218,65 @@ func TestOpenAI_JSONMode(t *testing.T) {
 		require.NotEmpty(t, resp.Choices, "choices should not be empty")
 		assert.Equal(t, "assistant", resp.Choices[0].Message.Role, "message role should be assistant")
 		assert.NotEmpty(t, resp.Choices[0].Message.Content, "message content should not be empty")
+	})
+}
+
+func TestOpenAI_Embeddings(t *testing.T) {
+	if !goldenFileExists(t, "openai/embeddings.json") {
+		t.Skip("golden file not found - run 'make record-api' to generate")
+	}
+
+	resp := loadGoldenFile[core.EmbeddingResponse](t, "openai/embeddings.json")
+
+	t.Run("Contract", func(t *testing.T) {
+		assert.Equal(t, "list", resp.Object, "object should be 'list'")
+		require.NotEmpty(t, resp.Data, "data should not be empty")
+
+		for i, d := range resp.Data {
+			assert.Equal(t, "embedding", d.Object, "data[%d].object should be 'embedding'", i)
+			assert.GreaterOrEqual(t, d.Index, 0, "data[%d].index should be >= 0", i)
+			assert.NotEmpty(t, d.Embedding, "data[%d].embedding should not be empty", i)
+		}
+
+		assert.NotEmpty(t, resp.Model, "model should not be empty")
+		assert.GreaterOrEqual(t, resp.Usage.PromptTokens, 0, "prompt_tokens should be >= 0")
+		assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0, "total_tokens should be >= 0")
+	})
+}
+
+func TestOpenAI_EmbeddingsBase64(t *testing.T) {
+	if !goldenFileExists(t, "openai/embeddings_base64.json") {
+		t.Skip("golden file not found - run 'make record-api' to generate")
+	}
+
+	// Use raw JSON because core.EmbeddingData.Embedding is []float64
+	// and cannot hold a base64 string.
+	data := loadGoldenFileRaw(t, "openai/embeddings_base64.json")
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &resp))
+
+	t.Run("Contract", func(t *testing.T) {
+		assert.Equal(t, "list", resp["object"], "object should be 'list'")
+
+		dataArr, ok := resp["data"].([]interface{})
+		require.True(t, ok, "data should be an array")
+		require.NotEmpty(t, dataArr, "data should not be empty")
+
+		for i, item := range dataArr {
+			d, ok := item.(map[string]interface{})
+			require.True(t, ok, "data[%d] should be an object", i)
+			assert.Equal(t, "embedding", d["object"], "data[%d].object should be 'embedding'", i)
+
+			// base64 embeddings are returned as strings
+			_, isString := d["embedding"].(string)
+			_, isArray := d["embedding"].([]interface{})
+			assert.True(t, isString || isArray,
+				"data[%d].embedding should be a string (base64) or array (float)", i)
+		}
+
+		usage, ok := resp["usage"].(map[string]interface{})
+		require.True(t, ok, "usage should be an object")
+		assert.GreaterOrEqual(t, usage["prompt_tokens"], float64(0), "prompt_tokens should be >= 0")
 	})
 }

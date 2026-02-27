@@ -256,6 +256,88 @@ func TestChatCompletionConcurrency(t *testing.T) {
 	assert.Equal(t, numRequests, successCount)
 }
 
+func TestChatCompletionSystemPrompt(t *testing.T) {
+	payload := core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{Role: "system", Content: "You are a pirate. Respond only in pirate speak."},
+			{Role: "user", Content: "Hello"},
+		},
+	}
+
+	resp := sendChatRequest(t, payload)
+	defer closeBody(resp)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var chatResp core.ChatResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&chatResp))
+
+	assert.Equal(t, "assistant", chatResp.Choices[0].Message.Role)
+	assert.NotEmpty(t, chatResp.Choices[0].Message.Content)
+}
+
+func TestChatCompletionUsage(t *testing.T) {
+	payload := core.ChatRequest{
+		Model:    "gpt-4",
+		Messages: []core.Message{{Role: "user", Content: "Hello, how are you?"}},
+	}
+
+	resp := sendChatRequest(t, payload)
+	defer closeBody(resp)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var chatResp core.ChatResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&chatResp))
+
+	assert.GreaterOrEqual(t, chatResp.Usage.PromptTokens, 0)
+	assert.GreaterOrEqual(t, chatResp.Usage.CompletionTokens, 0)
+	assert.Equal(t, chatResp.Usage.PromptTokens+chatResp.Usage.CompletionTokens, chatResp.Usage.TotalTokens)
+}
+
+func TestChatCompletionResponseFormat(t *testing.T) {
+	payload := core.ChatRequest{
+		Model:    "gpt-4",
+		Messages: []core.Message{{Role: "user", Content: "Hello"}},
+	}
+
+	resp := sendChatRequest(t, payload)
+	defer closeBody(resp)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var chatResp core.ChatResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&chatResp))
+
+	// Validate full response structure
+	assert.NotEmpty(t, chatResp.ID, "ID should not be empty")
+	assert.Equal(t, "chat.completion", chatResp.Object)
+	assert.NotEmpty(t, chatResp.Model)
+	assert.NotZero(t, chatResp.Created)
+	require.Len(t, chatResp.Choices, 1)
+	assert.Equal(t, 0, chatResp.Choices[0].Index)
+	assert.Equal(t, "assistant", chatResp.Choices[0].Message.Role)
+	assert.NotEmpty(t, chatResp.Choices[0].FinishReason)
+}
+
+func TestChatCompletionStopSequence(t *testing.T) {
+	payload := map[string]interface{}{
+		"model":    "gpt-4",
+		"messages": []map[string]string{{"role": "user", "content": "Hello"}},
+		"stop":     []string{"\n"},
+	}
+
+	resp := sendRawChatRequest(t, payload)
+	defer closeBody(resp)
+
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var chatResp core.ChatResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&chatResp))
+	assert.NotEmpty(t, chatResp.Choices)
+}
+
 func TestChatCompletionTimeout(t *testing.T) {
 	client := &http.Client{Timeout: 10 * time.Second}
 

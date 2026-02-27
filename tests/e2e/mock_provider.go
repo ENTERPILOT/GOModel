@@ -106,6 +106,8 @@ func (m *MockLLMServer) handleRequest(w http.ResponseWriter, r *http.Request, bo
 		m.handleChatCompletion(w, r, body)
 	case "/responses":
 		m.handleResponses(w, r, body)
+	case "/embeddings":
+		m.handleEmbeddings(w, r, body)
 	case "/models":
 		m.handleListModels(w)
 	default:
@@ -215,11 +217,85 @@ func (m *MockLLMServer) handleListModels(w http.ResponseWriter) {
 			{ID: "gpt-4", Object: "model", OwnedBy: "openai", Created: time.Now().Unix()},
 			{ID: "gpt-4-turbo", Object: "model", OwnedBy: "openai", Created: time.Now().Unix()},
 			{ID: "gpt-3.5-turbo", Object: "model", OwnedBy: "openai", Created: time.Now().Unix()},
+			{ID: "text-embedding-3-small", Object: "model", OwnedBy: "openai", Created: time.Now().Unix()},
+			{ID: "text-embedding-3-large", Object: "model", OwnedBy: "openai", Created: time.Now().Unix()},
 		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(response)
+}
+
+// handleEmbeddings handles embedding requests.
+func (m *MockLLMServer) handleEmbeddings(w http.ResponseWriter, _ *http.Request, body []byte) {
+	var req core.EmbeddingRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error": {"message": "Invalid request body", "type": "invalid_request_error"}}`))
+		return
+	}
+
+	inputs := normalizeEmbeddingInput(req.Input)
+
+	dims := 1536
+	if req.Dimensions != nil && *req.Dimensions > 0 {
+		dims = *req.Dimensions
+	}
+
+	data := make([]core.EmbeddingData, len(inputs))
+	for i := range inputs {
+		emb := make([]float64, dims)
+		for j := range emb {
+			emb[j] = float64(j) * 0.001
+		}
+		data[i] = core.EmbeddingData{
+			Object:    "embedding",
+			Embedding: emb,
+			Index:     i,
+		}
+	}
+
+	promptTokens := 0
+	for _, s := range inputs {
+		promptTokens += len(s) / 4 // rough approximation
+	}
+	if promptTokens == 0 {
+		promptTokens = 1
+	}
+
+	response := core.EmbeddingResponse{
+		Object: "list",
+		Data:   data,
+		Model:  req.Model,
+		Usage: core.EmbeddingUsage{
+			PromptTokens: promptTokens,
+			TotalTokens:  promptTokens,
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(response)
+}
+
+// normalizeEmbeddingInput converts various input formats to a string slice.
+func normalizeEmbeddingInput(input any) []string {
+	switch v := input.(type) {
+	case string:
+		return []string{v}
+	case []interface{}:
+		result := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				result = append(result, s)
+			}
+		}
+		if len(result) == 0 {
+			return []string{""}
+		}
+		return result
+	default:
+		return []string{""}
+	}
 }
 
 // handleResponses handles the Responses API endpoint.
@@ -517,6 +593,40 @@ func forwardResponsesRequest(ctx context.Context, client *http.Client, baseURL, 
 	}
 
 	return &responsesResp, nil
+}
+
+// forwardEmbeddingsRequest forwards an embeddings request to the mock server.
+func forwardEmbeddingsRequest(ctx context.Context, client *http.Client, baseURL, apiKey string, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/embeddings", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("upstream error: %s", string(respBody))
+	}
+
+	var embResp core.EmbeddingResponse
+	if err := json.NewDecoder(resp.Body).Decode(&embResp); err != nil {
+		return nil, err
+	}
+
+	return &embResp, nil
 }
 
 // forwardResponsesStreamRequest forwards a streaming responses API request to the mock server.

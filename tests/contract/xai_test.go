@@ -97,6 +97,27 @@ func TestXAI_StreamingFormat_Contract(t *testing.T) {
 	assert.Contains(t, string(data), "[DONE]", "streaming response should end with [DONE]")
 }
 
+func TestXAI_Embeddings(t *testing.T) {
+	if !goldenFileExists(t, "xai/embeddings.json") {
+		t.Skip("golden file not found - run 'make record-api' to generate")
+	}
+
+	resp := loadGoldenFile[core.EmbeddingResponse](t, "xai/embeddings.json")
+
+	t.Run("Contract", func(t *testing.T) {
+		assert.Equal(t, "list", resp.Object, "object should be 'list'")
+		require.NotEmpty(t, resp.Data, "data should not be empty")
+
+		for i, d := range resp.Data {
+			assert.Equal(t, "embedding", d.Object, "data[%d].object should be 'embedding'", i)
+			assert.NotEmpty(t, d.Embedding, "data[%d].embedding should not be empty", i)
+		}
+
+		assert.GreaterOrEqual(t, resp.Usage.PromptTokens, 0, "prompt_tokens should be >= 0")
+		assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0, "total_tokens should be >= 0")
+	})
+}
+
 func TestXAI_ChatWithParams(t *testing.T) {
 	if !goldenFileExists(t, "xai/chat_with_params.json") {
 		t.Skip("golden file not found - run 'make record-api' to generate")

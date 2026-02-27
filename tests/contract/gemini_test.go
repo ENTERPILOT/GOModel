@@ -140,6 +140,27 @@ func TestGemini_ChatWithTools(t *testing.T) {
 	})
 }
 
+func TestGemini_Embeddings(t *testing.T) {
+	if !goldenFileExists(t, "gemini/embeddings.json") {
+		t.Skip("golden file not found - run 'make record-api' to generate")
+	}
+
+	resp := loadGoldenFile[core.EmbeddingResponse](t, "gemini/embeddings.json")
+
+	t.Run("Contract", func(t *testing.T) {
+		assert.Equal(t, "list", resp.Object, "object should be 'list'")
+		require.NotEmpty(t, resp.Data, "data should not be empty")
+
+		for i, d := range resp.Data {
+			assert.Equal(t, "embedding", d.Object, "data[%d].object should be 'embedding'", i)
+			assert.NotEmpty(t, d.Embedding, "data[%d].embedding should not be empty", i)
+		}
+
+		assert.GreaterOrEqual(t, resp.Usage.PromptTokens, 0, "prompt_tokens should be >= 0")
+		assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0, "total_tokens should be >= 0")
+	})
+}
+
 // hasPrefixIgnoreModels checks if a string has a given prefix, after stripping "models/" prefix
 func hasPrefixIgnoreModels(s, prefix string) bool {
 	s = strings.TrimPrefix(s, "models/")
