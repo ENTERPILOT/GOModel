@@ -1092,6 +1092,150 @@ func TestBatchResults_PendingReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestBatchResults_LogsUsageOnce(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"claude-3-haiku-20240307"},
+		providerTypes: map[string]string{
+			"claude-3-haiku-20240307": "anthropic",
+		},
+		batchCreateResponse: &core.BatchResponse{
+			ID:            "msgbatch_usage_1",
+			Object:        "batch",
+			Status:        "completed",
+			CreatedAt:     1000,
+			RequestCounts: core.BatchRequestCounts{Total: 1, Completed: 1},
+			Metadata:      map[string]string{"upstream": "true"},
+		},
+		batchResults: &core.BatchResultsResponse{
+			Object:  "list",
+			BatchID: "msgbatch_usage_1",
+			Data: []core.BatchResultItem{
+				{
+					Index:      0,
+					CustomID:   "usage-1",
+					StatusCode: 200,
+					Response: map[string]any{
+						"id":    "msg_usage_1",
+						"model": "claude-3-haiku-20240307",
+						"usage": map[string]any{
+							"input_tokens":            1000.0,
+							"output_tokens":           500.0,
+							"total_tokens":            1500.0,
+							"cache_read_input_tokens": 120.0,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	inputPrice := 10.0
+	outputPrice := 20.0
+	batchInputPrice := 1.0
+	batchOutputPrice := 2.0
+	resolver := &mockPricingResolver{
+		pricing: &core.ModelPricing{
+			Currency:           "USD",
+			InputPerMtok:       &inputPrice,
+			OutputPerMtok:      &outputPrice,
+			BatchInputPerMtok:  &batchInputPrice,
+			BatchOutputPerMtok: &batchOutputPrice,
+		},
+	}
+
+	usageLog := &collectingUsageLogger{
+		config: usage.Config{Enabled: true},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, usageLog, resolver)
+
+	createBody := `{
+	  "endpoint":"/v1/chat/completions",
+	  "requests":[{"custom_id":"usage-1","method":"POST","body":{"model":"claude-3-haiku-20240307","messages":[{"role":"user","content":"hi"}]}}]
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createReq.Header.Set("X-Request-ID", "batch-usage-request-id")
+	createRec := httptest.NewRecorder()
+	createCtx := e.NewContext(createReq, createRec)
+	if err := handler.Batches(createCtx); err != nil {
+		t.Fatalf("create handler returned error: %v", err)
+	}
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200", createRec.Code)
+	}
+
+	var created core.BatchResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	// First results call should log usage.
+	resReq1 := httptest.NewRequest(http.MethodGet, "/v1/batches/"+created.ID+"/results", nil)
+	resRec1 := httptest.NewRecorder()
+	resCtx1 := e.NewContext(resReq1, resRec1)
+	resCtx1.SetPath("/v1/batches/:id/results")
+	resCtx1.SetParamNames("id")
+	resCtx1.SetParamValues(created.ID)
+	if err := handler.BatchResults(resCtx1); err != nil {
+		t.Fatalf("results handler returned error: %v", err)
+	}
+	if resRec1.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want 200", resRec1.Code)
+	}
+
+	// Second results call should not duplicate usage writes.
+	resReq2 := httptest.NewRequest(http.MethodGet, "/v1/batches/"+created.ID+"/results", nil)
+	resRec2 := httptest.NewRecorder()
+	resCtx2 := e.NewContext(resReq2, resRec2)
+	resCtx2.SetPath("/v1/batches/:id/results")
+	resCtx2.SetParamNames("id")
+	resCtx2.SetParamValues(created.ID)
+	if err := handler.BatchResults(resCtx2); err != nil {
+		t.Fatalf("second results handler returned error: %v", err)
+	}
+	if resRec2.Code != http.StatusOK {
+		t.Fatalf("second results status = %d, want 200", resRec2.Code)
+	}
+
+	if len(usageLog.entries) != 1 {
+		t.Fatalf("usage entries = %d, want 1", len(usageLog.entries))
+	}
+
+	entry := usageLog.entries[0]
+	if entry.RequestID != "batch-usage-request-id" {
+		t.Errorf("RequestID = %q, want %q", entry.RequestID, "batch-usage-request-id")
+	}
+	if entry.Endpoint != "/v1/batches" {
+		t.Errorf("Endpoint = %q, want %q", entry.Endpoint, "/v1/batches")
+	}
+	if entry.ProviderID != "msg_usage_1" {
+		t.Errorf("ProviderID = %q, want %q", entry.ProviderID, "msg_usage_1")
+	}
+	if entry.InputTokens != 1000 || entry.OutputTokens != 500 || entry.TotalTokens != 1500 {
+		t.Errorf("unexpected token totals: input=%d output=%d total=%d", entry.InputTokens, entry.OutputTokens, entry.TotalTokens)
+	}
+	if entry.TotalCost == nil || *entry.TotalCost <= 0 {
+		t.Fatalf("expected non-zero total cost, got %+v", entry.TotalCost)
+	}
+	// 1000 * 1$/Mt + 500 * 2$/Mt = 0.001 + 0.001 = 0.002
+	expectedTotalCost := 0.002
+	delta := *entry.TotalCost - expectedTotalCost
+	if delta < 0 {
+		delta = -delta
+	}
+	if delta > 1e-9 {
+		t.Errorf("TotalCost = %.6f, want %.6f", *entry.TotalCost, expectedTotalCost)
+	}
+	if entry.RawData == nil {
+		t.Fatal("expected raw usage data")
+	}
+	if entry.RawData["batch_custom_id"] != "usage-1" {
+		t.Errorf("batch_custom_id = %v, want %q", entry.RawData["batch_custom_id"], "usage-1")
+	}
+}
+
 func TestGetBatch_NotFound(t *testing.T) {
 	e := echo.New()
 	handler := NewHandler(&mockProvider{}, nil, nil, nil)
@@ -1128,6 +1272,21 @@ type capturingUsageLogger struct {
 func (c *capturingUsageLogger) Write(entry *usage.UsageEntry) { *c.captured = entry }
 func (c *capturingUsageLogger) Config() usage.Config          { return c.config }
 func (c *capturingUsageLogger) Close() error                  { return nil }
+
+type collectingUsageLogger struct {
+	config  usage.Config
+	entries []*usage.UsageEntry
+}
+
+func (c *collectingUsageLogger) Write(entry *usage.UsageEntry) {
+	if entry == nil {
+		return
+	}
+	c.entries = append(c.entries, entry)
+}
+
+func (c *collectingUsageLogger) Config() usage.Config { return c.config }
+func (c *collectingUsageLogger) Close() error         { return nil }
 
 type mockPricingResolver struct {
 	pricing *core.ModelPricing

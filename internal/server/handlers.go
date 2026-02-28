@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -18,6 +19,11 @@ import (
 	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
+)
+
+const (
+	batchMetadataRequestIDKey   = "request_id"
+	batchMetadataUsageLoggedKey = "usage_logged_at"
 )
 
 // Handler holds the HTTP handlers
@@ -335,6 +341,9 @@ func (h *Handler) Batches(c echo.Context) error {
 	}
 	resp.Metadata["provider"] = providerType
 	resp.Metadata["provider_batch_id"] = providerBatchID
+	if requestID != "" {
+		resp.Metadata[batchMetadataRequestIDKey] = requestID
+	}
 
 	if h.batchStore != nil {
 		if err := h.batchStore.Create(ctx, &resp); err != nil {
@@ -447,6 +456,8 @@ func (h *Handler) GetBatch(c echo.Context) error {
 		}
 		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to load batch", err))
 	}
+	auditlog.EnrichEntry(c, "batch", resp.Provider)
+
 	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
 	if !ok {
 		return c.JSON(http.StatusOK, resp)
@@ -496,6 +507,7 @@ func (h *Handler) ListBatches(c echo.Context) error {
 		}
 		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to list batches", err))
 	}
+	auditlog.EnrichEntry(c, "batch", "")
 
 	data := make([]core.BatchResponse, 0, len(items))
 	for _, item := range items {
@@ -532,6 +544,7 @@ func (h *Handler) CancelBatch(c echo.Context) error {
 		}
 		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to load batch", err))
 	}
+	auditlog.EnrichEntry(c, "batch", resp.Provider)
 
 	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
 	if !ok || resp.Provider == "" || resp.ProviderBatchID == "" {
@@ -570,6 +583,7 @@ func (h *Handler) BatchResults(c echo.Context) error {
 		}
 		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to load batch results", err))
 	}
+	auditlog.EnrichEntry(c, "batch", stored.Provider)
 
 	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
 	if !ok || stored.Provider == "" || stored.ProviderBatchID == "" {
@@ -605,8 +619,11 @@ func (h *Handler) BatchResults(c echo.Context) error {
 
 	result := *upstream
 	result.BatchID = stored.ID
+	usageLogged := h.logBatchUsageFromBatchResults(stored, &result, strings.TrimSpace(c.Request().Header.Get("X-Request-ID")))
 	if len(result.Data) > 0 {
 		stored.Results = result.Data
+	}
+	if len(result.Data) > 0 || usageLogged {
 		_ = h.batchStore.Update(c.Request().Context(), stored)
 	}
 
@@ -639,6 +656,302 @@ func normalizeBatchEndpoint(raw string) string {
 	return trimmed
 }
 
+func (h *Handler) logBatchUsageFromBatchResults(stored *core.BatchResponse, result *core.BatchResultsResponse, fallbackRequestID string) bool {
+	if h.usageLogger == nil || !h.usageLogger.Config().Enabled || stored == nil || result == nil || len(result.Data) == 0 {
+		return false
+	}
+	if stored.Metadata != nil && strings.TrimSpace(stored.Metadata[batchMetadataUsageLoggedKey]) != "" {
+		return false
+	}
+
+	requestID := strings.TrimSpace(fallbackRequestID)
+	if stored.Metadata != nil {
+		if originalRequestID := strings.TrimSpace(stored.Metadata[batchMetadataRequestIDKey]); originalRequestID != "" {
+			requestID = originalRequestID
+		}
+	}
+	if requestID == "" {
+		requestID = "batch:" + stored.ID
+	}
+
+	loggedEntries := 0
+	inputTotal := 0
+	outputTotal := 0
+	totalTokens := 0
+	var inputCostTotal float64
+	var outputCostTotal float64
+	var totalCostTotal float64
+	hasAnyCost := false
+
+	for _, item := range result.Data {
+		if item.StatusCode < http.StatusOK || item.StatusCode >= http.StatusMultipleChoices {
+			continue
+		}
+
+		payload, ok := asJSONMap(item.Response)
+		if !ok {
+			continue
+		}
+		usagePayload, ok := asJSONMap(payload["usage"])
+		if !ok {
+			continue
+		}
+
+		inputTokens, outputTokens, usageTotal, hasUsage := extractTokenTotals(usagePayload)
+		if !hasUsage {
+			continue
+		}
+
+		provider := firstNonEmpty(item.Provider, stored.Provider)
+		model := firstNonEmpty(item.Model, stringFromAny(payload["model"]))
+		providerID := firstNonEmpty(
+			stringFromAny(payload["id"]),
+			item.CustomID,
+			fmt.Sprintf("%s:%d", firstNonEmpty(stored.ProviderBatchID, stored.ID), item.Index),
+		)
+		rawUsage := buildBatchUsageRawData(usagePayload, stored, item)
+
+		var pricing *core.ModelPricing
+		if h.pricingResolver != nil && model != "" {
+			pricing = h.pricingResolver.ResolvePricing(model, provider)
+		}
+
+		entry := usage.ExtractFromSSEUsage(
+			providerID,
+			inputTokens,
+			outputTokens,
+			usageTotal,
+			rawUsage,
+			requestID,
+			model,
+			provider,
+			"/v1/batches",
+			pricing,
+		)
+		if entry == nil {
+			continue
+		}
+		entry.ID = deterministicBatchUsageID(stored, item, providerID)
+
+		h.usageLogger.Write(entry)
+		loggedEntries++
+		inputTotal += inputTokens
+		outputTotal += outputTokens
+		totalTokens += usageTotal
+		if entry.InputCost != nil {
+			inputCostTotal += *entry.InputCost
+			hasAnyCost = true
+		}
+		if entry.OutputCost != nil {
+			outputCostTotal += *entry.OutputCost
+			hasAnyCost = true
+		}
+		if entry.TotalCost != nil {
+			totalCostTotal += *entry.TotalCost
+			hasAnyCost = true
+		}
+	}
+
+	if loggedEntries == 0 {
+		return false
+	}
+
+	if stored.Metadata == nil {
+		stored.Metadata = map[string]string{}
+	}
+	stored.Metadata[batchMetadataUsageLoggedKey] = strconv.FormatInt(time.Now().Unix(), 10)
+	stored.Metadata[batchMetadataRequestIDKey] = requestID
+
+	stored.Usage.InputTokens = inputTotal
+	stored.Usage.OutputTokens = outputTotal
+	stored.Usage.TotalTokens = totalTokens
+	if hasAnyCost {
+		stored.Usage.InputCost = &inputCostTotal
+		stored.Usage.OutputCost = &outputCostTotal
+		stored.Usage.TotalCost = &totalCostTotal
+	}
+
+	return true
+}
+
+func deterministicBatchUsageID(stored *core.BatchResponse, item core.BatchResultItem, providerID string) string {
+	seed := fmt.Sprintf(
+		"%s|%s|%d|%s|%s",
+		firstNonEmpty(stored.ID, stored.ProviderBatchID),
+		firstNonEmpty(stored.ProviderBatchID, stored.ID),
+		item.Index,
+		item.CustomID,
+		providerID,
+	)
+	return uuid.NewSHA1(uuid.NameSpaceOID, []byte(seed)).String()
+}
+
+func buildBatchUsageRawData(usagePayload map[string]any, stored *core.BatchResponse, item core.BatchResultItem) map[string]any {
+	if usagePayload == nil {
+		return nil
+	}
+
+	raw := make(map[string]any)
+	for key, value := range usagePayload {
+		switch key {
+		case "input_tokens", "output_tokens", "prompt_tokens", "completion_tokens", "total_tokens":
+			continue
+		default:
+			raw[key] = value
+		}
+	}
+
+	if promptDetails, ok := asJSONMap(usagePayload["prompt_tokens_details"]); ok {
+		for key, value := range promptDetails {
+			raw["prompt_"+key] = value
+		}
+	}
+	if completionDetails, ok := asJSONMap(usagePayload["completion_tokens_details"]); ok {
+		for key, value := range completionDetails {
+			raw["completion_"+key] = value
+		}
+	}
+
+	raw["batch_id"] = stored.ID
+	raw["provider_batch_id"] = stored.ProviderBatchID
+	raw["batch_result_index"] = item.Index
+	if item.CustomID != "" {
+		raw["batch_custom_id"] = item.CustomID
+	}
+	if endpoint := strings.TrimSpace(stored.Endpoint); endpoint != "" {
+		raw["batch_endpoint"] = endpoint
+	}
+
+	return raw
+}
+
+func extractTokenTotals(usagePayload map[string]any) (int, int, int, bool) {
+	inputTokens, hasInput := readFirstInt(usagePayload, "input_tokens", "prompt_tokens")
+	outputTokens, hasOutput := readFirstInt(usagePayload, "output_tokens", "completion_tokens")
+	totalTokens, hasTotal := readFirstInt(usagePayload, "total_tokens")
+	if !hasTotal && (hasInput || hasOutput) {
+		totalTokens = inputTokens + outputTokens
+		hasTotal = true
+	}
+
+	return inputTokens, outputTokens, totalTokens, hasInput || hasOutput || hasTotal
+}
+
+func readFirstInt(values map[string]any, keys ...string) (int, bool) {
+	for _, key := range keys {
+		value, exists := values[key]
+		if !exists {
+			continue
+		}
+		if num, ok := intFromAny(value); ok {
+			return num, true
+		}
+	}
+	return 0, false
+}
+
+func intFromAny(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int8:
+		return int(v), true
+	case int16:
+		return int(v), true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case uint:
+		return int(v), true
+	case uint8:
+		return int(v), true
+	case uint16:
+		return int(v), true
+	case uint32:
+		return int(v), true
+	case uint64:
+		return int(v), true
+	case float32:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case json.Number:
+		i, err := v.Int64()
+		if err == nil {
+			return int(i), true
+		}
+		f, err := v.Float64()
+		if err == nil {
+			return int(f), true
+		}
+		return 0, false
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return 0, false
+		}
+		if i, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return i, true
+		}
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+func asJSONMap(value any) (map[string]any, bool) {
+	switch v := value.(type) {
+	case map[string]any:
+		return v, true
+	case json.RawMessage:
+		return decodeJSONMap(v)
+	case []byte:
+		return decodeJSONMap(v)
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil, false
+		}
+		return decodeJSONMap([]byte(v))
+	default:
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return nil, false
+		}
+		return decodeJSONMap(raw)
+	}
+}
+
+func decodeJSONMap(raw []byte) (map[string]any, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return nil, false
+	}
+	return decoded, true
+}
+
+func stringFromAny(value any) string {
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case []byte:
+		return strings.TrimSpace(string(v))
+	default:
+		return ""
+	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func mergeStoredBatchFromUpstream(stored, upstream *core.BatchResponse) {
 	if stored == nil || upstream == nil {
 		return
@@ -657,7 +970,12 @@ func mergeStoredBatchFromUpstream(stored, upstream *core.BatchResponse) {
 	stored.CancellingAt = upstream.CancellingAt
 	stored.CancelledAt = upstream.CancelledAt
 	if upstream.Metadata != nil {
-		stored.Metadata = upstream.Metadata
+		if stored.Metadata == nil {
+			stored.Metadata = map[string]string{}
+		}
+		for key, value := range upstream.Metadata {
+			stored.Metadata[key] = value
+		}
 	}
 }
 
