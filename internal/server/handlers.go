@@ -102,6 +102,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 
 	ctx, providerType := ModelCtx(c)
 	requestID := c.Request().Header.Get("X-Request-ID")
+	ctx = core.WithRequestID(ctx, requestID)
 
 	if req.Stream {
 		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
