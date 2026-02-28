@@ -1,0 +1,65 @@
+---
+title: "Quick Start"
+description: "Run GOModel in minutes and send your first OpenAI-compatible request."
+---
+
+## 1. Start GOModel
+
+Run GOModel with at least one provider credential.
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e GOMODEL_MASTER_KEY="change-me" \
+  -e OPENAI_API_KEY="sk-..." \
+  enterpilot/gomodel
+```
+
+<Note>
+  `GOMODEL_MASTER_KEY` is strongly recommended. Without it, your API endpoints
+  are unprotected.
+</Note>
+
+## 2. Verify models are available
+
+```bash
+curl -s http://localhost:8080/v1/models \
+  -H "Authorization: Bearer change-me"
+```
+
+Use one of the returned model IDs in the next request.
+
+## 3. Send your first request
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer change-me" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Say hello in one sentence."}]
+  }'
+```
+
+## 4. Optional: call GOModel with the OpenAI SDK
+
+```javascript
+import OpenAI from "openai";
+
+const client = new OpenAI({
+  apiKey: "change-me",
+  baseURL: "http://localhost:8080/v1"
+});
+
+const res = await client.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [{ role: "user", content: "Hello from SDK" }]
+});
+
+console.log(res.choices[0].message.content);
+```
+
+## Next Steps
+
+- Configure production settings: [Configuration](/advanced/configuration)
+- Add request policies: [Guardrails](/advanced/guardrails)
+- Connect OpenClaw: [Using GOModel with OpenClaw](/guides/openclaw)

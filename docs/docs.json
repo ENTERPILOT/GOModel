@@ -8,6 +8,14 @@
     "navigation": {
         "pages": [
             {
+                "group": "Getting Started",
+                "pages": ["getting-started/quickstart"]
+            },
+            {
+                "group": "Guides",
+                "pages": ["guides/openclaw"]
+            },
+            {
                 "group": "Advanced",
                 "pages": ["advanced/configuration", "advanced/guardrails", "advanced/admin-endpoints"]
             }
