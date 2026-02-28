@@ -160,21 +160,7 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 	defer cursor.Close(ctx)
 
 	var facetResult struct {
-		Data []struct {
-			ID         string    `bson:"_id"`
-			Timestamp  time.Time `bson:"timestamp"`
-			DurationNs int64     `bson:"duration_ns"`
-			Model      string    `bson:"model"`
-			Provider   string    `bson:"provider"`
-			StatusCode int       `bson:"status_code"`
-			RequestID  string    `bson:"request_id"`
-			ClientIP   string    `bson:"client_ip"`
-			Method     string    `bson:"method"`
-			Path       string    `bson:"path"`
-			Stream     bool      `bson:"stream"`
-			ErrorType  string    `bson:"error_type"`
-			Data       *LogData  `bson:"data"`
-		} `bson:"data"`
+		Data  []mongoLogRow `bson:"data"`
 		Total []struct {
 			Count int `bson:"count"`
 		} `bson:"total"`
@@ -197,21 +183,10 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 
 	entries := make([]LogEntry, 0, len(facetResult.Data))
 	for _, row := range facetResult.Data {
-		entries = append(entries, LogEntry{
-			ID:         row.ID,
-			Timestamp:  row.Timestamp,
-			DurationNs: row.DurationNs,
-			Model:      row.Model,
-			Provider:   row.Provider,
-			StatusCode: row.StatusCode,
-			RequestID:  row.RequestID,
-			ClientIP:   row.ClientIP,
-			Method:     row.Method,
-			Path:       row.Path,
-			Stream:     row.Stream,
-			ErrorType:  row.ErrorType,
-			Data:       row.Data,
-		})
+		entry := row.toLogEntry()
+		if entry != nil {
+			entries = append(entries, *entry)
+		}
 	}
 
 	return &LogListResult{

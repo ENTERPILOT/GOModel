@@ -10,6 +10,7 @@
             },
 
             async fetchAuditLog(resetOffset) {
+                const requestToken = ++this.auditFetchToken;
                 try {
                     if (resetOffset) this.auditLog.offset = 0;
                     let qs = this._auditQueryStr();
@@ -24,13 +25,17 @@
 
                     const res = await fetch('/admin/api/v1/audit/log?' + qs, { headers: this.headers() });
                     if (!this.handleFetchResponse(res, 'audit log')) {
+                        if (requestToken !== this.auditFetchToken) return;
                         this.auditLog = { entries: [], total: 0, limit: 25, offset: 0 };
                         return;
                     }
-                    this.auditLog = await res.json();
+                    const payload = await res.json();
+                    if (requestToken !== this.auditFetchToken) return;
+                    this.auditLog = payload;
                     if (!this.auditLog.entries) this.auditLog.entries = [];
                 } catch (e) {
                     console.error('Failed to fetch audit log:', e);
+                    if (requestToken !== this.auditFetchToken) return;
                     this.auditLog = { entries: [], total: 0, limit: 25, offset: 0 };
                 }
             },

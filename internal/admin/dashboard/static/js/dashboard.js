@@ -55,6 +55,7 @@ function dashboard() {
         auditPath: '',
         auditStatusCode: '',
         auditStream: '',
+        auditFetchToken: 0,
 
         // Conversation drawer state
         conversationOpen: false,
@@ -85,6 +86,7 @@ function dashboard() {
             const { page, sub } = this._parseRoute(window.location.pathname);
             this.page = page;
             if (page === 'usage' && sub === 'costs') this.usageMode = 'costs';
+            if (page === 'audit') this.fetchAuditLog(true);
 
             window.addEventListener('popstate', () => {
                 const { page: p, sub: s } = this._parseRoute(window.location.pathname);
