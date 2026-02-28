@@ -3,6 +3,8 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -28,24 +30,26 @@ const (
 
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
-	client    *llmclient.Client
-	hooks     llmclient.Hooks
-	apiKey    string
-	modelsURL string
+	client     *llmclient.Client
+	httpClient *http.Client
+	hooks      llmclient.Hooks
+	apiKey     string
+	modelsURL  string
 }
 
 // New creates a new Gemini provider.
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{
-		apiKey:    apiKey,
-		hooks:     opts.Hooks,
-		modelsURL: defaultModelsBaseURL,
+		httpClient: nil,
+		apiKey:     apiKey,
+		hooks:      opts.Hooks,
+		modelsURL:  defaultModelsBaseURL,
 	}
 	cfg := llmclient.Config{
-		ProviderName: "gemini",
-		BaseURL:      defaultOpenAICompatibleBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "gemini",
+		BaseURL:        defaultOpenAICompatibleBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -59,9 +63,10 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 		httpClient = http.DefaultClient
 	}
 	p := &Provider{
-		apiKey:    apiKey,
-		hooks:     hooks,
-		modelsURL: defaultModelsBaseURL,
+		httpClient: httpClient,
+		apiKey:     apiKey,
+		hooks:      hooks,
+		modelsURL:  defaultModelsBaseURL,
 	}
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
 	cfg.Hooks = hooks
@@ -72,6 +77,12 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
+}
+
+// SetModelsURL allows configuring a custom models API base URL.
+// This is primarily useful for tests and local emulators.
+func (p *Provider) SetModelsURL(url string) {
+	p.modelsURL = url
 }
 
 // setHeaders sets the required headers for Gemini API requests
@@ -140,55 +151,86 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	// We need to create a separate client for the models endpoint since it uses a different URL
 	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
 	modelsCfg.Hooks = p.hooks
-	modelsClient := llmclient.New(
-		modelsCfg,
-		func(req *http.Request) {
-			// Add API key as query parameter.
-			// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
-			// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
-			// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
-			q := req.URL.Query()
-			q.Add("key", p.apiKey)
-			req.URL.RawQuery = q.Encode()
-		},
-	)
+	headers := func(req *http.Request) {
+		// Add API key as query parameter.
+		// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
+		// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
+		// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
+		q := req.URL.Query()
+		q.Add("key", p.apiKey)
+		req.URL.RawQuery = q.Encode()
+	}
 
-	var geminiResp geminiModelsResponse
-	err := modelsClient.Do(ctx, llmclient.Request{
+	var modelsClient *llmclient.Client
+	if p.httpClient != nil {
+		modelsClient = llmclient.NewWithHTTPClient(p.httpClient, modelsCfg, headers)
+	} else {
+		modelsClient = llmclient.New(modelsCfg, headers)
+	}
+
+	rawResp, err := modelsClient.DoRaw(ctx, llmclient.Request{
 		Method:   http.MethodGet,
 		Endpoint: "/models",
-	}, &geminiResp)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert Gemini models to core.Model format
 	now := time.Now().Unix()
-	models := make([]core.Model, 0, len(geminiResp.Models))
 
-	for _, gm := range geminiResp.Models {
-		// Extract model ID from name (format: "models/gemini-...")
-		modelID := strings.TrimPrefix(gm.Name, "models/")
+	// Preferred path: native Gemini models response.
+	var geminiResp geminiModelsResponse
+	if err := json.Unmarshal(rawResp.Body, &geminiResp); err == nil && len(geminiResp.Models) > 0 {
+		models := make([]core.Model, 0, len(geminiResp.Models))
 
-		// Only include models that support generateContent (chat/completion)
-		supportsGenerate := false
-		for _, method := range gm.SupportedMethods {
-			if method == "generateContent" || method == "streamGenerateContent" {
-				supportsGenerate = true
-				break
+		for _, gm := range geminiResp.Models {
+			// Extract model ID from name (format: "models/gemini-...")
+			modelID := strings.TrimPrefix(gm.Name, "models/")
+
+			// Only include models that support generateContent (chat/completion)
+			supportsGenerate := false
+			for _, method := range gm.SupportedMethods {
+				if method == "generateContent" || method == "streamGenerateContent" {
+					supportsGenerate = true
+					break
+				}
+			}
+
+			supportsEmbed := false
+			for _, method := range gm.SupportedMethods {
+				if method == "embedContent" {
+					supportsEmbed = true
+					break
+				}
+			}
+
+			isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
+			if (supportsGenerate || supportsEmbed) && isOpenAICompatModel {
+				models = append(models, core.Model{
+					ID:      modelID,
+					Object:  "model",
+					OwnedBy: "google",
+					Created: now,
+				})
 			}
 		}
 
-		supportsEmbed := false
-		for _, method := range gm.SupportedMethods {
-			if method == "embedContent" {
-				supportsEmbed = true
-				break
-			}
-		}
+		return &core.ModelsResponse{
+			Object: "list",
+			Data:   models,
+		}, nil
+	}
 
-		isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
-		if (supportsGenerate || supportsEmbed) && isOpenAICompatModel {
+	// Fallback path: OpenAI-compatible models list.
+	var openAIResp core.ModelsResponse
+	if err := json.Unmarshal(rawResp.Body, &openAIResp); err == nil && openAIResp.Object == "list" {
+		models := make([]core.Model, 0, len(openAIResp.Data))
+		for _, m := range openAIResp.Data {
+			modelID := strings.TrimPrefix(m.ID, "models/")
+			isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
+			if !isOpenAICompatModel {
+				continue
+			}
 			models = append(models, core.Model{
 				ID:      modelID,
 				Object:  "model",
@@ -196,12 +238,13 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 				Created: now,
 			})
 		}
+		return &core.ModelsResponse{
+			Object: "list",
+			Data:   models,
+		}, nil
 	}
 
-	return &core.ModelsResponse{
-		Object: "list",
-		Data:   models,
-	}, nil
+	return nil, fmt.Errorf("unexpected Gemini models response format")
 }
 
 // Responses sends a Responses API request to Gemini (converted to chat format)

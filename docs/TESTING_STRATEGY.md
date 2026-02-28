@@ -4,9 +4,9 @@ A 3-layer testing strategy with **DB state verification** as the highest priorit
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: Contract Tests (Provider API Compatibility)       │
-│  - Golden files with real API responses                     │
-│  - Schema validation, no API calls in CI                    │
+│  Layer 3: Contract Replay Tests (Provider Compatibility)     │
+│  - Golden files with real API responses                      │
+│  - Replay through real provider adapters in CI               │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Integration Tests (DB Verification) ← PRIORITY    │
 │  - Real PostgreSQL/MongoDB via testcontainers               │
@@ -101,9 +101,9 @@ go test -v -tags=integration ./tests/integration/...
 - Request/response pairs are correctly stored
 - Token counts match expected values
 
-## Layer 3: Contract Tests (Provider API Compatibility)
+## Layer 3: Contract Replay Tests (Provider API Compatibility)
 
-Golden file tests validating API response structures. No API calls in CI.
+Golden file replay tests validating provider adapter behavior. No API calls in CI.
 
 ```bash
 # Run contract tests
@@ -116,9 +116,9 @@ go test -v -tags=contract ./tests/contract/... -run TestOpenAI
 **Key characteristics:**
 
 - Golden files contain real API responses (recorded manually)
-- Tests validate response structure, not content
+- Tests replay payloads through real adapters (`ChatCompletion`, streaming, models, `Responses`)
 - No network calls during test execution
-- Detects API contract changes
+- Detects API contract changes and adapter parsing regressions
 
 ### Supported Providers
 

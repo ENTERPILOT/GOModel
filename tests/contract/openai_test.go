@@ -3,219 +3,159 @@
 package contract
 
 import (
+	"context"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gomodel/internal/core"
+	"gomodel/internal/llmclient"
+	"gomodel/internal/providers/openai"
 )
 
-func TestOpenAI_ChatCompletion(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_completion.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
+func newOpenAIReplayProvider(t *testing.T, routes map[string]replayRoute) core.Provider {
+	t.Helper()
 
-	resp := loadGoldenFile[core.ChatResponse](t, "openai/chat_completion.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		// Validate required fields exist (structure validation)
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.NotEmpty(t, resp.Object, "response object should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
-		assert.NotZero(t, resp.Created, "created timestamp should not be zero")
-
-		// Validate choices structure
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		choice := resp.Choices[0]
-		assert.GreaterOrEqual(t, choice.Index, 0, "choice index should be >= 0")
-		assert.NotNil(t, choice.Message, "choice message should not be nil")
-		assert.NotEmpty(t, choice.Message.Role, "message role should not be empty")
-		assert.Equal(t, "assistant", choice.Message.Role, "message role should be assistant")
-		assert.NotEmpty(t, choice.FinishReason, "finish reason should not be empty")
-
-		// Validate usage structure
-		assert.GreaterOrEqual(t, resp.Usage.PromptTokens, 0, "prompt tokens should be >= 0")
-		assert.GreaterOrEqual(t, resp.Usage.CompletionTokens, 0, "completion tokens should be >= 0")
-		assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0, "total tokens should be >= 0")
-
-		// Total should equal prompt + completion
-		expectedTotal := resp.Usage.PromptTokens + resp.Usage.CompletionTokens
-		assert.Equal(t, expectedTotal, resp.Usage.TotalTokens,
-			"total tokens should equal prompt + completion")
-	})
-
-	t.Run("IDFormat", func(t *testing.T) {
-		// OpenAI response IDs typically start with "chatcmpl-"
-		assert.Contains(t, resp.ID, "chatcmpl-", "OpenAI chat completion ID should contain 'chatcmpl-'")
-	})
+	client := newReplayHTTPClient(t, routes)
+	provider := openai.NewWithHTTPClient("sk-test", client, llmclient.Hooks{})
+	provider.SetBaseURL("https://replay.local")
+	return provider
 }
 
-func TestOpenAI_ModelsResponse_Contract(t *testing.T) {
-	if !goldenFileExists(t, "openai/models.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func TestOpenAIReplayChatCompletion(t *testing.T) {
+	testCases := []struct {
+		name          string
+		fixturePath   string
+		expectContent bool
+		finishReason  string
+	}{
+		{name: "basic", fixturePath: "openai/chat_completion.json", expectContent: true, finishReason: "stop"},
+		{name: "reasoning", fixturePath: "openai/chat_completion_reasoning.json", expectContent: true},
+		{name: "json-mode", fixturePath: "openai/chat_json_mode.json", expectContent: true},
+		{name: "params", fixturePath: "openai/chat_with_params.json", expectContent: true, finishReason: "stop"},
+		{name: "multi-turn", fixturePath: "openai/chat_multi_turn.json", expectContent: true},
+		{name: "multimodal", fixturePath: "openai/chat_multimodal.json", expectContent: true},
+		{name: "tools", fixturePath: "openai/chat_with_tools.json", expectContent: false, finishReason: "tool_calls"},
 	}
 
-	resp := loadGoldenFile[core.ModelsResponse](t, "openai/models.json")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newOpenAIReplayProvider(t, map[string]replayRoute{
+				replayKey(http.MethodPost, "/chat/completions"): jsonFixtureRoute(t, tc.fixturePath),
+			})
 
-	// Validate required fields
-	assert.Equal(t, "list", resp.Object, "object should be 'list'")
-	assert.NotEmpty(t, resp.Data, "models list should not be empty")
+			resp, err := provider.ChatCompletion(context.Background(), &core.ChatRequest{
+				Model: "gpt-4o-mini",
+				Messages: []core.Message{{
+					Role:    "user",
+					Content: "hello",
+				}},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, resp)
 
-	// Validate each model structure
-	for i, model := range resp.Data {
-		assert.NotEmpty(t, model.ID, "model %d: ID should not be empty", i)
-		assert.Equal(t, "model", model.Object, "model %d: object should be 'model'", i)
-		assert.NotEmpty(t, model.OwnedBy, "model %d: owned_by should not be empty", i)
+			assert.NotEmpty(t, resp.ID)
+			assert.Equal(t, "chat.completion", resp.Object)
+			require.NotEmpty(t, resp.Choices)
+			assert.Equal(t, "assistant", resp.Choices[0].Message.Role)
+			assert.NotEmpty(t, resp.Choices[0].FinishReason)
+			if tc.finishReason != "" {
+				assert.Equal(t, tc.finishReason, resp.Choices[0].FinishReason)
+			}
+			if tc.expectContent {
+				assert.NotEmpty(t, resp.Choices[0].Message.Content)
+			}
+		})
 	}
+}
 
-	// Check for some expected models
-	modelIDs := make(map[string]bool)
+func TestOpenAIReplayStreamChatCompletion(t *testing.T) {
+	provider := newOpenAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/chat/completions"): sseFixtureRoute(t, "openai/chat_completion_stream.txt"),
+	})
+
+	stream, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "gpt-4o-mini",
+		Messages: []core.Message{{
+			Role:    "user",
+			Content: "stream",
+		}},
+	})
+	require.NoError(t, err)
+
+	raw := readAllStream(t, stream)
+	chunks, done := parseChatStream(t, raw)
+
+	require.True(t, done, "stream should terminate with [DONE]")
+	require.NotEmpty(t, chunks)
+	assert.NotEmpty(t, extractChatStreamText(chunks))
+}
+
+func TestOpenAIReplayListModels(t *testing.T) {
+	provider := newOpenAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodGet, "/models"): jsonFixtureRoute(t, "openai/models.json"),
+	})
+
+	resp, err := provider.ListModels(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, "list", resp.Object)
+	require.NotEmpty(t, resp.Data)
 	for _, model := range resp.Data {
-		modelIDs[model.ID] = true
+		assert.NotEmpty(t, model.ID)
+		assert.Equal(t, "model", model.Object)
 	}
-
-	// GPT-4 variants should exist (at least one)
-	hasGPT4 := modelIDs["gpt-4"] || modelIDs["gpt-4-turbo"] || modelIDs["gpt-4o"] || modelIDs["gpt-4o-mini"]
-	assert.True(t, hasGPT4, "expected at least one GPT-4 variant in models list")
 }
 
-func TestOpenAI_StreamingFormat_Contract(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_completion_stream.txt") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func TestOpenAIReplayResponses(t *testing.T) {
+	if !goldenFileExists(t, "openai/responses.json") {
+		t.Skip("golden file not found - record openai responses first")
 	}
 
-	data := loadGoldenFileRaw(t, "openai/chat_completion_stream.txt")
+	provider := newOpenAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/responses"): jsonFixtureRoute(t, "openai/responses.json"),
+	})
 
-	// Streaming responses should be in SSE format
-	assert.Contains(t, string(data), "data:", "streaming response should contain SSE data lines")
+	resp, err := provider.Responses(context.Background(), &core.ResponsesRequest{
+		Model: "gpt-4o-mini",
+		Input: "hello",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 
-	// Should end with [DONE]
-	assert.Contains(t, string(data), "[DONE]", "streaming response should end with [DONE]")
+	assert.Equal(t, "response", resp.Object)
+	assert.Equal(t, "completed", resp.Status)
+	require.NotEmpty(t, resp.Output)
+	require.NotEmpty(t, resp.Output[0].Content)
+	assert.NotEmpty(t, resp.Output[0].Content[0].Text)
+	require.NotNil(t, resp.Usage)
+	assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0)
 }
 
-func TestOpenAI_ReasoningModel(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_completion_reasoning.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func TestOpenAIReplayStreamResponses(t *testing.T) {
+	if !goldenFileExists(t, "openai/responses_stream.txt") {
+		t.Skip("golden file not found - record openai responses stream first")
 	}
 
-	resp := loadGoldenFile[core.ChatResponse](t, "openai/chat_completion_reasoning.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		// Validate required fields
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
-		assert.NotZero(t, resp.Created, "created timestamp should not be zero")
-
-		// Validate choices
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		choice := resp.Choices[0]
-		assert.Equal(t, "assistant", choice.Message.Role, "message role should be assistant")
-		assert.NotEmpty(t, choice.FinishReason, "finish reason should not be empty")
+	provider := newOpenAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/responses"): sseFixtureRoute(t, "openai/responses_stream.txt"),
 	})
 
-	t.Run("ModelType", func(t *testing.T) {
-		// Reasoning models contain "o1" or "o3" in their name
-		isReasoningModel := false
-		if len(resp.Model) >= 2 {
-			prefix := resp.Model[:2]
-			if prefix == "o1" || prefix == "o3" {
-				isReasoningModel = true
-			}
-		}
-		assert.True(t, isReasoningModel, "model should be a reasoning model (o1 or o3 series)")
+	stream, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "gpt-4o-mini",
+		Input: "stream",
 	})
-}
+	require.NoError(t, err)
 
-func TestOpenAI_ChatWithTools(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_with_tools.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
+	raw := readAllStream(t, stream)
+	events := parseResponsesStream(t, raw)
+	require.NotEmpty(t, events)
 
-	resp := loadGoldenFile[ToolCallResponse](t, "openai/chat_with_tools.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-
-		choice := resp.Choices[0]
-		// Tool calls should be present when model uses function calling
-		if len(choice.Message.ToolCalls) > 0 {
-			for i, tc := range choice.Message.ToolCalls {
-				assert.NotEmpty(t, tc.ID, "tool call %d: ID should not be empty", i)
-				assert.Equal(t, "function", tc.Type, "tool call %d: type should be 'function'", i)
-				assert.NotEmpty(t, tc.Function.Name, "tool call %d: function name should not be empty", i)
-			}
-			assert.Equal(t, "tool_calls", choice.FinishReason, "finish reason should be 'tool_calls' when tools are called")
-		}
-	})
-}
-
-func TestOpenAI_ChatWithParams(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_with_params.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
-
-	resp := loadGoldenFile[core.ChatResponse](t, "openai/chat_with_params.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		assert.Equal(t, "assistant", resp.Choices[0].Message.Role, "message role should be assistant")
-
-		// When stop sequence is hit, finish_reason should be "stop"
-		assert.Equal(t, "stop", resp.Choices[0].FinishReason, "finish reason should be 'stop'")
-	})
-}
-
-func TestOpenAI_ChatMultiTurn(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_multi_turn.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
-
-	resp := loadGoldenFile[core.ChatResponse](t, "openai/chat_multi_turn.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		assert.Equal(t, "assistant", resp.Choices[0].Message.Role, "message role should be assistant")
-		assert.NotEmpty(t, resp.Choices[0].Message.Content, "message content should not be empty")
-	})
-}
-
-func TestOpenAI_ChatMultimodal(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_multimodal.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
-
-	resp := loadGoldenFile[core.ChatResponse](t, "openai/chat_multimodal.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		assert.Equal(t, "assistant", resp.Choices[0].Message.Role, "message role should be assistant")
-		assert.NotEmpty(t, resp.Choices[0].Message.Content, "message content should not be empty")
-	})
-}
-
-func TestOpenAI_JSONMode(t *testing.T) {
-	if !goldenFileExists(t, "openai/chat_json_mode.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
-
-	resp := loadGoldenFile[core.ChatResponse](t, "openai/chat_json_mode.json")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		assert.Equal(t, "assistant", resp.Choices[0].Message.Role, "message role should be assistant")
-		assert.NotEmpty(t, resp.Choices[0].Message.Content, "message content should not be empty")
-	})
+	assert.True(t, hasResponsesEvent(events, "response.created"))
+	assert.True(t, hasResponsesEvent(events, "response.output_text.delta"))
+	assert.True(t, hasResponsesEvent(events, "response.completed"))
+	assert.NotEmpty(t, extractResponsesStreamText(events))
 }

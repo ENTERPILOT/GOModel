@@ -92,11 +92,28 @@ var endpointConfigs = map[string]struct {
 		path:   "/v1/models",
 		method: http.MethodGet,
 	},
+	"responses": {
+		path:   "/v1/responses",
+		method: http.MethodPost,
+		requestBody: map[string]interface{}{
+			"model": "gpt-4o-mini",
+			"input": "Say 'Hello, World!' and nothing else.",
+		},
+	},
+	"responses_stream": {
+		path:   "/v1/responses",
+		method: http.MethodPost,
+		requestBody: map[string]interface{}{
+			"model":  "gpt-4o-mini",
+			"input":  "Say 'Hello, World!' and nothing else.",
+			"stream": true,
+		},
+	},
 }
 
 func main() {
 	provider := flag.String("provider", "openai", "Provider to test (openai, anthropic, gemini, groq, xai)")
-	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models)")
+	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models, responses, responses_stream)")
 	output := flag.String("output", "", "Output file path (required)")
 	model := flag.String("model", "", "Override model in request")
 	flag.Parse()
