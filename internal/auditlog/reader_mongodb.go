@@ -47,8 +47,18 @@ func (r mongoLogRow) toLogEntry() *LogEntry {
 		Path:       r.Path,
 		Stream:     r.Stream,
 		ErrorType:  r.ErrorType,
-		Data:       r.Data,
+		Data:       sanitizeLogData(r.Data),
 	}
+}
+
+func sanitizeLogData(data *LogData) *LogData {
+	if data == nil {
+		return nil
+	}
+	clean := *data
+	clean.RequestHeaders = RedactHeaders(data.RequestHeaders)
+	clean.ResponseHeaders = RedactHeaders(data.ResponseHeaders)
+	return &clean
 }
 
 // NewMongoDBReader creates a new MongoDB audit log reader.

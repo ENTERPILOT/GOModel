@@ -722,6 +722,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -858,7 +861,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "json text/event-stream"
+                    "application/json",
+                    "text/event-stream"
                 ],
                 "tags": [
                     "chat"
@@ -1267,7 +1271,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Raw file content",
                         "schema": {
-                            "type": "string"
+                            "type": "file"
                         }
                     },
                     "400": {

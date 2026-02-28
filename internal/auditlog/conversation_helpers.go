@@ -2,6 +2,8 @@ package auditlog
 
 import (
 	"strings"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func extractResponseID(entry *LogEntry) string {
@@ -19,12 +21,25 @@ func extractPreviousResponseID(entry *LogEntry) string {
 }
 
 func extractStringField(v interface{}, key string) string {
-	obj, ok := v.(map[string]interface{})
-	if !ok || obj == nil {
+	switch obj := v.(type) {
+	case map[string]interface{}:
+		return extractTrimmedString(obj[key])
+	case bson.M:
+		return extractTrimmedString(obj[key])
+	case bson.D:
+		for _, entry := range obj {
+			if entry.Key == key {
+				return extractTrimmedString(entry.Value)
+			}
+		}
+		return ""
+	default:
 		return ""
 	}
-	raw, ok := obj[key]
-	if !ok {
+}
+
+func extractTrimmedString(raw interface{}) string {
+	if raw == nil {
 		return ""
 	}
 	s, ok := raw.(string)

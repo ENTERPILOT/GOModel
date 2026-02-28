@@ -384,7 +384,7 @@
 
         <div class="audit-log-list" x-show="auditLog.entries.length > 0">
             <template x-for="entry in auditLog.entries" :key="entry.id">
-                <details class="audit-entry">
+                <details class="audit-entry" @toggle="handleAuditEntryToggle($event)">
                     <summary class="audit-entry-summary">
                         <div class="audit-entry-main">
                             <span class="audit-status-badge" :class="statusCodeClass(entry.status_code)" x-text="entry.status_code || '-'"></span>
@@ -398,7 +398,7 @@
                                     x-show="canShowConversation(entry)"
                                     title="Open conversation"
                                     aria-label="Open conversation"
-                                    @click.stop.prevent="openConversation(entry, $el.closest('details'), true)">
+                                    @click.stop.prevent="openConversation(entry, $el.closest('details'), true, $el)">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M9 6l6 6-6 6"/>
                                 </svg>
@@ -419,7 +419,7 @@
                             <section class="audit-pane">
                                 <div class="audit-pane-head">
                                     <h4>Request</h4>
-                                    <button class="pagination-btn" @click.prevent="copyAuditJSON(entry.data && entry.data.request_body)">Copy Body</button>
+                                    <button class="pagination-btn" @click.prevent="copyAuditJSON(entry.data && entry.data.request_body, $event)">Copy Body</button>
                                 </div>
                                 <div class="audit-pane-block" x-show="entry.data && entry.data.request_headers">
                                     <h5>Headers</h5>
@@ -439,7 +439,7 @@
                             <section class="audit-pane">
                                 <div class="audit-pane-head">
                                     <h4>Response</h4>
-                                    <button class="pagination-btn" @click.prevent="copyAuditJSON(entry.data && entry.data.response_body)">Copy Body</button>
+                                    <button class="pagination-btn" @click.prevent="copyAuditJSON(entry.data && entry.data.response_body, $event)">Copy Body</button>
                                 </div>
                                 <div class="audit-pane-block" x-show="entry.data && entry.data.error_message">
                                     <h5>Error Message</h5>
@@ -476,27 +476,38 @@
         </div>
     </div>
 
-    <div class="conversation-overlay" x-show="conversationOpen" x-transition.opacity.duration.160ms @click="closeConversation()"></div>
-    <aside class="conversation-drawer" :class="{ open: conversationOpen }">
+    <div class="conversation-overlay" x-show="conversationOpen" x-transition.opacity.duration.160ms aria-hidden="true" @click="closeConversation()"></div>
+    <aside class="conversation-drawer"
+           :class="{ open: conversationOpen }"
+           x-ref="conversationDialog"
+           tabindex="-1"
+           role="dialog"
+           aria-modal="true"
+           :aria-hidden="(!conversationOpen).toString()"
+           aria-labelledby="conversation-drawer-title"
+           aria-describedby="conversation-drawer-content"
+           @keydown.escape.window="conversationOpen && closeConversation()">
         <div class="conversation-drawer-header">
-            <h3>Conversation</h3>
-            <button class="pagination-btn" @click="closeConversation()">Close</button>
+            <h3 id="conversation-drawer-title">Conversation</h3>
+            <button class="pagination-btn" x-ref="conversationCloseBtn" aria-label="Close conversation" @click="closeConversation()">Close</button>
         </div>
 
-        <div class="alert alert-warning" x-show="conversationError" x-text="conversationError"></div>
-        <p class="empty-state" x-show="conversationLoading">Loading conversation...</p>
-        <p class="empty-state" x-show="!conversationLoading && !conversationError && conversationMessages.length === 0">No conversation data available for this entry.</p>
+        <div id="conversation-drawer-content">
+            <div class="alert alert-warning" x-show="conversationError" x-text="conversationError"></div>
+            <p class="empty-state" x-show="conversationLoading">Loading conversation...</p>
+            <p class="empty-state" x-show="!conversationLoading && !conversationError && conversationMessages.length === 0">No conversation data available for this entry.</p>
 
-        <div class="conversation-thread" x-show="conversationMessages.length > 0">
-            <template x-for="msg in conversationMessages" :key="msg.uid">
-                <article class="chat-message" :class="[msg.roleClass, msg.isAnchor ? 'is-anchor' : '']">
-                    <header class="chat-message-meta">
-                        <span class="chat-role" x-text="msg.roleLabel"></span>
-                        <span class="mono chat-time" x-text="formatTimestamp(msg.timestamp)"></span>
-                    </header>
-                    <pre class="chat-content" x-text="msg.text"></pre>
-                </article>
-            </template>
+            <div class="conversation-thread" x-show="conversationMessages.length > 0">
+                <template x-for="msg in conversationMessages" :key="msg.uid">
+                    <article class="chat-message" :class="[msg.roleClass, msg.isAnchor ? 'is-anchor' : '']">
+                        <header class="chat-message-meta">
+                            <span class="chat-role" x-text="msg.roleLabel"></span>
+                            <span class="mono chat-time" x-text="formatTimestamp(msg.timestamp)"></span>
+                        </header>
+                        <pre class="chat-content" x-text="msg.text"></pre>
+                    </article>
+                </template>
+            </div>
         </div>
 
         <div class="conversation-drawer-footer" x-show="conversationAnchorID">

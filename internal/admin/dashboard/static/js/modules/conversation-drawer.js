@@ -41,7 +41,7 @@
                 if (!el) return;
                 event.preventDefault();
                 event.stopPropagation();
-                this.openConversation(entry);
+                this.openConversation(entry, null, false, el);
             },
 
             renderBodyWithConversationHighlights(entry, value) {
@@ -55,10 +55,17 @@
                 });
             },
 
-            async openConversation(entry, detailsEl, expandEntry) {
+            async openConversation(entry, detailsEl, expandEntry, triggerEl) {
                 if (!entry || !entry.id || !this.canShowConversation(entry)) return;
                 if (expandEntry && detailsEl && !detailsEl.open) {
                     detailsEl.open = true;
+                }
+
+                const activeEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                if (triggerEl instanceof HTMLElement) {
+                    this.conversationReturnFocusEl = triggerEl;
+                } else if (activeEl && activeEl !== document.body) {
+                    this.conversationReturnFocusEl = activeEl;
                 }
 
                 const requestToken = ++this.conversationRequestToken;
@@ -68,12 +75,31 @@
                 this.conversationAnchorID = entry.id;
                 this.conversationEntries = [];
                 this.conversationMessages = [];
+                requestAnimationFrame(() => this._focusConversationDrawer());
                 await this.fetchConversation(entry.id, requestToken);
             },
 
             closeConversation() {
                 this.conversationOpen = false;
                 this.conversationRequestToken++;
+                const returnFocusEl = this.conversationReturnFocusEl;
+                this.conversationReturnFocusEl = null;
+                if (returnFocusEl && typeof returnFocusEl.focus === 'function' && document.contains(returnFocusEl)) {
+                    requestAnimationFrame(() => returnFocusEl.focus());
+                }
+            },
+
+            _focusConversationDrawer() {
+                if (!this.conversationOpen) return;
+                const closeBtn = this.$refs && this.$refs.conversationCloseBtn;
+                if (closeBtn && typeof closeBtn.focus === 'function') {
+                    closeBtn.focus();
+                    return;
+                }
+                const drawer = this.$refs && this.$refs.conversationDialog;
+                if (drawer && typeof drawer.focus === 'function') {
+                    drawer.focus();
+                }
             },
 
             async fetchConversation(logID, requestToken) {

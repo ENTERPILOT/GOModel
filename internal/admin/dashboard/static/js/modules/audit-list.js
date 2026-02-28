@@ -61,10 +61,39 @@
             },
 
             formatDurationNs(ns) {
-                if (ns == null || ns === undefined) return '-';
+                if (ns == null) return '-';
                 if (ns < 1000000) return Math.round(ns / 1000) + ' \u00b5s';
                 if (ns < 1000000000) return (ns / 1000000).toFixed(2) + ' ms';
                 return (ns / 1000000000).toFixed(2) + ' s';
+            },
+
+            handleAuditEntryToggle(event) {
+                const detailsEl = event && event.currentTarget;
+                if (!detailsEl) return;
+
+                const content = detailsEl.querySelector('.audit-entry-details');
+                if (!content) return;
+
+                if (detailsEl.open) {
+                    const targetHeight = content.scrollHeight;
+                    content.style.maxHeight = targetHeight + 'px';
+                    const onTransitionEnd = () => {
+                        if (detailsEl.open) {
+                            content.style.maxHeight = 'none';
+                        }
+                        content.removeEventListener('transitionend', onTransitionEnd);
+                    };
+                    content.addEventListener('transitionend', onTransitionEnd);
+                    return;
+                }
+
+                if (!content.style.maxHeight || content.style.maxHeight === 'none') {
+                    content.style.maxHeight = content.scrollHeight + 'px';
+                    void content.offsetHeight;
+                }
+                requestAnimationFrame(() => {
+                    content.style.maxHeight = '0px';
+                });
             },
 
             statusCodeClass(statusCode) {
@@ -99,13 +128,25 @@
                 }
             },
 
-            async copyAuditJSON(v) {
+            async copyAuditJSON(v, event) {
                 if (v == null || v === undefined || v === '') return;
+                const button = event && event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+                if (button && !button.dataset.copyLabel) {
+                    button.dataset.copyLabel = String(button.textContent || 'Copy').trim();
+                }
                 try {
                     const payload = this.formatJSON(v);
                     await navigator.clipboard.writeText(payload);
                 } catch (e) {
                     console.error('Failed to copy audit payload:', e);
+                    if (button) {
+                        button.textContent = 'Copy failed';
+                        button.disabled = true;
+                        window.setTimeout(() => {
+                            button.textContent = button.dataset.copyLabel || 'Copy';
+                            button.disabled = false;
+                        }, 2000);
+                    }
                 }
             }
         };

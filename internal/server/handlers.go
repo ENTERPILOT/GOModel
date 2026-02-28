@@ -116,7 +116,8 @@ func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string
 // @Summary      Create a chat completion
 // @Tags         chat
 // @Accept       json
-// @Produce      json text/event-stream
+// @Produce      json
+// @Produce      text/event-stream
 // @Security     BearerAuth
 // @Param        request  body      core.ChatRequest  true  "Chat completion request"
 // @Success      200      {object}  core.ChatResponse  "JSON response or SSE stream when stream=true"
@@ -583,7 +584,7 @@ func (h *Handler) DeleteFile(c echo.Context) error {
 // @Security     BearerAuth
 // @Param        id        path   string  true   "File ID"
 // @Param        provider  query  string  false  "Provider override"
-// @Success      200       {string}  string  "Raw file content"
+// @Success      200       {file}  file  "Raw file content"
 // @Failure      400       {object}  core.GatewayError
 // @Failure      401       {object}  core.GatewayError
 // @Failure      404       {object}  core.GatewayError
@@ -1027,6 +1028,7 @@ func (h *Handler) ListBatches(c echo.Context) error {
 //
 // @Summary      Cancel a batch
 // @Tags         batch
+// @Accept       json
 // @Produce      json
 // @Security     BearerAuth
 // @Param        id   path      string  true  "Batch ID"

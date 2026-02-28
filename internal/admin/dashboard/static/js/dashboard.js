@@ -64,6 +64,7 @@ function dashboard() {
         conversationEntries: [],
         conversationMessages: [],
         conversationRequestToken: 0,
+        conversationReturnFocusEl: null,
         bodyPointerStart: null,
 
         _parseRoute(pathname) {

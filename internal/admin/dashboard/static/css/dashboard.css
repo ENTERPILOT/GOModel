@@ -1145,7 +1145,6 @@ td.col-price {
 .audit-entry[open] .audit-entry-details {
     border-top-color: var(--border);
     padding: 12px;
-    max-height: 2200px;
     opacity: 1;
 }
 

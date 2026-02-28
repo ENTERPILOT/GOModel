@@ -718,6 +718,9 @@
                         "BearerAuth": []
                     }
                 ],
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
@@ -854,7 +857,8 @@
                     "application/json"
                 ],
                 "produces": [
-                    "json text/event-stream"
+                    "application/json",
+                    "text/event-stream"
                 ],
                 "tags": [
                     "chat"
@@ -1263,7 +1267,7 @@
                     "200": {
                         "description": "Raw file content",
                         "schema": {
-                            "type": "string"
+                            "type": "file"
                         }
                     },
                     "400": {
