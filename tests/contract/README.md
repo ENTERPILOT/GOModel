@@ -35,7 +35,7 @@ Each folder contains recorded JSON and SSE payloads used by replay tests.
 
 ```bash
 # Run contract replay tests
-go test -v -tags=contract ./tests/contract/...
+go test -v -tags=contract -timeout=5m ./tests/contract/...
 
 # Make target
 make test-contract
@@ -43,4 +43,18 @@ make test-contract
 
 ## Updating fixtures
 
-Use `cmd/recordapi` (or provider curl calls) to refresh payloads when provider contracts change, then re-run the contract suite.
+Contract tests under `tests/contract/**/*_test.go` must validate full normalized output against committed golden files.
+
+Use the canonical recorder target to refresh provider payload fixtures:
+
+```bash
+make record-api
+```
+
+Then refresh normalized contract-output goldens from replay tests:
+
+```bash
+RECORD=1 go test -v -tags=contract -timeout=5m ./tests/contract/...
+```
+
+Re-run the suite without `RECORD=1` before committing.

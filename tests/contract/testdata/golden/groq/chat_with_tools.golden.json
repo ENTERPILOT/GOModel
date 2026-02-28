@@ -1,0 +1,22 @@
+{
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "index": 0,
+      "message": {
+        "content": "",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 0,
+  "id": "chatcmpl-090b9776-6a9d-4ed8-8f75-8bf03dd0e90d",
+  "model": "llama-3.3-70b-versatile",
+  "object": "chat.completion",
+  "provider": "",
+  "usage": {
+    "completion_tokens": 14,
+    "prompt_tokens": 203,
+    "total_tokens": 217
+  }
+}

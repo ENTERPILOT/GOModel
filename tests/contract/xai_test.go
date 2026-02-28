@@ -1,5 +1,6 @@
 //go:build contract
 
+// Contract tests in this file are intended to run with: -tags=contract -timeout=5m.
 package contract
 
 import (
@@ -7,7 +8,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gomodel/internal/core"
@@ -49,11 +49,7 @@ func TestXAIReplayChatCompletion(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, resp)
 
-			assert.NotEmpty(t, resp.ID)
-			assert.Equal(t, "chat.completion", resp.Object)
-			require.NotEmpty(t, resp.Choices)
-			assert.Equal(t, "assistant", resp.Choices[0].Message.Role)
-			assert.NotEmpty(t, resp.Choices[0].Message.Content)
+			compareGoldenJSON(t, goldenPathForFixture(tc.fixturePath), resp)
 		})
 	}
 }
@@ -75,9 +71,11 @@ func TestXAIReplayStreamChatCompletion(t *testing.T) {
 	raw := readAllStream(t, stream)
 	chunks, done := parseChatStream(t, raw)
 
-	require.True(t, done, "stream should terminate with [DONE]")
-	require.NotEmpty(t, chunks)
-	assert.NotEmpty(t, extractChatStreamText(chunks))
+	compareGoldenJSON(t, goldenPathForFixture("xai/chat_completion_stream.txt"), map[string]any{
+		"done":   done,
+		"chunks": chunks,
+		"text":   extractChatStreamText(chunks),
+	})
 }
 
 func TestXAIReplayListModels(t *testing.T) {
@@ -89,17 +87,12 @@ func TestXAIReplayListModels(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "list", resp.Object)
-	require.NotEmpty(t, resp.Data)
-	for _, model := range resp.Data {
-		assert.NotEmpty(t, model.ID)
-		assert.Equal(t, "model", model.Object)
-	}
+	compareGoldenJSON(t, goldenPathForFixture("xai/models.json"), resp)
 }
 
 func TestXAIReplayResponses(t *testing.T) {
 	if !goldenFileExists(t, "xai/responses.json") {
-		t.Skip("golden file not found - record xai responses first")
+		t.Fatalf("missing golden file xai/responses.json; run `make record-api` to create/update contract fixtures")
 	}
 
 	provider := newXAIReplayProvider(t, map[string]replayRoute{
@@ -113,18 +106,12 @@ func TestXAIReplayResponses(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "response", resp.Object)
-	assert.Equal(t, "completed", resp.Status)
-	require.NotEmpty(t, resp.Output)
-	require.NotEmpty(t, resp.Output[0].Content)
-	assert.NotEmpty(t, resp.Output[0].Content[0].Text)
-	require.NotNil(t, resp.Usage)
-	assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0)
+	compareGoldenJSON(t, "xai/responses.golden.json", resp)
 }
 
 func TestXAIReplayStreamResponses(t *testing.T) {
 	if !goldenFileExists(t, "xai/responses_stream.txt") {
-		t.Skip("golden file not found - record xai responses stream first")
+		t.Fatalf("missing golden file xai/responses_stream.txt; run `make record-api` to create/update contract fixtures")
 	}
 
 	provider := newXAIReplayProvider(t, map[string]replayRoute{
@@ -139,10 +126,12 @@ func TestXAIReplayStreamResponses(t *testing.T) {
 
 	raw := readAllStream(t, stream)
 	events := parseResponsesStream(t, raw)
-	require.NotEmpty(t, events)
+	require.True(t, hasResponsesEvent(events, "response.created"))
+	require.True(t, hasResponsesEvent(events, "response.output_text.delta"))
+	require.True(t, hasResponsesEvent(events, "response.completed"))
 
-	assert.True(t, hasResponsesEvent(events, "response.created"))
-	assert.True(t, hasResponsesEvent(events, "response.output_text.delta"))
-	assert.True(t, hasResponsesEvent(events, "response.completed"))
-	assert.NotEmpty(t, extractResponsesStreamText(events))
+	compareGoldenJSON(t, "xai/responses_stream.golden.json", map[string]any{
+		"events": events,
+		"text":   extractResponsesStreamText(events),
+	})
 }

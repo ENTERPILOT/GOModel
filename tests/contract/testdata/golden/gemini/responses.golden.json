@@ -1,0 +1,27 @@
+{
+  "created_at": 0,
+  "id": "QTpyabuaIfaevdIPzqPKkQU",
+  "model": "gemini-2.5-flash-preview-09-2025",
+  "object": "response",
+  "output": [
+    {
+      "content": [
+        {
+          "text": "Hello World",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_\u003cgenerated\u003e",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "provider": "",
+  "status": "completed",
+  "usage": {
+    "input_tokens": 4,
+    "output_tokens": 2,
+    "total_tokens": 6
+  }
+}

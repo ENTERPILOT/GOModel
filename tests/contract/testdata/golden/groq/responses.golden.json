@@ -1,0 +1,27 @@
+{
+  "created_at": 0,
+  "id": "chatcmpl-704f97d8-0ee9-4fa6-b74f-777917cc07d7",
+  "model": "llama-3.3-70b-versatile",
+  "object": "response",
+  "output": [
+    {
+      "content": [
+        {
+          "text": "Hello World!",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_\u003cgenerated\u003e",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "provider": "",
+  "status": "completed",
+  "usage": {
+    "input_tokens": 38,
+    "output_tokens": 4,
+    "total_tokens": 42
+  }
+}

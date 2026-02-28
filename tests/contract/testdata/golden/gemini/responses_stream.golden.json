@@ -1,0 +1,48 @@
+{
+  "events": [
+    {
+      "Done": false,
+      "Name": "response.created",
+      "Payload": {
+        "response": {
+          "created_at": 0,
+          "id": "resp_\u003cgenerated\u003e",
+          "model": "gemini-2.5-flash",
+          "object": "response",
+          "provider": "gemini",
+          "status": "in_progress"
+        },
+        "type": "response.created"
+      }
+    },
+    {
+      "Done": false,
+      "Name": "response.output_text.delta",
+      "Payload": {
+        "delta": "Hello World",
+        "type": "response.output_text.delta"
+      }
+    },
+    {
+      "Done": false,
+      "Name": "response.completed",
+      "Payload": {
+        "response": {
+          "created_at": 0,
+          "id": "resp_\u003cgenerated\u003e",
+          "model": "gemini-2.5-flash",
+          "object": "response",
+          "provider": "gemini",
+          "status": "completed"
+        },
+        "type": "response.completed"
+      }
+    },
+    {
+      "Done": true,
+      "Name": "",
+      "Payload": null
+    }
+  ],
+  "text": "Hello World"
+}

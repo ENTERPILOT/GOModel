@@ -1,0 +1,22 @@
+{
+  "choices": [
+    {
+      "finish_reason": "end_turn",
+      "index": 0,
+      "message": {
+        "content": "To solve for x in the equation x + 5 = 12, I need to isolate x.\n\nI'll subtract 5 from both sides:\nx + 5 = 12\nx + 5 - 5 = 12 - 5\nx = 7\n\nLet me verify: 7 + 5 = 12 ✓\n\nTherefore, x = 7.",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 0,
+  "id": "msg_01MHEipmYGTxtwNoLd4876Ug",
+  "model": "claude-sonnet-4-20250514",
+  "object": "chat.completion",
+  "provider": "",
+  "usage": {
+    "completion_tokens": 211,
+    "prompt_tokens": 53,
+    "total_tokens": 264
+  }
+}

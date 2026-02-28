@@ -1,0 +1,41 @@
+{
+  "chunks": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Hello World"
+          },
+          "finish_reason": null,
+          "index": 0
+        }
+      ],
+      "created": 0,
+      "id": "msg_01SJmPi7XXP8qscFQiHPR9oy",
+      "model": "claude-sonnet-4-20250514",
+      "object": "chat.completion.chunk",
+      "provider": "anthropic"
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "end_turn",
+          "index": 0
+        }
+      ],
+      "created": 0,
+      "id": "msg_01SJmPi7XXP8qscFQiHPR9oy",
+      "model": "claude-sonnet-4-20250514",
+      "object": "chat.completion.chunk",
+      "provider": "anthropic",
+      "usage": {
+        "completion_tokens": 5,
+        "prompt_tokens": 10,
+        "total_tokens": 15
+      }
+    }
+  ],
+  "done": true,
+  "text": "Hello World"
+}

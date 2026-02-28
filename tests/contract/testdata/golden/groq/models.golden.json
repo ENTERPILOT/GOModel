@@ -1,0 +1,125 @@
+{
+  "data": [
+    {
+      "created": 0,
+      "id": "canopylabs/orpheus-v1-english",
+      "object": "model",
+      "owned_by": "Canopy Labs"
+    },
+    {
+      "created": 0,
+      "id": "whisper-large-v3",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "created": 0,
+      "id": "moonshotai/kimi-k2-instruct",
+      "object": "model",
+      "owned_by": "Moonshot AI"
+    },
+    {
+      "created": 0,
+      "id": "canopylabs/orpheus-arabic-saudi",
+      "object": "model",
+      "owned_by": "Canopy Labs"
+    },
+    {
+      "created": 0,
+      "id": "moonshotai/kimi-k2-instruct-0905",
+      "object": "model",
+      "owned_by": "Moonshot AI"
+    },
+    {
+      "created": 0,
+      "id": "meta-llama/llama-4-maverick-17b-128e-instruct",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "created": 0,
+      "id": "openai/gpt-oss-20b",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "created": 0,
+      "id": "meta-llama/llama-guard-4-12b",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "created": 0,
+      "id": "llama-3.1-8b-instant",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "created": 0,
+      "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "created": 0,
+      "id": "allam-2-7b",
+      "object": "model",
+      "owned_by": "SDAIA"
+    },
+    {
+      "created": 0,
+      "id": "groq/compound-mini",
+      "object": "model",
+      "owned_by": "Groq"
+    },
+    {
+      "created": 0,
+      "id": "whisper-large-v3-turbo",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "created": 0,
+      "id": "qwen/qwen3-32b",
+      "object": "model",
+      "owned_by": "Alibaba Cloud"
+    },
+    {
+      "created": 0,
+      "id": "meta-llama/llama-prompt-guard-2-22m",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "created": 0,
+      "id": "openai/gpt-oss-120b",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "created": 0,
+      "id": "groq/compound",
+      "object": "model",
+      "owned_by": "Groq"
+    },
+    {
+      "created": 0,
+      "id": "meta-llama/llama-prompt-guard-2-86m",
+      "object": "model",
+      "owned_by": "Meta"
+    },
+    {
+      "created": 0,
+      "id": "openai/gpt-oss-safeguard-20b",
+      "object": "model",
+      "owned_by": "OpenAI"
+    },
+    {
+      "created": 0,
+      "id": "llama-3.3-70b-versatile",
+      "object": "model",
+      "owned_by": "Meta"
+    }
+  ],
+  "object": "list"
+}

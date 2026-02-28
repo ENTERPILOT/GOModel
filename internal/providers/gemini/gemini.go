@@ -30,11 +30,12 @@ const (
 
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
-	client     *llmclient.Client
-	httpClient *http.Client
-	hooks      llmclient.Hooks
-	apiKey     string
-	modelsURL  string
+	client           *llmclient.Client
+	httpClient       *http.Client
+	hooks            llmclient.Hooks
+	apiKey           string
+	modelsURL        string
+	modelsClientConf llmclient.Config
 }
 
 // New creates a new Gemini provider.
@@ -44,6 +45,13 @@ func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 		apiKey:     apiKey,
 		hooks:      opts.Hooks,
 		modelsURL:  defaultModelsBaseURL,
+		modelsClientConf: llmclient.Config{
+			ProviderName:   "gemini",
+			BaseURL:        defaultModelsBaseURL,
+			Retry:          opts.Resilience.Retry,
+			Hooks:          opts.Hooks,
+			CircuitBreaker: opts.Resilience.CircuitBreaker,
+		},
 	}
 	cfg := llmclient.Config{
 		ProviderName:   "gemini",
@@ -68,6 +76,9 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 		hooks:      hooks,
 		modelsURL:  defaultModelsBaseURL,
 	}
+	modelsCfg := llmclient.DefaultConfig("gemini", defaultModelsBaseURL)
+	modelsCfg.Hooks = hooks
+	p.modelsClientConf = modelsCfg
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
 	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
@@ -83,6 +94,7 @@ func (p *Provider) SetBaseURL(url string) {
 // This is primarily useful for tests and local emulators.
 func (p *Provider) SetModelsURL(url string) {
 	p.modelsURL = url
+	p.modelsClientConf.BaseURL = url
 }
 
 // setHeaders sets the required headers for Gemini API requests
@@ -149,7 +161,8 @@ type geminiModelsResponse struct {
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	// Use the native Gemini API to list models
 	// We need to create a separate client for the models endpoint since it uses a different URL
-	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
+	modelsCfg := p.modelsClientConf
+	modelsCfg.BaseURL = p.modelsURL
 	modelsCfg.Hooks = p.hooks
 	headers := func(req *http.Request) {
 		// Add API key as query parameter.
@@ -157,8 +170,17 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 		// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
 		// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
 		q := req.URL.Query()
-		q.Add("key", p.apiKey)
+		q.Set("key", p.apiKey)
 		req.URL.RawQuery = q.Encode()
+
+		// Preserve request tracing across list-models requests.
+		requestID := req.Header.Get("X-Request-Id")
+		if requestID == "" {
+			requestID = core.GetRequestID(req.Context())
+		}
+		if requestID != "" {
+			req.Header.Set("X-Request-Id", requestID)
+		}
 	}
 
 	var modelsClient *llmclient.Client

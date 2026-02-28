@@ -1,5 +1,6 @@
 //go:build contract
 
+// Contract tests in this file are intended to run with: -tags=contract -timeout=5m.
 package contract
 
 import (
@@ -7,7 +8,6 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gomodel/internal/core"
@@ -53,16 +53,12 @@ func TestAnthropicReplayChatCompletion(t *testing.T) {
 			})
 			require.NoError(t, err)
 			require.NotNil(t, resp)
-
-			assert.NotEmpty(t, resp.ID)
-			assert.Equal(t, "chat.completion", resp.Object)
 			require.NotEmpty(t, resp.Choices)
-			assert.Equal(t, "assistant", resp.Choices[0].Message.Role)
-			assert.NotEmpty(t, resp.Choices[0].FinishReason)
+
 			if tc.finishReason != "" {
-				assert.Equal(t, tc.finishReason, resp.Choices[0].FinishReason)
+				require.Equal(t, tc.finishReason, resp.Choices[0].FinishReason)
 			}
-			assert.NotEmpty(t, resp.Choices[0].Message.Content)
+			compareGoldenJSON(t, goldenPathForFixture(tc.fixturePath), resp)
 		})
 	}
 }
@@ -84,9 +80,11 @@ func TestAnthropicReplayStreamChatCompletion(t *testing.T) {
 	raw := readAllStream(t, stream)
 	chunks, done := parseChatStream(t, raw)
 
-	require.True(t, done, "stream should terminate with [DONE]")
-	require.NotEmpty(t, chunks)
-	assert.NotEmpty(t, extractChatStreamText(chunks))
+	compareGoldenJSON(t, goldenPathForFixture("anthropic/messages_stream.txt"), map[string]any{
+		"done":   done,
+		"chunks": chunks,
+		"text":   extractChatStreamText(chunks),
+	})
 }
 
 func TestAnthropicReplayResponses(t *testing.T) {
@@ -101,13 +99,7 @@ func TestAnthropicReplayResponses(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	assert.Equal(t, "response", resp.Object)
-	assert.Equal(t, "completed", resp.Status)
-	require.NotEmpty(t, resp.Output)
-	require.NotEmpty(t, resp.Output[0].Content)
-	assert.NotEmpty(t, resp.Output[0].Content[0].Text)
-	require.NotNil(t, resp.Usage)
-	assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0)
+	compareGoldenJSON(t, "anthropic/responses.golden.json", resp)
 }
 
 func TestAnthropicReplayStreamResponses(t *testing.T) {
@@ -123,12 +115,9 @@ func TestAnthropicReplayStreamResponses(t *testing.T) {
 
 	raw := readAllStream(t, stream)
 	events := parseResponsesStream(t, raw)
-	require.NotEmpty(t, events)
-
-	assert.True(t, hasResponsesEvent(events, "response.created"))
-	assert.True(t, hasResponsesEvent(events, "response.output_text.delta"))
-	assert.True(t, hasResponsesEvent(events, "response.completed"))
-	assert.NotEmpty(t, extractResponsesStreamText(events))
+	require.True(t, hasResponsesEvent(events, "response.created"))
+	require.True(t, hasResponsesEvent(events, "response.output_text.delta"))
+	require.True(t, hasResponsesEvent(events, "response.completed"))
 
 	hasDone := false
 	for _, event := range events {
@@ -137,5 +126,10 @@ func TestAnthropicReplayStreamResponses(t *testing.T) {
 			break
 		}
 	}
-	assert.True(t, hasDone, "responses stream should terminate with [DONE]")
+	require.True(t, hasDone, "responses stream should terminate with [DONE]")
+
+	compareGoldenJSON(t, "anthropic/responses_stream.golden.json", map[string]any{
+		"events": events,
+		"text":   extractResponsesStreamText(events),
+	})
 }

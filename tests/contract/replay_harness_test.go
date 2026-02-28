@@ -117,12 +117,10 @@ func parseSSEEvents(t *testing.T, raw []byte) []sseEvent {
 			currentName = ""
 			return
 		}
-		for _, data := range dataLines {
-			events = append(events, sseEvent{
-				Name: currentName,
-				Data: data,
-			})
-		}
+		events = append(events, sseEvent{
+			Name: currentName,
+			Data: strings.Join(dataLines, "\n"),
+		})
 		currentName = ""
 		dataLines = dataLines[:0]
 	}

@@ -1,0 +1,120 @@
+{
+  "chunks": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "",
+            "refusal": null,
+            "role": "assistant"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-D0q8CZXN1uEzngZGkU7FuV92lnXWq",
+      "model": "gpt-4o-mini-2024-07-18",
+      "obfuscation": "iPgRzm",
+      "object": "chat.completion.chunk",
+      "service_tier": "default",
+      "system_fingerprint": "fp_29330a9688"
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Hello"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-D0q8CZXN1uEzngZGkU7FuV92lnXWq",
+      "model": "gpt-4o-mini-2024-07-18",
+      "obfuscation": "ZGF",
+      "object": "chat.completion.chunk",
+      "service_tier": "default",
+      "system_fingerprint": "fp_29330a9688"
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": ","
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-D0q8CZXN1uEzngZGkU7FuV92lnXWq",
+      "model": "gpt-4o-mini-2024-07-18",
+      "obfuscation": "lRK2aBv",
+      "object": "chat.completion.chunk",
+      "service_tier": "default",
+      "system_fingerprint": "fp_29330a9688"
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": " World"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-D0q8CZXN1uEzngZGkU7FuV92lnXWq",
+      "model": "gpt-4o-mini-2024-07-18",
+      "obfuscation": "kJ",
+      "object": "chat.completion.chunk",
+      "service_tier": "default",
+      "system_fingerprint": "fp_29330a9688"
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "!"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-D0q8CZXN1uEzngZGkU7FuV92lnXWq",
+      "model": "gpt-4o-mini-2024-07-18",
+      "obfuscation": "0wmdEAC",
+      "object": "chat.completion.chunk",
+      "service_tier": "default",
+      "system_fingerprint": "fp_29330a9688"
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop",
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-D0q8CZXN1uEzngZGkU7FuV92lnXWq",
+      "model": "gpt-4o-mini-2024-07-18",
+      "obfuscation": "pH",
+      "object": "chat.completion.chunk",
+      "service_tier": "default",
+      "system_fingerprint": "fp_29330a9688"
+    }
+  ],
+  "done": true,
+  "text": "Hello, World!"
+}

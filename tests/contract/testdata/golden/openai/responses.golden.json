@@ -1,0 +1,27 @@
+{
+  "created_at": 0,
+  "id": "resp_0d8b81b7c805508d0069a31431b68c8194af45c94a6952706b",
+  "model": "gpt-4o-mini-2024-07-18",
+  "object": "response",
+  "output": [
+    {
+      "content": [
+        {
+          "text": "Hello, World!",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_0d8b81b7c805508d0069a31432ad188194be889f9a6cd318e8",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "provider": "",
+  "status": "completed",
+  "usage": {
+    "input_tokens": 17,
+    "output_tokens": 5,
+    "total_tokens": 22
+  }
+}
