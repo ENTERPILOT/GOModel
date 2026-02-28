@@ -1,113 +1,137 @@
 //go:build contract
 
+// Contract tests in this file are intended to run with: -tags=contract -timeout=5m.
 package contract
 
 import (
-	"strings"
+	"context"
+	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"gomodel/internal/core"
+	"gomodel/internal/llmclient"
+	"gomodel/internal/providers/xai"
 )
 
-func TestXAI_ChatCompletion(t *testing.T) {
-	if !goldenFileExists(t, "xai/chat_completion.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func newXAIReplayProvider(t *testing.T, routes map[string]replayRoute) core.Provider {
+	t.Helper()
+
+	client := newReplayHTTPClient(t, routes)
+	provider := xai.NewWithHTTPClient("xai-test", client, llmclient.Hooks{})
+	provider.SetBaseURL("https://replay.local")
+	return provider
+}
+
+func TestXAIReplayChatCompletion(t *testing.T) {
+	testCases := []struct {
+		name        string
+		fixturePath string
+	}{
+		{name: "basic", fixturePath: "xai/chat_completion.json"},
+		{name: "params", fixturePath: "xai/chat_with_params.json"},
 	}
 
-	resp := loadGoldenFile[core.ChatResponse](t, "xai/chat_completion.json")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newXAIReplayProvider(t, map[string]replayRoute{
+				replayKey(http.MethodPost, "/chat/completions"): jsonFixtureRoute(t, tc.fixturePath),
+			})
 
-	t.Run("Contract", func(t *testing.T) {
-		// Validate required fields exist (structure validation)
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.NotEmpty(t, resp.Object, "response object should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
-		assert.NotZero(t, resp.Created, "created timestamp should not be zero")
+			resp, err := provider.ChatCompletion(context.Background(), &core.ChatRequest{
+				Model: "grok-3-mini",
+				Messages: []core.Message{{
+					Role:    "user",
+					Content: "hello",
+				}},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, resp)
 
-		// Validate choices structure
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		choice := resp.Choices[0]
-		assert.GreaterOrEqual(t, choice.Index, 0, "choice index should be >= 0")
-		assert.NotNil(t, choice.Message, "choice message should not be nil")
-		assert.NotEmpty(t, choice.Message.Role, "message role should not be empty")
-		assert.Equal(t, "assistant", choice.Message.Role, "message role should be assistant")
-		assert.NotEmpty(t, choice.FinishReason, "finish reason should not be empty")
+			compareGoldenJSON(t, goldenPathForFixture(tc.fixturePath), resp)
+		})
+	}
+}
 
-		// Validate usage structure
-		assert.GreaterOrEqual(t, resp.Usage.PromptTokens, 0, "prompt tokens should be >= 0")
-		assert.GreaterOrEqual(t, resp.Usage.CompletionTokens, 0, "completion tokens should be >= 0")
-		assert.GreaterOrEqual(t, resp.Usage.TotalTokens, 0, "total tokens should be >= 0")
+func TestXAIReplayStreamChatCompletion(t *testing.T) {
+	provider := newXAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/chat/completions"): sseFixtureRoute(t, "xai/chat_completion_stream.txt"),
 	})
 
-	t.Run("ModelPrefix", func(t *testing.T) {
-		// xAI models typically contain "grok"
-		assert.Contains(t, resp.Model, "grok", "xAI model should contain 'grok'")
+	stream, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "grok-3-mini",
+		Messages: []core.Message{{
+			Role:    "user",
+			Content: "stream",
+		}},
+	})
+	require.NoError(t, err)
+
+	raw := readAllStream(t, stream)
+	chunks, done := parseChatStream(t, raw)
+
+	compareGoldenJSON(t, goldenPathForFixture("xai/chat_completion_stream.txt"), map[string]any{
+		"done":   done,
+		"chunks": chunks,
+		"text":   extractChatStreamText(chunks),
 	})
 }
 
-func TestXAI_ModelsResponse_Contract(t *testing.T) {
-	if !goldenFileExists(t, "xai/models.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
+func TestXAIReplayListModels(t *testing.T) {
+	provider := newXAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodGet, "/models"): jsonFixtureRoute(t, "xai/models.json"),
+	})
 
-	resp := loadGoldenFile[core.ModelsResponse](t, "xai/models.json")
+	resp, err := provider.ListModels(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 
-	// Validate required fields
-	assert.Equal(t, "list", resp.Object, "object should be 'list'")
-	assert.NotEmpty(t, resp.Data, "models list should not be empty")
-
-	// Validate each model structure
-	for i, model := range resp.Data {
-		assert.NotEmpty(t, model.ID, "model %d: ID should not be empty", i)
-		assert.Equal(t, "model", model.Object, "model %d: object should be 'model'", i)
-		assert.NotEmpty(t, model.OwnedBy, "model %d: owned_by should not be empty", i)
-	}
-
-	// Check for some expected models (Grok variants)
-	modelIDs := make(map[string]bool)
-	for _, model := range resp.Data {
-		modelIDs[model.ID] = true
-	}
-
-	// At least one Grok model should exist
-	hasGrok := false
-	for id := range modelIDs {
-		if strings.HasPrefix(id, "grok") {
-			hasGrok = true
-			break
-		}
-	}
-	assert.True(t, hasGrok, "expected at least one Grok model in models list")
+	compareGoldenJSON(t, goldenPathForFixture("xai/models.json"), resp)
 }
 
-func TestXAI_StreamingFormat_Contract(t *testing.T) {
-	if !goldenFileExists(t, "xai/chat_completion_stream.txt") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func TestXAIReplayResponses(t *testing.T) {
+	if !goldenFileExists(t, "xai/responses.json") {
+		t.Fatalf("missing golden file xai/responses.json; run `make record-api` to create/update contract fixtures")
 	}
 
-	data := loadGoldenFileRaw(t, "xai/chat_completion_stream.txt")
+	provider := newXAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/responses"): jsonFixtureRoute(t, "xai/responses.json"),
+	})
 
-	// Streaming responses should be in SSE format
-	assert.Contains(t, string(data), "data:", "streaming response should contain SSE data lines")
+	resp, err := provider.Responses(context.Background(), &core.ResponsesRequest{
+		Model: "grok-3-mini",
+		Input: "hello",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
 
-	// Should end with [DONE]
-	assert.Contains(t, string(data), "[DONE]", "streaming response should end with [DONE]")
+	compareGoldenJSON(t, goldenPathForFixture("xai/responses.json"), resp)
 }
 
-func TestXAI_ChatWithParams(t *testing.T) {
-	if !goldenFileExists(t, "xai/chat_with_params.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func TestXAIReplayStreamResponses(t *testing.T) {
+	if !goldenFileExists(t, "xai/responses_stream.txt") {
+		t.Fatalf("missing golden file xai/responses_stream.txt; run `make record-api` to create/update contract fixtures")
 	}
 
-	resp := loadGoldenFile[core.ChatResponse](t, "xai/chat_with_params.json")
+	provider := newXAIReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/responses"): sseFixtureRoute(t, "xai/responses_stream.txt"),
+	})
 
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "chat.completion", resp.Object, "object should be chat.completion")
-		require.NotEmpty(t, resp.Choices, "choices should not be empty")
-		assert.Equal(t, "assistant", resp.Choices[0].Message.Role, "message role should be assistant")
+	stream, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "grok-3-mini",
+		Input: "stream",
+	})
+	require.NoError(t, err)
+
+	raw := readAllStream(t, stream)
+	events := parseResponsesStream(t, raw)
+	require.True(t, hasResponsesEvent(events, "response.created"))
+	require.True(t, hasResponsesEvent(events, "response.output_text.delta"))
+	require.True(t, hasResponsesEvent(events, "response.completed"))
+
+	compareGoldenJSON(t, goldenPathForFixture("xai/responses_stream.txt"), map[string]any{
+		"events": events,
+		"text":   extractResponsesStreamText(events),
 	})
 }

@@ -326,6 +326,12 @@ func TestIsModelInteractionPath(t *testing.T) {
 		{"chat completions with query", "/v1/chat/completions?stream=true", true},
 		{"responses", "/v1/responses", true},
 		{"responses with subpath", "/v1/responses/123", true},
+		{"files", "/v1/files", true},
+		{"files with subpath", "/v1/files/file-123", true},
+		{"files prefix overmatch", "/v1/fileship", false},
+		{"batches", "/v1/batches", true},
+		{"batches with subpath", "/v1/batches/123", true},
+		{"batches prefix overmatch", "/v1/batcheship", false},
 		{"models", "/v1/models", false},
 		{"models with subpath", "/v1/models/gpt-4", false},
 		{"health", "/health", false},
@@ -346,7 +352,6 @@ func TestIsModelInteractionPath(t *testing.T) {
 		})
 	}
 }
-
 
 func TestStreamLogWrapper(t *testing.T) {
 	// Create a mock stream with content
@@ -747,7 +752,7 @@ func (t *trackingReadCloser) Close() error {
 // discardWriter implements http.ResponseWriter but discards all output.
 type discardWriter struct{}
 
-func (d *discardWriter) Header() http.Header        { return http.Header{} }
+func (d *discardWriter) Header() http.Header         { return http.Header{} }
 func (d *discardWriter) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discardWriter) WriteHeader(int)             {}
 

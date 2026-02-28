@@ -1,0 +1,32 @@
+{
+  "choices": [
+    {
+      "finish_reason": "tool_use",
+      "index": 0,
+      "message": {
+        "content": "I'll check the current weather in Paris for you.",
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"location\":\"Paris\"}",
+              "name": "get_weather"
+            },
+            "id": "toolu_01Dq95J3WcnLmvSvBpAuaXwi",
+            "type": "function"
+          }
+        ]
+      }
+    }
+  ],
+  "created": 0,
+  "id": "msg_\u003cgenerated\u003e",
+  "model": "claude-sonnet-4-20250514",
+  "object": "chat.completion",
+  "provider": "",
+  "usage": {
+    "completion_tokens": 65,
+    "prompt_tokens": 380,
+    "total_tokens": 445
+  }
+}

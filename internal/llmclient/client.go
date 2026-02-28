@@ -155,6 +155,7 @@ type Request struct {
 	Method   string
 	Endpoint string
 	Body     interface{} // Will be JSON marshaled if not nil
+	RawBody  []byte      // Used as-is (e.g., multipart form bodies). Mutually exclusive with Body.
 	Headers  map[string]string
 }
 
@@ -528,7 +529,12 @@ func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, 
 	url := c.getBaseURL() + req.Endpoint
 
 	var bodyReader io.Reader
-	if req.Body != nil {
+	if req.Body != nil && req.RawBody != nil {
+		return nil, core.NewInvalidRequestError("Body and RawBody cannot both be set", nil)
+	}
+	if req.RawBody != nil {
+		bodyReader = bytes.NewReader(req.RawBody)
+	} else if req.Body != nil {
 		bodyBytes, err := json.Marshal(req.Body)
 		if err != nil {
 			return nil, core.NewInvalidRequestError("failed to marshal request", err)

@@ -1,0 +1,22 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop_sequence",
+      "index": 0,
+      "message": {
+        "content": "1, 2, ",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 0,
+  "id": "msg_\u003cgenerated\u003e",
+  "model": "claude-sonnet-4-20250514",
+  "object": "chat.completion",
+  "provider": "",
+  "usage": {
+    "completion_tokens": 8,
+    "prompt_tokens": 25,
+    "total_tokens": 33
+  }
+}

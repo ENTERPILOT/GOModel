@@ -1,0 +1,27 @@
+{
+  "created_at": 0,
+  "id": "msg_\u003cgenerated\u003e",
+  "model": "claude-sonnet-4-20250514",
+  "object": "response",
+  "output": [
+    {
+      "content": [
+        {
+          "text": "Hello World",
+          "type": "output_text"
+        }
+      ],
+      "id": "msg_\u003cgenerated\u003e",
+      "role": "assistant",
+      "status": "completed",
+      "type": "message"
+    }
+  ],
+  "provider": "",
+  "status": "completed",
+  "usage": {
+    "input_tokens": 14,
+    "output_tokens": 5,
+    "total_tokens": 19
+  }
+}

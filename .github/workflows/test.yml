@@ -85,6 +85,21 @@ jobs:
       - name: Run integration tests
         run: go test -v -tags=integration -timeout=10m ./tests/integration/...
 
+  test-contract:
+    name: Contract Replay Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run contract replay tests
+        run: go test -v -tags=contract -timeout=5m ./tests/contract/...
+
   docs-validate:
     name: Docs Validation
     runs-on: ubuntu-latest
@@ -103,7 +118,7 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint, test-unit, test-e2e, integration]
+    needs: [lint, test-unit, test-e2e, integration, test-contract]
     steps:
       - uses: actions/checkout@v6
 

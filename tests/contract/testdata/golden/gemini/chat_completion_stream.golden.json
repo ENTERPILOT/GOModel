@@ -1,0 +1,22 @@
+{
+  "chunks": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Hello World",
+            "role": "assistant"
+          },
+          "finish_reason": "stop",
+          "index": 0
+        }
+      ],
+      "created": 0,
+      "id": "SzpyaZuaHu_WxN8P9M-PgA4",
+      "model": "gemini-2.5-flash-preview-09-2025",
+      "object": "chat.completion.chunk"
+    }
+  ],
+  "done": true,
+  "text": "Hello World"
+}

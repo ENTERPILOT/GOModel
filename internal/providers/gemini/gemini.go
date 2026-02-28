@@ -3,8 +3,12 @@ package gemini
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,24 +32,34 @@ const (
 
 // Provider implements the core.Provider interface for Google Gemini
 type Provider struct {
-	client    *llmclient.Client
-	hooks     llmclient.Hooks
-	apiKey    string
-	modelsURL string
+	client           *llmclient.Client
+	httpClient       *http.Client
+	hooks            llmclient.Hooks
+	apiKey           string
+	modelsURL        string
+	modelsClientConf llmclient.Config
 }
 
 // New creates a new Gemini provider.
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{
-		apiKey:    apiKey,
-		hooks:     opts.Hooks,
-		modelsURL: defaultModelsBaseURL,
+		httpClient: nil,
+		apiKey:     apiKey,
+		hooks:      opts.Hooks,
+		modelsURL:  defaultModelsBaseURL,
+		modelsClientConf: llmclient.Config{
+			ProviderName:   "gemini",
+			BaseURL:        defaultModelsBaseURL,
+			Retry:          opts.Resilience.Retry,
+			Hooks:          opts.Hooks,
+			CircuitBreaker: opts.Resilience.CircuitBreaker,
+		},
 	}
 	cfg := llmclient.Config{
-		ProviderName: "gemini",
-		BaseURL:      defaultOpenAICompatibleBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "gemini",
+		BaseURL:        defaultOpenAICompatibleBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -59,10 +73,14 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 		httpClient = http.DefaultClient
 	}
 	p := &Provider{
-		apiKey:    apiKey,
-		hooks:     hooks,
-		modelsURL: defaultModelsBaseURL,
+		httpClient: httpClient,
+		apiKey:     apiKey,
+		hooks:      hooks,
+		modelsURL:  defaultModelsBaseURL,
 	}
+	modelsCfg := llmclient.DefaultConfig("gemini", defaultModelsBaseURL)
+	modelsCfg.Hooks = hooks
+	p.modelsClientConf = modelsCfg
 	cfg := llmclient.DefaultConfig("gemini", defaultOpenAICompatibleBaseURL)
 	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
@@ -72,6 +90,13 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
+}
+
+// SetModelsURL allows configuring a custom models API base URL.
+// This is primarily useful for tests and local emulators.
+func (p *Provider) SetModelsURL(url string) {
+	p.modelsURL = url
+	p.modelsClientConf.BaseURL = url
 }
 
 // setHeaders sets the required headers for Gemini API requests
@@ -138,57 +163,108 @@ type geminiModelsResponse struct {
 func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	// Use the native Gemini API to list models
 	// We need to create a separate client for the models endpoint since it uses a different URL
-	modelsCfg := llmclient.DefaultConfig("gemini", p.modelsURL)
+	modelsCfg := p.modelsClientConf
+	modelsCfg.BaseURL = p.modelsURL
 	modelsCfg.Hooks = p.hooks
-	modelsClient := llmclient.New(
-		modelsCfg,
-		func(req *http.Request) {
-			// Add API key as query parameter.
-			// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
-			// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
-			// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
-			q := req.URL.Query()
-			q.Add("key", p.apiKey)
-			req.URL.RawQuery = q.Encode()
-		},
-	)
+	headers := func(req *http.Request) {
+		// Use header-based API key auth for models requests.
+		req.Header.Set("x-goog-api-key", p.apiKey)
 
-	var geminiResp geminiModelsResponse
-	err := modelsClient.Do(ctx, llmclient.Request{
+		// Preserve request tracing across list-models requests.
+		requestID := req.Header.Get("X-Request-Id")
+		if requestID == "" {
+			requestID = core.GetRequestID(req.Context())
+		}
+		if requestID != "" {
+			req.Header.Set("X-Request-Id", requestID)
+		}
+	}
+
+	var modelsClient *llmclient.Client
+	if p.httpClient != nil {
+		modelsClient = llmclient.NewWithHTTPClient(p.httpClient, modelsCfg, headers)
+	} else {
+		modelsClient = llmclient.New(modelsCfg, headers)
+	}
+
+	rawResp, err := modelsClient.DoRaw(ctx, llmclient.Request{
 		Method:   http.MethodGet,
 		Endpoint: "/models",
-	}, &geminiResp)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert Gemini models to core.Model format
 	now := time.Now().Unix()
-	models := make([]core.Model, 0, len(geminiResp.Models))
 
-	for _, gm := range geminiResp.Models {
-		// Extract model ID from name (format: "models/gemini-...")
-		modelID := strings.TrimPrefix(gm.Name, "models/")
+	// Preferred path: native Gemini models response.
+	// If the payload contains an explicit "models" field with an empty array,
+	// return an empty list instead of falling through to fallback parsing.
+	var nativeProbe struct {
+		Models json.RawMessage `json:"models"`
+	}
+	if err := json.Unmarshal(rawResp.Body, &nativeProbe); err == nil && nativeProbe.Models != nil {
+		var geminiResp geminiModelsResponse
+		if err := json.Unmarshal(rawResp.Body, &geminiResp); err != nil {
+			return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to parse native Gemini models response", err)
+		}
+		if len(geminiResp.Models) == 0 {
+			return &core.ModelsResponse{
+				Object: "list",
+				Data:   []core.Model{},
+			}, nil
+		}
 
-		// Only include models that support generateContent (chat/completion)
-		supportsGenerate := false
-		for _, method := range gm.SupportedMethods {
-			if method == "generateContent" || method == "streamGenerateContent" {
-				supportsGenerate = true
-				break
+		models := make([]core.Model, 0, len(geminiResp.Models))
+
+		for _, gm := range geminiResp.Models {
+			// Extract model ID from name (format: "models/gemini-...")
+			modelID := strings.TrimPrefix(gm.Name, "models/")
+
+			// Only include models that support generateContent (chat/completion)
+			supportsGenerate := false
+			for _, method := range gm.SupportedMethods {
+				if method == "generateContent" || method == "streamGenerateContent" {
+					supportsGenerate = true
+					break
+				}
+			}
+
+			supportsEmbed := false
+			for _, method := range gm.SupportedMethods {
+				if method == "embedContent" {
+					supportsEmbed = true
+					break
+				}
+			}
+
+			isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
+			if (supportsGenerate || supportsEmbed) && isOpenAICompatModel {
+				models = append(models, core.Model{
+					ID:      modelID,
+					Object:  "model",
+					OwnedBy: "google",
+					Created: now,
+				})
 			}
 		}
 
-		supportsEmbed := false
-		for _, method := range gm.SupportedMethods {
-			if method == "embedContent" {
-				supportsEmbed = true
-				break
-			}
-		}
+		return &core.ModelsResponse{
+			Object: "list",
+			Data:   models,
+		}, nil
+	}
 
-		isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
-		if (supportsGenerate || supportsEmbed) && isOpenAICompatModel {
+	// Fallback path: OpenAI-compatible models list.
+	var openAIResp core.ModelsResponse
+	if err := json.Unmarshal(rawResp.Body, &openAIResp); err == nil && openAIResp.Object == "list" {
+		models := make([]core.Model, 0, len(openAIResp.Data))
+		for _, m := range openAIResp.Data {
+			modelID := strings.TrimPrefix(m.ID, "models/")
+			isOpenAICompatModel := strings.HasPrefix(modelID, "gemini-") || strings.HasPrefix(modelID, "text-embedding-")
+			if !isOpenAICompatModel {
+				continue
+			}
 			models = append(models, core.Model{
 				ID:      modelID,
 				Object:  "model",
@@ -196,12 +272,17 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 				Created: now,
 			})
 		}
+		return &core.ModelsResponse{
+			Object: "list",
+			Data:   models,
+		}, nil
 	}
 
-	return &core.ModelsResponse{
-		Object: "list",
-		Data:   models,
-	}, nil
+	responsePreview := string(rawResp.Body)
+	if len(responsePreview) > 512 {
+		responsePreview = responsePreview[:512] + "...(truncated)"
+	}
+	return nil, core.NewProviderError("gemini", http.StatusBadGateway, "unexpected Gemini models response format", fmt.Errorf("models response body: %s", responsePreview))
 }
 
 // Responses sends a Responses API request to Gemini (converted to chat format)
@@ -229,4 +310,130 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return providers.StreamResponsesViaChat(ctx, p, req, "gemini")
+}
+
+// CreateBatch creates a native Gemini batch job through its OpenAI-compatible endpoint.
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatch retrieves a native Gemini batch job.
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/batches/" + url.PathEscape(id),
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// ListBatches lists native Gemini batch jobs.
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("after", after)
+	}
+	endpoint := "/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp core.BatchListResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		if resp.Data[i].ProviderBatchID == "" {
+			resp.Data[i].ProviderBatchID = resp.Data[i].ID
+		}
+	}
+	return &resp, nil
+}
+
+// CancelBatch cancels a native Gemini batch job.
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatchResults fetches Gemini batch results via the output file API.
+func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
+	return providers.FetchBatchResultsFromOutputFile(ctx, p.client, "gemini", id)
+}
+
+// CreateFile uploads a file through Gemini's OpenAI-compatible /files API.
+func (p *Provider) CreateFile(ctx context.Context, req *core.FileCreateRequest) (*core.FileObject, error) {
+	resp, err := providers.CreateOpenAICompatibleFile(ctx, p.client, req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "gemini"
+	return resp, nil
+}
+
+// ListFiles lists files through Gemini's OpenAI-compatible /files API.
+func (p *Provider) ListFiles(ctx context.Context, purpose string, limit int, after string) (*core.FileListResponse, error) {
+	resp, err := providers.ListOpenAICompatibleFiles(ctx, p.client, purpose, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		resp.Data[i].Provider = "gemini"
+	}
+	return resp, nil
+}
+
+// GetFile retrieves one file object through Gemini's OpenAI-compatible /files API.
+func (p *Provider) GetFile(ctx context.Context, id string) (*core.FileObject, error) {
+	resp, err := providers.GetOpenAICompatibleFile(ctx, p.client, id)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "gemini"
+	return resp, nil
+}
+
+// DeleteFile deletes a file object through Gemini's OpenAI-compatible /files API.
+func (p *Provider) DeleteFile(ctx context.Context, id string) (*core.FileDeleteResponse, error) {
+	return providers.DeleteOpenAICompatibleFile(ctx, p.client, id)
+}
+
+// GetFileContent fetches raw file bytes through Gemini's /files/{id}/content API.
+func (p *Provider) GetFileContent(ctx context.Context, id string) (*core.FileContentResponse, error) {
+	return providers.GetOpenAICompatibleFileContent(ctx, p.client, id)
 }

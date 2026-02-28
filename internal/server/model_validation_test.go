@@ -50,6 +50,22 @@ func TestModelValidation(t *testing.T) {
 			handlerCalled:  true,
 		},
 		{
+			name:           "batch path skips root model validation",
+			method:         http.MethodPost,
+			path:           "/v1/batches",
+			body:           `{"requests":[{"url":"/v1/chat/completions","body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}}]}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "files path skips root model validation",
+			method:         http.MethodPost,
+			path:           "/v1/files",
+			body:           "",
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
 			name:           "missing model returns 400",
 			method:         http.MethodPost,
 			path:           "/v1/chat/completions",
@@ -187,6 +203,31 @@ func TestModelValidation_SetsRequestIDInContext(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "test-req-123", capturedRequestID)
+}
+
+func TestModelValidation_DoesNotTreatPrefixOvermatchAsBatchPath(t *testing.T) {
+	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+
+	e := echo.New()
+	var capturedRequestID string
+
+	middleware := ModelValidation(provider)
+	handler := middleware(func(c echo.Context) error {
+		capturedRequestID = core.GetRequestID(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batchesXYZ", strings.NewReader(`{"foo":"bar"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "test-req-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "", capturedRequestID)
 }
 
 func TestModelValidation_BodyRewound(t *testing.T) {

@@ -1,0 +1,65 @@
+{
+  "data": [
+    {
+      "created": 0,
+      "id": "grok-2-vision-1212",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-3",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-3-mini",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-4-0709",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-4-1-fast-non-reasoning",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-4-1-fast-reasoning",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-4-fast-non-reasoning",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-4-fast-reasoning",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-code-fast-1",
+      "object": "model",
+      "owned_by": "xai"
+    },
+    {
+      "created": 0,
+      "id": "grok-2-image-1212",
+      "object": "model",
+      "owned_by": "xai"
+    }
+  ],
+  "object": "list"
+}

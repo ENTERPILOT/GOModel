@@ -143,3 +143,245 @@ func (r *Router) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*c
 func (r *Router) GetProviderType(model string) string {
 	return r.lookup.GetProviderType(model)
 }
+
+func (r *Router) providerByType(providerType string) core.Provider {
+	models := r.lookup.ListModels()
+	for _, model := range models {
+		if r.lookup.GetProviderType(model.ID) != providerType {
+			continue
+		}
+		p := r.lookup.GetProvider(model.ID)
+		if p != nil {
+			return p
+		}
+	}
+	return nil
+}
+
+// CreateBatch routes native batch creation to a provider type.
+func (r *Router) CreateBatch(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.CreateBatch(ctx, req)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// GetBatch routes native batch lookup to a provider type.
+func (r *Router) GetBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.GetBatch(ctx, id)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// ListBatches routes native batch listing to a provider type.
+func (r *Router) ListBatches(ctx context.Context, providerType string, limit int, after string) (*core.BatchListResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.ListBatches(ctx, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		for i := range resp.Data {
+			resp.Data[i].Provider = providerType
+		}
+	}
+	return resp, nil
+}
+
+// CancelBatch routes native batch cancellation to a provider type.
+func (r *Router) CancelBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.CancelBatch(ctx, id)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// GetBatchResults routes native batch results lookup to a provider type.
+func (r *Router) GetBatchResults(ctx context.Context, providerType, id string) (*core.BatchResultsResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	return bp.GetBatchResults(ctx, id)
+}
+
+// CreateFile routes file upload to a provider type.
+func (r *Router) CreateFile(ctx context.Context, providerType string, req *core.FileCreateRequest) (*core.FileObject, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	fp, ok := provider.(core.NativeFileProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native file operations", providerType), nil)
+	}
+	resp, err := fp.CreateFile(ctx, req)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// ListFiles routes file listing to a provider type.
+func (r *Router) ListFiles(ctx context.Context, providerType, purpose string, limit int, after string) (*core.FileListResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	fp, ok := provider.(core.NativeFileProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native file operations", providerType), nil)
+	}
+	resp, err := fp.ListFiles(ctx, purpose, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		for i := range resp.Data {
+			resp.Data[i].Provider = providerType
+		}
+	}
+	return resp, nil
+}
+
+// GetFile routes file retrieval to a provider type.
+func (r *Router) GetFile(ctx context.Context, providerType, id string) (*core.FileObject, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	fp, ok := provider.(core.NativeFileProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native file operations", providerType), nil)
+	}
+	resp, err := fp.GetFile(ctx, id)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// DeleteFile routes file deletion to a provider type.
+func (r *Router) DeleteFile(ctx context.Context, providerType, id string) (*core.FileDeleteResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	fp, ok := provider.(core.NativeFileProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native file operations", providerType), nil)
+	}
+	return fp.DeleteFile(ctx, id)
+}
+
+// GetFileContent routes file content retrieval to a provider type.
+func (r *Router) GetFileContent(ctx context.Context, providerType, id string) (*core.FileContentResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	fp, ok := provider.(core.NativeFileProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native file operations", providerType), nil)
+	}
+	return fp.GetFileContent(ctx, id)
+}

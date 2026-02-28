@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -21,7 +22,14 @@ const providerTypeKey contextKey = "providerType"
 func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if !auditlog.IsModelInteractionPath(c.Request().URL.Path) {
+			path := c.Request().URL.Path
+			if !auditlog.IsModelInteractionPath(path) {
+				return next(c)
+			}
+			if isBatchOrFileRootOrSubresource(path) {
+				requestID := c.Request().Header.Get("X-Request-ID")
+				ctx := core.WithRequestID(c.Request().Context(), requestID)
+				c.SetRequest(c.Request().WithContext(ctx))
 				return next(c)
 			}
 
@@ -57,6 +65,13 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func isBatchOrFileRootOrSubresource(path string) bool {
+	return path == "/v1/batches" ||
+		strings.HasPrefix(path, "/v1/batches/") ||
+		path == "/v1/files" ||
+		strings.HasPrefix(path, "/v1/files/")
 }
 
 // GetProviderType returns the provider type set by ModelValidation for this request.

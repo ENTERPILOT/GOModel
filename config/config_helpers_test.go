@@ -219,6 +219,15 @@ func TestApplyEnvOverrides(t *testing.T) {
 			},
 		},
 		{
+			name:    "guardrails batch flag override",
+			envVars: map[string]string{"ENABLE_GUARDRAILS_FOR_BATCH_PROCESSING": "true"},
+			check: func(t *testing.T, cfg *Config) {
+				if !cfg.Guardrails.EnableForBatchProcessing {
+					t.Error("Guardrails.EnableForBatchProcessing should be true")
+				}
+			},
+		},
+		{
 			name:    "HTTP timeout overrides",
 			envVars: map[string]string{"HTTP_TIMEOUT": "30", "HTTP_RESPONSE_HEADER_TIMEOUT": "60"},
 			check: func(t *testing.T, cfg *Config) {
@@ -252,7 +261,7 @@ func TestApplyEnvOverrides(t *testing.T) {
 			},
 		},
 		{
-			name: "retry int override",
+			name:    "retry int override",
 			envVars: map[string]string{"RETRY_MAX_RETRIES": "7"},
 			check: func(t *testing.T, cfg *Config) {
 				if cfg.Resilience.Retry.MaxRetries != 7 {

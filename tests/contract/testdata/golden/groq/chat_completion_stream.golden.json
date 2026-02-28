@@ -1,0 +1,115 @@
+{
+  "chunks": [
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "",
+            "role": "assistant"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-bc4c2b5f-ad1c-4152-831f-a0885de968a3",
+      "model": "llama-3.3-70b-versatile",
+      "object": "chat.completion.chunk",
+      "system_fingerprint": "fp_c06d5113ec",
+      "x_groq": {
+        "id": "req_\u003cgenerated\u003e",
+        "seed": 2093329955
+      }
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Hello"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-bc4c2b5f-ad1c-4152-831f-a0885de968a3",
+      "model": "llama-3.3-70b-versatile",
+      "object": "chat.completion.chunk",
+      "system_fingerprint": "fp_c06d5113ec"
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": " World"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-bc4c2b5f-ad1c-4152-831f-a0885de968a3",
+      "model": "llama-3.3-70b-versatile",
+      "object": "chat.completion.chunk",
+      "system_fingerprint": "fp_c06d5113ec"
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "!"
+          },
+          "finish_reason": null,
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-bc4c2b5f-ad1c-4152-831f-a0885de968a3",
+      "model": "llama-3.3-70b-versatile",
+      "object": "chat.completion.chunk",
+      "system_fingerprint": "fp_c06d5113ec"
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop",
+          "index": 0,
+          "logprobs": null
+        }
+      ],
+      "created": 0,
+      "id": "chatcmpl-bc4c2b5f-ad1c-4152-831f-a0885de968a3",
+      "model": "llama-3.3-70b-versatile",
+      "object": "chat.completion.chunk",
+      "system_fingerprint": "fp_c06d5113ec",
+      "usage": {
+        "completion_time": 0.027554055,
+        "completion_tokens": 4,
+        "prompt_time": 0.003210785,
+        "prompt_tokens": 38,
+        "queue_time": 0.090321431,
+        "total_time": 0.03076484,
+        "total_tokens": 42
+      },
+      "x_groq": {
+        "id": "req_\u003cgenerated\u003e",
+        "usage": {
+          "completion_time": 0.027554055,
+          "completion_tokens": 4,
+          "prompt_time": 0.003210785,
+          "prompt_tokens": 38,
+          "queue_time": 0.090321431,
+          "total_time": 0.03076484,
+          "total_tokens": 42
+        }
+      }
+    }
+  ],
+  "done": true,
+  "text": "Hello World!"
+}

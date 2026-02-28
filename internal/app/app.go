@@ -14,6 +14,7 @@ import (
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
+	"gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
@@ -29,6 +30,7 @@ type App struct {
 	providers *providers.InitResult
 	audit     *auditlog.Result
 	usage     *usage.Result
+	batch     *batch.Result
 	server    *server.Server
 
 	shutdownMu sync.Mutex
@@ -102,6 +104,24 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.usage = usageResult
 
+	// Initialize batch lifecycle storage.
+	var batchResult *batch.Result
+	if auditResult.Storage != nil {
+		batchResult, err = batch.NewWithSharedStorage(ctx, auditResult.Storage)
+	} else if usageResult.Storage != nil {
+		batchResult, err = batch.NewWithSharedStorage(ctx, usageResult.Storage)
+	} else {
+		batchResult, err = batch.New(ctx, appCfg)
+	}
+	if err != nil {
+		closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to initialize batch storage: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to initialize batch storage: %w", err)
+	}
+	app.batch = batchResult
+
 	// Log configuration status
 	app.logStartupInfo()
 
@@ -110,15 +130,25 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if appCfg.Guardrails.Enabled {
 		pipeline, err := buildGuardrailsPipeline(appCfg.Guardrails)
 		if err != nil {
-			closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
+			var batchCloseErr error
+			if app.batch != nil {
+				batchCloseErr = app.batch.Close()
+			}
+			closeErr := errors.Join(batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
 			if closeErr != nil {
 				return nil, fmt.Errorf("failed to build guardrails: %w (also: close error: %v)", err, closeErr)
 			}
 			return nil, fmt.Errorf("failed to build guardrails: %w", err)
 		}
 		if pipeline.Len() > 0 {
-			provider = guardrails.NewGuardedProvider(provider, pipeline)
-			slog.Info("guardrails enabled", "count", pipeline.Len())
+			provider = guardrails.NewGuardedProviderWithOptions(provider, pipeline, guardrails.Options{
+				EnableForBatchProcessing: appCfg.Guardrails.EnableForBatchProcessing,
+			})
+			slog.Info(
+				"guardrails enabled",
+				"count", pipeline.Len(),
+				"enable_for_batch_processing", appCfg.Guardrails.EnableForBatchProcessing,
+			)
 		}
 	}
 
@@ -131,6 +161,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		AuditLogger:              auditResult.Logger,
 		UsageLogger:              usageResult.Logger,
 		PricingResolver:          providerResult.Registry,
+		BatchStore:               batchResult.Store,
 		LogOnlyModelInteractions: appCfg.Logging.OnlyModelInteractions,
 		SwaggerEnabled:           appCfg.Server.SwaggerEnabled,
 	}
@@ -209,13 +240,16 @@ func (a *App) Start(addr string) error {
 	return nil
 }
 
-// Shutdown gracefully shuts down all components in the correct order.
-// It ensures proper cleanup of resources:
-// 1. HTTP server (stop accepting new requests)
-// 2. Background refresh goroutine and cache
-// 3. Audit logging
+// Shutdown gracefully tears down app components in dependency order.
+// Order:
+// 1. HTTP server shutdown via server.Shutdown(ctx), honoring the passed context timeout/cancellation.
+// 2. Provider subsystem close (stops model refresh loop and cache resources).
+// 3. Batch store close.
+// 4. Usage logger close (flushes pending usage records).
+// 5. Audit logger close (flushes pending audit records).
 //
-// Safe to call multiple times; subsequent calls are no-ops.
+// Shutdown is idempotent and safe for repeated calls; after the first call, subsequent calls are no-ops.
+// It attempts every close step, aggregates failures, and returns a joined error if any step fails.
 func (a *App) Shutdown(ctx context.Context) error {
 	a.shutdownMu.Lock()
 	if a.shutdown {
@@ -245,7 +279,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 3. Close usage tracking (flushes pending entries)
+	// 3. Close batch store (flushes pending entries)
+	if a.batch != nil {
+		if err := a.batch.Close(); err != nil {
+			slog.Error("batch store close error", "error", err)
+			errs = append(errs, fmt.Errorf("batch close: %w", err))
+		}
+	}
+
+	// 4. Close usage tracking (flushes pending entries)
 	if a.usage != nil {
 		if err := a.usage.Close(); err != nil {
 			slog.Error("usage logger close error", "error", err)
@@ -253,7 +295,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 4. Close audit logging (flushes pending logs)
+	// 5. Close audit logging (flushes pending logs)
 	if a.audit != nil {
 		if err := a.audit.Close(); err != nil {
 			slog.Error("audit logger close error", "error", err)

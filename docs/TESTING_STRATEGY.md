@@ -4,9 +4,9 @@ A 3-layer testing strategy with **DB state verification** as the highest priorit
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer 3: Contract Tests (Provider API Compatibility)       │
-│  - Golden files with real API responses                     │
-│  - Schema validation, no API calls in CI                    │
+│  Layer 3: Contract Replay Tests (Provider Compatibility)     │
+│  - Golden files with real API responses                      │
+│  - Replay through real provider adapters in CI               │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Integration Tests (DB Verification) ← PRIORITY    │
 │  - Real PostgreSQL/MongoDB via testcontainers               │
@@ -101,24 +101,24 @@ go test -v -tags=integration ./tests/integration/...
 - Request/response pairs are correctly stored
 - Token counts match expected values
 
-## Layer 3: Contract Tests (Provider API Compatibility)
+## Layer 3: Contract Replay Tests (Provider API Compatibility)
 
-Golden file tests validating API response structures. No API calls in CI.
+Golden file replay tests validating provider adapter behavior. No API calls in CI.
 
 ```bash
 # Run contract tests
-go test -v -tags=contract ./tests/contract/...
+go test -v -tags=contract -timeout=5m ./tests/contract/...
 
 # Run specific provider tests
-go test -v -tags=contract ./tests/contract/... -run TestOpenAI
+go test -v -tags=contract -timeout=5m ./tests/contract/... -run TestOpenAI
 ```
 
 **Key characteristics:**
 
 - Golden files contain real API responses (recorded manually)
-- Tests validate response structure, not content
+- Tests replay payloads through real adapters (`ChatCompletion`, streaming, models, `Responses`)
 - No network calls during test execution
-- Detects API contract changes
+- Detects API contract changes and adapter parsing regressions
 
 ### Supported Providers
 
@@ -159,18 +159,16 @@ tests/contract/testdata/
 
 ### Recording New Golden Files
 
-Use the `recordapi` tool or manual curl commands:
+Use the standardized make target:
 
 ```bash
-# Using recordapi
-go run ./cmd/recordapi -provider=openai -endpoint=chat -output=tests/contract/testdata/openai/chat_completion.json
+make record-api
+```
 
-# Manual curl (see tests/contract/README.md for full examples)
-curl https://api.openai.com/v1/chat/completions \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Say Hello World"}],"max_tokens":50}' \
-  | jq . > tests/contract/testdata/openai/chat_completion.json
+Then validate replay tests with golden-file checks enabled:
+
+```bash
+go test -v -tags=contract -timeout=5m ./tests/contract/...
 ```
 
 ## Running All Tests
@@ -180,7 +178,7 @@ curl https://api.openai.com/v1/chat/completions \
 make test-all
 
 # Contract tests separately
-go test -v -tags=contract ./tests/contract/...
+go test -v -tags=contract -timeout=5m ./tests/contract/...
 
 # Integration tests (requires Docker)
 go test -v -tags=integration ./tests/integration/...
@@ -196,7 +194,7 @@ make lint && make test-all
 | `make test`                                         | Unit tests only               |
 | `make test-e2e`                                     | E2E tests with mock providers |
 | `make test-all`                                     | Unit + E2E tests              |
-| `go test -tags=contract ./tests/contract/...`       | Contract tests                |
+| `go test -tags=contract -timeout=5m ./tests/contract/...` | Contract tests         |
 | `go test -tags=integration ./tests/integration/...` | Integration tests             |
 | `make lint`                                         | Run golangci-lint             |
 
@@ -217,7 +215,7 @@ jobs:
       - run: make test-all
 
       # Contract tests (no API calls, uses golden files)
-      - run: go test -tags=contract ./tests/contract/...
+      - run: go test -tags=contract -timeout=5m ./tests/contract/...
 
       # Integration tests (requires Docker)
       - run: go test -tags=integration ./tests/integration/...

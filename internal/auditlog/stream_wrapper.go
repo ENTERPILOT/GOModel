@@ -427,10 +427,18 @@ func IsModelInteractionPath(path string) bool {
 		"/v1/chat/completions",
 		"/v1/responses",
 		"/v1/embeddings",
+		"/v1/files",
+		"/v1/batches",
 	}
 	for _, p := range modelPaths {
-		if strings.HasPrefix(path, p) {
+		if path == p {
 			return true
+		}
+		if strings.HasPrefix(path, p) {
+			next := path[len(p):]
+			if strings.HasPrefix(next, "/") || strings.HasPrefix(next, "?") {
+				return true
+			}
 		}
 	}
 	return false

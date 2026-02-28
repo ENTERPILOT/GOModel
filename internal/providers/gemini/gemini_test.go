@@ -333,9 +333,9 @@ func TestListModels(t *testing.T) {
 					t.Errorf("Path = %q, want %q", r.URL.Path, "/models")
 				}
 
-				apiKey := r.URL.Query().Get("key")
+				apiKey := r.Header.Get("x-goog-api-key")
 				if apiKey == "" {
-					t.Error("API key should be in query parameter 'key'")
+					t.Error("API key should be in x-goog-api-key header")
 				}
 
 				w.WriteHeader(tt.statusCode)
