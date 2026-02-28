@@ -195,8 +195,11 @@ type anthropicResponse struct {
 
 // anthropicContent represents content in Anthropic response
 type anthropicContent struct {
-	Type string `json:"type"`
-	Text string `json:"text"`
+	Type  string          `json:"type"`
+	Text  string          `json:"text"`
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
 // anthropicUsage represents token usage in Anthropic response
@@ -377,6 +380,7 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 // convertFromAnthropicResponse converts Anthropic response to core.ChatResponse
 func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	content := extractTextContent(resp.Content)
+	toolCalls := extractToolCalls(resp.Content)
 
 	finishReason := resp.StopReason
 	if finishReason == "" {
@@ -403,8 +407,9 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 			{
 				Index: 0,
 				Message: core.Message{
-					Role:    "assistant",
-					Content: content,
+					Role:      "assistant",
+					Content:   content,
+					ToolCalls: toolCalls,
 				},
 				FinishReason: finishReason,
 			},
@@ -738,6 +743,44 @@ func extractTextContent(blocks []anthropicContent) string {
 		}
 	}
 	return last
+}
+
+// extractToolCalls maps Anthropic "tool_use" content blocks to OpenAI-compatible tool calls.
+func extractToolCalls(blocks []anthropicContent) []core.ToolCall {
+	out := make([]core.ToolCall, 0)
+	for _, b := range blocks {
+		if b.Type != "tool_use" || b.Name == "" {
+			continue
+		}
+
+		arguments := "{}"
+		if len(b.Input) > 0 {
+			var parsed any
+			if err := json.Unmarshal(b.Input, &parsed); err == nil {
+				if canonical, err := json.Marshal(parsed); err == nil {
+					arguments = string(canonical)
+				}
+			} else {
+				trimmed := strings.TrimSpace(string(b.Input))
+				if trimmed != "" {
+					arguments = trimmed
+				}
+			}
+		}
+
+		out = append(out, core.ToolCall{
+			ID:   b.ID,
+			Type: "function",
+			Function: core.FunctionCall{
+				Name:      b.Name,
+				Arguments: arguments,
+			},
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse

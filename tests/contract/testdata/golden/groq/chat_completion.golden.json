@@ -1,0 +1,22 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "Hello World!",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 0,
+  "id": "chatcmpl-704f97d8-0ee9-4fa6-b74f-777917cc07d7",
+  "model": "llama-3.3-70b-versatile",
+  "object": "chat.completion",
+  "provider": "",
+  "usage": {
+    "completion_tokens": 4,
+    "prompt_tokens": 38,
+    "total_tokens": 42
+  }
+}

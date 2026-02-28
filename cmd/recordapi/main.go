@@ -92,11 +92,58 @@ var endpointConfigs = map[string]struct {
 		path:   "/v1/models",
 		method: http.MethodGet,
 	},
+	"responses": {
+		path:   "/v1/responses",
+		method: http.MethodPost,
+		requestBody: map[string]interface{}{
+			"model": "gpt-4o-mini",
+			"input": "Say 'Hello, World!' and nothing else.",
+		},
+	},
+	"responses_stream": {
+		path:   "/v1/responses",
+		method: http.MethodPost,
+		requestBody: map[string]interface{}{
+			"model":  "gpt-4o-mini",
+			"input":  "Say 'Hello, World!' and nothing else.",
+			"stream": true,
+		},
+	},
+}
+
+var providerCapabilities = map[string]map[string]bool{
+	"openai": {
+		"responses": true,
+	},
+	"anthropic": {
+		"responses": false,
+	},
+	"gemini": {
+		"responses": false,
+	},
+	"groq": {
+		"responses": false,
+	},
+	"xai": {
+		"responses": true,
+	},
+}
+
+func endpointRequiresResponsesCapability(endpoint string) bool {
+	return endpoint == "responses" || endpoint == "responses_stream"
+}
+
+func providerSupportsResponses(provider string) bool {
+	capabilities, ok := providerCapabilities[provider]
+	if !ok {
+		return false
+	}
+	return capabilities["responses"]
 }
 
 func main() {
 	provider := flag.String("provider", "openai", "Provider to test (openai, anthropic, gemini, groq, xai)")
-	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models)")
+	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models, responses, responses_stream)")
 	output := flag.String("output", "", "Output file path (required)")
 	model := flag.String("model", "", "Override model in request")
 	flag.Parse()
@@ -116,6 +163,10 @@ func main() {
 	eConfig, ok := endpointConfigs[*endpoint]
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Error: unknown endpoint %q\n", *endpoint)
+		os.Exit(1)
+	}
+	if endpointRequiresResponsesCapability(*endpoint) && !providerSupportsResponses(*provider) {
+		fmt.Fprintf(os.Stderr, "Error: provider %q is missing responses capability (/v1/responses)\n", *provider)
 		os.Exit(1)
 	}
 

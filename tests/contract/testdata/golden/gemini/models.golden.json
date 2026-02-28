@@ -1,0 +1,191 @@
+{
+  "data": [
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-pro",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash-exp",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash-001",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash-lite-001",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash-lite",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash-lite-preview-02-05",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.0-flash-lite-preview",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-exp-1206",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-preview-tts",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-pro-preview-tts",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-flash-latest",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-flash-lite-latest",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-pro-latest",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-lite",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-image",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-preview-09-2025",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-lite-preview-09-2025",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-3-pro-preview",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-3-flash-preview",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-3-pro-image-preview",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-robotics-er-1.5-preview",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-computer-use-preview-10-2025",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "text-embedding-004",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-embedding-exp-03-07",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-embedding-exp",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-embedding-001",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-native-audio-latest",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-native-audio-preview-09-2025",
+      "object": "model",
+      "owned_by": "google"
+    },
+    {
+      "created": 0,
+      "id": "gemini-2.5-flash-native-audio-preview-12-2025",
+      "object": "model",
+      "owned_by": "google"
+    }
+  ],
+  "object": "list"
+}

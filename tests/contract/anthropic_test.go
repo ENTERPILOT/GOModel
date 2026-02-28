@@ -1,259 +1,135 @@
 //go:build contract
 
+// Contract tests in this file are intended to run with: -tags=contract -timeout=5m.
 package contract
 
 import (
-	"encoding/json"
+	"context"
+	"net/http"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"gomodel/internal/core"
+	"gomodel/internal/llmclient"
+	"gomodel/internal/providers/anthropic"
 )
 
-// AnthropicMessageResponse represents an Anthropic messages API response.
-type AnthropicMessageResponse struct {
-	ID           string                   `json:"id"`
-	Type         string                   `json:"type"`
-	Role         string                   `json:"role"`
-	Content      []AnthropicContentBlock  `json:"content"`
-	Model        string                   `json:"model"`
-	StopReason   string                   `json:"stop_reason"`
-	StopSequence *string                  `json:"stop_sequence"`
-	Usage        AnthropicUsage           `json:"usage"`
+func newAnthropicReplayProvider(t *testing.T, routes map[string]replayRoute) core.Provider {
+	t.Helper()
+
+	client := newReplayHTTPClient(t, routes)
+	provider := anthropic.NewWithHTTPClient("sk-ant-test", client, llmclient.Hooks{})
+	provider.SetBaseURL("https://replay.local")
+	return provider
 }
 
-// AnthropicContentBlock represents a content block in Anthropic response.
-type AnthropicContentBlock struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
-}
-
-// AnthropicUsage represents token usage in Anthropic response.
-type AnthropicUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
-
-func TestAnthropic_Messages(t *testing.T) {
-	if !goldenFileExists(t, "anthropic/messages.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+func TestAnthropicReplayChatCompletion(t *testing.T) {
+	testCases := []struct {
+		name         string
+		fixturePath  string
+		finishReason string
+	}{
+		{name: "basic", fixturePath: "anthropic/messages.json"},
+		{name: "with-params", fixturePath: "anthropic/messages_with_params.json"},
+		{name: "with-tools", fixturePath: "anthropic/messages_with_tools.json", finishReason: "tool_use"},
+		{name: "extended-thinking", fixturePath: "anthropic/messages_extended_thinking.json"},
+		{name: "multi-turn", fixturePath: "anthropic/messages_multi_turn.json"},
+		{name: "multimodal", fixturePath: "anthropic/messages_multimodal.json"},
 	}
 
-	data := loadGoldenFileRaw(t, "anthropic/messages.json")
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			provider := newAnthropicReplayProvider(t, map[string]replayRoute{
+				replayKey(http.MethodPost, "/messages"): jsonFixtureRoute(t, tc.fixturePath),
+			})
 
-	var resp AnthropicMessageResponse
-	err := json.Unmarshal(data, &resp)
-	require.NoError(t, err, "failed to unmarshal Anthropic response")
+			resp, err := provider.ChatCompletion(context.Background(), &core.ChatRequest{
+				Model: "claude-sonnet-4-20250514",
+				Messages: []core.Message{{
+					Role:    "user",
+					Content: "hello",
+				}},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NotEmpty(t, resp.Choices)
 
-	t.Run("Contract", func(t *testing.T) {
-		// Validate required fields
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "message", resp.Type, "type should be 'message'")
-		assert.Equal(t, "assistant", resp.Role, "role should be 'assistant'")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
-
-		// Validate content structure
-		require.NotEmpty(t, resp.Content, "content should not be empty")
-		for i, block := range resp.Content {
-			assert.NotEmpty(t, block.Type, "content block %d: type should not be empty", i)
-			if block.Type == "text" {
-				assert.NotEmpty(t, block.Text, "content block %d: text should not be empty for text type", i)
+			if tc.finishReason != "" {
+				require.Equal(t, tc.finishReason, resp.Choices[0].FinishReason)
 			}
-		}
-
-		// Validate stop reason
-		assert.NotEmpty(t, resp.StopReason, "stop_reason should not be empty")
-
-		// Validate usage
-		assert.GreaterOrEqual(t, resp.Usage.InputTokens, 0, "input_tokens should be >= 0")
-		assert.GreaterOrEqual(t, resp.Usage.OutputTokens, 0, "output_tokens should be >= 0")
-	})
-
-	t.Run("IDFormat", func(t *testing.T) {
-		// Anthropic message IDs typically start with "msg_"
-		assert.Contains(t, resp.ID, "msg_", "Anthropic message ID should contain 'msg_'")
-	})
-
-	t.Run("Streaming", func(t *testing.T) {
-		if !goldenFileExists(t, "anthropic/messages_stream.txt") {
-			t.Skip("golden file not found - run 'make record-api' to generate")
-		}
-
-		data := loadGoldenFileRaw(t, "anthropic/messages_stream.txt")
-
-		// Anthropic streaming responses use SSE format with event types
-		assert.Contains(t, string(data), "event:", "streaming response should contain SSE event lines")
-		assert.Contains(t, string(data), "data:", "streaming response should contain SSE data lines")
-
-		// Should contain message_start event
-		assert.Contains(t, string(data), "message_start", "streaming response should contain message_start event")
-
-		// Should contain message_stop event
-		assert.Contains(t, string(data), "message_stop", "streaming response should contain message_stop event")
-	})
-}
-
-func TestAnthropic_MessagesWithParams(t *testing.T) {
-	if !goldenFileExists(t, "anthropic/messages_with_params.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
+			compareGoldenJSON(t, goldenPathForFixture(tc.fixturePath), resp)
+		})
 	}
+}
 
-	data := loadGoldenFileRaw(t, "anthropic/messages_with_params.json")
+func TestAnthropicReplayStreamChatCompletion(t *testing.T) {
+	provider := newAnthropicReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/messages"): sseFixtureRoute(t, "anthropic/messages_stream.txt"),
+	})
 
-	var resp AnthropicMessageResponse
-	err := json.Unmarshal(data, &resp)
-	require.NoError(t, err, "failed to unmarshal Anthropic response")
+	stream, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "claude-sonnet-4-20250514",
+		Messages: []core.Message{{
+			Role:    "user",
+			Content: "stream",
+		}},
+	})
+	require.NoError(t, err)
 
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "message", resp.Type, "type should be 'message'")
-		assert.Equal(t, "assistant", resp.Role, "role should be 'assistant'")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
+	raw := readAllStream(t, stream)
+	chunks, done := parseChatStream(t, raw)
+
+	compareGoldenJSON(t, goldenPathForFixture("anthropic/messages_stream.txt"), map[string]any{
+		"done":   done,
+		"chunks": chunks,
+		"text":   extractChatStreamText(chunks),
 	})
 }
 
-// AnthropicToolUseResponse represents an Anthropic response with tool use.
-type AnthropicToolUseResponse struct {
-	ID           string                       `json:"id"`
-	Type         string                       `json:"type"`
-	Role         string                       `json:"role"`
-	Content      []AnthropicToolContentBlock  `json:"content"`
-	Model        string                       `json:"model"`
-	StopReason   string                       `json:"stop_reason"`
-	StopSequence *string                      `json:"stop_sequence"`
-	Usage        AnthropicUsage               `json:"usage"`
+func TestAnthropicReplayResponses(t *testing.T) {
+	provider := newAnthropicReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/messages"): jsonFixtureRoute(t, "anthropic/messages.json"),
+	})
+
+	resp, err := provider.Responses(context.Background(), &core.ResponsesRequest{
+		Model: "claude-sonnet-4-20250514",
+		Input: "hello",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	compareGoldenJSON(t, "anthropic/responses.golden.json", resp)
 }
 
-// AnthropicToolContentBlock represents a content block that may be text or tool_use.
-type AnthropicToolContentBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text,omitempty"`
-	ID    string          `json:"id,omitempty"`
-	Name  string          `json:"name,omitempty"`
-	Input json.RawMessage `json:"input,omitempty"`
-}
+func TestAnthropicReplayStreamResponses(t *testing.T) {
+	provider := newAnthropicReplayProvider(t, map[string]replayRoute{
+		replayKey(http.MethodPost, "/messages"): sseFixtureRoute(t, "anthropic/messages_stream.txt"),
+	})
 
-func TestAnthropic_MessagesWithTools(t *testing.T) {
-	if !goldenFileExists(t, "anthropic/messages_with_tools.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
+	stream, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "claude-sonnet-4-20250514",
+		Input: "stream",
+	})
+	require.NoError(t, err)
 
-	data := loadGoldenFileRaw(t, "anthropic/messages_with_tools.json")
+	raw := readAllStream(t, stream)
+	events := parseResponsesStream(t, raw)
+	require.True(t, hasResponsesEvent(events, "response.created"))
+	require.True(t, hasResponsesEvent(events, "response.output_text.delta"))
+	require.True(t, hasResponsesEvent(events, "response.completed"))
 
-	var resp AnthropicToolUseResponse
-	err := json.Unmarshal(data, &resp)
-	require.NoError(t, err, "failed to unmarshal Anthropic response")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "message", resp.Type, "type should be 'message'")
-		assert.Equal(t, "assistant", resp.Role, "role should be 'assistant'")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
-
-		// Check for tool_use content blocks
-		hasToolUse := false
-		for _, block := range resp.Content {
-			if block.Type == "tool_use" {
-				hasToolUse = true
-				assert.NotEmpty(t, block.ID, "tool_use block should have ID")
-				assert.NotEmpty(t, block.Name, "tool_use block should have name")
-			}
+	hasDone := false
+	for _, event := range events {
+		if event.Done {
+			hasDone = true
+			break
 		}
-		if hasToolUse {
-			assert.Equal(t, "tool_use", resp.StopReason, "stop_reason should be 'tool_use' when tools are called")
-		}
-	})
-}
-
-// AnthropicThinkingResponse represents an Anthropic response with extended thinking.
-type AnthropicThinkingResponse struct {
-	ID           string                         `json:"id"`
-	Type         string                         `json:"type"`
-	Role         string                         `json:"role"`
-	Content      []AnthropicThinkingContentBlock `json:"content"`
-	Model        string                         `json:"model"`
-	StopReason   string                         `json:"stop_reason"`
-	StopSequence *string                        `json:"stop_sequence"`
-	Usage        AnthropicThinkingUsage         `json:"usage"`
-}
-
-// AnthropicThinkingContentBlock represents a content block that may be text or thinking.
-type AnthropicThinkingContentBlock struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
-	Thinking string `json:"thinking,omitempty"`
-}
-
-// AnthropicThinkingUsage represents usage with cache tokens for extended thinking.
-type AnthropicThinkingUsage struct {
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-}
-
-func TestAnthropic_ExtendedThinking(t *testing.T) {
-	if !goldenFileExists(t, "anthropic/messages_extended_thinking.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
 	}
+	require.True(t, hasDone, "responses stream should terminate with [DONE]")
 
-	data := loadGoldenFileRaw(t, "anthropic/messages_extended_thinking.json")
-
-	var resp AnthropicThinkingResponse
-	err := json.Unmarshal(data, &resp)
-	require.NoError(t, err, "failed to unmarshal Anthropic response")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "message", resp.Type, "type should be 'message'")
-		assert.Equal(t, "assistant", resp.Role, "role should be 'assistant'")
-		assert.NotEmpty(t, resp.Model, "model should not be empty")
-
-		// Extended thinking responses should have thinking content block
-		hasThinking := false
-		for _, block := range resp.Content {
-			if block.Type == "thinking" {
-				hasThinking = true
-				assert.NotEmpty(t, block.Thinking, "thinking block should have content")
-			}
-		}
-		// Note: thinking may not always be present depending on the model and request
-		_ = hasThinking
-	})
-}
-
-func TestAnthropic_MessagesMultiTurn(t *testing.T) {
-	if !goldenFileExists(t, "anthropic/messages_multi_turn.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
-
-	data := loadGoldenFileRaw(t, "anthropic/messages_multi_turn.json")
-
-	var resp AnthropicMessageResponse
-	err := json.Unmarshal(data, &resp)
-	require.NoError(t, err, "failed to unmarshal Anthropic response")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "message", resp.Type, "type should be 'message'")
-		assert.Equal(t, "assistant", resp.Role, "role should be 'assistant'")
-		require.NotEmpty(t, resp.Content, "content should not be empty")
-	})
-}
-
-func TestAnthropic_MessagesMultimodal(t *testing.T) {
-	if !goldenFileExists(t, "anthropic/messages_multimodal.json") {
-		t.Skip("golden file not found - run 'make record-api' to generate")
-	}
-
-	data := loadGoldenFileRaw(t, "anthropic/messages_multimodal.json")
-
-	var resp AnthropicMessageResponse
-	err := json.Unmarshal(data, &resp)
-	require.NoError(t, err, "failed to unmarshal Anthropic response")
-
-	t.Run("Contract", func(t *testing.T) {
-		assert.NotEmpty(t, resp.ID, "response ID should not be empty")
-		assert.Equal(t, "message", resp.Type, "type should be 'message'")
-		assert.Equal(t, "assistant", resp.Role, "role should be 'assistant'")
-		require.NotEmpty(t, resp.Content, "content should not be empty")
+	compareGoldenJSON(t, "anthropic/responses_stream.golden.json", map[string]any{
+		"events": events,
+		"text":   extractResponsesStreamText(events),
 	})
 }

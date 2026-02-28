@@ -1,0 +1,73 @@
+{
+  "events": [
+    {
+      "Done": false,
+      "Name": "response.created",
+      "Payload": {
+        "response": {
+          "created_at": 0,
+          "id": "resp_\u003cgenerated\u003e",
+          "model": "llama-3.3-70b-versatile",
+          "object": "response",
+          "provider": "groq",
+          "status": "in_progress"
+        },
+        "type": "response.created"
+      }
+    },
+    {
+      "Done": false,
+      "Name": "response.output_text.delta",
+      "Payload": {
+        "delta": "Hello",
+        "type": "response.output_text.delta"
+      }
+    },
+    {
+      "Done": false,
+      "Name": "response.output_text.delta",
+      "Payload": {
+        "delta": " World",
+        "type": "response.output_text.delta"
+      }
+    },
+    {
+      "Done": false,
+      "Name": "response.output_text.delta",
+      "Payload": {
+        "delta": "!",
+        "type": "response.output_text.delta"
+      }
+    },
+    {
+      "Done": false,
+      "Name": "response.completed",
+      "Payload": {
+        "response": {
+          "created_at": 0,
+          "id": "resp_\u003cgenerated\u003e",
+          "model": "llama-3.3-70b-versatile",
+          "object": "response",
+          "provider": "groq",
+          "status": "completed",
+          "usage": {
+            "completion_time": 0.027554055,
+            "completion_tokens": 4,
+            "prompt_time": 0.003210785,
+            "prompt_tokens": 38,
+            "queue_time": 0.090321431,
+            "total_time": 0.03076484,
+            "total_tokens": 42
+          }
+        },
+        "type": "response.completed"
+      }
+    },
+    {
+      "Done": true,
+      "Name": "",
+      "Payload": null
+    }
+  ],
+  "text": "Hello World!"
+}

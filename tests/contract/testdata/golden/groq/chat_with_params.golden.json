@@ -1,0 +1,22 @@
+{
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "index": 0,
+      "message": {
+        "content": "1. Earth\n2. Mars\n3. Jupiter",
+        "role": "assistant"
+      }
+    }
+  ],
+  "created": 0,
+  "id": "chatcmpl-3139ccda-4286-4f93-ad82-179db1171d29",
+  "model": "llama-3.3-70b-versatile",
+  "object": "chat.completion",
+  "provider": "",
+  "usage": {
+    "completion_tokens": 12,
+    "prompt_tokens": 43,
+    "total_tokens": 55
+  }
+}
