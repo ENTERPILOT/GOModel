@@ -9,7 +9,7 @@
         "tool_calls": [
           {
             "function": {
-              "arguments": "{\n        \"location\": \"Paris\"\n      }",
+              "arguments": "{\"location\":\"Paris\"}",
               "name": "get_weather"
             },
             "id": "toolu_01Dq95J3WcnLmvSvBpAuaXwi",

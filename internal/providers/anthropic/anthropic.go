@@ -652,7 +652,17 @@ func extractToolCalls(blocks []anthropicContent) []core.ToolCall {
 
 		arguments := "{}"
 		if len(b.Input) > 0 {
-			arguments = string(b.Input)
+			var parsed any
+			if err := json.Unmarshal(b.Input, &parsed); err == nil {
+				if canonical, err := json.Marshal(parsed); err == nil {
+					arguments = string(canonical)
+				}
+			} else {
+				trimmed := strings.TrimSpace(string(b.Input))
+				if trimmed != "" {
+					arguments = trimmed
+				}
+			}
 		}
 
 		out = append(out, core.ToolCall{

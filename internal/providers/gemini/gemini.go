@@ -201,8 +201,23 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	now := time.Now().Unix()
 
 	// Preferred path: native Gemini models response.
-	var geminiResp geminiModelsResponse
-	if err := json.Unmarshal(rawResp.Body, &geminiResp); err == nil && len(geminiResp.Models) > 0 {
+	// If the payload contains an explicit "models" field with an empty array,
+	// return an empty list instead of falling through to fallback parsing.
+	var nativeProbe struct {
+		Models json.RawMessage `json:"models"`
+	}
+	if err := json.Unmarshal(rawResp.Body, &nativeProbe); err == nil && nativeProbe.Models != nil {
+		var geminiResp geminiModelsResponse
+		if err := json.Unmarshal(rawResp.Body, &geminiResp); err != nil {
+			return nil, core.NewProviderError("gemini", http.StatusBadGateway, "failed to parse native Gemini models response", err)
+		}
+		if len(geminiResp.Models) == 0 {
+			return &core.ModelsResponse{
+				Object: "list",
+				Data:   []core.Model{},
+			}, nil
+		}
+
 		models := make([]core.Model, 0, len(geminiResp.Models))
 
 		for _, gm := range geminiResp.Models {
