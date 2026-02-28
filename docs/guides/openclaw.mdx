@@ -1,0 +1,89 @@
+---
+title: "Using GOModel with OpenClaw"
+description: "Connect OpenClaw to GOModel through an OpenAI-compatible provider config."
+---
+
+## Overview
+
+OpenClaw can use GOModel as an OpenAI-compatible backend.
+
+Flow:
+
+`OpenClaw -> GOModel -> OpenAI/Anthropic/Gemini/...`
+
+## 1. Run GOModel
+
+Start GOModel with at least one provider and a master key:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e GOMODEL_MASTER_KEY="change-me" \
+  -e OPENAI_API_KEY="sk-..." \
+  enterpilot/gomodel
+```
+
+Confirm your model list:
+
+```bash
+curl -s http://localhost:8080/v1/models \
+  -H "Authorization: Bearer change-me"
+```
+
+## 2. Add a GOModel provider in OpenClaw
+
+In your OpenClaw config, add a custom provider that uses OpenAI-compatible requests:
+
+```json
+{
+  "env": {
+    "GOMODEL_MASTER_KEY": "change-me"
+  },
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "gomodel": {
+        "baseUrl": "http://localhost:8080/v1",
+        "apiKey": "${GOMODEL_MASTER_KEY}",
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "gpt-4o-mini",
+            "name": "GOModel gpt-4o-mini",
+            "reasoning": false,
+            "input": ["text"],
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0
+            },
+            "contextWindow": 128000,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "gomodel/gpt-4o-mini"
+      }
+    }
+  }
+}
+```
+
+Replace `gpt-4o-mini` with any model ID returned by GOModel at `/v1/models`.
+
+## 3. Validate from OpenClaw
+
+After reloading OpenClaw, send a test prompt with your configured default model.
+
+If you get `401 Unauthorized`, verify OpenClaw is sending the same value as `GOMODEL_MASTER_KEY`.
+
+## Notes
+
+- If GOModel is running in Docker and OpenClaw is not, `http://localhost:8080` is usually correct.
+- If both run in different containers, use a shared Docker network and container hostname instead of `localhost`.
+- You can expose multiple GOModel-backed models by adding more entries under `models.providers.gomodel.models`.
