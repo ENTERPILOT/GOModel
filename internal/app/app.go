@@ -337,7 +337,18 @@ func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.M
 		}
 	}
 
-	adminHandler := admin.NewHandler(reader, registry)
+	// Create audit reader (only from audit storage, because the usage-only storage
+	// schema may not include the audit_logs table/collection).
+	var auditReader auditlog.Reader
+	if auditStorage != nil {
+		var err error
+		auditReader, err = auditlog.NewReader(auditStorage)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create audit reader: %w", err)
+		}
+	}
+
+	adminHandler := admin.NewHandler(reader, registry, admin.WithAuditReader(auditReader))
 
 	var dashHandler *dashboard.Handler
 	if uiEnabled {

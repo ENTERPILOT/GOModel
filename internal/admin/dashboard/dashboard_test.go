@@ -47,6 +47,9 @@ func TestIndex_ReturnsHTML(t *testing.T) {
 	if !strings.Contains(body, "<!doctype html") && !strings.Contains(body, "<html") {
 		t.Errorf("expected HTML content, got: %.200s", rec.Body.String())
 	}
+	if !strings.Contains(body, "audit logs") {
+		t.Errorf("expected audit logs navigation item in page HTML")
+	}
 }
 
 func TestStatic_ServesCSS(t *testing.T) {

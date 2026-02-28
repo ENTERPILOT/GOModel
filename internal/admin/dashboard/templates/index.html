@@ -326,4 +326,139 @@
     <p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && activeCategory && activeCategory !== 'all'">No models in this category.</p>
     <p class="empty-state" x-show="models.length > 0 && filteredModels.length === 0 && modelFilter">No models match your filter.</p>
 </div>
+
+<!-- Audit Logs Page -->
+<div x-show="page==='audit'">
+    <div class="page-header">
+        <h2>Audit Logs</h2>
+        <div class="page-header-controls">
+            {{template "date-picker" .}}
+        </div>
+    </div>
+
+    <!-- Auth Error Banner -->
+    <div class="alert alert-warning" x-show="authError">
+        Authentication required. Enter your API key in the sidebar to view data.
+    </div>
+
+    <div class="audit-log-section">
+        <div class="audit-log-toolbar">
+            <div class="audit-filter-row">
+                <input type="text" placeholder="Search by request ID, path, provider, error..." x-model="auditSearch" @input.debounce.300ms="fetchAuditLog(true)" class="filter-input">
+                <input type="text" placeholder="Model" x-model="auditModel" @input.debounce.300ms="fetchAuditLog(true)" class="filter-input audit-filter-input">
+                <input type="text" placeholder="Provider" x-model="auditProvider" @input.debounce.300ms="fetchAuditLog(true)" class="filter-input audit-filter-input">
+                <input type="text" placeholder="Path" x-model="auditPath" @input.debounce.300ms="fetchAuditLog(true)" class="filter-input audit-filter-input">
+                <button class="pagination-btn" @click="clearAuditFilters()">Clear</button>
+            </div>
+            <div class="audit-filter-row audit-filter-row-selects">
+                <select x-model="auditMethod" @change="fetchAuditLog(true)" class="usage-log-select audit-filter-select">
+                    <option value="">All Methods</option>
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                    <option value="PATCH">PATCH</option>
+                    <option value="DELETE">DELETE</option>
+                </select>
+                <select x-model="auditStatusCode" @change="fetchAuditLog(true)" class="usage-log-select audit-filter-select">
+                    <option value="">All Statuses</option>
+                    <option value="200">200</option>
+                    <option value="201">201</option>
+                    <option value="400">400</option>
+                    <option value="401">401</option>
+                    <option value="403">403</option>
+                    <option value="404">404</option>
+                    <option value="429">429</option>
+                    <option value="500">500</option>
+                    <option value="502">502</option>
+                    <option value="503">503</option>
+                </select>
+                <select x-model="auditStream" @change="fetchAuditLog(true)" class="usage-log-select audit-filter-select">
+                    <option value="">All Modes</option>
+                    <option value="true">Streaming</option>
+                    <option value="false">Non-streaming</option>
+                </select>
+            </div>
+        </div>
+
+        <p class="audit-log-summary" x-show="auditLog.total > 0" x-text="'Showing ' + (auditLog.offset + 1) + '-' + Math.min(auditLog.offset + auditLog.limit, auditLog.total) + ' of ' + auditLog.total + ' logs'"></p>
+
+        <div class="audit-log-list" x-show="auditLog.entries.length > 0">
+            <template x-for="entry in auditLog.entries" :key="entry.id">
+                <details class="audit-entry">
+                    <summary class="audit-entry-summary">
+                        <div class="audit-entry-main">
+                            <span class="audit-status-badge" :class="statusCodeClass(entry.status_code)" x-text="entry.status_code || '-'"></span>
+                            <span class="audit-method-badge" x-text="entry.method || '-'"></span>
+                            <span class="audit-path mono" x-text="entry.path || '-'"></span>
+                        </div>
+                        <div class="audit-entry-meta">
+                            <span class="mono" x-text="formatTimestamp(entry.timestamp)"></span>
+                            <span class="mono" x-text="formatDurationNs(entry.duration_ns)"></span>
+                        </div>
+                    </summary>
+                    <div class="audit-entry-details">
+                        <div class="audit-entry-context">
+                            <span class="provider-badge" x-text="entry.provider || '-'"></span>
+                            <span class="provider-badge mono" x-text="entry.model || '-'"></span>
+                            <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
+                            <span class="provider-badge mono" x-show="entry.client_ip" x-text="'ip: ' + entry.client_ip"></span>
+                            <span class="provider-badge" x-show="entry.stream">stream</span>
+                            <span class="provider-badge" x-show="entry.error_type" x-text="entry.error_type"></span>
+                        </div>
+
+                        <div class="audit-request-response">
+                            <section class="audit-pane">
+                                <div class="audit-pane-head">
+                                    <h4>Request</h4>
+                                    <button class="pagination-btn" @click.prevent="copyAuditJSON(entry.data && entry.data.request_body)">Copy Body</button>
+                                </div>
+                                <div class="audit-pane-block" x-show="entry.data && entry.data.request_headers">
+                                    <h5>Headers</h5>
+                                    <pre class="audit-json" x-text="formatJSON(entry.data.request_headers)"></pre>
+                                </div>
+                                <div class="audit-pane-block" x-show="entry.data && entry.data.request_body">
+                                    <h5>Body</h5>
+                                    <pre class="audit-json" x-text="formatJSON(entry.data.request_body)"></pre>
+                                </div>
+                                <p class="empty-state audit-pane-empty" x-show="!entry.data || (!entry.data.request_headers && !entry.data.request_body)">Request details were not captured.</p>
+                                <p class="audit-size-warning" x-show="entry.data && entry.data.request_body_too_big_to_handle">Request body was too large to capture.</p>
+                            </section>
+
+                            <section class="audit-pane">
+                                <div class="audit-pane-head">
+                                    <h4>Response</h4>
+                                    <button class="pagination-btn" @click.prevent="copyAuditJSON(entry.data && entry.data.response_body)">Copy Body</button>
+                                </div>
+                                <div class="audit-pane-block" x-show="entry.data && entry.data.error_message">
+                                    <h5>Error Message</h5>
+                                    <pre class="audit-json" x-text="entry.data.error_message"></pre>
+                                </div>
+                                <div class="audit-pane-block" x-show="entry.data && entry.data.response_headers">
+                                    <h5>Headers</h5>
+                                    <pre class="audit-json" x-text="formatJSON(entry.data.response_headers)"></pre>
+                                </div>
+                                <div class="audit-pane-block" x-show="entry.data && entry.data.response_body">
+                                    <h5>Body</h5>
+                                    <pre class="audit-json" x-text="formatJSON(entry.data.response_body)"></pre>
+                                </div>
+                                <p class="empty-state audit-pane-empty" x-show="!entry.data || (!entry.data.error_message && !entry.data.response_headers && !entry.data.response_body)">Response details were not captured.</p>
+                                <p class="audit-size-warning" x-show="entry.data && entry.data.response_body_too_big_to_handle">Response body was too large to capture.</p>
+                            </section>
+                        </div>
+                    </div>
+                </details>
+            </template>
+        </div>
+
+        <p class="empty-state" x-show="auditLog.entries.length === 0 && !loading && !authError">No audit log entries found.</p>
+
+        <div class="pagination" x-show="auditLog.total > 0">
+            <span class="pagination-info" x-text="'Showing ' + (auditLog.offset + 1) + '-' + Math.min(auditLog.offset + auditLog.limit, auditLog.total) + ' of ' + auditLog.total"></span>
+            <div class="pagination-buttons">
+                <button class="pagination-btn" :disabled="auditLog.offset === 0" @click="auditLogPrevPage()">Prev</button>
+                <button class="pagination-btn" :disabled="auditLog.offset + auditLog.limit >= auditLog.total" @click="auditLogNextPage()">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
 {{end}}

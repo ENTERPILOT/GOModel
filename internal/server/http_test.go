@@ -274,12 +274,14 @@ func TestAdminEndpoints_Enabled(t *testing.T) {
 		AdminHandler:          adminHandler,
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/api/v1/models", nil)
-	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, req)
+	for _, path := range []string{"/admin/api/v1/models", "/admin/api/v1/audit/log"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Errorf("expected 200 for %s, got %d", path, rec.Code)
+		}
 	}
 }
 

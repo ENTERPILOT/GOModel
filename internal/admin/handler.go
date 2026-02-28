@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
 
+	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/providers"
 	"gomodel/internal/usage"
@@ -17,16 +19,35 @@ import (
 // Handler serves admin API endpoints.
 type Handler struct {
 	usageReader usage.UsageReader
+	auditReader auditlog.Reader
 	registry    *providers.ModelRegistry
+}
+
+// Option configures the admin API handler.
+type Option func(*Handler)
+
+// WithAuditReader enables audit log read endpoints.
+func WithAuditReader(reader auditlog.Reader) Option {
+	return func(h *Handler) {
+		h.auditReader = reader
+	}
 }
 
 // NewHandler creates a new admin API handler.
 // usageReader may be nil if usage tracking is not available.
-func NewHandler(reader usage.UsageReader, registry *providers.ModelRegistry) *Handler {
-	return &Handler{
+func NewHandler(reader usage.UsageReader, registry *providers.ModelRegistry, options ...Option) *Handler {
+	h := &Handler{
 		usageReader: reader,
 		registry:    registry,
 	}
+
+	for _, opt := range options {
+		if opt != nil {
+			opt(h)
+		}
+	}
+
+	return h
 }
 
 var validIntervals = map[string]bool{
@@ -39,6 +60,23 @@ var validIntervals = map[string]bool{
 // parseUsageParams extracts UsageQueryParams from the request query string.
 // Returns an error if date parameters are provided but malformed.
 func parseUsageParams(c echo.Context) (usage.UsageQueryParams, error) {
+	params, err := parseDateRangeParams(c)
+	if err != nil {
+		return params, err
+	}
+
+	// Parse interval
+	params.Interval = c.QueryParam("interval")
+	if !validIntervals[params.Interval] {
+		params.Interval = "daily"
+	}
+
+	return params, nil
+}
+
+// parseDateRangeParams extracts common date range query params.
+// Returns an error if date parameters are provided but malformed.
+func parseDateRangeParams(c echo.Context) (usage.UsageQueryParams, error) {
 	var params usage.UsageQueryParams
 
 	now := time.Now().UTC()
@@ -68,30 +106,23 @@ func parseUsageParams(c echo.Context) (usage.UsageQueryParams, error) {
 	}
 
 	if startParsed || endParsed {
-		// Fill in missing side
 		if !startParsed {
 			params.StartDate = params.EndDate.AddDate(0, 0, -29)
 		}
 		if !endParsed {
 			params.EndDate = today
 		}
-	} else {
-		// Fall back to days param
-		days := 30
-		if d := c.QueryParam("days"); d != "" {
-			if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
-				days = parsed
-			}
-		}
-		params.EndDate = today
-		params.StartDate = today.AddDate(0, 0, -(days - 1))
+		return params, nil
 	}
 
-	// Parse interval
-	params.Interval = c.QueryParam("interval")
-	if !validIntervals[params.Interval] {
-		params.Interval = "daily"
+	days := 30
+	if d := c.QueryParam("days"); d != "" {
+		if parsed, err := strconv.Atoi(d); err == nil && parsed > 0 {
+			days = parsed
+		}
 	}
+	params.EndDate = today
+	params.StartDate = today.AddDate(0, 0, -(days - 1))
 
 	return params, nil
 }
@@ -269,6 +300,93 @@ func (h *Handler) UsageLog(c echo.Context) error {
 
 	if result.Entries == nil {
 		result.Entries = []usage.UsageLogEntry{}
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
+// AuditLog handles GET /admin/api/v1/audit/log
+//
+// @Summary      Get paginated audit log entries
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days         query     int     false  "Number of days (default 30)"
+// @Param        start_date   query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date     query     string  false  "End date (YYYY-MM-DD)"
+// @Param        model        query     string  false  "Filter by model name"
+// @Param        provider     query     string  false  "Filter by provider"
+// @Param        method       query     string  false  "Filter by HTTP method"
+// @Param        path         query     string  false  "Filter by request path"
+// @Param        error_type   query     string  false  "Filter by error type"
+// @Param        status_code  query     int     false  "Filter by status code"
+// @Param        stream       query     string  false  "Filter by stream mode (true/false)"
+// @Param        search       query     string  false  "Search across request_id/model/provider/method/path/error_type"
+// @Param        limit        query     int     false  "Page size (default 25, max 100)"
+// @Param        offset       query     int     false  "Offset for pagination"
+// @Success      200  {object}  auditlog.LogListResult
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/audit/log [get]
+func (h *Handler) AuditLog(c echo.Context) error {
+	if h.auditReader == nil {
+		return c.JSON(http.StatusOK, auditlog.LogListResult{
+			Entries: []auditlog.LogEntry{},
+		})
+	}
+
+	dateRange, err := parseDateRangeParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	params := auditlog.LogQueryParams{
+		QueryParams: auditlog.QueryParams{
+			StartDate: dateRange.StartDate,
+			EndDate:   dateRange.EndDate,
+		},
+		Model:     c.QueryParam("model"),
+		Provider:  c.QueryParam("provider"),
+		Method:    strings.ToUpper(c.QueryParam("method")),
+		Path:      c.QueryParam("path"),
+		ErrorType: c.QueryParam("error_type"),
+		Search:    c.QueryParam("search"),
+	}
+
+	if sc := c.QueryParam("status_code"); sc != "" {
+		parsed, err := strconv.Atoi(sc)
+		if err != nil {
+			return handleError(c, core.NewInvalidRequestError("invalid status_code, expected integer", nil))
+		}
+		params.StatusCode = &parsed
+	}
+
+	if stream := c.QueryParam("stream"); stream != "" {
+		parsed, err := strconv.ParseBool(stream)
+		if err != nil {
+			return handleError(c, core.NewInvalidRequestError("invalid stream value, expected true or false", nil))
+		}
+		params.Stream = &parsed
+	}
+
+	if l := c.QueryParam("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			params.Limit = parsed
+		}
+	}
+	if o := c.QueryParam("offset"); o != "" {
+		if parsed, err := strconv.Atoi(o); err == nil && parsed >= 0 {
+			params.Offset = parsed
+		}
+	}
+
+	result, err := h.auditReader.GetLogs(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if result.Entries == nil {
+		result.Entries = []auditlog.LogEntry{}
 	}
 
 	return c.JSON(http.StatusOK, result)

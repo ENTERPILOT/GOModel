@@ -11,6 +11,122 @@
     },
     "basePath": "/",
     "paths": {
+        "/admin/api/v1/audit/log": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get paginated audit log entries",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by model name",
+                        "name": "model",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by provider",
+                        "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by HTTP method",
+                        "name": "method",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by request path",
+                        "name": "path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by error type",
+                        "name": "error_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Filter by status code",
+                        "name": "status_code",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by stream mode (true/false)",
+                        "name": "stream",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search across request_id/model/provider/method/path/error_type",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 25, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/auditlog.LogListResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/models": {
             "get": {
                 "security": [
@@ -527,6 +643,127 @@
         }
     },
     "definitions": {
+        "auditlog.LogData": {
+            "type": "object",
+            "properties": {
+                "api_key_hash": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "description": "Error details (message can be long, so kept in JSON)",
+                    "type": "string"
+                },
+                "max_tokens": {
+                    "type": "integer"
+                },
+                "request_body": {
+                    "description": "Optional bodies (when LOGGING_LOG_BODIES=true)\nStored as interface{} so MongoDB serializes as native BSON documents (queryable/readable)\ninstead of BSON Binary (base64 in Compass)"
+                },
+                "request_body_too_big_to_handle": {
+                    "description": "Body capture status flags (set when body exceeds 1MB limit)",
+                    "type": "boolean"
+                },
+                "request_headers": {
+                    "description": "Optional headers (when LOGGING_LOG_HEADERS=true)\nSensitive headers are auto-redacted",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "response_body": {},
+                "response_body_too_big_to_handle": {
+                    "type": "boolean"
+                },
+                "response_headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "temperature": {
+                    "description": "Request parameters",
+                    "type": "number"
+                },
+                "user_agent": {
+                    "description": "Identity",
+                    "type": "string"
+                }
+            }
+        },
+        "auditlog.LogEntry": {
+            "type": "object",
+            "properties": {
+                "client_ip": {
+                    "type": "string"
+                },
+                "data": {
+                    "description": "Data contains flexible request/response information as JSON",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/auditlog.LogData"
+                        }
+                    ]
+                },
+                "duration_ns": {
+                    "description": "DurationNs is the request duration in nanoseconds",
+                    "type": "integer"
+                },
+                "error_type": {
+                    "type": "string"
+                },
+                "id": {
+                    "description": "ID is a unique identifier for this log entry (UUID)",
+                    "type": "string"
+                },
+                "method": {
+                    "type": "string"
+                },
+                "model": {
+                    "description": "Core fields (indexed for queries)",
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "description": "Extracted fields for efficient filtering (indexed in relational DBs)",
+                    "type": "string"
+                },
+                "status_code": {
+                    "type": "integer"
+                },
+                "stream": {
+                    "type": "boolean"
+                },
+                "timestamp": {
+                    "description": "Timestamp is when the request started",
+                    "type": "string"
+                }
+            }
+        },
+        "auditlog.LogListResult": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/auditlog.LogEntry"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "core.ChatRequest": {
             "type": "object",
             "properties": {
@@ -671,7 +908,12 @@
                     "type": "string"
                 },
                 "metadata": {
-                    "$ref": "#/definitions/core.ModelMetadata"
+                    "description": "Metadata holds optional enrichment data (display name, pricing, capabilities, etc.).\nMay be nil if the model was not found in the external registry.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/core.ModelMetadata"
+                        }
+                    ]
                 },
                 "object": {
                     "type": "string"
