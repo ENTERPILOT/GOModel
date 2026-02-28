@@ -250,7 +250,7 @@ type EmbeddingResponse struct {
 // Embedding is json.RawMessage to support both float arrays and base64-encoded strings.
 type EmbeddingData struct {
 	Object    string          `json:"object"`
-	Embedding json.RawMessage `json:"embedding"`
+	Embedding json.RawMessage `json:"embedding" swaggertype:"object"`
 	Index     int             `json:"index"`
 }
 
