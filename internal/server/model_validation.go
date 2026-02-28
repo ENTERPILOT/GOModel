@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -22,6 +23,12 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if !auditlog.IsModelInteractionPath(c.Request().URL.Path) {
+				return next(c)
+			}
+			if strings.HasPrefix(c.Request().URL.Path, "/v1/batches") {
+				requestID := c.Request().Header.Get("X-Request-ID")
+				ctx := core.WithRequestID(c.Request().Context(), requestID)
+				c.SetRequest(c.Request().WithContext(ctx))
 				return next(c)
 			}
 

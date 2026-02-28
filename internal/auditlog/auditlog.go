@@ -43,8 +43,8 @@ type LogEntry struct {
 	StatusCode int    `json:"status_code" bson:"status_code"`
 
 	// Extracted fields for efficient filtering (indexed in relational DBs)
-	RequestID        string `json:"request_id,omitempty" bson:"request_id,omitempty"`
-	ClientIP         string `json:"client_ip,omitempty" bson:"client_ip,omitempty"`
+	RequestID string `json:"request_id,omitempty" bson:"request_id,omitempty"`
+	ClientIP  string `json:"client_ip,omitempty" bson:"client_ip,omitempty"`
 	Method    string `json:"method,omitempty" bson:"method,omitempty"`
 	Path      string `json:"path,omitempty" bson:"path,omitempty"`
 	Stream    bool   `json:"stream,omitempty" bson:"stream,omitempty"`
@@ -81,7 +81,7 @@ type LogData struct {
 	ResponseBody interface{} `json:"response_body,omitempty" bson:"response_body,omitempty"`
 
 	// Body capture status flags (set when body exceeds 1MB limit)
-	RequestBodyTooBigToHandle bool `json:"request_body_too_big_to_handle,omitempty" bson:"request_body_too_big_to_handle,omitempty"`
+	RequestBodyTooBigToHandle  bool `json:"request_body_too_big_to_handle,omitempty" bson:"request_body_too_big_to_handle,omitempty"`
 	ResponseBodyTooBigToHandle bool `json:"response_body_too_big_to_handle,omitempty" bson:"response_body_too_big_to_handle,omitempty"`
 }
 
@@ -161,7 +161,7 @@ type Config struct {
 	RetentionDays int
 
 	// OnlyModelInteractions limits logging to AI model endpoints only
-	// When true, only /v1/chat/completions, /v1/responses, /v1/models are logged
+	// When true, only /v1/chat/completions, /v1/responses, /v1/embeddings, and /v1/batches are logged
 	OnlyModelInteractions bool
 }
 

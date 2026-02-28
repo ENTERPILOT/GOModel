@@ -174,6 +174,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)
 	e.POST("/v1/embeddings", handler.Embeddings)
+	e.POST("/v1/batches", handler.Batches)
 
 	// Admin API routes (behind ADMIN_ENDPOINTS_ENABLED flag)
 	if cfg != nil && cfg.AdminEndpointsEnabled && cfg.AdminHandler != nil {

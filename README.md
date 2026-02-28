@@ -160,6 +160,7 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 | `/v1/chat/completions` | POST | Chat completions (streaming supported) |
 | `/v1/responses` | POST | OpenAI Responses API |
 | `/v1/embeddings` | POST | Text embeddings |
+| `/v1/batches` | POST | OpenAI-style batch execution (supports inline `requests`) |
 | `/v1/models` | GET | List available models |
 | `/health` | GET | Health check |
 | `/metrics` | GET | Prometheus metrics (when enabled) |

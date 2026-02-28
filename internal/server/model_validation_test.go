@@ -50,6 +50,14 @@ func TestModelValidation(t *testing.T) {
 			handlerCalled:  true,
 		},
 		{
+			name:           "batch path skips root model validation",
+			method:         http.MethodPost,
+			path:           "/v1/batches",
+			body:           `{"requests":[{"url":"/v1/chat/completions","body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}}]}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
 			name:           "missing model returns 400",
 			method:         http.MethodPost,
 			path:           "/v1/chat/completions",

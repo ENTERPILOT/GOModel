@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,14 +18,14 @@ import (
 
 // mockProvider implements core.RoutableProvider for testing
 type mockProvider struct {
-	err                error
-	response           *core.ChatResponse
-	responsesResponse  *core.ResponsesResponse
-	modelsResponse     *core.ModelsResponse
-	embeddingResponse  *core.EmbeddingResponse
-	embeddingErr       error
-	streamData         string
-	supportedModels    []string
+	err               error
+	response          *core.ChatResponse
+	responsesResponse *core.ResponsesResponse
+	modelsResponse    *core.ModelsResponse
+	embeddingResponse *core.EmbeddingResponse
+	embeddingErr      error
+	streamData        string
+	supportedModels   []string
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -693,14 +694,216 @@ func TestListModels_TypedError(t *testing.T) {
 	}
 }
 
+func TestBatches(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		response: &core.ChatResponse{
+			ID:    "chatcmpl-batch-1",
+			Model: "gpt-4o-mini",
+			Usage: core.Usage{
+				PromptTokens:     100,
+				CompletionTokens: 50,
+				TotalTokens:      150,
+			},
+		},
+		responsesResponse: &core.ResponsesResponse{
+			ID:    "resp-batch-1",
+			Model: "gpt-4o-mini",
+			Usage: &core.ResponsesUsage{
+				InputTokens:  200,
+				OutputTokens: 80,
+				TotalTokens:  280,
+			},
+		},
+	}
+
+	usageLog := &mockUsageLogger{
+		config: usage.Config{Enabled: true},
+	}
+	resolver := &mockPricingResolver{
+		pricing: &core.ModelPricing{
+			InputPerMtok:       floatPtr(10.0),
+			OutputPerMtok:      floatPtr(20.0),
+			BatchInputPerMtok:  floatPtr(2.0),
+			BatchOutputPerMtok: floatPtr(4.0),
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, usageLog, resolver)
+
+	reqBody := `{
+	  "completion_window":"24h",
+	  "requests":[
+	    {
+	      "custom_id":"chat-1",
+	      "method":"POST",
+	      "url":"/v1/chat/completions",
+	      "body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]}
+	    },
+	    {
+	      "custom_id":"resp-1",
+	      "method":"POST",
+	      "url":"/v1/responses",
+	      "body":{"model":"gpt-4o-mini","input":"Hi"}
+	    }
+	  ]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "batch-req-1")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Batches(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var resp core.BatchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Object != "batch" {
+		t.Errorf("Object = %q, want %q", resp.Object, "batch")
+	}
+	if resp.Status != "completed" {
+		t.Errorf("Status = %q, want %q", resp.Status, "completed")
+	}
+	if resp.RequestCounts.Total != 2 || resp.RequestCounts.Completed != 2 || resp.RequestCounts.Failed != 0 {
+		t.Errorf("unexpected request counts: %+v", resp.RequestCounts)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(resp.Results))
+	}
+	if resp.Results[0].StatusCode != http.StatusOK || resp.Results[1].StatusCode != http.StatusOK {
+		t.Errorf("expected both batch items to succeed, got statuses %d and %d", resp.Results[0].StatusCode, resp.Results[1].StatusCode)
+	}
+	if resp.Usage.InputTokens != 300 {
+		t.Errorf("InputTokens = %d, want 300", resp.Usage.InputTokens)
+	}
+	if resp.Usage.OutputTokens != 130 {
+		t.Errorf("OutputTokens = %d, want 130", resp.Usage.OutputTokens)
+	}
+	if resp.Usage.TotalTokens != 430 {
+		t.Errorf("TotalTokens = %d, want 430", resp.Usage.TotalTokens)
+	}
+
+	if resp.Usage.InputCost == nil || resp.Usage.OutputCost == nil || resp.Usage.TotalCost == nil {
+		t.Fatalf("expected usage costs to be populated")
+	}
+
+	wantInputCost := 300.0 / 1_000_000.0 * 2.0
+	wantOutputCost := 130.0 / 1_000_000.0 * 4.0
+	wantTotalCost := wantInputCost + wantOutputCost
+
+	if math.Abs(*resp.Usage.InputCost-wantInputCost) > 1e-12 {
+		t.Errorf("InputCost = %f, want %f", *resp.Usage.InputCost, wantInputCost)
+	}
+	if math.Abs(*resp.Usage.OutputCost-wantOutputCost) > 1e-12 {
+		t.Errorf("OutputCost = %f, want %f", *resp.Usage.OutputCost, wantOutputCost)
+	}
+	if math.Abs(*resp.Usage.TotalCost-wantTotalCost) > 1e-12 {
+		t.Errorf("TotalCost = %f, want %f", *resp.Usage.TotalCost, wantTotalCost)
+	}
+}
+
+func TestBatches_PartialFailure(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		response: &core.ChatResponse{
+			ID:    "chatcmpl-ok",
+			Model: "gpt-4o-mini",
+			Usage: core.Usage{
+				PromptTokens:     10,
+				CompletionTokens: 5,
+				TotalTokens:      15,
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, &mockUsageLogger{config: usage.Config{Enabled: true}}, nil)
+
+	reqBody := `{
+	  "requests":[
+	    {
+	      "custom_id":"ok",
+	      "url":"/v1/chat/completions",
+	      "body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]}
+	    },
+	    {
+	      "custom_id":"bad",
+	      "url":"/v1/unknown",
+	      "body":{"model":"gpt-4o-mini"}
+	    }
+	  ]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Batches(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var resp core.BatchResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.RequestCounts.Total != 2 || resp.RequestCounts.Completed != 1 || resp.RequestCounts.Failed != 1 {
+		t.Errorf("unexpected request counts: %+v", resp.RequestCounts)
+	}
+	if len(resp.Results) != 2 {
+		t.Fatalf("expected 2 results, got %d", len(resp.Results))
+	}
+
+	if resp.Results[1].Error == nil {
+		t.Fatal("expected second result to have an error")
+	}
+	if resp.Results[1].Error.Type != string(core.ErrorTypeInvalidRequest) {
+		t.Errorf("error type = %q, want %q", resp.Results[1].Error.Type, string(core.ErrorTypeInvalidRequest))
+	}
+}
+
+func TestBatches_EmptyRequests(t *testing.T) {
+	e := echo.New()
+	handler := NewHandler(&mockProvider{}, nil, nil, nil)
+
+	reqBody := `{"requests":[]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Batches(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
 // mockUsageLogger implements usage.LoggerInterface for testing.
 type mockUsageLogger struct {
 	config usage.Config
 }
 
 func (m *mockUsageLogger) Write(_ *usage.UsageEntry) {}
-func (m *mockUsageLogger) Config() usage.Config       { return m.config }
-func (m *mockUsageLogger) Close() error               { return nil }
+func (m *mockUsageLogger) Config() usage.Config      { return m.config }
+func (m *mockUsageLogger) Close() error              { return nil }
 
 type capturingUsageLogger struct {
 	config   usage.Config
@@ -718,6 +921,8 @@ type mockPricingResolver struct {
 func (m *mockPricingResolver) ResolvePricing(_, _ string) *core.ModelPricing {
 	return m.pricing
 }
+
+func floatPtr(v float64) *float64 { return &v }
 
 // capturingProvider is a mockProvider that captures the request passed to StreamResponses/StreamChatCompletion.
 type capturingProvider struct {

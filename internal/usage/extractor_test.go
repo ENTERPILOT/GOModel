@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"math"
 	"testing"
 
 	"gomodel/internal/core"
@@ -478,5 +479,69 @@ func TestExtractFromSSEUsageEmptyRawData(t *testing.T) {
 
 	if entry.RawData != nil {
 		t.Error("expected RawData to be nil")
+	}
+}
+
+func TestExtractFromChatResponse_WithBatchPricingEndpoint(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:       f64Ptr(4.0),
+		OutputPerMtok:      f64Ptr(8.0),
+		BatchInputPerMtok:  f64Ptr(1.0),
+		BatchOutputPerMtok: f64Ptr(2.0),
+	}
+
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-batch-priced",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     1_000_000,
+			CompletionTokens: 500_000,
+			TotalTokens:      1_500_000,
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-batch-priced", "openai", "/v1/batches", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil || entry.OutputCost == nil || entry.TotalCost == nil {
+		t.Fatal("expected all costs to be populated")
+	}
+
+	if math.Abs(*entry.InputCost-1.0) > 1e-9 {
+		t.Errorf("InputCost = %f, want 1.0", *entry.InputCost)
+	}
+	if math.Abs(*entry.OutputCost-1.0) > 1e-9 {
+		t.Errorf("OutputCost = %f, want 1.0", *entry.OutputCost)
+	}
+	if math.Abs(*entry.TotalCost-2.0) > 1e-9 {
+		t.Errorf("TotalCost = %f, want 2.0", *entry.TotalCost)
+	}
+}
+
+func TestExtractFromEmbeddingResponse_WithBatchPricingEndpoint(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:      f64Ptr(3.0),
+		BatchInputPerMtok: f64Ptr(1.5),
+	}
+
+	resp := &core.EmbeddingResponse{
+		Object: "list",
+		Model:  "text-embedding-3-small",
+		Usage: core.EmbeddingUsage{
+			PromptTokens: 1_000_000,
+			TotalTokens:  1_000_000,
+		},
+	}
+
+	entry := ExtractFromEmbeddingResponse(resp, "req-embed-batch", "openai", "/v1/batches", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil {
+		t.Fatal("expected InputCost to be populated")
+	}
+	if math.Abs(*entry.InputCost-1.5) > 1e-9 {
+		t.Errorf("InputCost = %f, want 1.5", *entry.InputCost)
 	}
 }

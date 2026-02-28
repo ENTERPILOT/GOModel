@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -81,7 +82,8 @@ func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpo
 
 	// Calculate granular costs if pricing is provided
 	if len(pricing) > 0 && pricing[0] != nil {
-		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		effectivePricing := pricingForEndpoint(pricing[0], endpoint)
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, effectivePricing)
 		entry.InputCost = costResult.InputCost
 		entry.OutputCost = costResult.OutputCost
 		entry.TotalCost = costResult.TotalCost
@@ -141,7 +143,8 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provi
 
 	// Calculate granular costs if pricing is provided
 	if len(pricing) > 0 && pricing[0] != nil {
-		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		effectivePricing := pricingForEndpoint(pricing[0], endpoint)
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, effectivePricing)
 		entry.InputCost = costResult.InputCost
 		entry.OutputCost = costResult.OutputCost
 		entry.TotalCost = costResult.TotalCost
@@ -170,7 +173,8 @@ func ExtractFromEmbeddingResponse(resp *core.EmbeddingResponse, requestID, provi
 	}
 
 	if len(pricing) > 0 && pricing[0] != nil {
-		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		effectivePricing := pricingForEndpoint(pricing[0], endpoint)
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, effectivePricing)
 		entry.InputCost = costResult.InputCost
 		entry.OutputCost = costResult.OutputCost
 		entry.TotalCost = costResult.TotalCost
@@ -210,7 +214,8 @@ func ExtractFromSSEUsage(
 
 	// Calculate granular costs if pricing is provided
 	if len(pricing) > 0 && pricing[0] != nil {
-		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		effectivePricing := pricingForEndpoint(pricing[0], endpoint)
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, effectivePricing)
 		entry.InputCost = costResult.InputCost
 		entry.OutputCost = costResult.OutputCost
 		entry.TotalCost = costResult.TotalCost
@@ -218,4 +223,22 @@ func ExtractFromSSEUsage(
 	}
 
 	return entry
+}
+
+func pricingForEndpoint(pricing *core.ModelPricing, endpoint string) *core.ModelPricing {
+	if pricing == nil {
+		return nil
+	}
+	if !strings.HasPrefix(endpoint, "/v1/batches") {
+		return pricing
+	}
+
+	effective := *pricing
+	if pricing.BatchInputPerMtok != nil {
+		effective.InputPerMtok = pricing.BatchInputPerMtok
+	}
+	if pricing.BatchOutputPerMtok != nil {
+		effective.OutputPerMtok = pricing.BatchOutputPerMtok
+	}
+	return &effective
 }
