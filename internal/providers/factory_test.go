@@ -45,6 +45,10 @@ func (m *factoryMockProvider) StreamResponses(ctx context.Context, req *core.Res
 	return nil, nil
 }
 
+func (m *factoryMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return &core.EmbeddingResponse{}, nil
+}
+
 func TestProviderFactory_Register(t *testing.T) {
 	factory := NewProviderFactory()
 
@@ -343,3 +347,4 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 		t.Errorf("JitterFactor = %f, want 0.5", r.JitterFactor)
 	}
 }
+

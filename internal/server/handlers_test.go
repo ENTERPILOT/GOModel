@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,14 +15,16 @@ import (
 	"gomodel/internal/usage"
 )
 
-// mockProvider implements core.Provider for testing
+// mockProvider implements core.RoutableProvider for testing
 type mockProvider struct {
-	err               error
-	response          *core.ChatResponse
-	responsesResponse *core.ResponsesResponse
-	modelsResponse    *core.ModelsResponse
-	streamData        string
-	supportedModels   []string
+	err                error
+	response           *core.ChatResponse
+	responsesResponse  *core.ResponsesResponse
+	modelsResponse     *core.ModelsResponse
+	embeddingResponse  *core.EmbeddingResponse
+	embeddingErr       error
+	streamData         string
+	supportedModels    []string
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -40,39 +43,49 @@ func (m *mockProvider) GetProviderType(model string) string {
 	return ""
 }
 
-func (m *mockProvider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+func (m *mockProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.response, nil
 }
 
-func (m *mockProvider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+func (m *mockProvider) StreamChatCompletion(_ context.Context, _ *core.ChatRequest) (io.ReadCloser, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return io.NopCloser(strings.NewReader(m.streamData)), nil
 }
 
-func (m *mockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+func (m *mockProvider) ListModels(_ context.Context) (*core.ModelsResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.modelsResponse, nil
 }
 
-func (m *mockProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+func (m *mockProvider) Responses(_ context.Context, _ *core.ResponsesRequest) (*core.ResponsesResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return m.responsesResponse, nil
 }
 
-func (m *mockProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+func (m *mockProvider) StreamResponses(_ context.Context, _ *core.ResponsesRequest) (io.ReadCloser, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
 	return io.NopCloser(strings.NewReader(m.streamData)), nil
+}
+
+func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	if m.embeddingErr != nil {
+		return nil, m.embeddingErr
+	}
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.embeddingResponse, nil
 }
 
 func TestChatCompletion(t *testing.T) {
@@ -122,30 +135,6 @@ func TestChatCompletion(t *testing.T) {
 	}
 	if !strings.Contains(body, "Hello!") {
 		t.Errorf("response missing expected content, got: %s", body)
-	}
-}
-
-func TestChatCompletionUnsupportedModel(t *testing.T) {
-	mock := &mockProvider{
-		supportedModels: []string{"gpt-4o-mini"},
-	}
-
-	e := echo.New()
-	handler := NewHandler(mock, nil, nil, nil)
-
-	reqBody := `{"model": "unsupported-model", "messages": [{"role": "user", "content": "Hi"}]}`
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
-	req.Header.Set("Content-Type", "application/json")
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-
-	err := handler.ChatCompletion(c)
-	if err != nil {
-		t.Fatalf("handler returned error: %v", err)
-	}
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("expected status 400, got %d", rec.Code)
 	}
 }
 
@@ -521,6 +510,159 @@ func TestChatCompletion_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestEmbeddings(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"text-embedding-3-small"},
+		embeddingResponse: &core.EmbeddingResponse{
+			Object: "list",
+			Data: []core.EmbeddingData{
+				{Object: "embedding", Embedding: json.RawMessage(`[0.1,0.2,0.3]`), Index: 0},
+			},
+			Model:    "text-embedding-3-small",
+			Provider: "openai",
+			Usage:    core.EmbeddingUsage{PromptTokens: 5, TotalTokens: 5},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	reqBody := `{"model": "text-embedding-3-small", "input": "hello world"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Embeddings(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "text-embedding-3-small") {
+		t.Errorf("response missing model, got: %s", body)
+	}
+	if !strings.Contains(body, "embedding") {
+		t.Errorf("response missing embedding data, got: %s", body)
+	}
+}
+
+func TestEmbeddings_InvalidJSON(t *testing.T) {
+	mock := &mockProvider{supportedModels: []string{"text-embedding-3-small"}}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	reqBody := `{bad json}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Embeddings(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestEmbeddings_ProviderReturnsError(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"text-embedding-3-small"},
+		embeddingErr:    core.NewInvalidRequestError("embeddings not supported by this provider", nil),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	reqBody := `{"model": "text-embedding-3-small", "input": "hello"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Embeddings(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected status 400, got %d", rec.Code)
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "embeddings not supported") {
+		t.Errorf("expected error message about embeddings, got: %s", body)
+	}
+}
+
+func TestEmbeddings_WithUsageTracking(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"text-embedding-3-small"},
+		embeddingResponse: &core.EmbeddingResponse{
+			Object: "list",
+			Data: []core.EmbeddingData{
+				{Object: "embedding", Embedding: json.RawMessage(`[0.1,0.2,0.3]`), Index: 0},
+			},
+			Model: "text-embedding-3-small",
+			Usage: core.EmbeddingUsage{PromptTokens: 10, TotalTokens: 10},
+		},
+	}
+
+	var capturedEntry *usage.UsageEntry
+	usageLog := &capturingUsageLogger{
+		config:   usage.Config{Enabled: true},
+		captured: &capturedEntry,
+	}
+
+	inputPrice := 0.02
+	resolver := &mockPricingResolver{
+		pricing: &core.ModelPricing{
+			Currency:     "USD",
+			InputPerMtok: &inputPrice,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, usageLog, resolver)
+
+	reqBody := `{"model": "text-embedding-3-small", "input": "hello world"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "test-req-embed-usage")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.Embeddings(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", rec.Code)
+	}
+
+	if capturedEntry == nil {
+		t.Fatal("expected usage entry to be captured, got nil")
+	}
+	if capturedEntry.InputTokens != 10 {
+		t.Errorf("InputTokens = %d, want 10", capturedEntry.InputTokens)
+	}
+	if capturedEntry.RequestID != "test-req-embed-usage" {
+		t.Errorf("RequestID = %q, want %q", capturedEntry.RequestID, "test-req-embed-usage")
+	}
+	if capturedEntry.InputCost == nil || *capturedEntry.InputCost == 0 {
+		t.Error("expected non-zero InputCost from pricing resolver")
+	}
+}
+
 func TestListModels_TypedError(t *testing.T) {
 	mock := &mockProvider{
 		err: core.NewProviderError("openai", http.StatusBadGateway, "failed to list models", nil),
@@ -559,6 +701,23 @@ type mockUsageLogger struct {
 func (m *mockUsageLogger) Write(_ *usage.UsageEntry) {}
 func (m *mockUsageLogger) Config() usage.Config       { return m.config }
 func (m *mockUsageLogger) Close() error               { return nil }
+
+type capturingUsageLogger struct {
+	config   usage.Config
+	captured **usage.UsageEntry
+}
+
+func (c *capturingUsageLogger) Write(entry *usage.UsageEntry) { *c.captured = entry }
+func (c *capturingUsageLogger) Config() usage.Config          { return c.config }
+func (c *capturingUsageLogger) Close() error                  { return nil }
+
+type mockPricingResolver struct {
+	pricing *core.ModelPricing
+}
+
+func (m *mockPricingResolver) ResolvePricing(_, _ string) *core.ModelPricing {
+	return m.pricing
+}
 
 // capturingProvider is a mockProvider that captures the request passed to StreamResponses/StreamChatCompletion.
 type capturingProvider struct {

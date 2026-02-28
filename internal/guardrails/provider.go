@@ -59,6 +59,11 @@ func (g *GuardedProvider) ListModels(ctx context.Context) (*core.ModelsResponse,
 	return g.inner.ListModels(ctx)
 }
 
+// Embeddings delegates directly to the inner provider (no guardrails needed for embeddings).
+func (g *GuardedProvider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return g.inner.Embeddings(ctx, req)
+}
+
 // Responses extracts messages, applies guardrails, then routes the request.
 func (g *GuardedProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
 	modified, err := g.processResponses(ctx, req)

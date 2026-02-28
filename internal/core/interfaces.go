@@ -22,6 +22,9 @@ type Provider interface {
 
 	// StreamResponses returns a raw SSE stream for Responses API (caller must close)
 	StreamResponses(ctx context.Context, req *ResponsesRequest) (io.ReadCloser, error)
+
+	// Embeddings sends an embeddings request to the provider
+	Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error)
 }
 
 // RoutableProvider extends Provider with routing capability.
@@ -30,11 +33,7 @@ type Provider interface {
 type RoutableProvider interface {
 	Provider
 
-	// Supports returns true if the provider can handle the given model
 	Supports(model string) bool
-
-	// GetProviderType returns the provider type string for the given model.
-	// Returns empty string if the model is not found.
 	GetProviderType(model string) string
 }
 

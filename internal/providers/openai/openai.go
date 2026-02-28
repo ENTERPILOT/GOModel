@@ -139,7 +139,6 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "openai"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -180,7 +179,6 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "openai"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -194,4 +192,21 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 		Endpoint: "/responses",
 		Body:     req.WithStreaming(),
 	})
+}
+
+// Embeddings sends an embeddings request to OpenAI
+func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	var resp core.EmbeddingResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/embeddings",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Model == "" {
+		resp.Model = req.Model
+	}
+	return &resp, nil
 }

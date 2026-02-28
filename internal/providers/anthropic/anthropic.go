@@ -292,11 +292,10 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	}
 
 	return &core.ChatResponse{
-		ID:       resp.ID,
-		Object:   "chat.completion",
-		Model:    resp.Model,
-		Provider: "anthropic",
-		Created:  time.Now().Unix(),
+		ID:      resp.ID,
+		Object:  "chat.completion",
+		Model:   resp.Model,
+		Created: time.Now().Unix(),
 		Choices: []core.Choice{
 			{
 				Index: 0,
@@ -647,7 +646,6 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		Object:    "response",
 		CreatedAt: time.Now().Unix(),
 		Model:     model,
-		Provider:  "anthropic",
 		Status:    "completed",
 		Output: []core.ResponsesOutputItem{
 			{
@@ -712,6 +710,12 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 	}
 
 	return convertAnthropicResponseToResponses(&anthropicResp, req.Model), nil
+}
+
+// Embeddings returns an error because Anthropic does not natively support embeddings.
+// Voyage AI (Anthropic's recommended embedding provider) may be added in the future.
+func (p *Provider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, core.NewInvalidRequestError("anthropic does not support embeddings — consider using Voyage AI", nil)
 }
 
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)

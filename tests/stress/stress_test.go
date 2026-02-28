@@ -61,6 +61,10 @@ func (m *mockProvider) StreamResponses(ctx context.Context, req *core.ResponsesR
 	return nil, nil
 }
 
+func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, nil
+}
+
 func TestRegistryRaceCondition(t *testing.T) {
 	// This test attempts to trigger concurrent map access panics between:
 	// - Background goroutine writing to r.models in Initialize()
@@ -180,12 +184,20 @@ func (m *mockRoutableProvider) StreamResponses(ctx context.Context, req *core.Re
 	return nil, nil
 }
 
+func (m *mockRoutableProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, nil
+}
+
 func (m *mockRoutableProvider) Route(model string) (core.Provider, error) {
 	return nil, fmt.Errorf("no provider for model: %s", model)
 }
 
 func (m *mockRoutableProvider) Supports(model string) bool {
 	return false
+}
+
+func (m *mockRoutableProvider) GetProviderType(model string) string {
+	return ""
 }
 
 func (m *mockRoutableProvider) AllModels() []core.Model {

@@ -1,5 +1,7 @@
 package core
 
+import "encoding/json"
+
 // StreamOptions controls streaming behavior options.
 // This is used to request usage data in streaming responses.
 type StreamOptions struct {
@@ -211,4 +213,35 @@ type ModelPricingTier struct {
 type ModelsResponse struct {
 	Object string  `json:"object"`
 	Data   []Model `json:"data"`
+}
+
+// EmbeddingRequest represents the incoming embeddings request (OpenAI-compatible).
+type EmbeddingRequest struct {
+	Model          string `json:"model"`
+	Input          any    `json:"input"`
+	EncodingFormat string `json:"encoding_format,omitempty"`
+	Dimensions     *int   `json:"dimensions,omitempty"`
+}
+
+// EmbeddingResponse represents the embeddings response (OpenAI-compatible).
+type EmbeddingResponse struct {
+	Object   string          `json:"object"`
+	Data     []EmbeddingData `json:"data"`
+	Model    string          `json:"model"`
+	Provider string          `json:"provider"`
+	Usage    EmbeddingUsage  `json:"usage"`
+}
+
+// EmbeddingData represents a single embedding data point.
+// Embedding is json.RawMessage to support both float arrays and base64-encoded strings.
+type EmbeddingData struct {
+	Object    string          `json:"object"`
+	Embedding json.RawMessage `json:"embedding"`
+	Index     int             `json:"index"`
+}
+
+// EmbeddingUsage represents token usage information for embeddings.
+type EmbeddingUsage struct {
+	PromptTokens int `json:"prompt_tokens"`
+	TotalTokens  int `json:"total_tokens"`
 }

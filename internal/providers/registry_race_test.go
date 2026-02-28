@@ -43,6 +43,10 @@ func (m *slowMockProvider) StreamResponses(_ context.Context, _ *core.ResponsesR
 	return nil, nil
 }
 
+func (m *slowMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, nil
+}
+
 func (m *slowMockProvider) Supports(model string) bool {
 	return true
 }

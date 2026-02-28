@@ -151,6 +151,35 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provi
 	return entry
 }
 
+// ExtractFromEmbeddingResponse extracts usage data from an EmbeddingResponse.
+// Embeddings only have prompt tokens (no output tokens).
+func ExtractFromEmbeddingResponse(resp *core.EmbeddingResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
+	if resp == nil {
+		return nil
+	}
+
+	entry := &UsageEntry{
+		ID:          uuid.New().String(),
+		RequestID:   requestID,
+		Timestamp:   time.Now().UTC(),
+		Model:       resp.Model,
+		Provider:    provider,
+		Endpoint:    endpoint,
+		InputTokens: resp.Usage.PromptTokens,
+		TotalTokens: resp.Usage.TotalTokens,
+	}
+
+	if len(pricing) > 0 && pricing[0] != nil {
+		costResult := CalculateGranularCost(entry.InputTokens, entry.OutputTokens, entry.RawData, provider, pricing[0])
+		entry.InputCost = costResult.InputCost
+		entry.OutputCost = costResult.OutputCost
+		entry.TotalCost = costResult.TotalCost
+		entry.CostsCalculationCaveat = costResult.Caveat
+	}
+
+	return entry
+}
+
 // ExtractFromSSEUsage creates a UsageEntry from SSE-extracted usage data.
 // This is used for streaming responses where usage is extracted from the final SSE event.
 // If pricing is provided, cost fields are calculated.

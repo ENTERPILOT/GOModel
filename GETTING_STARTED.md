@@ -114,11 +114,13 @@ providers:
 
 **Effective resilience per provider:**
 
-| Provider  | max_retries | failure_threshold | cb timeout |
-|-----------|-------------|-------------------|------------|
-| openai    | 2 (global)  | 3 (global)        | 15s (global) |
-| anthropic | **5** (override) | 3 (global)   | 15s (global) |
-| ollama    | 2 (global)  | **10** (override) | **5s** (override) |
+
+| Provider  | max_retries      | failure_threshold | cb timeout        |
+| --------- | ---------------- | ----------------- | ----------------- |
+| openai    | 2 (global)       | 3 (global)        | 15s (global)      |
+| anthropic | **5** (override) | 3 (global)        | 15s (global)      |
+| ollama    | 2 (global)       | **10** (override) | **5s** (override) |
+
 
 Only fields that are explicitly listed under a provider's `resilience:` block are overridden. Everything else silently inherits from the global section.
 
@@ -161,33 +163,37 @@ GROQ_API_KEY=gsk_...
 
 All resilience settings can be overridden at runtime via env vars. Env vars always beat both code defaults and YAML values.
 
-| Variable | Type | Default | Description |
-|---|---|---|---|
-| `RETRY_MAX_RETRIES` | int | `3` | Maximum retry attempts per request |
-| `RETRY_INITIAL_BACKOFF` | duration | `1s` | First retry wait (e.g. `500ms`, `2s`) |
-| `RETRY_MAX_BACKOFF` | duration | `30s` | Upper cap on retry wait |
-| `RETRY_BACKOFF_FACTOR` | float | `2.0` | Exponential multiplier between retries |
-| `RETRY_JITTER_FACTOR` | float | `0.1` | Random jitter as a fraction of the backoff |
-| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | int | `5` | Consecutive failures before opening |
-| `CIRCUIT_BREAKER_SUCCESS_THRESHOLD` | int | `2` | Consecutive successes to close again |
-| `CIRCUIT_BREAKER_TIMEOUT` | duration | `30s` | How long the circuit stays open |
-| `LOG_FORMAT` | string | _(unset)_ | Auto-detects based on environment: colorized text on a TTY, JSON otherwise. Set to `text` to force human-readable output (no colors if not a TTY), or `json` to force structured JSON even on a TTY (recommended for production, CloudWatch, Datadog, GCP). |
+
+| Variable                            | Type     | Default   | Description                                                                                                                                                                                                                                                 |
+| ----------------------------------- | -------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `RETRY_MAX_RETRIES`                 | int      | `3`       | Maximum retry attempts per request                                                                                                                                                                                                                          |
+| `RETRY_INITIAL_BACKOFF`             | duration | `1s`      | First retry wait (e.g. `500ms`, `2s`)                                                                                                                                                                                                                       |
+| `RETRY_MAX_BACKOFF`                 | duration | `30s`     | Upper cap on retry wait                                                                                                                                                                                                                                     |
+| `RETRY_BACKOFF_FACTOR`              | float    | `2.0`     | Exponential multiplier between retries                                                                                                                                                                                                                      |
+| `RETRY_JITTER_FACTOR`               | float    | `0.1`     | Random jitter as a fraction of the backoff                                                                                                                                                                                                                  |
+| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | int      | `5`       | Consecutive failures before opening                                                                                                                                                                                                                         |
+| `CIRCUIT_BREAKER_SUCCESS_THRESHOLD` | int      | `2`       | Consecutive successes to close again                                                                                                                                                                                                                        |
+| `CIRCUIT_BREAKER_TIMEOUT`           | duration | `30s`     | How long the circuit stays open                                                                                                                                                                                                                             |
+| `LOG_FORMAT`                        | string   | *(unset)* | Auto-detects based on environment: colorized text on a TTY, JSON otherwise. Set to `text` to force human-readable output (no colors if not a TTY), or `json` to force structured JSON even on a TTY (recommended for production, CloudWatch, Datadog, GCP). |
+
 
 Provider credentials:
 
-| Variable | Provider |
-|---|---|
-| `OPENAI_API_KEY` | OpenAI |
-| `OPENAI_BASE_URL` | OpenAI (custom endpoint) |
-| `ANTHROPIC_API_KEY` | Anthropic |
-| `ANTHROPIC_BASE_URL` | Anthropic (custom endpoint) |
-| `GEMINI_API_KEY` | Google Gemini |
-| `GEMINI_BASE_URL` | Gemini (custom endpoint) |
-| `XAI_API_KEY` | xAI / Grok |
-| `XAI_BASE_URL` | xAI (custom endpoint) |
-| `GROQ_API_KEY` | Groq |
-| `GROQ_BASE_URL` | Groq (custom endpoint) |
-| `OLLAMA_BASE_URL` | Ollama (default: `http://localhost:11434/v1`) |
+
+| Variable             | Provider                                      |
+| -------------------- | --------------------------------------------- |
+| `OPENAI_API_KEY`     | OpenAI                                        |
+| `OPENAI_BASE_URL`    | OpenAI (custom endpoint)                      |
+| `ANTHROPIC_API_KEY`  | Anthropic                                     |
+| `ANTHROPIC_BASE_URL` | Anthropic (custom endpoint)                   |
+| `GEMINI_API_KEY`     | Google Gemini                                 |
+| `GEMINI_BASE_URL`    | Gemini (custom endpoint)                      |
+| `XAI_API_KEY`        | xAI / Grok                                    |
+| `XAI_BASE_URL`       | xAI (custom endpoint)                         |
+| `GROQ_API_KEY`       | Groq                                          |
+| `GROQ_BASE_URL`      | Groq (custom endpoint)                        |
+| `OLLAMA_BASE_URL`    | Ollama (default: `http://localhost:11434/v1`) |
+
 
 See `.env.template` for the full list of all configurable environment variables.
 
@@ -409,6 +415,44 @@ curl http://localhost:8080/v1/responses \
   }'
 ```
 
+### Embeddings
+
+#### Basic Embedding
+
+```bash
+curl http://localhost:8080/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-3-small",
+    "input": "The quick brown fox jumps over the lazy dog."
+  }'
+```
+
+#### Batch Embedding (multiple inputs)
+
+```bash
+curl http://localhost:8080/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-3-small",
+    "input": ["First sentence", "Second sentence", "Third sentence"]
+  }'
+```
+
+#### With Custom Dimensions
+
+```bash
+curl http://localhost:8080/v1/embeddings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "text-embedding-3-large",
+    "input": "Hello world",
+    "dimensions": 512
+  }'
+```
+
+Supported by: OpenAI, Gemini, Groq, xAI, Ollama. Anthropic does not support embeddings natively.
+
 ### List Available Models
 
 ```bash
@@ -480,6 +524,13 @@ stream = client.chat.completions.create(
 for chunk in stream:
     if chunk.choices[0].delta.content:
         print(chunk.choices[0].delta.content, end="")
+
+# Embeddings
+embedding = client.embeddings.create(
+    model="text-embedding-3-small",
+    input="Hello world"
+)
+print(embedding.data[0].embedding[:5])  # first 5 dimensions
 ```
 
 ### Node.js
@@ -510,6 +561,13 @@ for await (const chunk of stream) {
     process.stdout.write(chunk.choices[0].delta.content);
   }
 }
+
+// Embeddings
+const embedding = await client.embeddings.create({
+  model: "text-embedding-3-small",
+  input: "Hello world",
+});
+console.log(embedding.data[0].embedding.slice(0, 5)); // first 5 dimensions
 ```
 
 ---
@@ -554,13 +612,10 @@ for await (const chunk of stream) {
 ## Tips
 
 1. **Model routing**: The gateway automatically routes requests to the correct provider based on the model name — no configuration needed. Just use any model name from the list above.
-
 2. **API compatibility**: The gateway exposes an OpenAI-compatible API. Existing OpenAI client libraries work unchanged for all providers.
-
 3. **Streaming**: All providers support streaming. The gateway normalises provider-specific formats to OpenAI's SSE format.
-
 4. **System messages**: Anthropic's system message format is handled automatically. Gemini uses Google's OpenAI-compatible endpoint, which also handles system messages natively.
-
 5. **Max tokens**: Anthropic requires `max_tokens` to be set. If not provided, the gateway defaults to 4096. OpenAI and Gemini treat it as optional.
-
 6. **Responses API**: The `/v1/responses` endpoint provides a unified interface across all providers. Providers that do not natively support the Responses API convert requests internally.
+7. **Embeddings**: The `/v1/embeddings` endpoint is supported by OpenAI, Gemini, Groq, xAI, and Ollama. Anthropic does not offer embeddings natively.
+

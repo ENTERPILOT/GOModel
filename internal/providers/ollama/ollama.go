@@ -3,8 +3,11 @@ package ollama
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"gomodel/internal/core"
@@ -19,26 +22,38 @@ var Registration = providers.Registration{
 }
 
 const (
-	defaultBaseURL = "http://localhost:11434/v1"
+	defaultRootURL       = "http://localhost:11434"
+	defaultBaseURL       = defaultRootURL + "/v1"
+	defaultNativeBaseURL = defaultRootURL
 )
 
 // Provider implements the core.Provider interface for Ollama
 type Provider struct {
-	client *llmclient.Client
-	apiKey string // Accepted but ignored by Ollama
+	client       *llmclient.Client
+	nativeClient *llmclient.Client
+	apiKey       string // Accepted but ignored by Ollama
 }
 
 // New creates a new Ollama provider.
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.Config{
-		ProviderName: "ollama",
-		BaseURL:      defaultBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "ollama",
+		BaseURL:        defaultBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
+
+	nativeCfg := llmclient.Config{
+		ProviderName:   "ollama",
+		BaseURL:        defaultNativeBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
+		CircuitBreaker: opts.Resilience.CircuitBreaker,
+	}
+	p.nativeClient = llmclient.New(nativeCfg, p.setHeaders)
 	return p
 }
 
@@ -52,12 +67,20 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 	cfg := llmclient.DefaultConfig("ollama", defaultBaseURL)
 	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
+
+	nativeCfg := llmclient.DefaultConfig("ollama", defaultNativeBaseURL)
+	nativeCfg.Hooks = hooks
+	p.nativeClient = llmclient.NewWithHTTPClient(httpClient, nativeCfg, p.setHeaders)
 	return p
 }
 
-// SetBaseURL allows configuring a custom base URL for the provider
+// SetBaseURL allows configuring a custom base URL for the provider.
+// Also updates the native client by deriving the root URL (stripping /v1 suffix).
 func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
+	normalized := strings.TrimRight(url, "/")
+	normalized = strings.TrimSuffix(normalized, "/v1")
+	p.nativeClient.SetBaseURL(normalized)
 }
 
 // CheckAvailability verifies that Ollama is running and accessible.
@@ -94,7 +117,6 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "ollama"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -131,4 +153,62 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return providers.StreamResponsesViaChat(ctx, p, req, "ollama")
+}
+
+type ollamaEmbedRequest struct {
+	Model string `json:"model"`
+	Input any    `json:"input"`
+}
+
+type ollamaEmbedResponse struct {
+	Model           string      `json:"model"`
+	Embeddings      [][]float64 `json:"embeddings"`
+	PromptEvalCount int         `json:"prompt_eval_count"`
+}
+
+// Embeddings sends an embeddings request to Ollama via its native /api/embed endpoint.
+// Converts between OpenAI embedding format and Ollama's native format.
+func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	ollamaReq := ollamaEmbedRequest{
+		Model: req.Model,
+		Input: req.Input,
+	}
+
+	var ollamaResp ollamaEmbedResponse
+	err := p.nativeClient.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/api/embed",
+		Body:     ollamaReq,
+	}, &ollamaResp)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]core.EmbeddingData, len(ollamaResp.Embeddings))
+	for i, emb := range ollamaResp.Embeddings {
+		raw, err := json.Marshal(emb)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal embedding at index %d: %w", i, err)
+		}
+		data[i] = core.EmbeddingData{
+			Object:    "embedding",
+			Embedding: raw,
+			Index:     i,
+		}
+	}
+
+	model := ollamaResp.Model
+	if model == "" {
+		model = req.Model
+	}
+
+	return &core.EmbeddingResponse{
+		Object: "list",
+		Data:   data,
+		Model:  model,
+		Usage: core.EmbeddingUsage{
+			PromptTokens: ollamaResp.PromptEvalCount,
+			TotalTokens:  ollamaResp.PromptEvalCount,
+		},
+	}, nil
 }

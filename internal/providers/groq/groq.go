@@ -80,7 +80,6 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	resp.Provider = "groq"
 	if resp.Model == "" {
 		resp.Model = req.Model
 	}
@@ -117,4 +116,21 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return providers.StreamResponsesViaChat(ctx, p, req, "groq")
+}
+
+// Embeddings sends an embeddings request to Groq
+func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	var resp core.EmbeddingResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/embeddings",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Model == "" {
+		resp.Model = req.Model
+	}
+	return &resp, nil
 }

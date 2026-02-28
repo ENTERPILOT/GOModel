@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1871,6 +1872,28 @@ func TestIsAdaptiveThinkingModel(t *testing.T) {
 				t.Errorf("isAdaptiveThinkingModel(%q) = %v, want %v", tt.model, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestEmbeddings_ReturnsUnsupportedError(t *testing.T) {
+	p := &Provider{}
+	_, err := p.Embeddings(context.Background(), &core.EmbeddingRequest{
+		Model: "text-embedding-3-small",
+		Input: "hello",
+	})
+	if err == nil {
+		t.Fatal("expected error from Anthropic Embeddings, got nil")
+	}
+
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("expected GatewayError, got %T: %v", err, err)
+	}
+	if gatewayErr.HTTPStatusCode() != 400 {
+		t.Errorf("expected HTTP 400, got %d", gatewayErr.HTTPStatusCode())
+	}
+	if !strings.Contains(err.Error(), "anthropic does not support embeddings") {
+		t.Errorf("expected message about anthropic not supporting embeddings, got: %s", err.Error())
 	}
 }
 

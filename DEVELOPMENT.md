@@ -1,5 +1,23 @@
 # Development
 
+## Prerequisites
+
+Install all required development tools in one step:
+
+```bash
+make install-tools
+```
+
+This installs:
+- [golangci-lint v2](https://golangci-lint.run/welcome/install/) — required for `make lint`
+- [pre-commit](https://pre-commit.com/) — required for git hook setup
+
+After installing tools, set up the pre-commit hooks:
+
+```bash
+pre-commit install
+```
+
 ## Testing
 
 ```bash
@@ -10,7 +28,7 @@ make test-all      # All tests
 
 ## Linting
 
-Requires [golangci-lint](https://golangci-lint.run/welcome/install/).
+Requires [golangci-lint v2](https://golangci-lint.run/welcome/install/)
 
 ```bash
 make lint          # Check code quality
@@ -41,11 +59,4 @@ Override the auto-detection with `LOG_FORMAT`:
 ```bash
 LOG_FORMAT=text make run   # force text output
 LOG_FORMAT=json make run   # force JSON output
-```
-
-## Pre-commit
-
-```bash
-pip install pre-commit
-pre-commit install
 ```

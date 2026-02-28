@@ -157,6 +157,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		e.Use(AuthMiddleware(cfg.MasterKey, authSkipPaths))
 	}
 
+	// Model validation (skips non-model paths via IsModelInteractionPath)
+	e.Use(ModelValidation(provider))
+
 	// Public routes
 	e.GET("/health", handler.Health)
 	if cfg != nil && cfg.SwaggerEnabled {
@@ -170,6 +173,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)
+	e.POST("/v1/embeddings", handler.Embeddings)
 
 	// Admin API routes (behind ADMIN_ENDPOINTS_ENABLED flag)
 	if cfg != nil && cfg.AdminEndpointsEnabled && cfg.AdminHandler != nil {

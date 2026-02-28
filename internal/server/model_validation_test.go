@@ -1,0 +1,238 @@
+package server
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"gomodel/internal/core"
+)
+
+func TestModelValidation(t *testing.T) {
+	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini", "text-embedding-3-small"}}
+
+	tests := []struct {
+		name           string
+		method         string
+		path           string
+		body           string
+		expectedStatus int
+		expectedBody   string
+		handlerCalled  bool
+	}{
+		{
+			name:           "valid model on chat completions",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "valid model on embeddings",
+			method:         http.MethodPost,
+			path:           "/v1/embeddings",
+			body:           `{"model":"text-embedding-3-small","input":"hello"}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "valid model on responses",
+			method:         http.MethodPost,
+			path:           "/v1/responses",
+			body:           `{"model":"gpt-4o-mini","input":"hello"}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "missing model returns 400",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{"messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "model is required",
+			handlerCalled:  false,
+		},
+		{
+			name:           "empty model returns 400",
+			method:         http.MethodPost,
+			path:           "/v1/embeddings",
+			body:           `{"model":"","input":"hello"}`,
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "model is required",
+			handlerCalled:  false,
+		},
+		{
+			name:           "unsupported model returns 400",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{"model":"unsupported-model","messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "unsupported model",
+			handlerCalled:  false,
+		},
+		{
+			name:           "non-model path skips validation",
+			method:         http.MethodGet,
+			path:           "/v1/models",
+			body:           "",
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "health path skips validation",
+			method:         http.MethodGet,
+			path:           "/health",
+			body:           "",
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "invalid JSON passes through to handler",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{invalid}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			e := echo.New()
+			handlerCalled := false
+
+			middleware := ModelValidation(provider)
+			handler := middleware(func(c echo.Context) error {
+				handlerCalled = true
+				return c.String(http.StatusOK, "ok")
+			})
+
+			var body *strings.Reader
+			if tt.body != "" {
+				body = strings.NewReader(tt.body)
+			} else {
+				body = strings.NewReader("")
+			}
+
+			req := httptest.NewRequest(tt.method, tt.path, body)
+			if tt.body != "" {
+				req.Header.Set("Content-Type", "application/json")
+			}
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			err := handler(c)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.expectedStatus, rec.Code)
+			assert.Equal(t, tt.handlerCalled, handlerCalled)
+
+			if tt.expectedBody != "" {
+				assert.Contains(t, rec.Body.String(), tt.expectedBody)
+			}
+		})
+	}
+}
+
+func TestModelValidation_SetsProviderType(t *testing.T) {
+	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+
+	e := echo.New()
+	var capturedProviderType string
+
+	middleware := ModelValidation(provider)
+	handler := middleware(func(c echo.Context) error {
+		capturedProviderType = GetProviderType(c)
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	assert.Equal(t, "mock", capturedProviderType)
+}
+
+func TestModelValidation_SetsRequestIDInContext(t *testing.T) {
+	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+
+	e := echo.New()
+	var capturedRequestID string
+
+	middleware := ModelValidation(provider)
+	handler := middleware(func(c echo.Context) error {
+		capturedRequestID = core.GetRequestID(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "test-req-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	assert.Equal(t, "test-req-123", capturedRequestID)
+}
+
+func TestModelValidation_BodyRewound(t *testing.T) {
+	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+
+	e := echo.New()
+	var boundReq core.ChatRequest
+
+	middleware := ModelValidation(provider)
+	handler := middleware(func(c echo.Context) error {
+		if err := c.Bind(&boundReq); err != nil {
+			return err
+		}
+		return c.String(http.StatusOK, "ok")
+	})
+
+	reqBody := `{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	assert.Equal(t, "gpt-4o-mini", boundReq.Model)
+	assert.Len(t, boundReq.Messages, 1)
+}
+
+func TestModelCtx_ReturnsContextAndProviderType(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(string(providerTypeKey), "openai")
+
+	ctx, pt := ModelCtx(c)
+	assert.NotNil(t, ctx)
+	assert.Equal(t, "openai", pt)
+}
+
+func TestGetProviderType_EmptyWhenNotSet(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	assert.Equal(t, "", GetProviderType(c))
+}

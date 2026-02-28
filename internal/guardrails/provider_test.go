@@ -55,6 +55,10 @@ func (m *mockRoutableProvider) StreamResponses(_ context.Context, req *core.Resp
 	return io.NopCloser(strings.NewReader("data: test\n\n")), nil
 }
 
+func (m *mockRoutableProvider) Embeddings(_ context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return &core.EmbeddingResponse{Object: "list", Model: req.Model, Provider: "mock"}, nil
+}
+
 // --- Chat adapter integration tests ---
 
 func TestGuardedProvider_ChatCompletion_AppliesGuardrails(t *testing.T) {
@@ -333,6 +337,30 @@ func TestGuardedProvider_DoesNotMutateOriginalRequest(t *testing.T) {
 	// Original request must be untouched
 	if req.Messages[0].Content != "original" {
 		t.Error("original request was mutated")
+	}
+}
+
+// --- Embeddings delegation tests ---
+
+func TestGuardedProvider_Embeddings_DelegatesDirectly(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "should not affect embeddings")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.EmbeddingRequest{Model: "text-embedding-3-small", Input: "hello"}
+	resp, err := guarded.Embeddings(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Object != "list" {
+		t.Errorf("expected object 'list', got %q", resp.Object)
+	}
+	if resp.Provider != "mock" {
+		t.Errorf("expected provider 'mock', got %q", resp.Provider)
 	}
 }
 

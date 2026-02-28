@@ -100,21 +100,11 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 
-	if !h.provider.Supports(req.Model) {
-		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
-	}
-
-	// Enrich audit log entry with model and provider
-	providerType := h.provider.GetProviderType(req.Model)
-	auditlog.EnrichEntry(c, req.Model, providerType)
-
-	// Create context with request ID for provider
+	ctx, providerType := ModelCtx(c)
 	requestID := c.Request().Header.Get("X-Request-ID")
-	ctx := core.WithRequestID(c.Request().Context(), requestID)
+	ctx = core.WithRequestID(ctx, requestID)
 
-	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
-		// Enforce returning usage data in streaming responses if configured
 		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
 			if req.StreamOptions == nil {
 				req.StreamOptions = &core.StreamOptions{}
@@ -126,13 +116,11 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 		})
 	}
 
-	// Non-streaming
 	resp, err := h.provider.ChatCompletion(ctx, &req)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	// Track usage if enabled (reuses requestID from context enrichment above)
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
 		var pricing *core.ModelPricing
 		if h.pricingResolver != nil {
@@ -201,42 +189,55 @@ func (h *Handler) Responses(c echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 
-	if req.Model == "" {
-		return handleError(c, core.NewInvalidRequestError("model is required", nil))
-	}
-
-	if !h.provider.Supports(req.Model) {
-		return handleError(c, core.NewInvalidRequestError("unsupported model: "+req.Model, nil))
-	}
-
-	// Enrich audit log entry with model and provider
-	providerType := h.provider.GetProviderType(req.Model)
-	auditlog.EnrichEntry(c, req.Model, providerType)
-
-	// Create context with request ID for provider
+	ctx, providerType := ModelCtx(c)
 	requestID := c.Request().Header.Get("X-Request-ID")
-	ctx := core.WithRequestID(c.Request().Context(), requestID)
 
-	// Handle streaming: proxy the raw SSE stream
 	if req.Stream {
 		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
 			return h.provider.StreamResponses(ctx, &req)
 		})
 	}
 
-	// Non-streaming
 	resp, err := h.provider.Responses(ctx, &req)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	// Track usage if enabled (reuses requestID from context enrichment above)
 	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
 		var pricing *core.ModelPricing
 		if h.pricingResolver != nil {
 			pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
 		}
 		usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, providerType, "/v1/responses", pricing)
+		if usageEntry != nil {
+			h.usageLogger.Write(usageEntry)
+		}
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// Embeddings handles POST /v1/embeddings
+func (h *Handler) Embeddings(c echo.Context) error {
+	var req core.EmbeddingRequest
+	if err := c.Bind(&req); err != nil {
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
+	}
+
+	ctx, providerType := ModelCtx(c)
+	requestID := c.Request().Header.Get("X-Request-ID")
+
+	resp, err := h.provider.Embeddings(ctx, &req)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if h.usageLogger != nil && h.usageLogger.Config().Enabled {
+		var pricing *core.ModelPricing
+		if h.pricingResolver != nil {
+			pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
+		}
+		usageEntry := usage.ExtractFromEmbeddingResponse(resp, requestID, providerType, "/v1/embeddings", pricing)
 		if usageEntry != nil {
 			h.usageLogger.Write(usageEntry)
 		}
@@ -262,3 +263,4 @@ func handleError(c echo.Context, err error) error {
 		},
 	})
 }
+
