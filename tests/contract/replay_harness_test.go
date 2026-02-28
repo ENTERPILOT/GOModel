@@ -35,11 +35,6 @@ func (rt *replayTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	key := replayKey(req.Method, req.URL.RequestURI())
 	route, ok := rt.routes[key]
-	if !ok && req.URL.RawQuery != "" {
-		// Allow path-only route keys to match requests with query params.
-		key = replayKey(req.Method, req.URL.Path)
-		route, ok = rt.routes[key]
-	}
 	if !ok {
 		notFoundBody := []byte(fmt.Sprintf(`{"error":{"message":"missing replay route: %s"}}`, key))
 		return &http.Response{
@@ -140,7 +135,12 @@ func parseSSEEvents(t *testing.T, raw []byte) []sseEvent {
 		case strings.HasPrefix(line, "event:"):
 			currentName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			data := strings.TrimPrefix(line, "data:")
+			if strings.HasPrefix(data, " ") {
+				// Per SSE format, a single optional space may follow the colon.
+				data = data[1:]
+			}
+			dataLines = append(dataLines, data)
 		}
 	}
 	require.NoError(t, scanner.Err())

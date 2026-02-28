@@ -165,13 +165,8 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	modelsCfg.BaseURL = p.modelsURL
 	modelsCfg.Hooks = p.hooks
 	headers := func(req *http.Request) {
-		// Add API key as query parameter.
-		// NOTE: Passing the API key in the URL query parameter is required by Google's native Gemini API for the models endpoint.
-		// This may be a security concern, as the API key can be logged in server access logs, proxy logs, and browser history.
-		// See: https://cloud.google.com/vertex-ai/docs/generative-ai/model-parameters#api-key
-		q := req.URL.Query()
-		q.Set("key", p.apiKey)
-		req.URL.RawQuery = q.Encode()
+		// Use header-based API key auth for models requests.
+		req.Header.Set("x-goog-api-key", p.apiKey)
 
 		// Preserve request tracing across list-models requests.
 		requestID := req.Header.Get("X-Request-Id")
