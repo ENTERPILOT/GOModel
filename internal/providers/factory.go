@@ -85,7 +85,7 @@ func (f *ProviderFactory) Create(cfg ProviderConfig) (core.Provider, error) {
 		}
 	}
 
-	return newProviderWrapper(p, cfg.Type), nil
+	return p, nil
 }
 
 // RegisteredTypes returns a list of all registered provider types.

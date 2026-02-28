@@ -59,7 +59,11 @@ func (r *Router) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*co
 	if provider == nil {
 		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
 	}
-	return provider.ChatCompletion(ctx, req)
+	resp, err := provider.ChatCompletion(ctx, req)
+	if err == nil && resp != nil {
+		resp.Provider = r.GetProviderType(req.Model)
+	}
+	return resp, err
 }
 
 // StreamChatCompletion routes the streaming request to the appropriate provider.
@@ -98,7 +102,11 @@ func (r *Router) Responses(ctx context.Context, req *core.ResponsesRequest) (*co
 	if provider == nil {
 		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
 	}
-	return provider.Responses(ctx, req)
+	resp, err := provider.Responses(ctx, req)
+	if err == nil && resp != nil {
+		resp.Provider = r.GetProviderType(req.Model)
+	}
+	return resp, err
 }
 
 // StreamResponses routes the streaming Responses API request to the appropriate provider.
@@ -123,7 +131,11 @@ func (r *Router) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*c
 	if provider == nil {
 		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
 	}
-	return provider.Embeddings(ctx, req)
+	resp, err := provider.Embeddings(ctx, req)
+	if err == nil && resp != nil {
+		resp.Provider = r.GetProviderType(req.Model)
+	}
+	return resp, err
 }
 
 // GetProviderType returns the provider type string for the given model.

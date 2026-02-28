@@ -211,14 +211,15 @@ func TestRouterChatCompletion(t *testing.T) {
 	router, _ := NewRouter(lookup)
 
 	tests := []struct {
-		name      string
-		model     string
-		wantResp  *core.ChatResponse
-		wantError bool
+		name         string
+		model        string
+		wantResp     *core.ChatResponse
+		wantProvider string
+		wantError    bool
 	}{
-		{"routes to openai", "gpt-4o", openaiResp, false},
-		{"routes to anthropic", "claude-3-5-sonnet", anthropicResp, false},
-		{"unsupported model", "unknown", nil, true},
+		{"routes to openai", "gpt-4o", openaiResp, "openai", false},
+		{"routes to anthropic", "claude-3-5-sonnet", anthropicResp, "anthropic", false},
+		{"unsupported model", "unknown", nil, "", true},
 	}
 
 	for _, tt := range tests {
@@ -236,8 +237,11 @@ func TestRouterChatCompletion(t *testing.T) {
 			if err != nil {
 				t.Errorf("unexpected error: %v", err)
 			}
-			if resp != tt.wantResp {
-				t.Errorf("got response %v, want %v", resp, tt.wantResp)
+			if resp.ID != tt.wantResp.ID {
+				t.Errorf("got response ID %q, want %q", resp.ID, tt.wantResp.ID)
+			}
+			if resp.Provider != tt.wantProvider {
+				t.Errorf("Provider = %q, want %q", resp.Provider, tt.wantProvider)
 			}
 		})
 	}
@@ -252,14 +256,17 @@ func TestRouterResponses(t *testing.T) {
 
 	router, _ := NewRouter(lookup)
 
-	t.Run("routes correctly", func(t *testing.T) {
+	t.Run("routes correctly and stamps provider", func(t *testing.T) {
 		req := &core.ResponsesRequest{Model: "gpt-4o"}
 		resp, err := router.Responses(context.Background(), req)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
-		if resp != expectedResp {
-			t.Errorf("got %v, want %v", resp, expectedResp)
+		if resp.ID != expectedResp.ID {
+			t.Errorf("got ID %q, want %q", resp.ID, expectedResp.ID)
+		}
+		if resp.Provider != "openai" {
+			t.Errorf("Provider = %q, want %q", resp.Provider, "openai")
 		}
 	})
 
@@ -333,14 +340,17 @@ func TestRouterEmbeddings(t *testing.T) {
 
 	router, _ := NewRouter(lookup)
 
-	t.Run("routes correctly", func(t *testing.T) {
+	t.Run("routes correctly and stamps provider", func(t *testing.T) {
 		req := &core.EmbeddingRequest{Model: "text-embedding-3-small", Input: "hello"}
 		resp, err := router.Embeddings(context.Background(), req)
 		if err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
-		if resp != expectedResp {
-			t.Errorf("got %v, want %v", resp, expectedResp)
+		if resp.Model != expectedResp.Model {
+			t.Errorf("got Model %q, want %q", resp.Model, expectedResp.Model)
+		}
+		if resp.Provider != "openai" {
+			t.Errorf("Provider = %q, want %q", resp.Provider, "openai")
 		}
 	})
 
