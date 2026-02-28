@@ -25,7 +25,7 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 			if !auditlog.IsModelInteractionPath(c.Request().URL.Path) {
 				return next(c)
 			}
-			if strings.HasPrefix(c.Request().URL.Path, "/v1/batches") {
+			if strings.HasPrefix(c.Request().URL.Path, "/v1/batches") || strings.HasPrefix(c.Request().URL.Path, "/v1/files") {
 				requestID := c.Request().Header.Get("X-Request-ID")
 				ctx := core.WithRequestID(c.Request().Context(), requestID)
 				c.SetRequest(c.Request().WithContext(ctx))

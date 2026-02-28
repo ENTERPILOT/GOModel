@@ -427,6 +427,7 @@ func IsModelInteractionPath(path string) bool {
 		"/v1/chat/completions",
 		"/v1/responses",
 		"/v1/embeddings",
+		"/v1/files",
 		"/v1/batches",
 	}
 	for _, p := range modelPaths {

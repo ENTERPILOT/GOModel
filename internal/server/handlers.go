@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -191,6 +192,377 @@ func (h *Handler) ListModels(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (h *Handler) nativeFileRouter() (core.NativeFileRoutableProvider, error) {
+	nativeRouter, ok := h.provider.(core.NativeFileRoutableProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError("file routing is not supported by the current provider router", nil)
+	}
+	return nativeRouter, nil
+}
+
+func (h *Handler) fileProviderTypes(ctx echo.Context) ([]string, error) {
+	resp, err := h.provider.ListModels(ctx.Request().Context())
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return []string{}, nil
+	}
+	seen := make(map[string]struct{})
+	providers := make([]string, 0)
+	for _, model := range resp.Data {
+		providerType := strings.TrimSpace(h.provider.GetProviderType(model.ID))
+		if providerType == "" {
+			continue
+		}
+		if _, exists := seen[providerType]; exists {
+			continue
+		}
+		seen[providerType] = struct{}{}
+		providers = append(providers, providerType)
+	}
+	sort.Strings(providers)
+	return providers, nil
+}
+
+func resolveProviderHint(c echo.Context) string {
+	if provider := strings.TrimSpace(c.QueryParam("provider")); provider != "" {
+		return provider
+	}
+	return strings.TrimSpace(c.FormValue("provider"))
+}
+
+func isNotFoundGatewayError(err error) bool {
+	var gatewayErr *core.GatewayError
+	return errors.As(err, &gatewayErr) && gatewayErr.HTTPStatusCode() == http.StatusNotFound
+}
+
+func isUnsupportedNativeFilesError(err error) bool {
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		return false
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		return false
+	}
+	return strings.Contains(strings.ToLower(gatewayErr.Message), "does not support native file operations")
+}
+
+func sortFilesDesc(items []core.FileObject) {
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].CreatedAt == items[j].CreatedAt {
+			return items[i].ID > items[j].ID
+		}
+		return items[i].CreatedAt > items[j].CreatedAt
+	})
+}
+
+func applyAfterCursor(items []core.FileObject, after string) []core.FileObject {
+	after = strings.TrimSpace(after)
+	if after == "" {
+		return items
+	}
+	for i := range items {
+		if items[i].ID == after {
+			if i+1 >= len(items) {
+				return []core.FileObject{}
+			}
+			return items[i+1:]
+		}
+	}
+	return items
+}
+
+// CreateFile handles POST /v1/files.
+func (h *Handler) CreateFile(c echo.Context) error {
+	nativeRouter, err := h.nativeFileRouter()
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	providers, err := h.fileProviderTypes(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	providerType := resolveProviderHint(c)
+	if providerType == "" {
+		if len(providers) == 1 {
+			providerType = providers[0]
+		} else if len(providers) == 0 {
+			return handleError(c, core.NewInvalidRequestError("no providers are available for file uploads", nil))
+		} else {
+			return handleError(c, core.NewInvalidRequestError("provider is required when multiple providers are configured; pass ?provider=<type>", nil))
+		}
+	}
+	auditlog.EnrichEntry(c, "file", providerType)
+
+	purpose := strings.TrimSpace(c.FormValue("purpose"))
+	if purpose == "" {
+		return handleError(c, core.NewInvalidRequestError("purpose is required", nil))
+	}
+
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError("file is required", err))
+	}
+	file, err := fileHeader.Open()
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError("failed to open uploaded file", err))
+	}
+	defer func() {
+		_ = file.Close()
+	}()
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError("failed to read uploaded file", err))
+	}
+
+	requestID := strings.TrimSpace(c.Request().Header.Get("X-Request-ID"))
+	ctx := core.WithRequestID(c.Request().Context(), requestID)
+	resp, err := nativeRouter.CreateFile(ctx, providerType, &core.FileCreateRequest{
+		Purpose:  purpose,
+		Filename: fileHeader.Filename,
+		Content:  content,
+	})
+	if err != nil {
+		return handleError(c, err)
+	}
+	return c.JSON(http.StatusOK, resp)
+}
+
+// ListFiles handles GET /v1/files.
+func (h *Handler) ListFiles(c echo.Context) error {
+	nativeRouter, err := h.nativeFileRouter()
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	limit := 20
+	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			return handleError(c, core.NewInvalidRequestError("invalid limit parameter", err))
+		}
+		limit = parsed
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	purpose := strings.TrimSpace(c.QueryParam("purpose"))
+	after := strings.TrimSpace(c.QueryParam("after"))
+	providerType := strings.TrimSpace(c.QueryParam("provider"))
+
+	if providerType != "" {
+		auditlog.EnrichEntry(c, "file", providerType)
+		resp, err := nativeRouter.ListFiles(c.Request().Context(), providerType, purpose, limit, after)
+		if err != nil {
+			return handleError(c, err)
+		}
+		if resp == nil {
+			resp = &core.FileListResponse{Object: "list"}
+		}
+		if resp.Object == "" {
+			resp.Object = "list"
+		}
+		return c.JSON(http.StatusOK, resp)
+	}
+
+	providers, err := h.fileProviderTypes(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	auditlog.EnrichEntry(c, "file", "")
+
+	aggregated := make([]core.FileObject, 0)
+	anySuccess := false
+	var firstErr error
+	for _, candidate := range providers {
+		resp, err := nativeRouter.ListFiles(c.Request().Context(), candidate, purpose, limit+1, "")
+		if err != nil {
+			if isUnsupportedNativeFilesError(err) || isNotFoundGatewayError(err) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		anySuccess = true
+		if resp == nil {
+			continue
+		}
+		aggregated = append(aggregated, resp.Data...)
+	}
+	if !anySuccess && firstErr != nil {
+		return handleError(c, firstErr)
+	}
+
+	sortFilesDesc(aggregated)
+	aggregated = applyAfterCursor(aggregated, after)
+	hasMore := len(aggregated) > limit
+	if hasMore {
+		aggregated = aggregated[:limit]
+	}
+
+	return c.JSON(http.StatusOK, core.FileListResponse{
+		Object:  "list",
+		Data:    aggregated,
+		HasMore: hasMore,
+	})
+}
+
+// GetFile handles GET /v1/files/{id}.
+func (h *Handler) GetFile(c echo.Context) error {
+	nativeRouter, err := h.nativeFileRouter()
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("file id is required", nil))
+	}
+	if providerType := strings.TrimSpace(c.QueryParam("provider")); providerType != "" {
+		auditlog.EnrichEntry(c, "file", providerType)
+		resp, err := nativeRouter.GetFile(c.Request().Context(), providerType, id)
+		if err != nil {
+			return handleError(c, err)
+		}
+		return c.JSON(http.StatusOK, resp)
+	}
+
+	providers, err := h.fileProviderTypes(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	auditlog.EnrichEntry(c, "file", "")
+
+	var firstErr error
+	for _, candidate := range providers {
+		resp, err := nativeRouter.GetFile(c.Request().Context(), candidate, id)
+		if err == nil {
+			return c.JSON(http.StatusOK, resp)
+		}
+		if isNotFoundGatewayError(err) || isUnsupportedNativeFilesError(err) {
+			continue
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		continue
+	}
+	if firstErr != nil {
+		return handleError(c, firstErr)
+	}
+	return handleError(c, core.NewNotFoundError("file not found: "+id))
+}
+
+// DeleteFile handles DELETE /v1/files/{id}.
+func (h *Handler) DeleteFile(c echo.Context) error {
+	nativeRouter, err := h.nativeFileRouter()
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("file id is required", nil))
+	}
+	if providerType := strings.TrimSpace(c.QueryParam("provider")); providerType != "" {
+		auditlog.EnrichEntry(c, "file", providerType)
+		resp, err := nativeRouter.DeleteFile(c.Request().Context(), providerType, id)
+		if err != nil {
+			return handleError(c, err)
+		}
+		return c.JSON(http.StatusOK, resp)
+	}
+
+	providers, err := h.fileProviderTypes(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	auditlog.EnrichEntry(c, "file", "")
+
+	var firstErr error
+	for _, candidate := range providers {
+		resp, err := nativeRouter.DeleteFile(c.Request().Context(), candidate, id)
+		if err == nil {
+			return c.JSON(http.StatusOK, resp)
+		}
+		if isNotFoundGatewayError(err) || isUnsupportedNativeFilesError(err) {
+			continue
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		continue
+	}
+	if firstErr != nil {
+		return handleError(c, firstErr)
+	}
+	return handleError(c, core.NewNotFoundError("file not found: "+id))
+}
+
+// GetFileContent handles GET /v1/files/{id}/content.
+func (h *Handler) GetFileContent(c echo.Context) error {
+	nativeRouter, err := h.nativeFileRouter()
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("file id is required", nil))
+	}
+	if providerType := strings.TrimSpace(c.QueryParam("provider")); providerType != "" {
+		auditlog.EnrichEntry(c, "file", providerType)
+		resp, err := nativeRouter.GetFileContent(c.Request().Context(), providerType, id)
+		if err != nil {
+			return handleError(c, err)
+		}
+		contentType := strings.TrimSpace(resp.ContentType)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		return c.Blob(http.StatusOK, contentType, resp.Data)
+	}
+
+	providers, err := h.fileProviderTypes(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	auditlog.EnrichEntry(c, "file", "")
+
+	var firstErr error
+	for _, candidate := range providers {
+		resp, err := nativeRouter.GetFileContent(c.Request().Context(), candidate, id)
+		if err == nil {
+			contentType := strings.TrimSpace(resp.ContentType)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+			return c.Blob(http.StatusOK, contentType, resp.Data)
+		}
+		if isNotFoundGatewayError(err) || isUnsupportedNativeFilesError(err) {
+			continue
+		}
+		if firstErr == nil {
+			firstErr = err
+		}
+		continue
+	}
+	if firstErr != nil {
+		return handleError(c, firstErr)
+	}
+	return handleError(c, core.NewNotFoundError("file not found: "+id))
 }
 
 // Responses handles POST /v1/responses

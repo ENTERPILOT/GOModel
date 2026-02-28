@@ -184,7 +184,7 @@ type LogConfig struct {
 	RetentionDays int `yaml:"retention_days" env:"LOGGING_RETENTION_DAYS"`
 
 	// OnlyModelInteractions limits audit logging to AI model endpoints only
-	// When true, only /v1/chat/completions, /v1/responses, /v1/embeddings, and /v1/batches are logged
+	// When true, only /v1/chat/completions, /v1/responses, /v1/embeddings, /v1/files, and /v1/batches are logged
 	// Endpoints like /health, /metrics, /admin, /v1/models are skipped
 	// Default: true
 	OnlyModelInteractions bool `yaml:"only_model_interactions" env:"LOGGING_ONLY_MODEL_INTERACTIONS"`

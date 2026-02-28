@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"testing"
 
 	"gomodel/internal/core"
@@ -122,6 +123,38 @@ func (m *mockBatchProvider) CancelBatch(_ context.Context, _ string) (*core.Batc
 
 func (m *mockBatchProvider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
 	return &core.BatchResultsResponse{Object: "list", BatchID: "provider-batch-1"}, nil
+}
+
+func (m *mockBatchProvider) CreateFile(_ context.Context, req *core.FileCreateRequest) (*core.FileObject, error) {
+	return &core.FileObject{
+		ID:        "file_1",
+		Object:    "file",
+		Bytes:     int64(len(req.Content)),
+		CreatedAt: 1,
+		Filename:  req.Filename,
+		Purpose:   req.Purpose,
+	}, nil
+}
+
+func (m *mockBatchProvider) ListFiles(_ context.Context, purpose string, _ int, _ string) (*core.FileListResponse, error) {
+	return &core.FileListResponse{
+		Object: "list",
+		Data: []core.FileObject{
+			{ID: "file_1", Object: "file", CreatedAt: 1, Filename: "a.jsonl", Purpose: purpose},
+		},
+	}, nil
+}
+
+func (m *mockBatchProvider) GetFile(_ context.Context, id string) (*core.FileObject, error) {
+	return &core.FileObject{ID: id, Object: "file", CreatedAt: 1, Filename: "a.jsonl", Purpose: "batch"}, nil
+}
+
+func (m *mockBatchProvider) DeleteFile(_ context.Context, id string) (*core.FileDeleteResponse, error) {
+	return &core.FileDeleteResponse{ID: id, Object: "file", Deleted: true}, nil
+}
+
+func (m *mockBatchProvider) GetFileContent(_ context.Context, id string) (*core.FileContentResponse, error) {
+	return &core.FileContentResponse{ID: id, ContentType: "application/jsonl", Data: []byte("{}\n")}, nil
 }
 
 func TestNewRouter(t *testing.T) {
@@ -388,6 +421,49 @@ func TestRouterBatchProviderTypeValidation(t *testing.T) {
 				t.Fatalf("expected GatewayError, got %T: %v", err, err)
 			}
 			if gwErr.HTTPStatusCode() != 400 {
+				t.Fatalf("expected status 400, got %d", gwErr.HTTPStatusCode())
+			}
+		})
+	}
+}
+
+func TestRouterFileProviderTypeValidation(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", &mockBatchProvider{}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "empty provider type",
+			call: func() error {
+				_, err := router.GetFile(context.Background(), "", "file_1")
+				return err
+			},
+		},
+		{
+			name: "unknown provider type",
+			call: func() error {
+				_, err := router.GetFile(context.Background(), "does-not-exist", "file_1")
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var gwErr *core.GatewayError
+			if !errors.As(err, &gwErr) {
+				t.Fatalf("expected GatewayError, got %T: %v", err, err)
+			}
+			if gwErr.HTTPStatusCode() != http.StatusBadRequest {
 				t.Fatalf("expected status 400, got %d", gwErr.HTTPStatusCode())
 			}
 		})

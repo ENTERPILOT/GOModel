@@ -326,6 +326,8 @@ func TestIsModelInteractionPath(t *testing.T) {
 		{"chat completions with query", "/v1/chat/completions?stream=true", true},
 		{"responses", "/v1/responses", true},
 		{"responses with subpath", "/v1/responses/123", true},
+		{"files", "/v1/files", true},
+		{"files with subpath", "/v1/files/file-123", true},
 		{"batches", "/v1/batches", true},
 		{"batches with subpath", "/v1/batches/123", true},
 		{"models", "/v1/models", false},

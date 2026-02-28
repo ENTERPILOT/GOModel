@@ -1,9 +1,11 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,6 +35,17 @@ type mockProvider struct {
 	batchResults        *core.BatchResultsResponse
 	batchResultsErr     error
 	batchErr            error
+
+	fileCreateResponse  *core.FileObject
+	fileGetResponse     *core.FileObject
+	fileDeleteResponse  *core.FileDeleteResponse
+	fileListResponse    *core.FileListResponse
+	fileContentResponse *core.FileContentResponse
+	fileErr             error
+	fileListByProvider  map[string]*core.FileListResponse
+	fileErrByProvider   map[string]error
+	fileGetByProvider   map[string]*core.FileObject
+	fileContentByProv   map[string]*core.FileContentResponse
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -165,6 +178,124 @@ func (m *mockProvider) GetBatchResults(_ context.Context, _ string, _ string) (*
 		Data: []core.BatchResultItem{
 			{Index: 0, StatusCode: 200},
 		},
+	}, nil
+}
+
+func (m *mockProvider) CreateFile(_ context.Context, providerType string, req *core.FileCreateRequest) (*core.FileObject, error) {
+	if m.fileErr != nil {
+		return nil, m.fileErr
+	}
+	if m.fileCreateResponse != nil {
+		return m.fileCreateResponse, nil
+	}
+	return &core.FileObject{
+		ID:        "file_mock_1",
+		Object:    "file",
+		Bytes:     int64(len(req.Content)),
+		CreatedAt: 1000,
+		Filename:  req.Filename,
+		Purpose:   req.Purpose,
+		Provider:  providerType,
+	}, nil
+}
+
+func (m *mockProvider) ListFiles(_ context.Context, providerType, purpose string, _ int, _ string) (*core.FileListResponse, error) {
+	if m.fileErrByProvider != nil {
+		if err, ok := m.fileErrByProvider[providerType]; ok && err != nil {
+			return nil, err
+		}
+	}
+	if m.fileErr != nil {
+		return nil, m.fileErr
+	}
+	if m.fileListByProvider != nil {
+		if resp, ok := m.fileListByProvider[providerType]; ok {
+			return resp, nil
+		}
+	}
+	if m.fileListResponse != nil {
+		return m.fileListResponse, nil
+	}
+	return &core.FileListResponse{
+		Object: "list",
+		Data: []core.FileObject{
+			{
+				ID:        "file_mock_1",
+				Object:    "file",
+				Bytes:     10,
+				CreatedAt: 1000,
+				Filename:  "a.jsonl",
+				Purpose:   firstNonEmpty(purpose, "batch"),
+				Provider:  providerType,
+			},
+		},
+	}, nil
+}
+
+func (m *mockProvider) GetFile(_ context.Context, providerType, id string) (*core.FileObject, error) {
+	if m.fileErrByProvider != nil {
+		if err, ok := m.fileErrByProvider[providerType]; ok && err != nil {
+			return nil, err
+		}
+	}
+	if m.fileErr != nil {
+		return nil, m.fileErr
+	}
+	if m.fileGetByProvider != nil {
+		if resp, ok := m.fileGetByProvider[providerType]; ok {
+			return resp, nil
+		}
+	}
+	if m.fileGetResponse != nil {
+		return m.fileGetResponse, nil
+	}
+	return &core.FileObject{
+		ID:        id,
+		Object:    "file",
+		Bytes:     10,
+		CreatedAt: 1000,
+		Filename:  "a.jsonl",
+		Purpose:   "batch",
+		Provider:  providerType,
+	}, nil
+}
+
+func (m *mockProvider) DeleteFile(_ context.Context, providerType string, id string) (*core.FileDeleteResponse, error) {
+	if m.fileErrByProvider != nil {
+		if err, ok := m.fileErrByProvider[providerType]; ok && err != nil {
+			return nil, err
+		}
+	}
+	if m.fileErr != nil {
+		return nil, m.fileErr
+	}
+	if m.fileDeleteResponse != nil {
+		return m.fileDeleteResponse, nil
+	}
+	return &core.FileDeleteResponse{ID: id, Object: "file", Deleted: true}, nil
+}
+
+func (m *mockProvider) GetFileContent(_ context.Context, providerType string, id string) (*core.FileContentResponse, error) {
+	if m.fileErrByProvider != nil {
+		if err, ok := m.fileErrByProvider[providerType]; ok && err != nil {
+			return nil, err
+		}
+	}
+	if m.fileErr != nil {
+		return nil, m.fileErr
+	}
+	if m.fileContentByProv != nil {
+		if resp, ok := m.fileContentByProv[providerType]; ok {
+			return resp, nil
+		}
+	}
+	if m.fileContentResponse != nil {
+		return m.fileContentResponse, nil
+	}
+	return &core.FileContentResponse{
+		ID:          id,
+		ContentType: "application/jsonl",
+		Data:        []byte("{\"ok\":true}\n"),
 	}, nil
 }
 
@@ -1397,5 +1528,230 @@ func TestStreamingChatCompletion_InjectsStreamOptions(t *testing.T) {
 
 	if !provider.capturedChatReq.StreamOptions.IncludeUsage {
 		t.Error("ChatCompletion streaming should have IncludeUsage=true")
+	}
+}
+
+func TestCreateFile(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini": "openai",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o-mini", Object: "model"},
+			},
+		},
+	}
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("purpose", "batch"); err != nil {
+		t.Fatalf("write purpose: %v", err)
+	}
+	part, err := writer.CreateFormFile("file", "requests.jsonl")
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write([]byte("{\"custom_id\":\"1\"}\n")); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/files", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := handler.CreateFile(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "\"object\":\"file\"") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestGetDeleteAndContentFile(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini": "openai",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o-mini", Object: "model"},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	// Get file
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/files/file_1", nil)
+	getRec := httptest.NewRecorder()
+	getCtx := e.NewContext(getReq, getRec)
+	getCtx.SetPath("/v1/files/:id")
+	getCtx.SetParamNames("id")
+	getCtx.SetParamValues("file_1")
+	if err := handler.GetFile(getCtx); err != nil {
+		t.Fatalf("get handler returned error: %v", err)
+	}
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected get status 200, got %d", getRec.Code)
+	}
+
+	// Delete file
+	delReq := httptest.NewRequest(http.MethodDelete, "/v1/files/file_1", nil)
+	delRec := httptest.NewRecorder()
+	delCtx := e.NewContext(delReq, delRec)
+	delCtx.SetPath("/v1/files/:id")
+	delCtx.SetParamNames("id")
+	delCtx.SetParamValues("file_1")
+	if err := handler.DeleteFile(delCtx); err != nil {
+		t.Fatalf("delete handler returned error: %v", err)
+	}
+	if delRec.Code != http.StatusOK {
+		t.Fatalf("expected delete status 200, got %d", delRec.Code)
+	}
+
+	// Get file content
+	contentReq := httptest.NewRequest(http.MethodGet, "/v1/files/file_1/content", nil)
+	contentRec := httptest.NewRecorder()
+	contentCtx := e.NewContext(contentReq, contentRec)
+	contentCtx.SetPath("/v1/files/:id/content")
+	contentCtx.SetParamNames("id")
+	contentCtx.SetParamValues("file_1")
+	if err := handler.GetFileContent(contentCtx); err != nil {
+		t.Fatalf("content handler returned error: %v", err)
+	}
+	if contentRec.Code != http.StatusOK {
+		t.Fatalf("expected content status 200, got %d", contentRec.Code)
+	}
+	if !strings.Contains(contentRec.Body.String(), "\"ok\":true") {
+		t.Fatalf("unexpected content body: %s", contentRec.Body.String())
+	}
+}
+
+func TestListFiles(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku", "gemini-2.5-flash"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini":      "openai",
+			"claude-3-haiku":   "anthropic",
+			"gemini-2.5-flash": "gemini",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o-mini", Object: "model"},
+				{ID: "claude-3-haiku", Object: "model"},
+				{ID: "gemini-2.5-flash", Object: "model"},
+			},
+		},
+		fileListByProvider: map[string]*core.FileListResponse{
+			"openai": {
+				Object: "list",
+				Data: []core.FileObject{
+					{
+						ID:        "file_ok_1",
+						Object:    "file",
+						Bytes:     10,
+						CreatedAt: 1000,
+						Filename:  "a.jsonl",
+						Purpose:   "batch",
+						Provider:  "openai",
+					},
+				},
+			},
+		},
+		fileErrByProvider: map[string]error{
+			"anthropic": core.NewNotFoundError(""),
+			"gemini":    core.NewProviderError("gemini", http.StatusUnauthorized, "Not available for your plan", nil),
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files?limit=5", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := handler.ListFiles(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "\"object\":\"list\"") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"id\":\"file_ok_1\"") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku", "gemini-2.5-flash"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini":      "openai",
+			"claude-3-haiku":   "anthropic",
+			"gemini-2.5-flash": "gemini",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o-mini", Object: "model"},
+				{ID: "claude-3-haiku", Object: "model"},
+				{ID: "gemini-2.5-flash", Object: "model"},
+			},
+		},
+		fileErrByProvider: map[string]error{
+			"anthropic": core.NewNotFoundError(""),
+			"gemini":    core.NewProviderError("gemini", http.StatusUnauthorized, "Not available for your plan", nil),
+		},
+		fileGetByProvider: map[string]*core.FileObject{
+			"openai": {
+				ID:        "file_ok_1",
+				Object:    "file",
+				Bytes:     10,
+				CreatedAt: 1000,
+				Filename:  "a.jsonl",
+				Purpose:   "batch",
+				Provider:  "openai",
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files/file_ok_1", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/v1/files/:id")
+	c.SetParamNames("id")
+	c.SetParamValues("file_ok_1")
+
+	if err := handler.GetFile(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "\"id\":\"file_ok_1\"") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }

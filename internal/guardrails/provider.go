@@ -106,6 +106,14 @@ func (g *GuardedProvider) nativeBatchRouter() (core.NativeBatchRoutableProvider,
 	return bp, nil
 }
 
+func (g *GuardedProvider) nativeFileRouter() (core.NativeFileRoutableProvider, error) {
+	fp, ok := g.inner.(core.NativeFileRoutableProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError("file routing is not supported by the current provider router", nil)
+	}
+	return fp, nil
+}
+
 func (g *GuardedProvider) normalizeBatchEndpoint(raw string) string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -232,6 +240,51 @@ func (g *GuardedProvider) GetBatchResults(ctx context.Context, providerType, id 
 		return nil, err
 	}
 	return bp.GetBatchResults(ctx, providerType, id)
+}
+
+// CreateFile delegates native file upload.
+func (g *GuardedProvider) CreateFile(ctx context.Context, providerType string, req *core.FileCreateRequest) (*core.FileObject, error) {
+	fp, err := g.nativeFileRouter()
+	if err != nil {
+		return nil, err
+	}
+	return fp.CreateFile(ctx, providerType, req)
+}
+
+// ListFiles delegates native file listing.
+func (g *GuardedProvider) ListFiles(ctx context.Context, providerType, purpose string, limit int, after string) (*core.FileListResponse, error) {
+	fp, err := g.nativeFileRouter()
+	if err != nil {
+		return nil, err
+	}
+	return fp.ListFiles(ctx, providerType, purpose, limit, after)
+}
+
+// GetFile delegates native file lookup.
+func (g *GuardedProvider) GetFile(ctx context.Context, providerType, id string) (*core.FileObject, error) {
+	fp, err := g.nativeFileRouter()
+	if err != nil {
+		return nil, err
+	}
+	return fp.GetFile(ctx, providerType, id)
+}
+
+// DeleteFile delegates native file deletion.
+func (g *GuardedProvider) DeleteFile(ctx context.Context, providerType, id string) (*core.FileDeleteResponse, error) {
+	fp, err := g.nativeFileRouter()
+	if err != nil {
+		return nil, err
+	}
+	return fp.DeleteFile(ctx, providerType, id)
+}
+
+// GetFileContent delegates native file content retrieval.
+func (g *GuardedProvider) GetFileContent(ctx context.Context, providerType, id string) (*core.FileContentResponse, error) {
+	fp, err := g.nativeFileRouter()
+	if err != nil {
+		return nil, err
+	}
+	return fp.GetFileContent(ctx, providerType, id)
 }
 
 // processChat runs the pipeline for a ChatRequest via the message adapter.

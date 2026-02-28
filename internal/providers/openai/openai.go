@@ -291,3 +291,45 @@ func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchRespo
 func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
 	return providers.FetchBatchResultsFromOutputFile(ctx, p.client, "openai", id)
 }
+
+// CreateFile uploads a file through OpenAI's /files API.
+func (p *Provider) CreateFile(ctx context.Context, req *core.FileCreateRequest) (*core.FileObject, error) {
+	resp, err := providers.CreateOpenAICompatibleFile(ctx, p.client, req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "openai"
+	return resp, nil
+}
+
+// ListFiles lists files through OpenAI's /files API.
+func (p *Provider) ListFiles(ctx context.Context, purpose string, limit int, after string) (*core.FileListResponse, error) {
+	resp, err := providers.ListOpenAICompatibleFiles(ctx, p.client, purpose, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		resp.Data[i].Provider = "openai"
+	}
+	return resp, nil
+}
+
+// GetFile retrieves one file object through OpenAI's /files API.
+func (p *Provider) GetFile(ctx context.Context, id string) (*core.FileObject, error) {
+	resp, err := providers.GetOpenAICompatibleFile(ctx, p.client, id)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "openai"
+	return resp, nil
+}
+
+// DeleteFile deletes a file object through OpenAI's /files API.
+func (p *Provider) DeleteFile(ctx context.Context, id string) (*core.FileDeleteResponse, error) {
+	return providers.DeleteOpenAICompatibleFile(ctx, p.client, id)
+}
+
+// GetFileContent fetches raw file bytes through OpenAI's /files/{id}/content API.
+func (p *Provider) GetFileContent(ctx context.Context, id string) (*core.FileContentResponse, error) {
+	return providers.GetOpenAICompatibleFileContent(ctx, p.client, id)
+}

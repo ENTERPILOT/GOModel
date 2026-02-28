@@ -58,6 +58,14 @@ func TestModelValidation(t *testing.T) {
 			handlerCalled:  true,
 		},
 		{
+			name:           "files path skips root model validation",
+			method:         http.MethodPost,
+			path:           "/v1/files",
+			body:           "",
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
 			name:           "missing model returns 400",
 			method:         http.MethodPost,
 			path:           "/v1/chat/completions",
