@@ -1755,3 +1755,52 @@ func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }
+
+func TestMergeStoredBatchFromUpstreamPreservesGatewayMetadata(t *testing.T) {
+	stored := &core.BatchResponse{
+		ID:              "batch_1",
+		Provider:        "openai",
+		ProviderBatchID: "provider-batch-1",
+		Metadata: map[string]string{
+			"provider":          "openai",
+			"provider_batch_id": "provider-batch-1",
+			"existing":          "keep-me",
+		},
+	}
+	upstream := &core.BatchResponse{
+		Status: "completed",
+		Metadata: map[string]string{
+			"provider":          "anthropic",
+			"provider_batch_id": "other-id",
+			"existing":          "upstream-overwrite",
+			"new_key":           "new-value",
+		},
+	}
+
+	mergeStoredBatchFromUpstream(stored, upstream)
+
+	if stored.Metadata["provider"] != "openai" {
+		t.Fatalf("provider metadata overwritten: %q", stored.Metadata["provider"])
+	}
+	if stored.Metadata["provider_batch_id"] != "provider-batch-1" {
+		t.Fatalf("provider_batch_id metadata overwritten: %q", stored.Metadata["provider_batch_id"])
+	}
+	if stored.Metadata["existing"] != "upstream-overwrite" {
+		t.Fatalf("expected non-gateway key overwrite from upstream, got %q", stored.Metadata["existing"])
+	}
+	if stored.Metadata["new_key"] != "new-value" {
+		t.Fatalf("expected merged upstream key, got %q", stored.Metadata["new_key"])
+	}
+}
+
+func TestIsNativeBatchResultsPending(t *testing.T) {
+	anthropicErr := core.NewProviderError("anthropic", http.StatusNotFound, "pending", nil)
+	if !isNativeBatchResultsPending(anthropicErr) {
+		t.Fatal("expected anthropic 404 to be treated as pending")
+	}
+
+	openAIErr := core.NewProviderError("openai", http.StatusNotFound, "not found", nil)
+	if isNativeBatchResultsPending(openAIErr) {
+		t.Fatal("expected openai 404 not to be treated as pending")
+	}
+}

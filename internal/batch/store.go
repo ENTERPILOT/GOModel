@@ -52,6 +52,9 @@ func serializeBatch(batch *core.BatchResponse) ([]byte, error) {
 	if batch == nil {
 		return nil, fmt.Errorf("batch is nil")
 	}
+	if len(batch.ID) == 0 {
+		return nil, fmt.Errorf("batch ID is empty")
+	}
 	b, err := json.Marshal(batch)
 	if err != nil {
 		return nil, fmt.Errorf("marshal batch: %w", err)

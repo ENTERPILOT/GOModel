@@ -18,12 +18,14 @@ type PostgreSQLStore struct {
 }
 
 // NewPostgreSQLStore creates the batches table and indexes if needed.
-func NewPostgreSQLStore(pool *pgxpool.Pool) (*PostgreSQLStore, error) {
+func NewPostgreSQLStore(ctx context.Context, pool *pgxpool.Pool) (*PostgreSQLStore, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context is required")
+	}
 	if pool == nil {
 		return nil, fmt.Errorf("connection pool is required")
 	}
 
-	ctx := context.Background()
 	_, err := pool.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS batches (
 			id TEXT PRIMARY KEY,

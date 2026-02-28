@@ -229,7 +229,7 @@ func pricingForEndpoint(pricing *core.ModelPricing, endpoint string) *core.Model
 	if pricing == nil {
 		return nil
 	}
-	if !strings.HasPrefix(endpoint, "/v1/batches") {
+	if endpoint != "/v1/batches" && !strings.HasPrefix(endpoint, "/v1/batches/") {
 		return pricing
 	}
 

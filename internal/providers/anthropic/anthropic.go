@@ -928,6 +928,8 @@ func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*c
 	if limit > 0 {
 		values.Set("limit", strconv.Itoa(limit))
 	}
+	// Anthropic uses before_id for reverse-chronological pagination.
+	// Gateway `after` is mapped directly to before_id for provider-native paging.
 	if after != "" {
 		values.Set("before_id", after)
 	}
@@ -1006,6 +1008,7 @@ func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchR
 
 		var row anthropicBatchResultLine
 		if err := json.Unmarshal(line, &row); err != nil {
+			slog.Warn("failed to decode anthropic batch result line", "error", err, "line", string(line))
 			continue
 		}
 

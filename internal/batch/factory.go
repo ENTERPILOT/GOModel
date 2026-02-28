@@ -39,13 +39,16 @@ func (r *Result) Close() error {
 
 // New creates a batch store from app configuration.
 func New(ctx context.Context, cfg *config.Config) (*Result, error) {
+	if cfg == nil {
+		return nil, fmt.Errorf("config is required")
+	}
 	storageCfg := buildStorageConfig(cfg)
 	store, err := storage.New(ctx, storageCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
 
-	batchStore, err := createStore(store)
+	batchStore, err := createStore(ctx, store)
 	if err != nil {
 		_ = store.Close()
 		return nil, err
@@ -58,14 +61,14 @@ func New(ctx context.Context, cfg *config.Config) (*Result, error) {
 }
 
 // NewWithSharedStorage creates a batch store using a shared storage connection.
-func NewWithSharedStorage(_ context.Context, cfg *config.Config, shared storage.Storage) (*Result, error) {
+func NewWithSharedStorage(ctx context.Context, cfg *config.Config, shared storage.Storage) (*Result, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
 	if shared == nil {
 		return nil, fmt.Errorf("shared storage is required")
 	}
-	batchStore, err := createStore(shared)
+	batchStore, err := createStore(ctx, shared)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +105,7 @@ func buildStorageConfig(cfg *config.Config) storage.Config {
 	return storageCfg
 }
 
-func createStore(store storage.Storage) (Store, error) {
+func createStore(ctx context.Context, store storage.Storage) (Store, error) {
 	switch store.Type() {
 	case storage.TypeSQLite:
 		return NewSQLiteStore(store.SQLiteDB())
@@ -115,7 +118,7 @@ func createStore(store storage.Storage) (Store, error) {
 		if !ok {
 			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
 		}
-		return NewPostgreSQLStore(pgxPool)
+		return NewPostgreSQLStore(ctx, pgxPool)
 	case storage.TypeMongoDB:
 		db := store.MongoDatabase()
 		if db == nil {

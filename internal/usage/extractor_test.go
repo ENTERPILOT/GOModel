@@ -545,3 +545,39 @@ func TestExtractFromEmbeddingResponse_WithBatchPricingEndpoint(t *testing.T) {
 		t.Errorf("InputCost = %f, want 1.5", *entry.InputCost)
 	}
 }
+
+func TestExtractFromChatResponse_BatchPrefixOvermatchUsesStandardPricing(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:       f64Ptr(4.0),
+		OutputPerMtok:      f64Ptr(8.0),
+		BatchInputPerMtok:  f64Ptr(1.0),
+		BatchOutputPerMtok: f64Ptr(2.0),
+	}
+
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-standard-priced",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     1_000_000,
+			CompletionTokens: 500_000,
+			TotalTokens:      1_500_000,
+		},
+	}
+
+	entry := ExtractFromChatResponse(resp, "req-standard-priced", "openai", "/v1/batcheship", pricing)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.InputCost == nil || entry.OutputCost == nil || entry.TotalCost == nil {
+		t.Fatal("expected all costs to be populated")
+	}
+	if math.Abs(*entry.InputCost-4.0) > 1e-9 {
+		t.Errorf("InputCost = %f, want 4.0", *entry.InputCost)
+	}
+	if math.Abs(*entry.OutputCost-4.0) > 1e-9 {
+		t.Errorf("OutputCost = %f, want 4.0", *entry.OutputCost)
+	}
+	if math.Abs(*entry.TotalCost-8.0) > 1e-9 {
+		t.Errorf("TotalCost = %f, want 8.0", *entry.TotalCost)
+	}
+}

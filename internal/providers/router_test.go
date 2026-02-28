@@ -103,6 +103,7 @@ func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (
 
 type mockBatchProvider struct {
 	mockProvider
+	listBatchesResp *core.BatchListResponse
 }
 
 func (m *mockBatchProvider) CreateBatch(_ context.Context, _ *core.BatchRequest) (*core.BatchResponse, error) {
@@ -114,6 +115,9 @@ func (m *mockBatchProvider) GetBatch(_ context.Context, _ string) (*core.BatchRe
 }
 
 func (m *mockBatchProvider) ListBatches(_ context.Context, _ int, _ string) (*core.BatchListResponse, error) {
+	if m.listBatchesResp != nil {
+		return m.listBatchesResp, nil
+	}
 	return &core.BatchListResponse{Object: "list"}, nil
 }
 
@@ -467,6 +471,34 @@ func TestRouterFileProviderTypeValidation(t *testing.T) {
 				t.Fatalf("expected status 400, got %d", gwErr.HTTPStatusCode())
 			}
 		})
+	}
+}
+
+func TestRouterListBatchesSetsProviderOnItems(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", &mockBatchProvider{
+		listBatchesResp: &core.BatchListResponse{
+			Object: "list",
+			Data: []core.BatchResponse{
+				{ID: "batch_1", Object: "batch"},
+			},
+		},
+	}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	resp, err := router.ListBatches(context.Background(), "openai", 10, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Provider != "openai" {
+		t.Fatalf("expected provider=openai, got %q", resp.Data[0].Provider)
 	}
 }
 

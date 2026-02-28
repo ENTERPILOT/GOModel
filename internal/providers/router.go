@@ -220,7 +220,16 @@ func (r *Router) ListBatches(ctx context.Context, providerType string, limit int
 	if !ok {
 		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
 	}
-	return bp.ListBatches(ctx, limit, after)
+	resp, err := bp.ListBatches(ctx, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		for i := range resp.Data {
+			resp.Data[i].Provider = providerType
+		}
+	}
+	return resp, nil
 }
 
 // CancelBatch routes native batch cancellation to a provider type.

@@ -268,6 +268,11 @@ func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*c
 	if err != nil {
 		return nil, err
 	}
+	for i := range resp.Data {
+		if resp.Data[i].ProviderBatchID == "" {
+			resp.Data[i].ProviderBatchID = resp.Data[i].ID
+		}
+	}
 	return &resp, nil
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sort"
@@ -26,6 +27,10 @@ const (
 	batchMetadataRequestIDKey   = "request_id"
 	batchMetadataUsageLoggedKey = "usage_logged_at"
 )
+
+var batchResultsPending404Providers = map[string]struct{}{
+	"anthropic": {},
+}
 
 // Handler holds the HTTP handlers
 type Handler struct {
@@ -977,7 +982,13 @@ func (h *Handler) BatchResults(c echo.Context) error {
 			if latest, getErr := nativeRouter.GetBatch(c.Request().Context(), stored.Provider, stored.ProviderBatchID); getErr == nil && latest != nil {
 				mergeStoredBatchFromUpstream(stored, latest)
 				if updateErr := h.batchStore.Update(c.Request().Context(), stored); updateErr != nil && !errors.Is(updateErr, batchstore.ErrNotFound) {
-					return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist refreshed batch", updateErr))
+					slog.Warn(
+						"failed to update batch store after refreshing pending results",
+						"batch_id", stored.ID,
+						"provider", stored.Provider,
+						"provider_batch_id", stored.ProviderBatchID,
+						"error", updateErr,
+					)
 				}
 			}
 			status := strings.TrimSpace(stored.Status)
@@ -1004,10 +1015,13 @@ func (h *Handler) BatchResults(c echo.Context) error {
 	}
 	if len(result.Data) > 0 || usageLogged {
 		if updateErr := h.batchStore.Update(c.Request().Context(), stored); updateErr != nil {
-			if errors.Is(updateErr, batchstore.ErrNotFound) {
-				return handleError(c, core.NewNotFoundError("batch not found: "+id))
-			}
-			return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist batch results", updateErr))
+			slog.Warn(
+				"failed to update batch store after receiving batch results",
+				"batch_id", stored.ID,
+				"provider", stored.Provider,
+				"provider_batch_id", stored.ProviderBatchID,
+				"error", updateErr,
+			)
 		}
 	}
 
@@ -1357,7 +1371,19 @@ func mergeStoredBatchFromUpstream(stored, upstream *core.BatchResponse) {
 		if stored.Metadata == nil {
 			stored.Metadata = map[string]string{}
 		}
+		preservedGatewayMetadata := map[string]string{}
+		for _, key := range []string{"provider", "provider_batch_id"} {
+			if value, exists := stored.Metadata[key]; exists {
+				preservedGatewayMetadata[key] = value
+			}
+		}
 		for key, value := range upstream.Metadata {
+			if _, preserve := preservedGatewayMetadata[key]; preserve {
+				continue
+			}
+			stored.Metadata[key] = value
+		}
+		for key, value := range preservedGatewayMetadata {
 			stored.Metadata[key] = value
 		}
 	}
@@ -1371,8 +1397,10 @@ func isNativeBatchResultsPending(err error) bool {
 	if gatewayErr.HTTPStatusCode() != http.StatusNotFound {
 		return false
 	}
-	// Anthropic results endpoint returns 404 until results are ready.
-	return strings.EqualFold(gatewayErr.Provider, "anthropic")
+	// Some providers return 404 while native results are still being prepared.
+	// Extend batchResultsPending404Providers as more provider-specific behaviors are confirmed.
+	_, ok := batchResultsPending404Providers[strings.ToLower(strings.TrimSpace(gatewayErr.Provider))]
+	return ok
 }
 
 // handleError converts gateway errors to appropriate HTTP responses

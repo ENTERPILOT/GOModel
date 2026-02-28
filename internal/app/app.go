@@ -240,13 +240,16 @@ func (a *App) Start(addr string) error {
 	return nil
 }
 
-// Shutdown gracefully shuts down all components in the correct order.
-// It ensures proper cleanup of resources:
-// 1. HTTP server (stop accepting new requests)
-// 2. Background refresh goroutine and cache
-// 3. Audit logging
+// Shutdown gracefully tears down app components in dependency order.
+// Order:
+// 1. HTTP server shutdown via server.Shutdown(ctx), honoring the passed context timeout/cancellation.
+// 2. Provider subsystem close (stops model refresh loop and cache resources).
+// 3. Batch store close.
+// 4. Usage logger close (flushes pending usage records).
+// 5. Audit logger close (flushes pending audit records).
 //
-// Safe to call multiple times; subsequent calls are no-ops.
+// Shutdown is idempotent and safe for repeated calls; after the first call, subsequent calls are no-ops.
+// It attempts every close step, aggregates failures, and returns a joined error if any step fails.
 func (a *App) Shutdown(ctx context.Context) error {
 	a.shutdownMu.Lock()
 	if a.shutdown {
