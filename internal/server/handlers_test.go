@@ -1702,6 +1702,54 @@ func TestListFiles(t *testing.T) {
 	}
 }
 
+func TestListFilesWithUnknownAfterCursorReturnsNotFound(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini": "openai",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o-mini", Object: "model"},
+			},
+		},
+		fileListByProvider: map[string]*core.FileListResponse{
+			"openai": {
+				Object: "list",
+				Data: []core.FileObject{
+					{
+						ID:        "file_ok_1",
+						Object:    "file",
+						Bytes:     10,
+						CreatedAt: 1000,
+						Filename:  "a.jsonl",
+						Purpose:   "batch",
+						Provider:  "openai",
+					},
+				},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files?after=missing-cursor", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := handler.ListFiles(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "after cursor file not found") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
 func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 	mock := &mockProvider{
 		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku", "gemini-2.5-flash"},

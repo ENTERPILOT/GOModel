@@ -51,6 +51,8 @@ func buildRawUsageFromDetails(ptd *core.PromptTokensDetails, ctd *core.Completio
 // ExtractFromChatResponse extracts usage data from a ChatResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
 // If pricing is provided, granular cost fields are calculated.
+// For `/v1/batches` endpoints (exact or subpath), batch pricing overrides
+// (BatchInputPerMtok/BatchOutputPerMtok) may replace standard input/output rates.
 func ExtractFromChatResponse(resp *core.ChatResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
 	if resp == nil {
 		return nil
@@ -109,6 +111,8 @@ func cloneRawData(src map[string]any) map[string]any {
 // ExtractFromResponsesResponse extracts usage data from a ResponsesResponse.
 // It normalizes the usage data into a UsageEntry and preserves raw extended data.
 // If pricing is provided, cost fields are calculated.
+// For `/v1/batches` endpoints (exact or subpath), batch pricing overrides
+// (BatchInputPerMtok/BatchOutputPerMtok) may replace standard input/output rates.
 func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
 	if resp == nil {
 		return nil
@@ -156,6 +160,8 @@ func ExtractFromResponsesResponse(resp *core.ResponsesResponse, requestID, provi
 
 // ExtractFromEmbeddingResponse extracts usage data from an EmbeddingResponse.
 // Embeddings only have prompt tokens (no output tokens).
+// For `/v1/batches` endpoints (exact or subpath), BatchInputPerMtok may replace
+// standard InputPerMtok when pricingForEndpoint applies batch overrides.
 func ExtractFromEmbeddingResponse(resp *core.EmbeddingResponse, requestID, provider, endpoint string, pricing ...*core.ModelPricing) *UsageEntry {
 	if resp == nil {
 		return nil
@@ -187,6 +193,8 @@ func ExtractFromEmbeddingResponse(resp *core.EmbeddingResponse, requestID, provi
 // ExtractFromSSEUsage creates a UsageEntry from SSE-extracted usage data.
 // This is used for streaming responses where usage is extracted from the final SSE event.
 // If pricing is provided, cost fields are calculated.
+// For `/v1/batches` endpoints (exact or subpath), batch pricing overrides
+// (BatchInputPerMtok/BatchOutputPerMtok) may replace standard input/output rates.
 func ExtractFromSSEUsage(
 	providerID string,
 	inputTokens, outputTokens, totalTokens int,

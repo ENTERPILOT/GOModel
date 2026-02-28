@@ -107,9 +107,9 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	// Initialize batch lifecycle storage.
 	var batchResult *batch.Result
 	if auditResult.Storage != nil {
-		batchResult, err = batch.NewWithSharedStorage(ctx, appCfg, auditResult.Storage)
+		batchResult, err = batch.NewWithSharedStorage(ctx, auditResult.Storage)
 	} else if usageResult.Storage != nil {
-		batchResult, err = batch.NewWithSharedStorage(ctx, appCfg, usageResult.Storage)
+		batchResult, err = batch.NewWithSharedStorage(ctx, usageResult.Storage)
 	} else {
 		batchResult, err = batch.New(ctx, appCfg)
 	}
@@ -279,7 +279,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 3. Close usage tracking (flushes pending entries)
+	// 3. Close batch store (flushes pending entries)
 	if a.batch != nil {
 		if err := a.batch.Close(); err != nil {
 			slog.Error("batch store close error", "error", err)

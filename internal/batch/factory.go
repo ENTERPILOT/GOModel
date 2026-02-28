@@ -61,10 +61,7 @@ func New(ctx context.Context, cfg *config.Config) (*Result, error) {
 }
 
 // NewWithSharedStorage creates a batch store using a shared storage connection.
-func NewWithSharedStorage(ctx context.Context, cfg *config.Config, shared storage.Storage) (*Result, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is required")
-	}
+func NewWithSharedStorage(ctx context.Context, shared storage.Storage) (*Result, error) {
 	if shared == nil {
 		return nil, fmt.Errorf("shared storage is required")
 	}

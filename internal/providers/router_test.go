@@ -424,8 +424,8 @@ func TestRouterBatchProviderTypeValidation(t *testing.T) {
 			if !errors.As(err, &gwErr) {
 				t.Fatalf("expected GatewayError, got %T: %v", err, err)
 			}
-			if gwErr.HTTPStatusCode() != 400 {
-				t.Fatalf("expected status 400, got %d", gwErr.HTTPStatusCode())
+			if gwErr.HTTPStatusCode() != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, gwErr.HTTPStatusCode())
 			}
 		})
 	}

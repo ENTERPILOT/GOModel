@@ -101,20 +101,26 @@ func (s *PostgreSQLStore) List(ctx context.Context, limit int, after string) ([]
 	} else {
 		var cursorCreatedAt int64
 		err = s.pool.QueryRow(ctx, "SELECT created_at FROM batches WHERE id = $1", after).Scan(&cursorCreatedAt)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, ErrNotFound
-			}
+		switch {
+		case err == nil:
+			rows, err = s.pool.Query(ctx, `
+				SELECT data
+				FROM batches
+				WHERE (created_at < $1) OR (created_at = $1 AND id < $2)
+				ORDER BY created_at DESC, id DESC
+				LIMIT $3
+			`, cursorCreatedAt, after, limit)
+		case errors.Is(err, pgx.ErrNoRows):
+			// Cursor may have been deleted between requests; restart pagination from newest items.
+			rows, err = s.pool.Query(ctx, `
+				SELECT data
+				FROM batches
+				ORDER BY created_at DESC, id DESC
+				LIMIT $1
+			`, limit)
+		default:
 			return nil, fmt.Errorf("query after cursor: %w", err)
 		}
-
-		rows, err = s.pool.Query(ctx, `
-			SELECT data
-			FROM batches
-			WHERE (created_at < $1) OR (created_at = $1 AND id < $2)
-			ORDER BY created_at DESC, id DESC
-			LIMIT $3
-		`, cursorCreatedAt, after, limit)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list batches: %w", err)

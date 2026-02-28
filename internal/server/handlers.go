@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/url"
 	"sort"
@@ -264,20 +265,20 @@ func sortFilesDesc(items []core.FileObject) {
 	})
 }
 
-func applyAfterCursor(items []core.FileObject, after string) []core.FileObject {
+func applyAfterCursor(items []core.FileObject, after string) ([]core.FileObject, error) {
 	after = strings.TrimSpace(after)
 	if after == "" {
-		return items
+		return items, nil
 	}
 	for i := range items {
 		if items[i].ID == after {
 			if i+1 >= len(items) {
-				return []core.FileObject{}
+				return []core.FileObject{}, nil
 			}
-			return items[i+1:]
+			return items[i+1:], nil
 		}
 	}
-	return items
+	return nil, core.NewNotFoundError("after cursor file not found: " + after)
 }
 
 // CreateFile handles POST /v1/files.
@@ -411,7 +412,10 @@ func (h *Handler) ListFiles(c echo.Context) error {
 	}
 
 	sortFilesDesc(aggregated)
-	aggregated = applyAfterCursor(aggregated, after)
+	aggregated, err = applyAfterCursor(aggregated, after)
+	if err != nil {
+		return handleError(c, err)
+	}
 	hasMore := len(aggregated) > limit
 	if hasMore {
 		aggregated = aggregated[:limit]
@@ -1259,29 +1263,29 @@ func intFromAny(value any) (int, bool) {
 	case int32:
 		return int(v), true
 	case int64:
-		return int(v), true
+		return intFromInt64(v)
 	case uint:
-		return int(v), true
+		return intFromUint64(uint64(v))
 	case uint8:
 		return int(v), true
 	case uint16:
 		return int(v), true
 	case uint32:
-		return int(v), true
+		return intFromUint64(uint64(v))
 	case uint64:
-		return int(v), true
+		return intFromUint64(v)
 	case float32:
-		return int(v), true
+		return intFromFloat64(float64(v))
 	case float64:
-		return int(v), true
+		return intFromFloat64(v)
 	case json.Number:
 		i, err := v.Int64()
 		if err == nil {
-			return int(i), true
+			return intFromInt64(i)
 		}
 		f, err := v.Float64()
 		if err == nil {
-			return int(f), true
+			return intFromFloat64(f)
 		}
 		return 0, false
 	case string:
@@ -1295,6 +1299,35 @@ func intFromAny(value any) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+func intFromInt64(v int64) (int, bool) {
+	maxInt := int64(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if v < minInt || v > maxInt {
+		return 0, false
+	}
+	return int(v), true
+}
+
+func intFromUint64(v uint64) (int, bool) {
+	maxInt := uint64(^uint(0) >> 1)
+	if v > maxInt {
+		return 0, false
+	}
+	return int(v), true
+}
+
+func intFromFloat64(v float64) (int, bool) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, false
+	}
+	maxInt := float64(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if v < minInt || v > maxInt {
+		return 0, false
+	}
+	return int(v), true
 }
 
 func asJSONMap(value any) (map[string]any, bool) {

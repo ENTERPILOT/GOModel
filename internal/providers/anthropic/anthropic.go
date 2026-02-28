@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,11 +38,19 @@ const (
 type Provider struct {
 	client *llmclient.Client
 	apiKey string
+
+	batchEndpointsMu sync.RWMutex
+	// batchResultEndpoints keeps endpoint hints by provider batch id and custom_id.
+	// Used only to shape native batch result items (e.g., /v1/responses vs /v1/chat/completions).
+	batchResultEndpoints map[string]map[string]string
 }
 
 // New creates a new Anthropic provider.
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
-	p := &Provider{apiKey: apiKey}
+	p := &Provider{
+		apiKey:               apiKey,
+		batchResultEndpoints: make(map[string]map[string]string),
+	}
 	cfg := llmclient.Config{
 		ProviderName:   "anthropic",
 		BaseURL:        defaultBaseURL,
@@ -59,7 +68,10 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	p := &Provider{apiKey: apiKey}
+	p := &Provider{
+		apiKey:               apiKey,
+		batchResultEndpoints: make(map[string]map[string]string),
+	}
 	cfg := llmclient.DefaultConfig("anthropic", defaultBaseURL)
 	cfg.Hooks = hooks
 	p.client = llmclient.NewWithHTTPClient(httpClient, cfg, p.setHeaders)
@@ -69,6 +81,49 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 // SetBaseURL allows configuring a custom base URL for the provider
 func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
+}
+
+func (p *Provider) setBatchResultEndpoints(batchID string, endpoints map[string]string) {
+	batchID = strings.TrimSpace(batchID)
+	if batchID == "" || len(endpoints) == 0 {
+		return
+	}
+	cloned := make(map[string]string, len(endpoints))
+	for customID, endpoint := range endpoints {
+		customID = strings.TrimSpace(customID)
+		endpoint = strings.TrimSpace(endpoint)
+		if customID == "" || endpoint == "" {
+			continue
+		}
+		cloned[customID] = endpoint
+	}
+	if len(cloned) == 0 {
+		return
+	}
+	p.batchEndpointsMu.Lock()
+	if p.batchResultEndpoints == nil {
+		p.batchResultEndpoints = make(map[string]map[string]string)
+	}
+	p.batchResultEndpoints[batchID] = cloned
+	p.batchEndpointsMu.Unlock()
+}
+
+func (p *Provider) getBatchResultEndpoints(batchID string) map[string]string {
+	batchID = strings.TrimSpace(batchID)
+	if batchID == "" {
+		return nil
+	}
+	p.batchEndpointsMu.RLock()
+	defer p.batchEndpointsMu.RUnlock()
+	endpoints, ok := p.batchResultEndpoints[batchID]
+	if !ok || len(endpoints) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(endpoints))
+	for customID, endpoint := range endpoints {
+		cloned[customID] = endpoint
+	}
+	return cloned
 }
 
 // setHeaders sets the required headers for Anthropic API requests
@@ -811,14 +866,18 @@ func mapAnthropicBatchResponse(resp *anthropicBatchResponse) *core.BatchResponse
 	}
 }
 
-func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCreateRequest, error) {
+func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCreateRequest, map[string]string, error) {
+	if req == nil {
+		return nil, nil, core.NewInvalidRequestError("request is required for anthropic batch processing", nil)
+	}
 	if len(req.Requests) == 0 {
-		return nil, core.NewInvalidRequestError("requests is required for anthropic batch processing", nil)
+		return nil, nil, core.NewInvalidRequestError("requests is required for anthropic batch processing", nil)
 	}
 
 	out := &anthropicBatchCreateRequest{
 		Requests: make([]anthropicBatchRequest, 0, len(req.Requests)),
 	}
+	endpointByCustomID := make(map[string]string, len(req.Requests))
 
 	for i, item := range req.Requests {
 		method := strings.ToUpper(strings.TrimSpace(item.Method))
@@ -826,7 +885,7 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 			method = http.MethodPost
 		}
 		if method != http.MethodPost {
-			return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: only POST is supported", i), nil)
+			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: only POST is supported", i), nil)
 		}
 
 		endpoint := strings.TrimSpace(item.URL)
@@ -835,7 +894,7 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 		}
 		endpoint = strings.TrimRight(endpoint, "/")
 		if endpoint == "" {
-			return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: url is required", i), nil)
+			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: url is required", i), nil)
 		}
 
 		var params *anthropicRequest
@@ -843,27 +902,27 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 		case "/v1/chat/completions":
 			var chatReq core.ChatRequest
 			if err := json.Unmarshal(item.Body, &chatReq); err != nil {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid chat body: %v", i, err), err)
+				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid chat body: %v", i, err), err)
 			}
 			if chatReq.Stream {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
+				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
 			}
 			params = convertToAnthropicRequest(&chatReq)
 			params.Stream = false
 		case "/v1/responses":
 			var respReq core.ResponsesRequest
 			if err := json.Unmarshal(item.Body, &respReq); err != nil {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid responses body: %v", i, err), err)
+				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid responses body: %v", i, err), err)
 			}
 			if respReq.Stream {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
+				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
 			}
 			params = convertResponsesRequestToAnthropic(&respReq)
 			params.Stream = false
 		case "/v1/embeddings":
-			return nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
+			return nil, nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
 		default:
-			return nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", endpoint), nil)
+			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", endpoint), nil)
 		}
 
 		customID := strings.TrimSpace(item.CustomID)
@@ -874,14 +933,15 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 			CustomID: customID,
 			Params:   *params,
 		})
+		endpointByCustomID[customID] = endpoint
 	}
 
-	return out, nil
+	return out, endpointByCustomID, nil
 }
 
 // CreateBatch creates an Anthropic native message batch.
 func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
-	anthropicReq, err := buildAnthropicBatchCreateRequest(req)
+	anthropicReq, endpointByCustomID, err := buildAnthropicBatchCreateRequest(req)
 	if err != nil {
 		return nil, err
 	}
@@ -901,6 +961,7 @@ func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*co
 		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to map anthropic batch response", nil)
 	}
 	mapped.ProviderBatchID = mapped.ID
+	p.setBatchResultEndpoints(mapped.ProviderBatchID, endpointByCustomID)
 	return mapped, nil
 }
 
@@ -997,6 +1058,7 @@ func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchR
 	scanner := bufio.NewScanner(bytes.NewReader(raw.Body))
 	// Allow larger result lines than Scanner's default 64K.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	endpointByCustomID := p.getBatchResultEndpoints(id)
 
 	results := make([]core.BatchResultItem, 0)
 	index := 0
@@ -1008,25 +1070,43 @@ func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchR
 
 		var row anthropicBatchResultLine
 		if err := json.Unmarshal(line, &row); err != nil {
-			slog.Warn("failed to decode anthropic batch result line", "error", err, "line", string(line))
+			slog.Warn(
+				"failed to decode anthropic batch result line",
+				"error", err,
+				"batch_id", id,
+				"line_index", index,
+				"line_bytes", len(line),
+			)
 			continue
+		}
+		itemEndpoint := "/v1/chat/completions"
+		if endpointByCustomID != nil {
+			if endpoint := strings.TrimSpace(endpointByCustomID[row.CustomID]); endpoint != "" {
+				itemEndpoint = endpoint
+			}
 		}
 
 		item := core.BatchResultItem{
 			Index:    index,
 			CustomID: row.CustomID,
-			URL:      "/v1/chat/completions",
+			URL:      itemEndpoint,
 			Provider: "anthropic",
 		}
 		switch row.Result.Type {
 		case "succeeded":
 			item.StatusCode = http.StatusOK
 			if len(row.Result.Message) > 0 {
-				var payload map[string]any
-				if err := json.Unmarshal(row.Result.Message, &payload); err == nil {
-					item.Response = payload
-					if model, ok := payload["model"].(string); ok {
-						item.Model = model
+				var anthropicPayload anthropicResponse
+				if err := json.Unmarshal(row.Result.Message, &anthropicPayload); err == nil {
+					switch itemEndpoint {
+					case "/v1/responses":
+						mapped := convertAnthropicResponseToResponses(&anthropicPayload, anthropicPayload.Model)
+						item.Response = mapped
+						item.Model = mapped.Model
+					default:
+						mapped := convertFromAnthropicResponse(&anthropicPayload)
+						item.Response = mapped
+						item.Model = mapped.Model
 					}
 				} else {
 					item.Response = string(row.Result.Message)
