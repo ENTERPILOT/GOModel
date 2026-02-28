@@ -266,7 +266,11 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 		}, nil
 	}
 
-	return nil, fmt.Errorf("unexpected Gemini models response format")
+	responsePreview := string(rawResp.Body)
+	if len(responsePreview) > 512 {
+		responsePreview = responsePreview[:512] + "...(truncated)"
+	}
+	return nil, core.NewProviderError("gemini", http.StatusBadGateway, "unexpected Gemini models response format", fmt.Errorf("models response body: %s", responsePreview))
 }
 
 // Responses sends a Responses API request to Gemini (converted to chat format)

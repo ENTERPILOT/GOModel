@@ -33,6 +33,8 @@ Each folder contains recorded JSON and SSE payloads used by replay tests.
 
 ## Running
 
+The CI workflow runs this suite in the `test-contract` job (`.github/workflows/test.yml`).
+
 ```bash
 # Run contract replay tests
 go test -v -tags=contract -timeout=5m ./tests/contract/...
@@ -44,6 +46,8 @@ make test-contract
 ## Updating fixtures
 
 Contract tests under `tests/contract/**/*_test.go` must validate full normalized output against committed golden files.
+When `finish_reason == "tool_calls"`, golden output must include `message.tool_calls[]` entries
+with `id`, `type`, and `function{name,arguments}`.
 
 Use the canonical recorder target to refresh provider payload fixtures:
 

@@ -10,7 +10,7 @@
           "created_at": 0,
           "error": null,
           "frequency_penalty": 0,
-          "id": "resp_0b7e83747d2b84440069a31433ab1881998d8036ef3db1ef03",
+          "id": "resp_\u003cgenerated\u003e",
           "incomplete_details": null,
           "instructions": null,
           "max_output_tokens": null,
@@ -61,7 +61,7 @@
           "created_at": 0,
           "error": null,
           "frequency_penalty": 0,
-          "id": "resp_0b7e83747d2b84440069a31433ab1881998d8036ef3db1ef03",
+          "id": "resp_\u003cgenerated\u003e",
           "incomplete_details": null,
           "instructions": null,
           "max_output_tokens": null,
@@ -108,7 +108,7 @@
       "Payload": {
         "item": {
           "content": [],
-          "id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+          "id": "msg_\u003cgenerated\u003e",
           "role": "assistant",
           "status": "in_progress",
           "type": "message"
@@ -123,7 +123,7 @@
       "Name": "response.content_part.added",
       "Payload": {
         "content_index": 0,
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "output_index": 0,
         "part": {
           "annotations": [],
@@ -141,7 +141,7 @@
       "Payload": {
         "content_index": 0,
         "delta": "Hello",
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "obfuscation": "fIVBptC5V5x",
         "output_index": 0,
@@ -155,7 +155,7 @@
       "Payload": {
         "content_index": 0,
         "delta": ",",
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "obfuscation": "Q8ckTZZrAUj0st5",
         "output_index": 0,
@@ -169,7 +169,7 @@
       "Payload": {
         "content_index": 0,
         "delta": " World",
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "obfuscation": "jeCuswy13M",
         "output_index": 0,
@@ -183,7 +183,7 @@
       "Payload": {
         "content_index": 0,
         "delta": "!",
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "obfuscation": "Bu7Lb4JlXbVWWxS",
         "output_index": 0,
@@ -196,7 +196,7 @@
       "Name": "response.output_text.done",
       "Payload": {
         "content_index": 0,
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "output_index": 0,
         "sequence_number": 8,
@@ -209,7 +209,7 @@
       "Name": "response.content_part.done",
       "Payload": {
         "content_index": 0,
-        "item_id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+        "item_id": "msg_\u003cgenerated\u003e",
         "output_index": 0,
         "part": {
           "annotations": [],
@@ -234,7 +234,7 @@
               "type": "output_text"
             }
           ],
-          "id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+          "id": "msg_\u003cgenerated\u003e",
           "role": "assistant",
           "status": "completed",
           "type": "message"
@@ -254,7 +254,7 @@
           "created_at": 0,
           "error": null,
           "frequency_penalty": 0,
-          "id": "resp_0b7e83747d2b84440069a31433ab1881998d8036ef3db1ef03",
+          "id": "resp_\u003cgenerated\u003e",
           "incomplete_details": null,
           "instructions": null,
           "max_output_tokens": null,
@@ -272,7 +272,7 @@
                   "type": "output_text"
                 }
               ],
-              "id": "msg_0b7e83747d2b84440069a314346ed08199b2e605faaedcb745",
+              "id": "msg_\u003cgenerated\u003e",
               "role": "assistant",
               "status": "completed",
               "type": "message"

@@ -10,7 +10,7 @@
     }
   ],
   "created": 0,
-  "id": "msg_01J9EE5VSWbER7SNDLc82bwt",
+  "id": "msg_\u003cgenerated\u003e",
   "model": "claude-sonnet-4-20250514",
   "object": "chat.completion",
   "provider": "",

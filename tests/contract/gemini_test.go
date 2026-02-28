@@ -70,7 +70,7 @@ func TestGeminiReplayStreamChatCompletion(t *testing.T) {
 
 func TestGeminiReplayListModels(t *testing.T) {
 	provider := newGeminiReplayProvider(t, map[string]replayRoute{
-		replayKey(http.MethodGet, "/models?key=test-api-key"): jsonFixtureRoute(t, "gemini/models.json"),
+		replayKey(http.MethodGet, "/models"): jsonFixtureRoute(t, "gemini/models.json"),
 	})
 
 	resp, err := provider.ListModels(context.Background())

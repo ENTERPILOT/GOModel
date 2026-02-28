@@ -2339,7 +2339,7 @@
       "Name": "response.content_part.added",
       "Payload": {
         "content_index": 0,
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "output_index": 1,
         "part": {
           "annotations": [],
@@ -2357,7 +2357,7 @@
       "Payload": {
         "content_index": 0,
         "delta": "Hello",
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "output_index": 1,
         "sequence_number": 188,
@@ -2370,7 +2370,7 @@
       "Payload": {
         "content_index": 0,
         "delta": ",",
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "output_index": 1,
         "sequence_number": 189,
@@ -2383,7 +2383,7 @@
       "Payload": {
         "content_index": 0,
         "delta": " World",
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "output_index": 1,
         "sequence_number": 190,
@@ -2396,7 +2396,7 @@
       "Payload": {
         "content_index": 0,
         "delta": "!",
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "output_index": 1,
         "sequence_number": 191,
@@ -2408,7 +2408,7 @@
       "Name": "response.output_text.done",
       "Payload": {
         "content_index": 0,
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "logprobs": [],
         "output_index": 1,
         "sequence_number": 192,
@@ -2421,7 +2421,7 @@
       "Name": "response.content_part.done",
       "Payload": {
         "content_index": 0,
-        "item_id": "msg_9f619ea5-7275-4a31-cb4c-35f8adb5c6b0",
+        "item_id": "msg_\u003cgenerated\u003e",
         "output_index": 1,
         "part": {
           "annotations": [],

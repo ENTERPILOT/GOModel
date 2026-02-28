@@ -106,7 +106,7 @@ func TestXAIReplayResponses(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	compareGoldenJSON(t, "xai/responses.golden.json", resp)
+	compareGoldenJSON(t, goldenPathForFixture("xai/responses.json"), resp)
 }
 
 func TestXAIReplayStreamResponses(t *testing.T) {
@@ -130,7 +130,7 @@ func TestXAIReplayStreamResponses(t *testing.T) {
 	require.True(t, hasResponsesEvent(events, "response.output_text.delta"))
 	require.True(t, hasResponsesEvent(events, "response.completed"))
 
-	compareGoldenJSON(t, "xai/responses_stream.golden.json", map[string]any{
+	compareGoldenJSON(t, goldenPathForFixture("xai/responses_stream.txt"), map[string]any{
 		"events": events,
 		"text":   extractResponsesStreamText(events),
 	})

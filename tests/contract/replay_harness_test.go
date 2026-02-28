@@ -35,6 +35,11 @@ func (rt *replayTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	key := replayKey(req.Method, req.URL.RequestURI())
 	route, ok := rt.routes[key]
+	if !ok && req.URL.RawQuery != "" {
+		// Allow path-only route keys to match requests with query params.
+		key = replayKey(req.Method, req.URL.Path)
+		route, ok = rt.routes[key]
+	}
 	if !ok {
 		notFoundBody := []byte(fmt.Sprintf(`{"error":{"message":"missing replay route: %s"}}`, key))
 		return &http.Response{

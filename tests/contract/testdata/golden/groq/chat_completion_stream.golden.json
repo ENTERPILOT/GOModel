@@ -18,7 +18,7 @@
       "object": "chat.completion.chunk",
       "system_fingerprint": "fp_c06d5113ec",
       "x_groq": {
-        "id": "req_01kfk38ha1ey6bw3b68mcaeddg",
+        "id": "req_\u003cgenerated\u003e",
         "seed": 2093329955
       }
     },
@@ -97,7 +97,7 @@
         "total_tokens": 42
       },
       "x_groq": {
-        "id": "req_01kfk38ha1ey6bw3b68mcaeddg",
+        "id": "req_\u003cgenerated\u003e",
         "usage": {
           "completion_time": 0.027554055,
           "completion_tokens": 4,

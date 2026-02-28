@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -70,7 +71,7 @@ func normalizeGoldenValue(v any) any {
 			}
 
 			normalizedItem := normalizeGoldenValue(item)
-			if lowerKey == "id" {
+			if lowerKey == "id" || strings.HasSuffix(lowerKey, "_id") {
 				if id, ok := normalizedItem.(string); ok {
 					out[key] = normalizeGeneratedID(id)
 					continue
@@ -92,14 +93,81 @@ func normalizeGoldenValue(v any) any {
 
 func normalizeGeneratedID(id string) string {
 	if strings.HasPrefix(id, "resp_") {
-		if _, err := uuid.Parse(strings.TrimPrefix(id, "resp_")); err == nil {
+		suffix := strings.TrimPrefix(id, "resp_")
+		if isGeneratedIDSuffix(suffix) {
 			return "resp_<generated>"
 		}
 	}
 	if strings.HasPrefix(id, "msg_") {
-		if _, err := uuid.Parse(strings.TrimPrefix(id, "msg_")); err == nil {
+		suffix := strings.TrimPrefix(id, "msg_")
+		if isGeneratedIDSuffix(suffix) {
 			return "msg_<generated>"
 		}
 	}
+	if strings.HasPrefix(id, "req_") {
+		suffix := strings.TrimPrefix(id, "req_")
+		if isGeneratedIDSuffix(suffix) {
+			return "req_<generated>"
+		}
+	}
 	return id
+}
+
+func isGeneratedIDSuffix(s string) bool {
+	if s == "" {
+		return false
+	}
+	if _, err := uuid.Parse(s); err == nil {
+		return true
+	}
+	// OpenAI response IDs often use long lowercase hex suffixes.
+	if len(s) >= 24 && isHexString(s) {
+		return true
+	}
+	// ULID-style request IDs.
+	if len(s) == 26 && isCrockfordBase32String(s) {
+		return true
+	}
+	// Provider-specific base62-like IDs (e.g. Anthropic/Groq/xAI IDs).
+	if len(s) >= 20 && isBase62String(s) {
+		return true
+	}
+	return false
+}
+
+func isHexString(s string) bool {
+	for _, r := range s {
+		if !unicode.IsDigit(r) && (r < 'a' || r > 'f') && (r < 'A' || r > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+func isBase62String(s string) bool {
+	for _, r := range s {
+		switch {
+		case unicode.IsDigit(r):
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r == '-':
+		case r == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isCrockfordBase32String(s string) bool {
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'Z')) {
+			return false
+		}
+		switch r {
+		case 'I', 'L', 'O', 'U':
+			return false
+		}
+	}
+	return true
 }

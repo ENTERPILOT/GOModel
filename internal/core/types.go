@@ -45,8 +45,22 @@ func (r *ChatRequest) WithStreaming() *ChatRequest {
 
 // Message represents a single message in the chat
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+}
+
+// ToolCall represents a single tool invocation emitted by a model.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall contains the function name and serialized arguments payload.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // ChatResponse represents the chat completion response
@@ -90,15 +104,15 @@ type Usage struct {
 	TotalTokens             int                      `json:"total_tokens"`
 	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
-	RawUsage                map[string]any            `json:"raw_usage,omitempty"`
+	RawUsage                map[string]any           `json:"raw_usage,omitempty"`
 }
 
 // Model represents a single model in the models list
 type Model struct {
-	ID       string         `json:"id"`
-	Object   string         `json:"object"`
-	OwnedBy  string         `json:"owned_by"`
-	Created int64 `json:"created"`
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	OwnedBy string `json:"owned_by"`
+	Created int64  `json:"created"`
 	// Metadata holds optional enrichment data (display name, pricing, capabilities, etc.).
 	// May be nil if the model was not found in the external registry.
 	Metadata *ModelMetadata `json:"metadata,omitempty"`
@@ -133,19 +147,19 @@ const (
 
 // modeToCategory maps mode strings from the external registry to categories.
 var modeToCategory = map[string]ModelCategory{
-	"chat":                 CategoryTextGeneration,
-	"completion":           CategoryTextGeneration,
-	"responses":            CategoryTextGeneration,
-	"embedding":            CategoryEmbedding,
-	"rerank":               CategoryEmbedding,
-	"image_generation":     CategoryImage,
-	"image_edit":           CategoryImage,
-	"audio_transcription":  CategoryAudio,
-	"audio_speech":         CategoryAudio,
-	"video_generation":     CategoryVideo,
-	"moderation":           CategoryUtility,
-	"ocr":                  CategoryUtility,
-	"search":               CategoryUtility,
+	"chat":                CategoryTextGeneration,
+	"completion":          CategoryTextGeneration,
+	"responses":           CategoryTextGeneration,
+	"embedding":           CategoryEmbedding,
+	"rerank":              CategoryEmbedding,
+	"image_generation":    CategoryImage,
+	"image_edit":          CategoryImage,
+	"audio_transcription": CategoryAudio,
+	"audio_speech":        CategoryAudio,
+	"video_generation":    CategoryVideo,
+	"moderation":          CategoryUtility,
+	"ocr":                 CategoryUtility,
+	"search":              CategoryUtility,
 }
 
 // CategoriesForModes returns deduplicated ModelCategory values for the given mode strings.
@@ -182,24 +196,24 @@ func AllCategories() []ModelCategory {
 
 // ModelPricing holds pricing information for cost calculation.
 type ModelPricing struct {
-	Currency               string              `json:"currency"`
-	InputPerMtok           *float64            `json:"input_per_mtok,omitempty"`
-	OutputPerMtok          *float64            `json:"output_per_mtok,omitempty"`
-	CachedInputPerMtok     *float64            `json:"cached_input_per_mtok,omitempty"`
-	CacheWritePerMtok      *float64            `json:"cache_write_per_mtok,omitempty"`
-	ReasoningOutputPerMtok *float64            `json:"reasoning_output_per_mtok,omitempty"`
-	BatchInputPerMtok      *float64            `json:"batch_input_per_mtok,omitempty"`
-	BatchOutputPerMtok     *float64            `json:"batch_output_per_mtok,omitempty"`
-	AudioInputPerMtok      *float64            `json:"audio_input_per_mtok,omitempty"`
-	AudioOutputPerMtok     *float64            `json:"audio_output_per_mtok,omitempty"`
-	PerImage               *float64            `json:"per_image,omitempty"`
-	InputPerImage          *float64            `json:"input_per_image,omitempty"`
-	PerSecondInput         *float64            `json:"per_second_input,omitempty"`
-	PerSecondOutput        *float64            `json:"per_second_output,omitempty"`
-	PerCharacterInput      *float64            `json:"per_character_input,omitempty"`
-	PerRequest             *float64            `json:"per_request,omitempty"`
-	PerPage                *float64            `json:"per_page,omitempty"`
-	Tiers                  []ModelPricingTier  `json:"tiers,omitempty"`
+	Currency               string             `json:"currency"`
+	InputPerMtok           *float64           `json:"input_per_mtok,omitempty"`
+	OutputPerMtok          *float64           `json:"output_per_mtok,omitempty"`
+	CachedInputPerMtok     *float64           `json:"cached_input_per_mtok,omitempty"`
+	CacheWritePerMtok      *float64           `json:"cache_write_per_mtok,omitempty"`
+	ReasoningOutputPerMtok *float64           `json:"reasoning_output_per_mtok,omitempty"`
+	BatchInputPerMtok      *float64           `json:"batch_input_per_mtok,omitempty"`
+	BatchOutputPerMtok     *float64           `json:"batch_output_per_mtok,omitempty"`
+	AudioInputPerMtok      *float64           `json:"audio_input_per_mtok,omitempty"`
+	AudioOutputPerMtok     *float64           `json:"audio_output_per_mtok,omitempty"`
+	PerImage               *float64           `json:"per_image,omitempty"`
+	InputPerImage          *float64           `json:"input_per_image,omitempty"`
+	PerSecondInput         *float64           `json:"per_second_input,omitempty"`
+	PerSecondOutput        *float64           `json:"per_second_output,omitempty"`
+	PerCharacterInput      *float64           `json:"per_character_input,omitempty"`
+	PerRequest             *float64           `json:"per_request,omitempty"`
+	PerPage                *float64           `json:"per_page,omitempty"`
+	Tiers                  []ModelPricingTier `json:"tiers,omitempty"`
 }
 
 // ModelPricingTier represents a volume-based pricing tier.

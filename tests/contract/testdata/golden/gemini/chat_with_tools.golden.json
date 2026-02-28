@@ -5,7 +5,17 @@
       "index": 0,
       "message": {
         "content": "",
-        "role": "assistant"
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": "{\"location\":\"Tokyo\"}",
+              "name": "get_weather"
+            },
+            "id": "function-call-21392045118397310",
+            "type": "function"
+          }
+        ]
       }
     }
   ],
