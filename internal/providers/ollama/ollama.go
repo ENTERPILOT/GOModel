@@ -186,7 +186,6 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 
 	data := make([]core.EmbeddingData, len(ollamaResp.Embeddings))
 	for i, emb := range ollamaResp.Embeddings {
-		raw, _ := json.Marshal(emb)
 		raw, err := json.Marshal(emb)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal embedding at index %d: %w", i, err)
