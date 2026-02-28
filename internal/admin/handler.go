@@ -392,6 +392,57 @@ func (h *Handler) AuditLog(c echo.Context) error {
 	return c.JSON(http.StatusOK, result)
 }
 
+// AuditConversation handles GET /admin/api/v1/audit/conversation
+//
+// @Summary      Get conversation thread around an audit log entry
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        log_id  query     string  true   "Anchor audit log entry ID"
+// @Param        limit   query     int     false  "Max entries in thread (default 40, max 200)"
+// @Success      200  {object}  auditlog.ConversationResult
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/audit/conversation [get]
+func (h *Handler) AuditConversation(c echo.Context) error {
+	if h.auditReader == nil {
+		return c.JSON(http.StatusOK, auditlog.ConversationResult{
+			AnchorID: c.QueryParam("log_id"),
+			Entries:  []auditlog.LogEntry{},
+		})
+	}
+
+	logID := strings.TrimSpace(c.QueryParam("log_id"))
+	if logID == "" {
+		return handleError(c, core.NewInvalidRequestError("log_id is required", nil))
+	}
+
+	limit := 40
+	if l := c.QueryParam("limit"); l != "" {
+		parsed, err := strconv.Atoi(l)
+		if err != nil {
+			return handleError(c, core.NewInvalidRequestError("invalid limit, expected integer", nil))
+		}
+		limit = parsed
+	}
+
+	result, err := h.auditReader.GetConversation(c.Request().Context(), logID, limit)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if result == nil {
+		result = &auditlog.ConversationResult{
+			AnchorID: logID,
+			Entries:  []auditlog.LogEntry{},
+		}
+	}
+	if result.Entries == nil {
+		result.Entries = []auditlog.LogEntry{}
+	}
+
+	return c.JSON(http.StatusOK, result)
+}
+
 // ListModels handles GET /admin/api/v1/models
 // Supports optional ?category= query param for filtering by model category.
 //

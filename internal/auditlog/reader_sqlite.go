@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"time"
 )
 
@@ -125,6 +126,108 @@ func (r *SQLiteReader) GetLogs(ctx context.Context, params LogQueryParams) (*Log
 	}, nil
 }
 
+// GetLogByID returns a single audit log entry by ID.
+func (r *SQLiteReader) GetLogByID(ctx context.Context, id string) (*LogEntry, error) {
+	query := `SELECT id, timestamp, duration_ns, model, provider, status_code, request_id,
+		client_ip, method, path, stream, error_type, data
+		FROM audit_logs WHERE id = ? LIMIT 1`
+
+	rows, err := r.db.QueryContext(ctx, query, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log by id: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, nil
+	}
+
+	entry, err := scanSQLiteLogEntry(rows)
+	if err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+// GetConversation returns a linear conversation thread around a seed log entry.
+func (r *SQLiteReader) GetConversation(ctx context.Context, logID string, limit int) (*ConversationResult, error) {
+	limit = clampConversationLimit(limit)
+
+	anchor, err := r.GetLogByID(ctx, logID)
+	if err != nil {
+		return nil, err
+	}
+	if anchor == nil {
+		return &ConversationResult{
+			AnchorID: logID,
+			Entries:  []LogEntry{},
+		}, nil
+	}
+
+	thread := []*LogEntry{anchor}
+	seen := map[string]struct{}{anchor.ID: {}}
+
+	// Walk backwards through previous_response_id links.
+	current := anchor
+	for len(thread) < limit {
+		prevID := extractPreviousResponseID(current)
+		if prevID == "" {
+			break
+		}
+		parent, err := r.findByResponseID(ctx, prevID)
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			break
+		}
+		if _, ok := seen[parent.ID]; ok {
+			break
+		}
+		thread = append([]*LogEntry{parent}, thread...)
+		seen[parent.ID] = struct{}{}
+		current = parent
+	}
+
+	// Walk forwards via entries whose previous_response_id points to current response id.
+	current = anchor
+	for len(thread) < limit {
+		respID := extractResponseID(current)
+		if respID == "" {
+			break
+		}
+		child, err := r.findByPreviousResponseID(ctx, respID)
+		if err != nil {
+			return nil, err
+		}
+		if child == nil {
+			break
+		}
+		if _, ok := seen[child.ID]; ok {
+			break
+		}
+		thread = append(thread, child)
+		seen[child.ID] = struct{}{}
+		current = child
+	}
+
+	sort.Slice(thread, func(i, j int) bool {
+		return thread[i].Timestamp.Before(thread[j].Timestamp)
+	})
+
+	entries := make([]LogEntry, 0, len(thread))
+	for _, entry := range thread {
+		if entry != nil {
+			entries = append(entries, *entry)
+		}
+	}
+
+	return &ConversationResult{
+		AnchorID: anchor.ID,
+		Entries:  entries,
+	}, nil
+}
+
 func sqliteDateRangeConditions(params QueryParams) (conditions []string, args []interface{}) {
 	if !params.StartDate.IsZero() {
 		conditions = append(conditions, "timestamp >= ?")
@@ -150,4 +253,68 @@ func parseSQLTimestamp(ts string, entryID string) time.Time {
 
 	slog.Warn("failed to parse audit timestamp", "id", entryID, "raw_timestamp", ts)
 	return time.Time{}
+}
+
+func (r *SQLiteReader) findByResponseID(ctx context.Context, responseID string) (*LogEntry, error) {
+	query := `SELECT id, timestamp, duration_ns, model, provider, status_code, request_id,
+		client_ip, method, path, stream, error_type, data
+		FROM audit_logs
+		WHERE json_extract(data, '$.response_body.id') = ?
+		ORDER BY timestamp ASC
+		LIMIT 1`
+
+	rows, err := r.db.QueryContext(ctx, query, responseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log by response id: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	return scanSQLiteLogEntry(rows)
+}
+
+func (r *SQLiteReader) findByPreviousResponseID(ctx context.Context, previousResponseID string) (*LogEntry, error) {
+	query := `SELECT id, timestamp, duration_ns, model, provider, status_code, request_id,
+		client_ip, method, path, stream, error_type, data
+		FROM audit_logs
+		WHERE json_extract(data, '$.request_body.previous_response_id') = ?
+		ORDER BY timestamp ASC
+		LIMIT 1`
+
+	rows, err := r.db.QueryContext(ctx, query, previousResponseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log by previous_response_id: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	return scanSQLiteLogEntry(rows)
+}
+
+func scanSQLiteLogEntry(rows *sql.Rows) (*LogEntry, error) {
+	var e LogEntry
+	var ts string
+	var streamInt int
+	var dataJSON *string
+
+	if err := rows.Scan(&e.ID, &ts, &e.DurationNs, &e.Model, &e.Provider, &e.StatusCode,
+		&e.RequestID, &e.ClientIP, &e.Method, &e.Path, &streamInt, &e.ErrorType, &dataJSON); err != nil {
+		return nil, fmt.Errorf("failed to scan audit log row: %w", err)
+	}
+
+	e.Stream = streamInt == 1
+	e.Timestamp = parseSQLTimestamp(ts, e.ID)
+
+	if dataJSON != nil && *dataJSON != "" {
+		var data LogData
+		if err := json.Unmarshal([]byte(*dataJSON), &data); err != nil {
+			slog.Warn("failed to unmarshal audit data JSON", "id", e.ID, "error", err)
+		} else {
+			e.Data = &data
+		}
+	}
+
+	return &e, nil
 }

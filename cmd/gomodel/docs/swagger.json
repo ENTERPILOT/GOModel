@@ -11,6 +11,57 @@
     },
     "basePath": "/",
     "paths": {
+        "/admin/api/v1/audit/conversation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get conversation thread around an audit log entry",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Anchor audit log entry ID",
+                        "name": "log_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max entries in thread (default 40, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/auditlog.ConversationResult"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/audit/log": {
             "get": {
                 "security": [
@@ -643,6 +694,20 @@
         }
     },
     "definitions": {
+        "auditlog.ConversationResult": {
+            "type": "object",
+            "properties": {
+                "anchor_id": {
+                    "type": "string"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/auditlog.LogEntry"
+                    }
+                }
+            }
+        },
         "auditlog.LogData": {
             "type": "object",
             "properties": {

@@ -55,6 +55,12 @@ function dashboard() {
         auditPath: '',
         auditStatusCode: '',
         auditStream: '',
+        conversationOpen: false,
+        conversationLoading: false,
+        conversationError: '',
+        conversationAnchorID: '',
+        conversationEntries: [],
+        conversationMessages: [],
 
         _parseRoute(pathname) {
             const path = pathname.replace(/\/$/, '');
@@ -838,6 +844,192 @@ function dashboard() {
             } catch (e) {
                 console.error('Failed to copy audit payload:', e);
             }
+        },
+
+        async openConversation(entry) {
+            if (!entry || !entry.id) return;
+            this.conversationOpen = true;
+            this.conversationLoading = true;
+            this.conversationError = '';
+            this.conversationAnchorID = entry.id;
+            this.conversationEntries = [];
+            this.conversationMessages = [];
+            await this.fetchConversation(entry.id);
+        },
+
+        closeConversation() {
+            this.conversationOpen = false;
+        },
+
+        async fetchConversation(logID) {
+            try {
+                const qs = 'log_id=' + encodeURIComponent(logID) + '&limit=120';
+                const res = await fetch('/admin/api/v1/audit/conversation?' + qs, { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'audit conversation')) {
+                    this.conversationError = 'Unable to load conversation.';
+                    this.conversationEntries = [];
+                    this.conversationMessages = [];
+                    return;
+                }
+
+                const result = await res.json();
+                this.conversationAnchorID = result.anchor_id || logID;
+                this.conversationEntries = Array.isArray(result.entries) ? result.entries : [];
+                this.conversationMessages = this.buildConversationMessages(this.conversationEntries, this.conversationAnchorID);
+            } catch (e) {
+                console.error('Failed to fetch audit conversation:', e);
+                this.conversationError = 'Failed to load conversation.';
+                this.conversationEntries = [];
+                this.conversationMessages = [];
+            } finally {
+                this.conversationLoading = false;
+            }
+        },
+
+        buildConversationMessages(entries, anchorID) {
+            if (!Array.isArray(entries) || entries.length === 0) return [];
+
+            const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const messages = [];
+            let idx = 0;
+
+            sorted.forEach((entry) => {
+                const isAnchor = entry.id === anchorID;
+                const ts = entry.timestamp;
+                const requestBody = entry.data && entry.data.request_body ? entry.data.request_body : null;
+                const responseBody = entry.data && entry.data.response_body ? entry.data.response_body : null;
+
+                // System prompt in request body (chat + responses APIs)
+                if (requestBody && typeof requestBody.instructions === 'string' && requestBody.instructions.trim()) {
+                    messages.push(this._conversationMessage('system', requestBody.instructions, ts, entry.id, isAnchor, ++idx));
+                }
+
+                if (requestBody && Array.isArray(requestBody.messages)) {
+                    requestBody.messages.forEach((m) => {
+                        if (!m) return;
+                        const role = (m.role || 'user').toLowerCase();
+                        const text = this._extractText(m.content);
+                        if (text) messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx));
+                    });
+                }
+
+                if (requestBody && requestBody.input !== undefined) {
+                    this._extractResponsesInputMessages(requestBody.input).forEach((m) => {
+                        if (m.text) messages.push(this._conversationMessage(m.role, m.text, ts, entry.id, isAnchor, ++idx));
+                    });
+                }
+
+                if (responseBody && Array.isArray(responseBody.choices)) {
+                    const first = responseBody.choices[0];
+                    if (first && first.message) {
+                        const role = (first.message.role || 'assistant').toLowerCase();
+                        const text = this._extractText(first.message.content);
+                        if (text) messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx));
+                    }
+                }
+
+                if (responseBody && Array.isArray(responseBody.output)) {
+                    responseBody.output.forEach((item) => {
+                        if (!item) return;
+                        const role = (item.role || 'assistant').toLowerCase();
+                        const text = this._extractResponsesOutputText(item);
+                        if (text) messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx));
+                    });
+                }
+
+                const errMsg = entry.data && entry.data.error_message ? String(entry.data.error_message).trim() : '';
+                if (errMsg) {
+                    messages.push(this._conversationMessage('assistant', 'Error: ' + errMsg, ts, entry.id, isAnchor, ++idx));
+                }
+            });
+
+            return messages;
+        },
+
+        _conversationMessage(role, text, timestamp, entryID, isAnchor, idx) {
+            const normalized = this._roleMeta(role);
+            return {
+                uid: entryID + '-' + idx,
+                entryID,
+                timestamp,
+                text,
+                role: normalized.role,
+                roleLabel: normalized.label,
+                roleClass: normalized.className,
+                isAnchor
+            };
+        },
+
+        _roleMeta(role) {
+            const normalized = String(role || '').toLowerCase();
+            if (normalized === 'system' || normalized === 'developer') {
+                return { role: 'system', label: 'System Prompt', className: 'role-system' };
+            }
+            if (normalized === 'assistant') {
+                return { role: 'assistant', label: 'Agent', className: 'role-assistant' };
+            }
+            return { role: 'user', label: 'User', className: 'role-user' };
+        },
+
+        _extractText(content) {
+            if (content == null) return '';
+            if (typeof content === 'string') return content.trim();
+
+            if (Array.isArray(content)) {
+                const parts = content.map((part) => {
+                    if (typeof part === 'string') return part;
+                    if (!part || typeof part !== 'object') return '';
+                    if (typeof part.text === 'string') return part.text;
+                    if (typeof part.output_text === 'string') return part.output_text;
+                    return '';
+                }).filter(Boolean);
+                return parts.join('\n').trim();
+            }
+
+            if (typeof content === 'object') {
+                if (typeof content.text === 'string') return content.text.trim();
+                try {
+                    return JSON.stringify(content, null, 2);
+                } catch (_) {
+                    return '';
+                }
+            }
+
+            return String(content).trim();
+        },
+
+        _extractResponsesInputMessages(input) {
+            if (input == null) return [];
+            if (typeof input === 'string') {
+                const text = input.trim();
+                return text ? [{ role: 'user', text }] : [];
+            }
+
+            if (!Array.isArray(input)) {
+                const text = this._extractText(input);
+                return text ? [{ role: 'user', text }] : [];
+            }
+
+            return input.map((item) => {
+                if (!item || typeof item !== 'object') return null;
+                const role = String(item.role || 'user').toLowerCase();
+                const text = this._extractText(item.content);
+                if (!text) return null;
+                return { role, text };
+            }).filter(Boolean);
+        },
+
+        _extractResponsesOutputText(item) {
+            if (!item || typeof item !== 'object') return '';
+            if (!Array.isArray(item.content)) return this._extractText(item.content);
+
+            const parts = item.content.map((part) => {
+                if (!part) return '';
+                if (typeof part.text === 'string') return part.text;
+                return '';
+            }).filter(Boolean);
+
+            return parts.join('\n').trim();
         },
 
         formatTokensShort(n) {

@@ -31,9 +31,15 @@ type mockUsageReader struct {
 }
 
 type mockAuditReader struct {
-	logResult *auditlog.LogListResult
-	logErr    error
-	lastQuery auditlog.LogQueryParams
+	logResult           *auditlog.LogListResult
+	logErr              error
+	lastQuery           auditlog.LogQueryParams
+	logByID             *auditlog.LogEntry
+	logByIDErr          error
+	conversationResult  *auditlog.ConversationResult
+	conversationErr     error
+	lastConversationID  string
+	lastConversationLim int
 }
 
 func (m *mockUsageReader) GetSummary(_ context.Context, _ usage.UsageQueryParams) (*usage.UsageSummary, error) {
@@ -70,6 +76,22 @@ func (m *mockAuditReader) GetLogs(_ context.Context, params auditlog.LogQueryPar
 		return nil, m.logErr
 	}
 	return m.logResult, nil
+}
+
+func (m *mockAuditReader) GetLogByID(_ context.Context, _ string) (*auditlog.LogEntry, error) {
+	if m.logByIDErr != nil {
+		return nil, m.logByIDErr
+	}
+	return m.logByID, nil
+}
+
+func (m *mockAuditReader) GetConversation(_ context.Context, logID string, limit int) (*auditlog.ConversationResult, error) {
+	m.lastConversationID = logID
+	m.lastConversationLim = limit
+	if m.conversationErr != nil {
+		return nil, m.conversationErr
+	}
+	return m.conversationResult, nil
 }
 
 // handlerMockProvider implements core.Provider for ListModels registry testing.
@@ -698,6 +720,95 @@ func TestAuditLog_Error(t *testing.T) {
 	c, rec := newHandlerContext("/admin/api/v1/audit/log")
 
 	if err := h.AuditLog(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("expected 502, got %d", rec.Code)
+	}
+}
+
+func TestAuditConversation_NilReader(t *testing.T) {
+	h := NewHandler(nil, nil)
+	c, rec := newHandlerContext("/admin/api/v1/audit/conversation?log_id=log-1")
+
+	if err := h.AuditConversation(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+
+	var result auditlog.ConversationResult
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if result.AnchorID != "log-1" {
+		t.Errorf("expected anchor log-1, got %q", result.AnchorID)
+	}
+	if len(result.Entries) != 0 {
+		t.Errorf("expected empty entries, got %d", len(result.Entries))
+	}
+}
+
+func TestAuditConversation_Success(t *testing.T) {
+	now := time.Now().UTC()
+	reader := &mockAuditReader{
+		conversationResult: &auditlog.ConversationResult{
+			AnchorID: "log-2",
+			Entries: []auditlog.LogEntry{
+				{ID: "log-1", Timestamp: now.Add(-time.Minute), Path: "/v1/responses"},
+				{ID: "log-2", Timestamp: now, Path: "/v1/responses"},
+			},
+		},
+	}
+	h := NewHandler(nil, nil, WithAuditReader(reader))
+	c, rec := newHandlerContext("/admin/api/v1/audit/conversation?log_id=log-2&limit=80")
+
+	if err := h.AuditConversation(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if reader.lastConversationID != "log-2" || reader.lastConversationLim != 80 {
+		t.Errorf("expected call with log-2/80, got %q/%d", reader.lastConversationID, reader.lastConversationLim)
+	}
+}
+
+func TestAuditConversation_MissingLogID(t *testing.T) {
+	reader := &mockAuditReader{}
+	h := NewHandler(nil, nil, WithAuditReader(reader))
+	c, rec := newHandlerContext("/admin/api/v1/audit/conversation")
+
+	if err := h.AuditConversation(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestAuditConversation_InvalidLimit(t *testing.T) {
+	reader := &mockAuditReader{}
+	h := NewHandler(nil, nil, WithAuditReader(reader))
+	c, rec := newHandlerContext("/admin/api/v1/audit/conversation?log_id=log-1&limit=bad")
+
+	if err := h.AuditConversation(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", rec.Code)
+	}
+}
+
+func TestAuditConversation_Error(t *testing.T) {
+	reader := &mockAuditReader{
+		conversationErr: core.NewProviderError("test", http.StatusBadGateway, "upstream failed", nil),
+	}
+	h := NewHandler(nil, nil, WithAuditReader(reader))
+	c, rec := newHandlerContext("/admin/api/v1/audit/conversation?log_id=log-1")
+
+	if err := h.AuditConversation(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if rec.Code != http.StatusBadGateway {

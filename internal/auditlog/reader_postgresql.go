@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -123,6 +124,106 @@ func (r *PostgreSQLReader) GetLogs(ctx context.Context, params LogQueryParams) (
 	}, nil
 }
 
+// GetLogByID returns a single audit log entry by ID.
+func (r *PostgreSQLReader) GetLogByID(ctx context.Context, id string) (*LogEntry, error) {
+	query := `SELECT id, timestamp, duration_ns, model, provider, status_code, request_id,
+		client_ip, method, path, stream, error_type, data
+		FROM audit_logs WHERE id::text = $1 LIMIT 1`
+
+	rows, err := r.pool.Query(ctx, query, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log by id: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		return nil, nil
+	}
+
+	entry, err := scanPostgreSQLLogEntry(rows)
+	if err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+// GetConversation returns a linear conversation thread around a seed log entry.
+func (r *PostgreSQLReader) GetConversation(ctx context.Context, logID string, limit int) (*ConversationResult, error) {
+	limit = clampConversationLimit(limit)
+
+	anchor, err := r.GetLogByID(ctx, logID)
+	if err != nil {
+		return nil, err
+	}
+	if anchor == nil {
+		return &ConversationResult{
+			AnchorID: logID,
+			Entries:  []LogEntry{},
+		}, nil
+	}
+
+	thread := []*LogEntry{anchor}
+	seen := map[string]struct{}{anchor.ID: {}}
+
+	current := anchor
+	for len(thread) < limit {
+		prevID := extractPreviousResponseID(current)
+		if prevID == "" {
+			break
+		}
+		parent, err := r.findByResponseID(ctx, prevID)
+		if err != nil {
+			return nil, err
+		}
+		if parent == nil {
+			break
+		}
+		if _, ok := seen[parent.ID]; ok {
+			break
+		}
+		thread = append([]*LogEntry{parent}, thread...)
+		seen[parent.ID] = struct{}{}
+		current = parent
+	}
+
+	current = anchor
+	for len(thread) < limit {
+		respID := extractResponseID(current)
+		if respID == "" {
+			break
+		}
+		child, err := r.findByPreviousResponseID(ctx, respID)
+		if err != nil {
+			return nil, err
+		}
+		if child == nil {
+			break
+		}
+		if _, ok := seen[child.ID]; ok {
+			break
+		}
+		thread = append(thread, child)
+		seen[child.ID] = struct{}{}
+		current = child
+	}
+
+	sort.Slice(thread, func(i, j int) bool {
+		return thread[i].Timestamp.Before(thread[j].Timestamp)
+	})
+
+	entries := make([]LogEntry, 0, len(thread))
+	for _, entry := range thread {
+		if entry != nil {
+			entries = append(entries, *entry)
+		}
+	}
+
+	return &ConversationResult{
+		AnchorID: anchor.ID,
+		Entries:  entries,
+	}, nil
+}
+
 func pgDateRangeConditions(params QueryParams, argIdx int) (conditions []string, args []interface{}, nextIdx int) {
 	nextIdx = argIdx
 	if !params.StartDate.IsZero() {
@@ -136,4 +237,65 @@ func pgDateRangeConditions(params QueryParams, argIdx int) (conditions []string,
 		nextIdx++
 	}
 	return conditions, args, nextIdx
+}
+
+func (r *PostgreSQLReader) findByResponseID(ctx context.Context, responseID string) (*LogEntry, error) {
+	query := `SELECT id, timestamp, duration_ns, model, provider, status_code, request_id,
+		client_ip, method, path, stream, error_type, data
+		FROM audit_logs
+		WHERE data->'response_body'->>'id' = $1
+		ORDER BY timestamp ASC
+		LIMIT 1`
+
+	rows, err := r.pool.Query(ctx, query, responseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log by response id: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	return scanPostgreSQLLogEntry(rows)
+}
+
+func (r *PostgreSQLReader) findByPreviousResponseID(ctx context.Context, previousResponseID string) (*LogEntry, error) {
+	query := `SELECT id, timestamp, duration_ns, model, provider, status_code, request_id,
+		client_ip, method, path, stream, error_type, data
+		FROM audit_logs
+		WHERE data->'request_body'->>'previous_response_id' = $1
+		ORDER BY timestamp ASC
+		LIMIT 1`
+
+	rows, err := r.pool.Query(ctx, query, previousResponseID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query audit log by previous_response_id: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, nil
+	}
+	return scanPostgreSQLLogEntry(rows)
+}
+
+func scanPostgreSQLLogEntry(rows interface {
+	Scan(dest ...interface{}) error
+}) (*LogEntry, error) {
+	var e LogEntry
+	var dataJSON *string
+
+	if err := rows.Scan(&e.ID, &e.Timestamp, &e.DurationNs, &e.Model, &e.Provider, &e.StatusCode,
+		&e.RequestID, &e.ClientIP, &e.Method, &e.Path, &e.Stream, &e.ErrorType, &dataJSON); err != nil {
+		return nil, fmt.Errorf("failed to scan audit log row: %w", err)
+	}
+
+	if dataJSON != nil && *dataJSON != "" {
+		var data LogData
+		if err := json.Unmarshal([]byte(*dataJSON), &data); err != nil {
+			slog.Warn("failed to unmarshal audit data JSON", "id", e.ID, "error", err)
+		} else {
+			e.Data = &data
+		}
+	}
+
+	return &e, nil
 }

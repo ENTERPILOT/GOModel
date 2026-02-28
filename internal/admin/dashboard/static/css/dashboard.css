@@ -1126,6 +1126,10 @@ td.col-price {
     margin-bottom: 12px;
 }
 
+.audit-conversation-btn {
+    margin-right: 2px;
+}
+
 .audit-request-response {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1188,6 +1192,121 @@ td.col-price {
     margin-top: 8px;
     color: var(--warning);
     font-size: 12px;
+}
+
+.conversation-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 50;
+}
+
+.conversation-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(560px, 100vw);
+    background: var(--bg-surface);
+    border-left: 1px solid var(--border);
+    z-index: 60;
+    transform: translateX(100%);
+    transition: transform 0.12s ease-out;
+    display: flex;
+    flex-direction: column;
+    box-shadow: -16px 0 40px rgba(0, 0, 0, 0.2);
+}
+
+.conversation-drawer.open {
+    transform: translateX(0);
+}
+
+.conversation-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.conversation-drawer-header h3 {
+    font-size: 16px;
+    font-weight: 700;
+}
+
+.conversation-meta {
+    padding: 10px 16px 0;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.conversation-thread {
+    overflow: auto;
+    padding: 14px 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.chat-message {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    max-width: 94%;
+    background: var(--bg);
+}
+
+.chat-message.is-anchor {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.chat-message.role-user {
+    align-self: flex-end;
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg));
+}
+
+.chat-message.role-assistant {
+    align-self: flex-start;
+}
+
+.chat-message.role-system {
+    align-self: center;
+    width: 100%;
+    max-width: 100%;
+    background: color-mix(in srgb, var(--warning) 10%, var(--bg));
+}
+
+.chat-message-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.chat-role {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+}
+
+.chat-time {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.chat-content {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text);
 }
 
 /* Caveat warning icon */
@@ -1320,6 +1439,12 @@ td.col-price {
     }
     .audit-request-response {
         grid-template-columns: 1fr;
+    }
+    .conversation-drawer {
+        width: 100%;
+    }
+    .chat-message {
+        max-width: 100%;
     }
 
     /* Date picker mobile */

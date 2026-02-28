@@ -34,8 +34,23 @@ type LogListResult struct {
 	Offset  int        `json:"offset"`
 }
 
+// ConversationResult holds a linear conversation thread centered around an anchor log.
+type ConversationResult struct {
+	AnchorID string     `json:"anchor_id"`
+	Entries  []LogEntry `json:"entries"`
+}
+
 // Reader provides read access to audit log data for the admin API.
 type Reader interface {
 	// GetLogs returns a paginated list of audit log entries with optional filtering.
 	GetLogs(ctx context.Context, params LogQueryParams) (*LogListResult, error)
+
+	// GetLogByID returns a single audit log entry by ID.
+	// Returns (nil, nil) when no entry exists for the given ID.
+	GetLogByID(ctx context.Context, id string) (*LogEntry, error)
+
+	// GetConversation returns a linear conversation thread around a seed log entry.
+	// It follows Responses API linkage fields when available:
+	// request_body.previous_response_id and response_body.id.
+	GetConversation(ctx context.Context, logID string, limit int) (*ConversationResult, error)
 }

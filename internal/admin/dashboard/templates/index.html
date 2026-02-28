@@ -398,6 +398,7 @@
                     </summary>
                     <div class="audit-entry-details">
                         <div class="audit-entry-context">
+                            <button class="pagination-btn audit-conversation-btn" @click.prevent="openConversation(entry)">View Conversation</button>
                             <span class="provider-badge" x-text="entry.provider || '-'"></span>
                             <span class="provider-badge mono" x-text="entry.model || '-'"></span>
                             <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
@@ -460,5 +461,30 @@
             </div>
         </div>
     </div>
+
+    <div class="conversation-overlay" x-show="conversationOpen" x-transition.opacity.duration.100ms @click="closeConversation()"></div>
+    <aside class="conversation-drawer" :class="{ open: conversationOpen }">
+        <div class="conversation-drawer-header">
+            <h3>Conversation</h3>
+            <button class="pagination-btn" @click="closeConversation()">Close</button>
+        </div>
+        <p class="conversation-meta" x-text="conversationAnchorID ? ('Anchor Log: ' + conversationAnchorID) : ''"></p>
+
+        <div class="alert alert-warning" x-show="conversationError" x-text="conversationError"></div>
+        <p class="empty-state" x-show="conversationLoading">Loading conversation...</p>
+        <p class="empty-state" x-show="!conversationLoading && !conversationError && conversationMessages.length === 0">No conversation data available for this entry.</p>
+
+        <div class="conversation-thread" x-show="conversationMessages.length > 0">
+            <template x-for="msg in conversationMessages" :key="msg.uid">
+                <article class="chat-message" :class="[msg.roleClass, msg.isAnchor ? 'is-anchor' : '']">
+                    <header class="chat-message-meta">
+                        <span class="chat-role" x-text="msg.roleLabel"></span>
+                        <span class="mono chat-time" x-text="formatTimestamp(msg.timestamp)"></span>
+                    </header>
+                    <pre class="chat-content" x-text="msg.text"></pre>
+                </article>
+            </template>
+        </div>
+    </aside>
 </div>
 {{end}}
