@@ -30,13 +30,13 @@ func (r *PostgreSQLReader) GetLogs(ctx context.Context, params LogQueryParams) (
 	conditions, args, argIdx := pgDateRangeConditions(params.QueryParams, 1)
 
 	if params.Model != "" {
-		conditions = append(conditions, fmt.Sprintf("model = $%d", argIdx))
-		args = append(args, params.Model)
+		conditions = append(conditions, fmt.Sprintf("model ILIKE $%d ESCAPE '\\'", argIdx))
+		args = append(args, "%"+escapeLikeWildcards(params.Model)+"%")
 		argIdx++
 	}
 	if params.Provider != "" {
-		conditions = append(conditions, fmt.Sprintf("provider = $%d", argIdx))
-		args = append(args, params.Provider)
+		conditions = append(conditions, fmt.Sprintf("provider ILIKE $%d ESCAPE '\\'", argIdx))
+		args = append(args, "%"+escapeLikeWildcards(params.Provider)+"%")
 		argIdx++
 	}
 	if params.Method != "" {
@@ -45,13 +45,13 @@ func (r *PostgreSQLReader) GetLogs(ctx context.Context, params LogQueryParams) (
 		argIdx++
 	}
 	if params.Path != "" {
-		conditions = append(conditions, fmt.Sprintf("path = $%d", argIdx))
-		args = append(args, params.Path)
+		conditions = append(conditions, fmt.Sprintf("path ILIKE $%d ESCAPE '\\'", argIdx))
+		args = append(args, "%"+escapeLikeWildcards(params.Path)+"%")
 		argIdx++
 	}
 	if params.ErrorType != "" {
-		conditions = append(conditions, fmt.Sprintf("error_type = $%d", argIdx))
-		args = append(args, params.ErrorType)
+		conditions = append(conditions, fmt.Sprintf("error_type ILIKE $%d ESCAPE '\\'", argIdx))
+		args = append(args, "%"+escapeLikeWildcards(params.ErrorType)+"%")
 		argIdx++
 	}
 	if params.StatusCode != nil {

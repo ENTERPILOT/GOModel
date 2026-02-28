@@ -61,6 +61,7 @@ function dashboard() {
         conversationAnchorID: '',
         conversationEntries: [],
         conversationMessages: [],
+        bodyPointerStart: null,
 
         _parseRoute(pathname) {
             const path = pathname.replace(/\/$/, '');
@@ -846,8 +847,205 @@ function dashboard() {
             }
         },
 
-        async openConversation(entry) {
-            if (!entry || !entry.id) return;
+        canShowConversation(entry) {
+            if (!entry) return false;
+            if (this._isConversationExcludedPath(entry.path)) return false;
+            return this._isConversationalPath(entry.path) || this._hasConversationPayload(entry);
+        },
+
+        _isConversationExcludedPath(path) {
+            if (!path) return false;
+            const p = String(path).toLowerCase();
+            return p === '/v1/embeddings' ||
+                p === '/v1/embeddings/' ||
+                p.startsWith('/v1/embeddings?') ||
+                p.startsWith('/v1/embeddings/');
+        },
+
+        _isConversationalPath(path) {
+            if (!path) return false;
+            const p = String(path).toLowerCase();
+            return p === '/v1/chat/completions' ||
+                p === '/v1/chat/completions/' ||
+                p.startsWith('/v1/chat/completions?') ||
+                p.startsWith('/v1/chat/completions/') ||
+                p === '/v1/responses' ||
+                p === '/v1/responses/' ||
+                p.startsWith('/v1/responses?') ||
+                p.startsWith('/v1/responses/');
+        },
+
+        _hasConversationPayload(entry) {
+            const requestBody = entry && entry.data ? entry.data.request_body : null;
+            const responseBody = entry && entry.data ? entry.data.response_body : null;
+
+            const reqHas = requestBody && (
+                Array.isArray(requestBody.messages) ||
+                requestBody.input !== undefined ||
+                typeof requestBody.instructions === 'string' ||
+                typeof requestBody.previous_response_id === 'string'
+            );
+            const respHas = responseBody && (
+                Array.isArray(responseBody.choices) ||
+                this._looksLikeResponsesOutput(responseBody.output)
+            );
+
+            return !!(reqHas || respHas);
+        },
+
+        startBodyInteraction(event) {
+            this.bodyPointerStart = {
+                x: event.clientX,
+                y: event.clientY
+            };
+        },
+
+        _isBodyDrag(event) {
+            if (!this.bodyPointerStart) return false;
+            const dx = Math.abs(event.clientX - this.bodyPointerStart.x);
+            const dy = Math.abs(event.clientY - this.bodyPointerStart.y);
+            return dx > 4 || dy > 4;
+        },
+
+        _hasActiveSelection() {
+            const selection = window.getSelection ? window.getSelection() : null;
+            if (!selection) return false;
+            if (selection.isCollapsed) return false;
+            return String(selection.toString() || '').trim().length > 0;
+        },
+
+        _looksLikeResponsesOutput(output) {
+            if (!Array.isArray(output)) return false;
+            return output.some((item) => {
+                if (!item || typeof item !== 'object') return false;
+                if (item.type === 'message' || item.role === 'assistant' || item.role === 'user' || item.role === 'system') return true;
+                if (!Array.isArray(item.content)) return false;
+                return item.content.some((part) => {
+                    if (!part || typeof part !== 'object') return false;
+                    return typeof part.text === 'string' || part.type === 'output_text' || part.type === 'input_text';
+                });
+            });
+        },
+
+        handleBodyConversationClick(event, entry) {
+            const wasDrag = this._isBodyDrag(event);
+            this.bodyPointerStart = null;
+            if (wasDrag) return;
+            if (this._hasActiveSelection()) return;
+            if (!this.canShowConversation(entry)) return;
+            const el = event.target && event.target.closest ? event.target.closest('[data-conversation-trigger="1"]') : null;
+            if (!el) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.openConversation(entry);
+        },
+
+        renderBodyWithConversationHighlights(entry, value) {
+            const raw = this.formatJSON(value);
+            const escaped = this._escapeHTML(raw);
+            if (!this.canShowConversation(entry) || !raw || raw === 'Not captured') {
+                return escaped;
+            }
+
+            const lines = raw.split('\n');
+            const sectionKeys = new Set(['instructions', 'messages', 'input', 'previous_response_id', 'choices', 'output']);
+            const rendered = [];
+
+            let i = 0;
+            while (i < lines.length) {
+                const line = lines[i];
+                const match = line.match(/^(\s*)"([^"]+)"\s*:\s*(.*)$/);
+                if (match && sectionKeys.has(match[2])) {
+                    const key = match[2];
+                    const valuePart = match[3] || '';
+                    const end = this._findConversationSectionEnd(lines, i, valuePart);
+                    const roleClass = this._conversationHighlightRoleClass(key);
+                    const block = lines.slice(i, end + 1).map((l) => this._escapeHTML(l)).join('\n');
+                    rendered.push('<span class="conversation-body-highlight ' + roleClass + '" data-conversation-trigger="1">' + block + '</span>');
+                    i = end + 1;
+                    continue;
+                }
+                rendered.push(this._escapeHTML(line));
+                i++;
+            }
+
+            return rendered.join('\n');
+        },
+
+        _findConversationSectionEnd(lines, startIdx, valuePart) {
+            const value = String(valuePart || '').trim();
+            if (!(value.startsWith('{') || value.startsWith('['))) {
+                return startIdx;
+            }
+
+            let depth = this._jsonBracketDelta(valuePart);
+            let idx = startIdx;
+            while (depth > 0 && idx + 1 < lines.length) {
+                idx++;
+                depth += this._jsonBracketDelta(lines[idx]);
+            }
+            return idx;
+        },
+
+        _jsonBracketDelta(text) {
+            let depth = 0;
+            let inString = false;
+            let escaped = false;
+            const src = String(text || '');
+
+            for (let i = 0; i < src.length; i++) {
+                const ch = src[i];
+                if (inString) {
+                    if (escaped) {
+                        escaped = false;
+                        continue;
+                    }
+                    if (ch === '\\') {
+                        escaped = true;
+                        continue;
+                    }
+                    if (ch === '"') {
+                        inString = false;
+                    }
+                    continue;
+                }
+
+                if (ch === '"') {
+                    inString = true;
+                    continue;
+                }
+                if (ch === '{' || ch === '[') {
+                    depth++;
+                    continue;
+                }
+                if (ch === '}' || ch === ']') {
+                    depth--;
+                }
+            }
+
+            return depth;
+        },
+
+        _conversationHighlightRoleClass(key) {
+            if (key === 'instructions') return 'conversation-system';
+            if (key === 'messages' || key === 'input' || key === 'previous_response_id') return 'conversation-user';
+            return 'conversation-assistant';
+        },
+
+        _escapeHTML(value) {
+            return String(value == null ? '' : value)
+                .replaceAll('&', '&amp;')
+                .replaceAll('<', '&lt;')
+                .replaceAll('>', '&gt;')
+                .replaceAll('"', '&quot;')
+                .replaceAll("'", '&#39;');
+        },
+
+        async openConversation(entry, detailsEl, expandEntry) {
+            if (!entry || !entry.id || !this.canShowConversation(entry)) return;
+            if (expandEntry && detailsEl && !detailsEl.open) {
+                detailsEl.open = true;
+            }
             this.conversationOpen = true;
             this.conversationLoading = true;
             this.conversationError = '';
@@ -937,9 +1135,9 @@ function dashboard() {
                     });
                 }
 
-                const errMsg = entry.data && entry.data.error_message ? String(entry.data.error_message).trim() : '';
+                const errMsg = this._extractConversationErrorMessage(entry);
                 if (errMsg) {
-                    messages.push(this._conversationMessage('assistant', 'Error: ' + errMsg, ts, entry.id, isAnchor, ++idx));
+                    messages.push(this._conversationMessage('error', errMsg, ts, entry.id, isAnchor, ++idx));
                 }
             });
 
@@ -967,6 +1165,9 @@ function dashboard() {
             }
             if (normalized === 'assistant') {
                 return { role: 'assistant', label: 'Agent', className: 'role-assistant' };
+            }
+            if (normalized === 'error') {
+                return { role: 'error', label: 'Error', className: 'role-error' };
             }
             return { role: 'user', label: 'User', className: 'role-user' };
         },
@@ -1030,6 +1231,101 @@ function dashboard() {
             }).filter(Boolean);
 
             return parts.join('\n').trim();
+        },
+
+        _extractConversationErrorMessage(entry) {
+            if (!entry || !entry.data) return '';
+
+            const responseBodyMessage = this._findNestedErrorMessage(entry.data.response_body);
+            if (responseBodyMessage) return responseBodyMessage;
+
+            const rawError = entry.data.error_message;
+            if (rawError == null) return '';
+
+            if (typeof rawError === 'string') {
+                const trimmed = rawError.trim();
+                if (!trimmed) return '';
+
+                const parsed = this._tryParseJSON(trimmed);
+                const parsedMessage = this._findNestedErrorMessage(parsed);
+                if (parsedMessage) return parsedMessage;
+                return trimmed;
+            }
+
+            const structuredMessage = this._findNestedErrorMessage(rawError);
+            if (structuredMessage) return structuredMessage;
+            return this._extractText(rawError);
+        },
+
+        _tryParseJSON(value) {
+            if (typeof value !== 'string') return null;
+            try {
+                return JSON.parse(value);
+            } catch (_) {
+                return null;
+            }
+        },
+
+        _normalizeErrorMessageText(text, depth) {
+            const trimmed = String(text || '').trim();
+            if (!trimmed) return '';
+            if (depth >= 4) return trimmed;
+
+            const parsed = this._tryParseJSON(trimmed);
+            if (!parsed || typeof parsed !== 'object') {
+                return trimmed;
+            }
+
+            const nested = this._findNestedErrorMessage(parsed, depth + 1);
+            if (nested) return nested;
+
+            const fallback = this._extractText(parsed);
+            return fallback || trimmed;
+        },
+
+        _findNestedErrorMessage(value, depth = 0) {
+            const visited = new Set();
+            const stack = [value];
+
+            while (stack.length > 0) {
+                const current = stack.shift();
+                if (!current || typeof current !== 'object') continue;
+                if (visited.has(current)) continue;
+                visited.add(current);
+
+                if (Array.isArray(current)) {
+                    for (let i = 0; i < current.length; i++) {
+                        stack.push(current[i]);
+                    }
+                    continue;
+                }
+
+                const error = current.error;
+                if (typeof error === 'string' && error.trim()) {
+                    return this._normalizeErrorMessageText(error, depth);
+                }
+                if (error && typeof error === 'object') {
+                    if (typeof error.message === 'string' && error.message.trim()) {
+                        return this._normalizeErrorMessageText(error.message, depth);
+                    }
+                    stack.push(error);
+                }
+
+                if (typeof current.message === 'string' && current.message.trim()) {
+                    if (current.error !== undefined || current.code !== undefined || current.status !== undefined || current.type !== undefined) {
+                        return this._normalizeErrorMessageText(current.message, depth);
+                    }
+                }
+
+                const keys = Object.keys(current);
+                for (let i = 0; i < keys.length; i++) {
+                    const key = keys[i];
+                    if (key === 'error') continue;
+                    stack.push(current[key]);
+                }
+            }
+
+            return '';
         },
 
         formatTokensShort(n) {

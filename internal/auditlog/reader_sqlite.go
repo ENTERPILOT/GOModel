@@ -30,24 +30,24 @@ func (r *SQLiteReader) GetLogs(ctx context.Context, params LogQueryParams) (*Log
 	conditions, args := sqliteDateRangeConditions(params.QueryParams)
 
 	if params.Model != "" {
-		conditions = append(conditions, "model = ?")
-		args = append(args, params.Model)
+		conditions = append(conditions, "model LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escapeLikeWildcards(params.Model)+"%")
 	}
 	if params.Provider != "" {
-		conditions = append(conditions, "provider = ?")
-		args = append(args, params.Provider)
+		conditions = append(conditions, "provider LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escapeLikeWildcards(params.Provider)+"%")
 	}
 	if params.Method != "" {
 		conditions = append(conditions, "method = ?")
 		args = append(args, params.Method)
 	}
 	if params.Path != "" {
-		conditions = append(conditions, "path = ?")
-		args = append(args, params.Path)
+		conditions = append(conditions, "path LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escapeLikeWildcards(params.Path)+"%")
 	}
 	if params.ErrorType != "" {
-		conditions = append(conditions, "error_type = ?")
-		args = append(args, params.ErrorType)
+		conditions = append(conditions, "error_type LIKE ? ESCAPE '\\'")
+		args = append(args, "%"+escapeLikeWildcards(params.ErrorType)+"%")
 	}
 	if params.StatusCode != nil {
 		conditions = append(conditions, "status_code = ?")

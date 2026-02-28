@@ -35,19 +35,43 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
 	}
 	if params.Model != "" {
-		matchFilters = append(matchFilters, bson.E{Key: "model", Value: params.Model})
+		matchFilters = append(matchFilters, bson.E{
+			Key: "model",
+			Value: bson.D{
+				{Key: "$regex", Value: regexp.QuoteMeta(params.Model)},
+				{Key: "$options", Value: "i"},
+			},
+		})
 	}
 	if params.Provider != "" {
-		matchFilters = append(matchFilters, bson.E{Key: "provider", Value: params.Provider})
+		matchFilters = append(matchFilters, bson.E{
+			Key: "provider",
+			Value: bson.D{
+				{Key: "$regex", Value: regexp.QuoteMeta(params.Provider)},
+				{Key: "$options", Value: "i"},
+			},
+		})
 	}
 	if params.Method != "" {
 		matchFilters = append(matchFilters, bson.E{Key: "method", Value: params.Method})
 	}
 	if params.Path != "" {
-		matchFilters = append(matchFilters, bson.E{Key: "path", Value: params.Path})
+		matchFilters = append(matchFilters, bson.E{
+			Key: "path",
+			Value: bson.D{
+				{Key: "$regex", Value: regexp.QuoteMeta(params.Path)},
+				{Key: "$options", Value: "i"},
+			},
+		})
 	}
 	if params.ErrorType != "" {
-		matchFilters = append(matchFilters, bson.E{Key: "error_type", Value: params.ErrorType})
+		matchFilters = append(matchFilters, bson.E{
+			Key: "error_type",
+			Value: bson.D{
+				{Key: "$regex", Value: regexp.QuoteMeta(params.ErrorType)},
+				{Key: "$options", Value: "i"},
+			},
+		})
 	}
 	if params.StatusCode != nil {
 		matchFilters = append(matchFilters, bson.E{Key: "status_code", Value: *params.StatusCode})

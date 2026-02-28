@@ -394,11 +394,18 @@
                         <div class="audit-entry-meta">
                             <span class="mono" x-text="formatTimestamp(entry.timestamp)"></span>
                             <span class="mono" x-text="formatDurationNs(entry.duration_ns)"></span>
+                            <button class="audit-conversation-trigger"
+                                    x-show="canShowConversation(entry)"
+                                    title="Open conversation"
+                                    @click.stop.prevent="openConversation(entry, $el.closest('details'), true)">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M9 6l6 6-6 6"/>
+                                </svg>
+                            </button>
                         </div>
                     </summary>
                     <div class="audit-entry-details">
                         <div class="audit-entry-context">
-                            <button class="pagination-btn audit-conversation-btn" @click.prevent="openConversation(entry)">View Conversation</button>
                             <span class="provider-badge" x-text="entry.provider || '-'"></span>
                             <span class="provider-badge mono" x-text="entry.model || '-'"></span>
                             <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
@@ -419,7 +426,10 @@
                                 </div>
                                 <div class="audit-pane-block" x-show="entry.data && entry.data.request_body">
                                     <h5>Body</h5>
-                                    <pre class="audit-json" x-text="formatJSON(entry.data.request_body)"></pre>
+                                    <pre class="audit-json audit-json-body"
+                                         x-html="renderBodyWithConversationHighlights(entry, entry.data.request_body)"
+                                         @mousedown="startBodyInteraction($event)"
+                                         @click="handleBodyConversationClick($event, entry)"></pre>
                                 </div>
                                 <p class="empty-state audit-pane-empty" x-show="!entry.data || (!entry.data.request_headers && !entry.data.request_body)">Request details were not captured.</p>
                                 <p class="audit-size-warning" x-show="entry.data && entry.data.request_body_too_big_to_handle">Request body was too large to capture.</p>
@@ -440,7 +450,10 @@
                                 </div>
                                 <div class="audit-pane-block" x-show="entry.data && entry.data.response_body">
                                     <h5>Body</h5>
-                                    <pre class="audit-json" x-text="formatJSON(entry.data.response_body)"></pre>
+                                    <pre class="audit-json audit-json-body"
+                                         x-html="renderBodyWithConversationHighlights(entry, entry.data.response_body)"
+                                         @mousedown="startBodyInteraction($event)"
+                                         @click="handleBodyConversationClick($event, entry)"></pre>
                                 </div>
                                 <p class="empty-state audit-pane-empty" x-show="!entry.data || (!entry.data.error_message && !entry.data.response_headers && !entry.data.response_body)">Response details were not captured.</p>
                                 <p class="audit-size-warning" x-show="entry.data && entry.data.response_body_too_big_to_handle">Response body was too large to capture.</p>
@@ -462,13 +475,12 @@
         </div>
     </div>
 
-    <div class="conversation-overlay" x-show="conversationOpen" x-transition.opacity.duration.100ms @click="closeConversation()"></div>
+    <div class="conversation-overlay" x-show="conversationOpen" x-transition.opacity.duration.160ms @click="closeConversation()"></div>
     <aside class="conversation-drawer" :class="{ open: conversationOpen }">
         <div class="conversation-drawer-header">
             <h3>Conversation</h3>
             <button class="pagination-btn" @click="closeConversation()">Close</button>
         </div>
-        <p class="conversation-meta" x-text="conversationAnchorID ? ('Anchor Log: ' + conversationAnchorID) : ''"></p>
 
         <div class="alert alert-warning" x-show="conversationError" x-text="conversationError"></div>
         <p class="empty-state" x-show="conversationLoading">Loading conversation...</p>
@@ -484,6 +496,10 @@
                     <pre class="chat-content" x-text="msg.text"></pre>
                 </article>
             </template>
+        </div>
+
+        <div class="conversation-drawer-footer" x-show="conversationAnchorID">
+            <p class="conversation-meta" x-text="'Opened from log: ' + conversationAnchorID"></p>
         </div>
     </aside>
 </div>
