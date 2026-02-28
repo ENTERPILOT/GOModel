@@ -26,8 +26,8 @@ func normalizeLimit(limit int) int {
 	switch {
 	case limit <= 0:
 		return 20
-	case limit > 100:
-		return 100
+	case limit > 101:
+		return 101
 	default:
 		return limit
 	}

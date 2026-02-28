@@ -102,6 +102,11 @@ type GuardrailsConfig struct {
 	// Default: false
 	Enabled bool `yaml:"enabled" env:"GUARDRAILS_ENABLED"`
 
+	// EnableForBatchProcessing controls whether guardrails are applied to inline
+	// batch items for /v1/batches requests.
+	// Default: false
+	EnableForBatchProcessing bool `yaml:"enable_for_batch_processing" env:"ENABLE_GUARDRAILS_FOR_BATCH_PROCESSING"`
+
 	// Rules is a list of guardrail instances. Each entry defines one guardrail
 	// with its own name, type, order, and type-specific settings. Multiple
 	// instances of the same type are allowed (e.g. two system_prompt guardrails

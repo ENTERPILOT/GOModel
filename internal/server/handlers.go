@@ -500,7 +500,7 @@ func (h *Handler) ListBatches(c echo.Context) error {
 		normalizedLimit = 100
 	}
 
-	items, err := h.batchStore.List(c.Request().Context(), normalizedLimit, after)
+	items, err := h.batchStore.List(c.Request().Context(), normalizedLimit+1, after)
 	if err != nil {
 		if errors.Is(err, batchstore.ErrNotFound) {
 			return handleError(c, core.NewNotFoundError("after cursor batch not found: "+after))
@@ -508,6 +508,11 @@ func (h *Handler) ListBatches(c echo.Context) error {
 		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to list batches", err))
 	}
 	auditlog.EnrichEntry(c, "batch", "")
+
+	hasMore := len(items) > normalizedLimit
+	if hasMore {
+		items = items[:normalizedLimit]
+	}
 
 	data := make([]core.BatchResponse, 0, len(items))
 	for _, item := range items {
@@ -520,7 +525,7 @@ func (h *Handler) ListBatches(c echo.Context) error {
 	resp := core.BatchListResponse{
 		Object:  "list",
 		Data:    data,
-		HasMore: len(data) >= normalizedLimit,
+		HasMore: hasMore,
 	}
 	if len(data) > 0 {
 		resp.FirstID = data[0].ID
@@ -599,7 +604,9 @@ func (h *Handler) BatchResults(c echo.Context) error {
 		if isNativeBatchResultsPending(err) {
 			if latest, getErr := nativeRouter.GetBatch(c.Request().Context(), stored.Provider, stored.ProviderBatchID); getErr == nil && latest != nil {
 				mergeStoredBatchFromUpstream(stored, latest)
-				_ = h.batchStore.Update(c.Request().Context(), stored)
+				if updateErr := h.batchStore.Update(c.Request().Context(), stored); updateErr != nil && !errors.Is(updateErr, batchstore.ErrNotFound) {
+					return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist refreshed batch", updateErr))
+				}
 			}
 			status := strings.TrimSpace(stored.Status)
 			if status == "" {
@@ -624,7 +631,12 @@ func (h *Handler) BatchResults(c echo.Context) error {
 		stored.Results = result.Data
 	}
 	if len(result.Data) > 0 || usageLogged {
-		_ = h.batchStore.Update(c.Request().Context(), stored)
+		if updateErr := h.batchStore.Update(c.Request().Context(), stored); updateErr != nil {
+			if errors.Is(updateErr, batchstore.ErrNotFound) {
+				return handleError(c, core.NewNotFoundError("batch not found: "+id))
+			}
+			return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist batch results", updateErr))
+		}
 	}
 
 	return c.JSON(http.StatusOK, result)

@@ -2,7 +2,11 @@ package guardrails
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
+	neturl "net/url"
+	"strings"
 
 	"gomodel/internal/core"
 )
@@ -15,14 +19,26 @@ import (
 type GuardedProvider struct {
 	inner    core.RoutableProvider
 	pipeline *Pipeline
+	options  Options
+}
+
+// Options controls optional behavior of GuardedProvider.
+type Options struct {
+	EnableForBatchProcessing bool
 }
 
 // NewGuardedProvider creates a RoutableProvider that applies guardrails
 // before delegating to the inner provider.
 func NewGuardedProvider(inner core.RoutableProvider, pipeline *Pipeline) *GuardedProvider {
+	return NewGuardedProviderWithOptions(inner, pipeline, Options{})
+}
+
+// NewGuardedProviderWithOptions creates a RoutableProvider with explicit options.
+func NewGuardedProviderWithOptions(inner core.RoutableProvider, pipeline *Pipeline, options Options) *GuardedProvider {
 	return &GuardedProvider{
 		inner:    inner,
 		pipeline: pipeline,
+		options:  options,
 	}
 }
 
@@ -80,6 +96,142 @@ func (g *GuardedProvider) StreamResponses(ctx context.Context, req *core.Respons
 		return nil, err
 	}
 	return g.inner.StreamResponses(ctx, modified)
+}
+
+func (g *GuardedProvider) nativeBatchRouter() (core.NativeBatchRoutableProvider, error) {
+	bp, ok := g.inner.(core.NativeBatchRoutableProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError("batch routing is not supported by the current provider router", nil)
+	}
+	return bp, nil
+}
+
+func (g *GuardedProvider) normalizeBatchEndpoint(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if parsed, err := neturl.Parse(trimmed); err == nil && parsed.Path != "" {
+		trimmed = parsed.Path
+	}
+	trimmed = strings.TrimSpace(trimmed)
+	trimmed = strings.TrimRight(trimmed, "/")
+	if trimmed == "" {
+		return "/"
+	}
+	return trimmed
+}
+
+func (g *GuardedProvider) processBatchRequest(ctx context.Context, req *core.BatchRequest) (*core.BatchRequest, error) {
+	if req == nil || len(req.Requests) == 0 {
+		return req, nil
+	}
+
+	out := *req
+	out.Requests = make([]core.BatchRequestItem, len(req.Requests))
+	copy(out.Requests, req.Requests)
+
+	for i := range out.Requests {
+		item := out.Requests[i]
+		method := strings.ToUpper(strings.TrimSpace(item.Method))
+		if method == "" {
+			method = http.MethodPost
+		}
+		if method != http.MethodPost || len(item.Body) == 0 {
+			continue
+		}
+
+		endpoint := strings.TrimSpace(item.URL)
+		if endpoint == "" {
+			endpoint = strings.TrimSpace(req.Endpoint)
+		}
+
+		switch g.normalizeBatchEndpoint(endpoint) {
+		case "/v1/chat/completions":
+			var chatReq core.ChatRequest
+			if err := json.Unmarshal(item.Body, &chatReq); err != nil {
+				return nil, core.NewInvalidRequestError("invalid chat request in batch item", err)
+			}
+			modified, err := g.processChat(ctx, &chatReq)
+			if err != nil {
+				return nil, err
+			}
+			body, err := json.Marshal(modified)
+			if err != nil {
+				return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
+			}
+			out.Requests[i].Body = body
+		case "/v1/responses":
+			var responsesReq core.ResponsesRequest
+			if err := json.Unmarshal(item.Body, &responsesReq); err != nil {
+				return nil, core.NewInvalidRequestError("invalid responses request in batch item", err)
+			}
+			modified, err := g.processResponses(ctx, &responsesReq)
+			if err != nil {
+				return nil, err
+			}
+			body, err := json.Marshal(modified)
+			if err != nil {
+				return nil, core.NewInvalidRequestError("failed to encode guarded responses batch item", err)
+			}
+			out.Requests[i].Body = body
+		}
+	}
+
+	return &out, nil
+}
+
+// CreateBatch delegates native batch creation and optionally applies guardrails to inline items.
+func (g *GuardedProvider) CreateBatch(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchResponse, error) {
+	bp, err := g.nativeBatchRouter()
+	if err != nil {
+		return nil, err
+	}
+	if !g.options.EnableForBatchProcessing {
+		return bp.CreateBatch(ctx, providerType, req)
+	}
+
+	modifiedReq, err := g.processBatchRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	return bp.CreateBatch(ctx, providerType, modifiedReq)
+}
+
+// GetBatch delegates native batch retrieval.
+func (g *GuardedProvider) GetBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
+	bp, err := g.nativeBatchRouter()
+	if err != nil {
+		return nil, err
+	}
+	return bp.GetBatch(ctx, providerType, id)
+}
+
+// ListBatches delegates native batch listing.
+func (g *GuardedProvider) ListBatches(ctx context.Context, providerType string, limit int, after string) (*core.BatchListResponse, error) {
+	bp, err := g.nativeBatchRouter()
+	if err != nil {
+		return nil, err
+	}
+	return bp.ListBatches(ctx, providerType, limit, after)
+}
+
+// CancelBatch delegates native batch cancellation.
+func (g *GuardedProvider) CancelBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
+	bp, err := g.nativeBatchRouter()
+	if err != nil {
+		return nil, err
+	}
+	return bp.CancelBatch(ctx, providerType, id)
+}
+
+// GetBatchResults delegates native batch results retrieval.
+func (g *GuardedProvider) GetBatchResults(ctx context.Context, providerType, id string) (*core.BatchResultsResponse, error) {
+	bp, err := g.nativeBatchRouter()
+	if err != nil {
+		return nil, err
+	}
+	return bp.GetBatchResults(ctx, providerType, id)
 }
 
 // processChat runs the pipeline for a ChatRequest via the message adapter.

@@ -64,6 +64,7 @@ resilience:
 
 guardrails:
   enabled: false
+  enable_for_batch_processing: false
   rules:
     # Each entry is a guardrail instance. Multiple instances of the same type are supported.
     # Guardrails with the same "order" run in parallel; different orders run sequentially.

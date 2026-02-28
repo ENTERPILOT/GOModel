@@ -227,7 +227,7 @@ func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchRespo
 	return &resp, nil
 }
 
-// GetBatchResults returns an explicit error for xAI-style providers.
-func (p *Provider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
-	return nil, core.NewInvalidRequestError("provider does not support direct batch results endpoint; fetch via output file APIs", nil)
+// GetBatchResults fetches xAI batch results via the output file API.
+func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
+	return providers.FetchBatchResultsFromOutputFile(ctx, p.client, "xai", id)
 }

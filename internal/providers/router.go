@@ -164,11 +164,11 @@ func (r *Router) CreateBatch(ctx context.Context, providerType string, req *core
 		return nil, err
 	}
 	if providerType == "" {
-		return nil, fmt.Errorf("provider type is required")
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
 	}
 	provider := r.providerByType(providerType)
 	if provider == nil {
-		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
 	}
 	bp, ok := provider.(core.NativeBatchProvider)
 	if !ok {
@@ -187,11 +187,11 @@ func (r *Router) GetBatch(ctx context.Context, providerType, id string) (*core.B
 		return nil, err
 	}
 	if providerType == "" {
-		return nil, fmt.Errorf("provider type is required")
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
 	}
 	provider := r.providerByType(providerType)
 	if provider == nil {
-		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
 	}
 	bp, ok := provider.(core.NativeBatchProvider)
 	if !ok {
@@ -210,11 +210,11 @@ func (r *Router) ListBatches(ctx context.Context, providerType string, limit int
 		return nil, err
 	}
 	if providerType == "" {
-		return nil, fmt.Errorf("provider type is required")
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
 	}
 	provider := r.providerByType(providerType)
 	if provider == nil {
-		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
 	}
 	bp, ok := provider.(core.NativeBatchProvider)
 	if !ok {
@@ -229,11 +229,11 @@ func (r *Router) CancelBatch(ctx context.Context, providerType, id string) (*cor
 		return nil, err
 	}
 	if providerType == "" {
-		return nil, fmt.Errorf("provider type is required")
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
 	}
 	provider := r.providerByType(providerType)
 	if provider == nil {
-		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
 	}
 	bp, ok := provider.(core.NativeBatchProvider)
 	if !ok {
@@ -252,11 +252,11 @@ func (r *Router) GetBatchResults(ctx context.Context, providerType, id string) (
 		return nil, err
 	}
 	if providerType == "" {
-		return nil, fmt.Errorf("provider type is required")
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
 	}
 	provider := r.providerByType(providerType)
 	if provider == nil {
-		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
 	}
 	bp, ok := provider.(core.NativeBatchProvider)
 	if !ok {

@@ -100,6 +100,30 @@ func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (
 	return m.embeddingResponse, nil
 }
 
+type mockBatchProvider struct {
+	mockProvider
+}
+
+func (m *mockBatchProvider) CreateBatch(_ context.Context, _ *core.BatchRequest) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "provider-batch-1", Object: "batch"}, nil
+}
+
+func (m *mockBatchProvider) GetBatch(_ context.Context, _ string) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "provider-batch-1", Object: "batch"}, nil
+}
+
+func (m *mockBatchProvider) ListBatches(_ context.Context, _ int, _ string) (*core.BatchListResponse, error) {
+	return &core.BatchListResponse{Object: "list"}, nil
+}
+
+func (m *mockBatchProvider) CancelBatch(_ context.Context, _ string) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "provider-batch-1", Object: "batch", Status: "cancelled"}, nil
+}
+
+func (m *mockBatchProvider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
+	return &core.BatchResultsResponse{Object: "list", BatchID: "provider-batch-1"}, nil
+}
+
 func TestNewRouter(t *testing.T) {
 	t.Run("nil lookup returns error", func(t *testing.T) {
 		router, err := NewRouter(nil)
@@ -319,6 +343,52 @@ func TestRouterGetProviderType(t *testing.T) {
 		t.Run(tt.model, func(t *testing.T) {
 			if got := router.GetProviderType(tt.model); got != tt.expected {
 				t.Errorf("GetProviderType(%q) = %q, want %q", tt.model, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestRouterBatchProviderTypeValidation(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", &mockBatchProvider{}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	tests := []struct {
+		name         string
+		providerType string
+		call         func() error
+	}{
+		{
+			name:         "empty provider type",
+			providerType: "",
+			call: func() error {
+				_, err := router.GetBatch(context.Background(), "", "batch_1")
+				return err
+			},
+		},
+		{
+			name:         "unknown provider type",
+			providerType: "does-not-exist",
+			call: func() error {
+				_, err := router.GetBatch(context.Background(), "does-not-exist", "batch_1")
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var gwErr *core.GatewayError
+			if !errors.As(err, &gwErr) {
+				t.Fatalf("expected GatewayError, got %T: %v", err, err)
+			}
+			if gwErr.HTTPStatusCode() != 400 {
+				t.Fatalf("expected status 400, got %d", gwErr.HTTPStatusCode())
 			}
 		})
 	}

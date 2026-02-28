@@ -130,15 +130,25 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if appCfg.Guardrails.Enabled {
 		pipeline, err := buildGuardrailsPipeline(appCfg.Guardrails)
 		if err != nil {
-			closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
+			var batchCloseErr error
+			if app.batch != nil {
+				batchCloseErr = app.batch.Close()
+			}
+			closeErr := errors.Join(batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
 			if closeErr != nil {
 				return nil, fmt.Errorf("failed to build guardrails: %w (also: close error: %v)", err, closeErr)
 			}
 			return nil, fmt.Errorf("failed to build guardrails: %w", err)
 		}
 		if pipeline.Len() > 0 {
-			provider = guardrails.NewGuardedProvider(provider, pipeline)
-			slog.Info("guardrails enabled", "count", pipeline.Len())
+			provider = guardrails.NewGuardedProviderWithOptions(provider, pipeline, guardrails.Options{
+				EnableForBatchProcessing: appCfg.Guardrails.EnableForBatchProcessing,
+			})
+			slog.Info(
+				"guardrails enabled",
+				"count", pipeline.Len(),
+				"enable_for_batch_processing", appCfg.Guardrails.EnableForBatchProcessing,
+			)
 		}
 	}
 
