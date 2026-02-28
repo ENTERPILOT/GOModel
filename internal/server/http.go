@@ -197,6 +197,8 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
 		adminAPI.GET("/usage/models", cfg.AdminHandler.UsageByModel)
 		adminAPI.GET("/usage/log", cfg.AdminHandler.UsageLog)
+		adminAPI.GET("/audit/log", cfg.AdminHandler.AuditLog)
+		adminAPI.GET("/audit/conversation", cfg.AdminHandler.AuditConversation)
 		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
 		adminAPI.GET("/models/categories", cfg.AdminHandler.ListCategories)
 	}

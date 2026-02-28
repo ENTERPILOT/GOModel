@@ -25,7 +25,7 @@ type BatchRequestItem struct {
 	CustomID string          `json:"custom_id,omitempty"`
 	Method   string          `json:"method,omitempty"`
 	URL      string          `json:"url"`
-	Body     json.RawMessage `json:"body"`
+	Body     json.RawMessage `json:"body" swaggertype:"object"`
 }
 
 // BatchResponse uses OpenAI-compatible batch fields and includes provider mapping plus optional cached results.

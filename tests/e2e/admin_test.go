@@ -72,6 +72,8 @@ func TestAdminAPI_EndpointsEnabled_E2E(t *testing.T) {
 	endpoints := []string{
 		"/admin/api/v1/usage/summary",
 		"/admin/api/v1/usage/daily",
+		"/admin/api/v1/audit/log",
+		"/admin/api/v1/audit/conversation?log_id=test",
 		"/admin/api/v1/models",
 	}
 
@@ -99,6 +101,8 @@ func TestAdminAPI_EndpointsDisabled_E2E(t *testing.T) {
 	endpoints := []string{
 		"/admin/api/v1/usage/summary",
 		"/admin/api/v1/usage/daily",
+		"/admin/api/v1/audit/log",
+		"/admin/api/v1/audit/conversation?log_id=test",
 		"/admin/api/v1/models",
 	}
 

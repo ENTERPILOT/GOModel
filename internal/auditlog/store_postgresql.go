@@ -61,6 +61,8 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		"CREATE INDEX IF NOT EXISTS idx_audit_client_ip ON audit_logs(client_ip)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_path ON audit_logs(path)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_error_type ON audit_logs(error_type)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_response_id ON audit_logs ((data->'response_body'->>'id'))",
+		"CREATE INDEX IF NOT EXISTS idx_audit_previous_response_id ON audit_logs ((data->'request_body'->>'previous_response_id'))",
 		"CREATE INDEX IF NOT EXISTS idx_audit_data_gin ON audit_logs USING GIN (data)",
 	}
 	for _, idx := range indexes {

@@ -47,6 +47,9 @@ func TestIndex_ReturnsHTML(t *testing.T) {
 	if !strings.Contains(body, "<!doctype html") && !strings.Contains(body, "<html") {
 		t.Errorf("expected HTML content, got: %.200s", rec.Body.String())
 	}
+	if !strings.Contains(body, "audit logs") {
+		t.Errorf("expected audit logs navigation item in page HTML")
+	}
 }
 
 func TestStatic_ServesCSS(t *testing.T) {
@@ -92,6 +95,29 @@ func TestStatic_ServesJS(t *testing.T) {
 	}
 	if rec.Body.Len() == 0 {
 		t.Error("expected non-empty body for JS file")
+	}
+}
+
+func TestStatic_ServesModuleJS(t *testing.T) {
+	h, err := New()
+	if err != nil {
+		t.Fatalf("New() returned error: %v", err)
+	}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/admin/static/js/modules/usage.js", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.Static(c); err != nil {
+		t.Fatalf("Static() returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.Len() == 0 {
+		t.Error("expected non-empty body for module JS file")
 	}
 }
 

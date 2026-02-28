@@ -31,6 +31,9 @@ It is an OpenAI-compatible API AI gateway.
 ## Documentation Expectations
 
 - Update docs whenever behavior, config, providers, commands, or public APIs change.
+- If any API endpoint is added, removed, or changed (path, method, params, request/response schema), update Swagger annotations and run `make swagger`.
+- Keep endpoint documentation concise and accurate in code comments (summary, params, success/error responses).
+- Commit regenerated Swagger files (`cmd/gomodel/docs/docs.go` and `cmd/gomodel/docs/swagger.json`) with the API change.
 - Check all relevant layers:
   - `README.md` and related README files
   - Exported Go doc comments

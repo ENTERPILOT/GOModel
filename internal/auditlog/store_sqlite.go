@@ -67,6 +67,8 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		"CREATE INDEX IF NOT EXISTS idx_audit_client_ip ON audit_logs(client_ip)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_path ON audit_logs(path)",
 		"CREATE INDEX IF NOT EXISTS idx_audit_error_type ON audit_logs(error_type)",
+		"CREATE INDEX IF NOT EXISTS idx_audit_response_id ON audit_logs(json_extract(data, '$.response_body.id'))",
+		"CREATE INDEX IF NOT EXISTS idx_audit_previous_response_id ON audit_logs(json_extract(data, '$.request_body.previous_response_id'))",
 	}
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
