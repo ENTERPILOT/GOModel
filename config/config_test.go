@@ -37,6 +37,7 @@ func clearAllConfigEnvVars(t *testing.T) {
 		"LOGGING_FLUSH_INTERVAL", "LOGGING_RETENTION_DAYS",
 		"USAGE_ENABLED", "ENFORCE_RETURNING_USAGE_DATA",
 		"USAGE_BUFFER_SIZE", "USAGE_FLUSH_INTERVAL", "USAGE_RETENTION_DAYS",
+		"GUARDRAILS_ENABLED", "ENABLE_GUARDRAILS_FOR_BATCH_PROCESSING",
 		"HTTP_TIMEOUT", "HTTP_RESPONSE_HEADER_TIMEOUT",
 	} {
 		t.Setenv(key, "")
@@ -140,6 +141,9 @@ func TestBuildDefaultConfig(t *testing.T) {
 	}
 	if cfg.HTTP.ResponseHeaderTimeout != 600 {
 		t.Errorf("expected HTTP.ResponseHeaderTimeout=600, got %d", cfg.HTTP.ResponseHeaderTimeout)
+	}
+	if cfg.Guardrails.EnableForBatchProcessing {
+		t.Error("expected Guardrails.EnableForBatchProcessing=false")
 	}
 
 	expectedRetry := DefaultRetryConfig()

@@ -2,7 +2,9 @@ package guardrails
 
 import (
 	"context"
+	"encoding/json"
 	"io"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -15,6 +17,7 @@ type mockRoutableProvider struct {
 	getProviderTypeFn func(model string) string
 	chatReq           *core.ChatRequest
 	responsesReq      *core.ResponsesRequest
+	batchReq          *core.BatchRequest
 }
 
 func (m *mockRoutableProvider) Supports(model string) bool {
@@ -57,6 +60,27 @@ func (m *mockRoutableProvider) StreamResponses(_ context.Context, req *core.Resp
 
 func (m *mockRoutableProvider) Embeddings(_ context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
 	return &core.EmbeddingResponse{Object: "list", Model: req.Model, Provider: "mock"}, nil
+}
+
+func (m *mockRoutableProvider) CreateBatch(_ context.Context, _ string, req *core.BatchRequest) (*core.BatchResponse, error) {
+	m.batchReq = req
+	return &core.BatchResponse{ID: "batch_1", Object: "batch", Status: "in_progress"}, nil
+}
+
+func (m *mockRoutableProvider) GetBatch(_ context.Context, _, _ string) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "batch_1", Object: "batch", Status: "completed"}, nil
+}
+
+func (m *mockRoutableProvider) ListBatches(_ context.Context, _ string, _ int, _ string) (*core.BatchListResponse, error) {
+	return &core.BatchListResponse{Object: "list"}, nil
+}
+
+func (m *mockRoutableProvider) CancelBatch(_ context.Context, _, _ string) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "batch_1", Object: "batch", Status: "cancelled"}, nil
+}
+
+func (m *mockRoutableProvider) GetBatchResults(_ context.Context, _, _ string) (*core.BatchResultsResponse, error) {
+	return &core.BatchResultsResponse{Object: "list", BatchID: "batch_1"}, nil
 }
 
 // --- Chat adapter integration tests ---
@@ -259,6 +283,74 @@ func TestGuardedProvider_ResponsesPreservesFields(t *testing.T) {
 	}
 	if got.Reasoning == nil || got.Reasoning.Effort != "medium" {
 		t.Errorf("reasoning not preserved")
+	}
+}
+
+func TestGuardedProvider_CreateBatch_DefaultNoBatchGuardrails(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
+	pipeline.Add(g, 0)
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.BatchRequest{
+		Endpoint: "/v1/chat/completions",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "/v1/chat/completions",
+				Body:   json.RawMessage(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`),
+			},
+		},
+	}
+
+	_, err := guarded.CreateBatch(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.batchReq == nil || len(inner.batchReq.Requests) != 1 {
+		t.Fatalf("expected delegated batch request")
+	}
+	var chatReq core.ChatRequest
+	if err := json.Unmarshal(inner.batchReq.Requests[0].Body, &chatReq); err != nil {
+		t.Fatal(err)
+	}
+	if len(chatReq.Messages) != 1 || chatReq.Messages[0].Role != "user" {
+		t.Fatalf("expected unchanged batch request when disabled, got: %+v", chatReq.Messages)
+	}
+}
+
+func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
+	pipeline.Add(g, 0)
+	guarded := NewGuardedProviderWithOptions(inner, pipeline, Options{EnableForBatchProcessing: true})
+
+	req := &core.BatchRequest{
+		Endpoint: "/v1/chat/completions",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "/v1/chat/completions",
+				Body:   json.RawMessage(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`),
+			},
+		},
+	}
+
+	_, err := guarded.CreateBatch(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.batchReq == nil || len(inner.batchReq.Requests) != 1 {
+		t.Fatalf("expected delegated batch request")
+	}
+	var chatReq core.ChatRequest
+	if err := json.Unmarshal(inner.batchReq.Requests[0].Body, &chatReq); err != nil {
+		t.Fatal(err)
+	}
+	if len(chatReq.Messages) != 2 || chatReq.Messages[0].Role != "system" {
+		t.Fatalf("expected guarded batch chat request, got: %+v", chatReq.Messages)
 	}
 }
 

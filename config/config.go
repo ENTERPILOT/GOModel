@@ -102,6 +102,11 @@ type GuardrailsConfig struct {
 	// Default: false
 	Enabled bool `yaml:"enabled" env:"GUARDRAILS_ENABLED"`
 
+	// EnableForBatchProcessing controls whether guardrails are applied to inline
+	// batch items for /v1/batches requests.
+	// Default: false
+	EnableForBatchProcessing bool `yaml:"enable_for_batch_processing" env:"ENABLE_GUARDRAILS_FOR_BATCH_PROCESSING"`
+
 	// Rules is a list of guardrail instances. Each entry defines one guardrail
 	// with its own name, type, order, and type-specific settings. Multiple
 	// instances of the same type are allowed (e.g. two system_prompt guardrails
@@ -179,7 +184,7 @@ type LogConfig struct {
 	RetentionDays int `yaml:"retention_days" env:"LOGGING_RETENTION_DAYS"`
 
 	// OnlyModelInteractions limits audit logging to AI model endpoints only
-	// When true, only /v1/chat/completions and /v1/responses are logged
+	// When true, only /v1/chat/completions, /v1/responses, /v1/embeddings, /v1/files, and /v1/batches are logged
 	// Endpoints like /health, /metrics, /admin, /v1/models are skipped
 	// Default: true
 	OnlyModelInteractions bool `yaml:"only_model_interactions" env:"LOGGING_ONLY_MODEL_INTERACTIONS"`

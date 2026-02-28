@@ -160,6 +160,16 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 | `/v1/chat/completions` | POST | Chat completions (streaming supported) |
 | `/v1/responses` | POST | OpenAI Responses API |
 | `/v1/embeddings` | POST | Text embeddings |
+| `/v1/files` | POST | Upload a file (OpenAI-compatible multipart) |
+| `/v1/files` | GET | List files |
+| `/v1/files/{id}` | GET | Retrieve file metadata |
+| `/v1/files/{id}` | DELETE | Delete a file |
+| `/v1/files/{id}/content` | GET | Retrieve raw file content |
+| `/v1/batches` | POST | Create a native provider batch (OpenAI-compatible schema; inline `requests` supported where provider-native) |
+| `/v1/batches` | GET | List stored batches |
+| `/v1/batches/{id}` | GET | Retrieve one stored batch |
+| `/v1/batches/{id}/cancel` | POST | Cancel a pending batch |
+| `/v1/batches/{id}/results` | GET | Retrieve native batch results when available |
 | `/v1/models` | GET | List available models |
 | `/health` | GET | Health check |
 | `/metrics` | GET | Prometheus metrics (when enabled) |

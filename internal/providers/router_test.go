@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"testing"
 
 	"gomodel/internal/core"
@@ -98,6 +99,66 @@ func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (
 		return nil, m.err
 	}
 	return m.embeddingResponse, nil
+}
+
+type mockBatchProvider struct {
+	mockProvider
+	listBatchesResp *core.BatchListResponse
+}
+
+func (m *mockBatchProvider) CreateBatch(_ context.Context, _ *core.BatchRequest) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "provider-batch-1", Object: "batch"}, nil
+}
+
+func (m *mockBatchProvider) GetBatch(_ context.Context, _ string) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "provider-batch-1", Object: "batch"}, nil
+}
+
+func (m *mockBatchProvider) ListBatches(_ context.Context, _ int, _ string) (*core.BatchListResponse, error) {
+	if m.listBatchesResp != nil {
+		return m.listBatchesResp, nil
+	}
+	return &core.BatchListResponse{Object: "list"}, nil
+}
+
+func (m *mockBatchProvider) CancelBatch(_ context.Context, _ string) (*core.BatchResponse, error) {
+	return &core.BatchResponse{ID: "provider-batch-1", Object: "batch", Status: "cancelled"}, nil
+}
+
+func (m *mockBatchProvider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
+	return &core.BatchResultsResponse{Object: "list", BatchID: "provider-batch-1"}, nil
+}
+
+func (m *mockBatchProvider) CreateFile(_ context.Context, req *core.FileCreateRequest) (*core.FileObject, error) {
+	return &core.FileObject{
+		ID:        "file_1",
+		Object:    "file",
+		Bytes:     int64(len(req.Content)),
+		CreatedAt: 1,
+		Filename:  req.Filename,
+		Purpose:   req.Purpose,
+	}, nil
+}
+
+func (m *mockBatchProvider) ListFiles(_ context.Context, purpose string, _ int, _ string) (*core.FileListResponse, error) {
+	return &core.FileListResponse{
+		Object: "list",
+		Data: []core.FileObject{
+			{ID: "file_1", Object: "file", CreatedAt: 1, Filename: "a.jsonl", Purpose: purpose},
+		},
+	}, nil
+}
+
+func (m *mockBatchProvider) GetFile(_ context.Context, id string) (*core.FileObject, error) {
+	return &core.FileObject{ID: id, Object: "file", CreatedAt: 1, Filename: "a.jsonl", Purpose: "batch"}, nil
+}
+
+func (m *mockBatchProvider) DeleteFile(_ context.Context, id string) (*core.FileDeleteResponse, error) {
+	return &core.FileDeleteResponse{ID: id, Object: "file", Deleted: true}, nil
+}
+
+func (m *mockBatchProvider) GetFileContent(_ context.Context, id string) (*core.FileContentResponse, error) {
+	return &core.FileContentResponse{ID: id, ContentType: "application/jsonl", Data: []byte("{}\n")}, nil
 }
 
 func TestNewRouter(t *testing.T) {
@@ -321,6 +382,123 @@ func TestRouterGetProviderType(t *testing.T) {
 				t.Errorf("GetProviderType(%q) = %q, want %q", tt.model, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestRouterBatchProviderTypeValidation(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", &mockBatchProvider{}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	tests := []struct {
+		name         string
+		providerType string
+		call         func() error
+	}{
+		{
+			name:         "empty provider type",
+			providerType: "",
+			call: func() error {
+				_, err := router.GetBatch(context.Background(), "", "batch_1")
+				return err
+			},
+		},
+		{
+			name:         "unknown provider type",
+			providerType: "does-not-exist",
+			call: func() error {
+				_, err := router.GetBatch(context.Background(), "does-not-exist", "batch_1")
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var gwErr *core.GatewayError
+			if !errors.As(err, &gwErr) {
+				t.Fatalf("expected GatewayError, got %T: %v", err, err)
+			}
+			if gwErr.HTTPStatusCode() != http.StatusBadRequest {
+				t.Fatalf("expected status %d, got %d", http.StatusBadRequest, gwErr.HTTPStatusCode())
+			}
+		})
+	}
+}
+
+func TestRouterFileProviderTypeValidation(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", &mockBatchProvider{}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "empty provider type",
+			call: func() error {
+				_, err := router.GetFile(context.Background(), "", "file_1")
+				return err
+			},
+		},
+		{
+			name: "unknown provider type",
+			call: func() error {
+				_, err := router.GetFile(context.Background(), "does-not-exist", "file_1")
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.call()
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			var gwErr *core.GatewayError
+			if !errors.As(err, &gwErr) {
+				t.Fatalf("expected GatewayError, got %T: %v", err, err)
+			}
+			if gwErr.HTTPStatusCode() != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d", gwErr.HTTPStatusCode())
+			}
+		})
+	}
+}
+
+func TestRouterListBatchesSetsProviderOnItems(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", &mockBatchProvider{
+		listBatchesResp: &core.BatchListResponse{
+			Object: "list",
+			Data: []core.BatchResponse{
+				{ID: "batch_1", Object: "batch"},
+			},
+		},
+	}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	resp, err := router.ListBatches(context.Background(), "openai", 10, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil {
+		t.Fatal("expected non-nil response")
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(resp.Data))
+	}
+	if resp.Data[0].Provider != "openai" {
+		t.Fatalf("expected provider=openai, got %q", resp.Data[0].Provider)
 	}
 }
 

@@ -27,6 +27,44 @@ type Provider interface {
 	Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error)
 }
 
+// NativeBatchProvider is implemented by providers that support native discounted batching.
+// This is intentionally separate from Provider so unsupported providers can still implement
+// regular synchronous APIs without batch capabilities.
+type NativeBatchProvider interface {
+	CreateBatch(ctx context.Context, req *BatchRequest) (*BatchResponse, error)
+	GetBatch(ctx context.Context, id string) (*BatchResponse, error)
+	ListBatches(ctx context.Context, limit int, after string) (*BatchListResponse, error)
+	CancelBatch(ctx context.Context, id string) (*BatchResponse, error)
+	GetBatchResults(ctx context.Context, id string) (*BatchResultsResponse, error)
+}
+
+// NativeBatchRoutableProvider extends routing with native batch operations.
+type NativeBatchRoutableProvider interface {
+	CreateBatch(ctx context.Context, providerType string, req *BatchRequest) (*BatchResponse, error)
+	GetBatch(ctx context.Context, providerType, id string) (*BatchResponse, error)
+	ListBatches(ctx context.Context, providerType string, limit int, after string) (*BatchListResponse, error)
+	CancelBatch(ctx context.Context, providerType, id string) (*BatchResponse, error)
+	GetBatchResults(ctx context.Context, providerType, id string) (*BatchResultsResponse, error)
+}
+
+// NativeFileProvider is implemented by providers that support OpenAI-compatible files APIs.
+type NativeFileProvider interface {
+	CreateFile(ctx context.Context, req *FileCreateRequest) (*FileObject, error)
+	ListFiles(ctx context.Context, purpose string, limit int, after string) (*FileListResponse, error)
+	GetFile(ctx context.Context, id string) (*FileObject, error)
+	DeleteFile(ctx context.Context, id string) (*FileDeleteResponse, error)
+	GetFileContent(ctx context.Context, id string) (*FileContentResponse, error)
+}
+
+// NativeFileRoutableProvider extends routing with provider-native file operations.
+type NativeFileRoutableProvider interface {
+	CreateFile(ctx context.Context, providerType string, req *FileCreateRequest) (*FileObject, error)
+	ListFiles(ctx context.Context, providerType, purpose string, limit int, after string) (*FileListResponse, error)
+	GetFile(ctx context.Context, providerType, id string) (*FileObject, error)
+	DeleteFile(ctx context.Context, providerType, id string) (*FileDeleteResponse, error)
+	GetFileContent(ctx context.Context, providerType, id string) (*FileContentResponse, error)
+}
+
 // RoutableProvider extends Provider with routing capability.
 // This is implemented by the Router which uses a model registry
 // to determine if a model is supported.

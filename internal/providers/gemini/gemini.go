@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,10 +44,10 @@ func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.Config{
-		ProviderName: "gemini",
-		BaseURL:      defaultOpenAICompatibleBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "gemini",
+		BaseURL:        defaultOpenAICompatibleBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -229,4 +231,130 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return providers.StreamResponsesViaChat(ctx, p, req, "gemini")
+}
+
+// CreateBatch creates a native Gemini batch job through its OpenAI-compatible endpoint.
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatch retrieves a native Gemini batch job.
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/batches/" + url.PathEscape(id),
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// ListBatches lists native Gemini batch jobs.
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("after", after)
+	}
+	endpoint := "/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp core.BatchListResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		if resp.Data[i].ProviderBatchID == "" {
+			resp.Data[i].ProviderBatchID = resp.Data[i].ID
+		}
+	}
+	return &resp, nil
+}
+
+// CancelBatch cancels a native Gemini batch job.
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatchResults fetches Gemini batch results via the output file API.
+func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
+	return providers.FetchBatchResultsFromOutputFile(ctx, p.client, "gemini", id)
+}
+
+// CreateFile uploads a file through Gemini's OpenAI-compatible /files API.
+func (p *Provider) CreateFile(ctx context.Context, req *core.FileCreateRequest) (*core.FileObject, error) {
+	resp, err := providers.CreateOpenAICompatibleFile(ctx, p.client, req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "gemini"
+	return resp, nil
+}
+
+// ListFiles lists files through Gemini's OpenAI-compatible /files API.
+func (p *Provider) ListFiles(ctx context.Context, purpose string, limit int, after string) (*core.FileListResponse, error) {
+	resp, err := providers.ListOpenAICompatibleFiles(ctx, p.client, purpose, limit, after)
+	if err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		resp.Data[i].Provider = "gemini"
+	}
+	return resp, nil
+}
+
+// GetFile retrieves one file object through Gemini's OpenAI-compatible /files API.
+func (p *Provider) GetFile(ctx context.Context, id string) (*core.FileObject, error) {
+	resp, err := providers.GetOpenAICompatibleFile(ctx, p.client, id)
+	if err != nil {
+		return nil, err
+	}
+	resp.Provider = "gemini"
+	return resp, nil
+}
+
+// DeleteFile deletes a file object through Gemini's OpenAI-compatible /files API.
+func (p *Provider) DeleteFile(ctx context.Context, id string) (*core.FileDeleteResponse, error) {
+	return providers.DeleteOpenAICompatibleFile(ctx, p.client, id)
+}
+
+// GetFileContent fetches raw file bytes through Gemini's /files/{id}/content API.
+func (p *Provider) GetFileContent(ctx context.Context, id string) (*core.FileContentResponse, error) {
+	return providers.GetOpenAICompatibleFileContent(ctx, p.client, id)
 }
