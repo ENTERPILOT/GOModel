@@ -15,6 +15,7 @@ import (
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
+	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
 
@@ -36,6 +37,7 @@ type Config struct {
 	AuditLogger              auditlog.LoggerInterface // Optional: Audit logger for request/response logging
 	UsageLogger              usage.LoggerInterface    // Optional: Usage logger for token tracking
 	PricingResolver          usage.PricingResolver    // Optional: Resolves pricing for cost calculation
+	BatchStore               batchstore.Store         // Optional: Batch lifecycle persistence store
 	LogOnlyModelInteractions bool                     // Only log AI model endpoints (default: true)
 	AdminEndpointsEnabled    bool                     // Whether admin API endpoints are enabled
 	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
@@ -60,6 +62,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	handler := NewHandler(provider, auditLogger, usageLogger, pricingResolver)
+	if cfg != nil && cfg.BatchStore != nil {
+		handler.SetBatchStore(cfg.BatchStore)
+	}
 
 	// Build list of paths that skip authentication
 	authSkipPaths := []string{"/health"}
@@ -175,6 +180,10 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.POST("/v1/responses", handler.Responses)
 	e.POST("/v1/embeddings", handler.Embeddings)
 	e.POST("/v1/batches", handler.Batches)
+	e.GET("/v1/batches", handler.ListBatches)
+	e.GET("/v1/batches/:id", handler.GetBatch)
+	e.POST("/v1/batches/:id/cancel", handler.CancelBatch)
+	e.GET("/v1/batches/:id/results", handler.BatchResults)
 
 	// Admin API routes (behind ADMIN_ENDPOINTS_ENABLED flag)
 	if cfg != nil && cfg.AdminEndpointsEnabled && cfg.AdminHandler != nil {

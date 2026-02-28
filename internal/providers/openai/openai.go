@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"gomodel/internal/core"
@@ -32,10 +34,10 @@ type Provider struct {
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.Config{
-		ProviderName: "openai",
-		BaseURL:      defaultBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "openai",
+		BaseURL:        defaultBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -98,12 +100,12 @@ func isOSeriesModel(model string) bool {
 // oSeriesChatRequest is the JSON body sent to OpenAI for o-series models.
 // It uses max_completion_tokens (required) instead of max_tokens (rejected).
 type oSeriesChatRequest struct {
-	Model              string              `json:"model"`
-	Messages           []core.Message      `json:"messages"`
-	Stream             bool                `json:"stream,omitempty"`
-	StreamOptions      *core.StreamOptions `json:"stream_options,omitempty"`
-	Reasoning          *core.Reasoning     `json:"reasoning,omitempty"`
-	MaxCompletionTokens *int               `json:"max_completion_tokens,omitempty"`
+	Model               string              `json:"model"`
+	Messages            []core.Message      `json:"messages"`
+	Stream              bool                `json:"stream,omitempty"`
+	StreamOptions       *core.StreamOptions `json:"stream_options,omitempty"`
+	Reasoning           *core.Reasoning     `json:"reasoning,omitempty"`
+	MaxCompletionTokens *int                `json:"max_completion_tokens,omitempty"`
 }
 
 // adaptForOSeries converts a ChatRequest into an oSeriesChatRequest,
@@ -209,4 +211,84 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 		resp.Model = req.Model
 	}
 	return &resp, nil
+}
+
+// CreateBatch creates a native OpenAI batch job.
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatch retrieves a native OpenAI batch job.
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/batches/" + url.PathEscape(id),
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// ListBatches lists native OpenAI batch jobs.
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("after", after)
+	}
+	endpoint := "/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp core.BatchListResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// CancelBatch cancels a native OpenAI batch job.
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatchResults returns an explicit error for OpenAI-style providers.
+// Native OpenAI-compatible APIs expose result file IDs, not a direct /results endpoint.
+func (p *Provider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
+	return nil, core.NewInvalidRequestError("provider does not support direct batch results endpoint; fetch via output file APIs", nil)
 }

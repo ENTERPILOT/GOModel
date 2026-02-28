@@ -4,16 +4,18 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"gomodel/internal/auditlog"
+	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/usage"
 )
@@ -24,6 +26,7 @@ type Handler struct {
 	logger          auditlog.LoggerInterface
 	usageLogger     usage.LoggerInterface
 	pricingResolver usage.PricingResolver
+	batchStore      batchstore.Store
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
@@ -33,7 +36,17 @@ func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface,
 		logger:          logger,
 		usageLogger:     usageLogger,
 		pricingResolver: pricingResolver,
+		batchStore:      batchstore.NewMemoryStore(),
 	}
+}
+
+// SetBatchStore replaces the batch store used by lifecycle endpoints.
+// nil is ignored to keep an always-available fallback memory store.
+func (h *Handler) SetBatchStore(store batchstore.Store) {
+	if store == nil {
+		return
+	}
+	h.batchStore = store
 }
 
 // handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
@@ -253,10 +266,10 @@ func (h *Handler) Embeddings(c echo.Context) error {
 
 // Batches handles POST /v1/batches.
 //
-// OpenAI-compatible fields are accepted (`endpoint`, `completion_window`, `metadata`),
-// and this gateway also supports inline `requests` for immediate execution.
+// OpenAI-compatible fields are accepted (`input_file_id`, `endpoint`, `completion_window`, `metadata`).
+// Inline `requests` are also accepted for providers with native inline batch support (for example Anthropic).
 //
-// @Summary      Create and execute a batch
+// @Summary      Create a native provider batch
 // @Tags         batch
 // @Accept       json
 // @Produce      json
@@ -273,334 +286,331 @@ func (h *Handler) Batches(c echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 
-	if len(req.Requests) == 0 {
-		msg := "requests is required and must not be empty"
-		if strings.TrimSpace(req.InputFileID) != "" {
-			msg = "input_file_id based batches are not supported yet; provide inline requests"
-		}
-		return handleError(c, core.NewInvalidRequestError(msg, nil))
-	}
-
 	requestID := c.Request().Header.Get("X-Request-ID")
 	ctx := core.WithRequestID(c.Request().Context(), requestID)
 
-	results := make([]core.BatchResultItem, 0, len(req.Requests))
-	usageSummary := core.BatchUsageSummary{}
-	requestCounts := core.BatchRequestCounts{
-		Total: len(req.Requests),
+	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
+	if !ok {
+		return handleError(c, core.NewInvalidRequestError("batch routing is not supported by the current provider router", nil))
 	}
 
-	modelSet := map[string]struct{}{}
-	providerSet := map[string]struct{}{}
+	providerType, err := determineBatchProviderType(h.provider, &req)
+	if err != nil {
+		return handleError(c, err)
+	}
+	auditlog.EnrichEntry(c, "batch", providerType)
 
-	for i, item := range req.Requests {
-		result := core.BatchResultItem{
-			Index:    i,
-			CustomID: item.CustomID,
-			URL:      item.URL,
-		}
-
-		endpoint := normalizeBatchEndpoint(resolveBatchEndpoint(req.Endpoint, item.URL))
-		if endpoint == "" {
-			result.StatusCode = http.StatusBadRequest
-			result.Error = &core.BatchError{
-				Type:    string(core.ErrorTypeInvalidRequest),
-				Message: "batch item url is required (or set top-level endpoint)",
-			}
-			requestCounts.Failed++
-			results = append(results, result)
-			continue
-		}
-		result.URL = endpoint
-
-		method := strings.ToUpper(strings.TrimSpace(item.Method))
-		if method == "" {
-			method = http.MethodPost
-		}
-		if method != http.MethodPost {
-			result.StatusCode = http.StatusBadRequest
-			result.Error = &core.BatchError{
-				Type:    string(core.ErrorTypeInvalidRequest),
-				Message: "only POST is supported for batch items",
-			}
-			requestCounts.Failed++
-			results = append(results, result)
-			continue
-		}
-
-		if len(item.Body) == 0 {
-			result.StatusCode = http.StatusBadRequest
-			result.Error = &core.BatchError{
-				Type:    string(core.ErrorTypeInvalidRequest),
-				Message: "batch item body is required",
-			}
-			requestCounts.Failed++
-			results = append(results, result)
-			continue
-		}
-
-		switch endpoint {
-		case "/v1/chat/completions":
-			var chatReq core.ChatRequest
-			if err := json.Unmarshal(item.Body, &chatReq); err != nil {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "invalid chat request body: " + err.Error(),
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if chatReq.Model == "" {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "model is required",
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if !h.provider.Supports(chatReq.Model) {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "unsupported model: " + chatReq.Model,
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-
-			chatReq.Stream = false
-			providerType := h.provider.GetProviderType(chatReq.Model)
-			resp, err := h.provider.ChatCompletion(ctx, &chatReq)
-			if err != nil {
-				statusCode, batchErr := batchErrorFromErr(err)
-				result.StatusCode = statusCode
-				result.Error = batchErr
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if resp != nil {
-				if resp.Model == "" {
-					resp.Model = chatReq.Model
-				}
-				result.Model = resp.Model
-				modelSet[result.Model] = struct{}{}
-			}
-			result.Provider = providerType
-			if providerType != "" {
-				providerSet[providerType] = struct{}{}
-			}
-			result.StatusCode = http.StatusOK
-			result.Response = resp
-			requestCounts.Completed++
-
-			if h.usageLogger != nil && h.usageLogger.Config().Enabled && resp != nil {
-				var pricing *core.ModelPricing
-				if h.pricingResolver != nil {
-					pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
-				}
-				usageEntry := usage.ExtractFromChatResponse(resp, requestID, providerType, "/v1/batches", pricing)
-				if usageEntry != nil {
-					usageEntry.RawData = ensureBatchEndpointRawData(usageEntry.RawData, endpoint)
-					h.usageLogger.Write(usageEntry)
-					mergeBatchUsage(&usageSummary, usageEntry)
-				}
-			}
-
-		case "/v1/responses":
-			var responsesReq core.ResponsesRequest
-			if err := json.Unmarshal(item.Body, &responsesReq); err != nil {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "invalid responses request body: " + err.Error(),
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if responsesReq.Model == "" {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "model is required",
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if !h.provider.Supports(responsesReq.Model) {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "unsupported model: " + responsesReq.Model,
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-
-			responsesReq.Stream = false
-			providerType := h.provider.GetProviderType(responsesReq.Model)
-			resp, err := h.provider.Responses(ctx, &responsesReq)
-			if err != nil {
-				statusCode, batchErr := batchErrorFromErr(err)
-				result.StatusCode = statusCode
-				result.Error = batchErr
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if resp != nil {
-				if resp.Model == "" {
-					resp.Model = responsesReq.Model
-				}
-				result.Model = resp.Model
-				modelSet[result.Model] = struct{}{}
-			}
-			result.Provider = providerType
-			if providerType != "" {
-				providerSet[providerType] = struct{}{}
-			}
-			result.StatusCode = http.StatusOK
-			result.Response = resp
-			requestCounts.Completed++
-
-			if h.usageLogger != nil && h.usageLogger.Config().Enabled && resp != nil {
-				var pricing *core.ModelPricing
-				if h.pricingResolver != nil {
-					pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
-				}
-				usageEntry := usage.ExtractFromResponsesResponse(resp, requestID, providerType, "/v1/batches", pricing)
-				if usageEntry != nil {
-					usageEntry.RawData = ensureBatchEndpointRawData(usageEntry.RawData, endpoint)
-					h.usageLogger.Write(usageEntry)
-					mergeBatchUsage(&usageSummary, usageEntry)
-				}
-			}
-
-		case "/v1/embeddings":
-			var embeddingsReq core.EmbeddingRequest
-			if err := json.Unmarshal(item.Body, &embeddingsReq); err != nil {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "invalid embeddings request body: " + err.Error(),
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if embeddingsReq.Model == "" {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "model is required",
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if !h.provider.Supports(embeddingsReq.Model) {
-				result.StatusCode = http.StatusBadRequest
-				result.Error = &core.BatchError{
-					Type:    string(core.ErrorTypeInvalidRequest),
-					Message: "unsupported model: " + embeddingsReq.Model,
-				}
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-
-			providerType := h.provider.GetProviderType(embeddingsReq.Model)
-			resp, err := h.provider.Embeddings(ctx, &embeddingsReq)
-			if err != nil {
-				statusCode, batchErr := batchErrorFromErr(err)
-				result.StatusCode = statusCode
-				result.Error = batchErr
-				requestCounts.Failed++
-				results = append(results, result)
-				continue
-			}
-			if resp != nil {
-				if resp.Model == "" {
-					resp.Model = embeddingsReq.Model
-				}
-				result.Model = resp.Model
-				modelSet[result.Model] = struct{}{}
-			}
-			result.Provider = providerType
-			if providerType != "" {
-				providerSet[providerType] = struct{}{}
-			}
-			result.StatusCode = http.StatusOK
-			result.Response = resp
-			requestCounts.Completed++
-
-			if h.usageLogger != nil && h.usageLogger.Config().Enabled && resp != nil {
-				var pricing *core.ModelPricing
-				if h.pricingResolver != nil {
-					pricing = h.pricingResolver.ResolvePricing(resp.Model, providerType)
-				}
-				usageEntry := usage.ExtractFromEmbeddingResponse(resp, requestID, providerType, "/v1/batches", pricing)
-				if usageEntry != nil {
-					usageEntry.RawData = ensureBatchEndpointRawData(usageEntry.RawData, endpoint)
-					h.usageLogger.Write(usageEntry)
-					mergeBatchUsage(&usageSummary, usageEntry)
-				}
-			}
-
-		default:
-			result.StatusCode = http.StatusBadRequest
-			result.Error = &core.BatchError{
-				Type:    string(core.ErrorTypeInvalidRequest),
-				Message: "unsupported batch item url: " + endpoint,
-			}
-			requestCounts.Failed++
-			results = append(results, result)
-			continue
-		}
-
-		results = append(results, result)
+	upstream, err := nativeRouter.CreateBatch(ctx, providerType, &req)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if upstream == nil {
+		return handleError(c, core.NewProviderError(providerType, http.StatusBadGateway, "provider returned empty batch response", nil))
 	}
 
-	// Best-effort enrichment for audit log summary fields.
-	auditlog.EnrichEntry(c, selectAuditModel(modelSet), selectAuditProvider(providerSet))
-
-	now := time.Now().Unix()
-	status := "completed"
-	if requestCounts.Completed == 0 {
-		status = "failed"
+	providerBatchID := upstream.ProviderBatchID
+	if providerBatchID == "" {
+		providerBatchID = upstream.ID
+	}
+	if providerBatchID == "" {
+		return handleError(c, core.NewProviderError(providerType, http.StatusBadGateway, "provider response missing batch id", nil))
 	}
 
-	resp := core.BatchResponse{
-		ID:               "batch_" + uuid.NewString(),
-		Object:           "batch",
-		Endpoint:         normalizeBatchEndpoint(req.Endpoint),
-		InputFileID:      req.InputFileID,
-		CompletionWindow: req.CompletionWindow,
-		Status:           status,
-		CreatedAt:        now,
-		CompletedAt:      &now,
-		RequestCounts:    requestCounts,
-		Metadata:         req.Metadata,
-		Usage:            usageSummary,
-		Results:          results,
+	resp := *upstream
+	resp.Provider = providerType
+	resp.ProviderBatchID = providerBatchID
+	resp.ID = "batch_" + uuid.NewString()
+	resp.Object = "batch"
+	if resp.Endpoint == "" {
+		resp.Endpoint = normalizeBatchEndpoint(req.Endpoint)
 	}
-
-	if resp.Endpoint == "" && len(results) > 0 {
-		resp.Endpoint = "mixed"
+	if resp.CompletionWindow == "" {
+		resp.CompletionWindow = req.CompletionWindow
 	}
 	if resp.CompletionWindow == "" {
 		resp.CompletionWindow = "24h"
 	}
+	if resp.Metadata == nil {
+		resp.Metadata = map[string]string{}
+	}
+	resp.Metadata["provider"] = providerType
+	resp.Metadata["provider_batch_id"] = providerBatchID
+
+	if h.batchStore != nil {
+		if err := h.batchStore.Create(ctx, &resp); err != nil {
+			return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist batch", err))
+		}
+	}
 
 	return c.JSON(http.StatusOK, resp)
+}
+
+func determineBatchProviderType(provider core.RoutableProvider, req *core.BatchRequest) (string, error) {
+	if provider == nil {
+		return "", core.NewInvalidRequestError("provider is not configured", nil)
+	}
+
+	if strings.TrimSpace(req.InputFileID) != "" {
+		if req.Metadata == nil {
+			return "", core.NewInvalidRequestError("metadata.provider is required for input_file_id batches", nil)
+		}
+		providerType := strings.TrimSpace(req.Metadata["provider"])
+		if providerType == "" {
+			return "", core.NewInvalidRequestError("metadata.provider is required for input_file_id batches", nil)
+		}
+		return providerType, nil
+	}
+
+	if len(req.Requests) == 0 {
+		return "", core.NewInvalidRequestError("requests is required and must not be empty", nil)
+	}
+
+	var providerType string
+	for i, item := range req.Requests {
+		model, err := extractBatchItemModel(resolveBatchEndpoint(req.Endpoint, item.URL), item.Method, item.Body)
+		if err != nil {
+			return "", core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
+		}
+		if model == "" {
+			return "", core.NewInvalidRequestError(fmt.Sprintf("batch item %d: model is required", i), nil)
+		}
+		if !provider.Supports(model) {
+			return "", core.NewInvalidRequestError("unsupported model: "+model, nil)
+		}
+		itemProvider := provider.GetProviderType(model)
+		if providerType == "" {
+			providerType = itemProvider
+			continue
+		}
+		if providerType != itemProvider {
+			return "", core.NewInvalidRequestError("native batch supports a single provider per batch; split mixed-provider requests", nil)
+		}
+	}
+
+	if providerType == "" {
+		return "", core.NewInvalidRequestError("unable to resolve provider for batch", nil)
+	}
+	return providerType, nil
+}
+
+func extractBatchItemModel(endpoint, method string, body json.RawMessage) (string, error) {
+	normalized := normalizeBatchEndpoint(endpoint)
+	if normalized == "" {
+		return "", fmt.Errorf("url is required")
+	}
+	normalizedMethod := strings.ToUpper(strings.TrimSpace(method))
+	if normalizedMethod == "" {
+		normalizedMethod = http.MethodPost
+	}
+	if normalizedMethod != http.MethodPost {
+		return "", fmt.Errorf("only POST is supported")
+	}
+	if len(body) == 0 {
+		return "", fmt.Errorf("body is required")
+	}
+
+	switch normalized {
+	case "/v1/chat/completions":
+		var req core.ChatRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			return "", fmt.Errorf("invalid chat request body: %w", err)
+		}
+		return req.Model, nil
+	case "/v1/responses":
+		var req core.ResponsesRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			return "", fmt.Errorf("invalid responses request body: %w", err)
+		}
+		return req.Model, nil
+	case "/v1/embeddings":
+		var req core.EmbeddingRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			return "", fmt.Errorf("invalid embeddings request body: %w", err)
+		}
+		return req.Model, nil
+	default:
+		return "", fmt.Errorf("unsupported batch item url: %s", normalized)
+	}
+}
+
+// GetBatch handles GET /v1/batches/{id}.
+func (h *Handler) GetBatch(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("batch id is required", nil))
+	}
+
+	resp, err := h.batchStore.Get(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, batchstore.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("batch not found: "+id))
+		}
+		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to load batch", err))
+	}
+	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
+	if !ok {
+		return c.JSON(http.StatusOK, resp)
+	}
+	if resp.Provider == "" || resp.ProviderBatchID == "" {
+		return c.JSON(http.StatusOK, resp)
+	}
+
+	latest, err := nativeRouter.GetBatch(c.Request().Context(), resp.Provider, resp.ProviderBatchID)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if latest != nil {
+		mergeStoredBatchFromUpstream(resp, latest)
+		if err := h.batchStore.Update(c.Request().Context(), resp); err != nil && !errors.Is(err, batchstore.ErrNotFound) {
+			return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist refreshed batch", err))
+		}
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// ListBatches handles GET /v1/batches.
+func (h *Handler) ListBatches(c echo.Context) error {
+	limit := 20
+	if v := strings.TrimSpace(c.QueryParam("limit")); v != "" {
+		parsed, err := strconv.Atoi(v)
+		if err != nil {
+			return handleError(c, core.NewInvalidRequestError("invalid limit parameter", err))
+		}
+		limit = parsed
+	}
+
+	after := strings.TrimSpace(c.QueryParam("after"))
+	normalizedLimit := limit
+	if normalizedLimit <= 0 {
+		normalizedLimit = 20
+	}
+	if normalizedLimit > 100 {
+		normalizedLimit = 100
+	}
+
+	items, err := h.batchStore.List(c.Request().Context(), normalizedLimit, after)
+	if err != nil {
+		if errors.Is(err, batchstore.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("after cursor batch not found: "+after))
+		}
+		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to list batches", err))
+	}
+
+	data := make([]core.BatchResponse, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		data = append(data, *item)
+	}
+
+	resp := core.BatchListResponse{
+		Object:  "list",
+		Data:    data,
+		HasMore: len(data) >= normalizedLimit,
+	}
+	if len(data) > 0 {
+		resp.FirstID = data[0].ID
+		resp.LastID = data[len(data)-1].ID
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// CancelBatch handles POST /v1/batches/{id}/cancel.
+func (h *Handler) CancelBatch(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("batch id is required", nil))
+	}
+
+	resp, err := h.batchStore.Get(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, batchstore.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("batch not found: "+id))
+		}
+		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to load batch", err))
+	}
+
+	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
+	if !ok || resp.Provider == "" || resp.ProviderBatchID == "" {
+		return handleError(c, core.NewInvalidRequestError("native batch cancellation is not available", nil))
+	}
+
+	latest, err := nativeRouter.CancelBatch(c.Request().Context(), resp.Provider, resp.ProviderBatchID)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if latest != nil {
+		mergeStoredBatchFromUpstream(resp, latest)
+	}
+
+	if err := h.batchStore.Update(c.Request().Context(), resp); err != nil {
+		if errors.Is(err, batchstore.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("batch not found: "+id))
+		}
+		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to cancel batch", err))
+	}
+
+	return c.JSON(http.StatusOK, resp)
+}
+
+// BatchResults handles GET /v1/batches/{id}/results.
+func (h *Handler) BatchResults(c echo.Context) error {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("batch id is required", nil))
+	}
+
+	stored, err := h.batchStore.Get(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, batchstore.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("batch not found: "+id))
+		}
+		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to load batch results", err))
+	}
+
+	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
+	if !ok || stored.Provider == "" || stored.ProviderBatchID == "" {
+		return c.JSON(http.StatusOK, core.BatchResultsResponse{
+			Object:  "list",
+			BatchID: stored.ID,
+			Data:    stored.Results,
+		})
+	}
+
+	upstream, err := nativeRouter.GetBatchResults(c.Request().Context(), stored.Provider, stored.ProviderBatchID)
+	if err != nil {
+		if isNativeBatchResultsPending(err) {
+			if latest, getErr := nativeRouter.GetBatch(c.Request().Context(), stored.Provider, stored.ProviderBatchID); getErr == nil && latest != nil {
+				mergeStoredBatchFromUpstream(stored, latest)
+				_ = h.batchStore.Update(c.Request().Context(), stored)
+			}
+			status := strings.TrimSpace(stored.Status)
+			if status == "" {
+				status = "in_progress"
+			}
+			return handleError(c, core.NewInvalidRequestErrorWithStatus(
+				http.StatusConflict,
+				fmt.Sprintf("batch results are not ready yet (status: %s)", status),
+				err,
+			))
+		}
+		return handleError(c, err)
+	}
+	if upstream == nil {
+		return handleError(c, core.NewProviderError(stored.Provider, http.StatusBadGateway, "provider returned empty batch results response", nil))
+	}
+
+	result := *upstream
+	result.BatchID = stored.ID
+	if len(result.Data) > 0 {
+		stored.Results = result.Data
+		_ = h.batchStore.Update(c.Request().Context(), stored)
+	}
+
+	return c.JSON(http.StatusOK, result)
 }
 
 func resolveBatchEndpoint(topLevel, itemURL string) string {
@@ -629,72 +639,38 @@ func normalizeBatchEndpoint(raw string) string {
 	return trimmed
 }
 
-func batchErrorFromErr(err error) (int, *core.BatchError) {
-	var gatewayErr *core.GatewayError
-	if errors.As(err, &gatewayErr) {
-		return gatewayErr.HTTPStatusCode(), &core.BatchError{
-			Type:    string(gatewayErr.Type),
-			Message: gatewayErr.Message,
-		}
-	}
-
-	return http.StatusInternalServerError, &core.BatchError{
-		Type:    "internal_error",
-		Message: "an unexpected error occurred",
-	}
-}
-
-func mergeBatchUsage(summary *core.BatchUsageSummary, entry *usage.UsageEntry) {
-	if summary == nil || entry == nil {
+func mergeStoredBatchFromUpstream(stored, upstream *core.BatchResponse) {
+	if stored == nil || upstream == nil {
 		return
 	}
 
-	summary.InputTokens += entry.InputTokens
-	summary.OutputTokens += entry.OutputTokens
-	summary.TotalTokens += entry.TotalTokens
-
-	addCost := func(dst **float64, src *float64) {
-		if src == nil {
-			return
-		}
-		if *dst == nil {
-			v := 0.0
-			*dst = &v
-		}
-		**dst += *src
+	stored.Status = upstream.Status
+	stored.Endpoint = upstream.Endpoint
+	stored.InputFileID = upstream.InputFileID
+	stored.CompletionWindow = upstream.CompletionWindow
+	stored.RequestCounts = upstream.RequestCounts
+	stored.Usage = upstream.Usage
+	stored.Results = upstream.Results
+	stored.InProgressAt = upstream.InProgressAt
+	stored.CompletedAt = upstream.CompletedAt
+	stored.FailedAt = upstream.FailedAt
+	stored.CancellingAt = upstream.CancellingAt
+	stored.CancelledAt = upstream.CancelledAt
+	if upstream.Metadata != nil {
+		stored.Metadata = upstream.Metadata
 	}
-	addCost(&summary.InputCost, entry.InputCost)
-	addCost(&summary.OutputCost, entry.OutputCost)
-	addCost(&summary.TotalCost, entry.TotalCost)
 }
 
-func selectAuditModel(models map[string]struct{}) string {
-	if len(models) == 1 {
-		for model := range models {
-			return model
-		}
+func isNativeBatchResultsPending(err error) bool {
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		return false
 	}
-	return "batch"
-}
-
-func selectAuditProvider(providers map[string]struct{}) string {
-	if len(providers) == 1 {
-		for provider := range providers {
-			return provider
-		}
+	if gatewayErr.HTTPStatusCode() != http.StatusNotFound {
+		return false
 	}
-	return "mixed"
-}
-
-func ensureBatchEndpointRawData(raw map[string]any, endpoint string) map[string]any {
-	if endpoint == "" {
-		return raw
-	}
-	if raw == nil {
-		raw = make(map[string]any, 1)
-	}
-	raw["batch_endpoint"] = endpoint
-	return raw
+	// Anthropic results endpoint returns 404 until results are ready.
+	return strings.EqualFold(gatewayErr.Provider, "anthropic")
 }
 
 // handleError converts gateway errors to appropriate HTTP responses

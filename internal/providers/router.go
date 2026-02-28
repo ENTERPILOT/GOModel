@@ -143,3 +143,124 @@ func (r *Router) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*c
 func (r *Router) GetProviderType(model string) string {
 	return r.lookup.GetProviderType(model)
 }
+
+func (r *Router) providerByType(providerType string) core.Provider {
+	models := r.lookup.ListModels()
+	for _, model := range models {
+		if r.lookup.GetProviderType(model.ID) != providerType {
+			continue
+		}
+		p := r.lookup.GetProvider(model.ID)
+		if p != nil {
+			return p
+		}
+	}
+	return nil
+}
+
+// CreateBatch routes native batch creation to a provider type.
+func (r *Router) CreateBatch(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, fmt.Errorf("provider type is required")
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.CreateBatch(ctx, req)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// GetBatch routes native batch lookup to a provider type.
+func (r *Router) GetBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, fmt.Errorf("provider type is required")
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.GetBatch(ctx, id)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// ListBatches routes native batch listing to a provider type.
+func (r *Router) ListBatches(ctx context.Context, providerType string, limit int, after string) (*core.BatchListResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, fmt.Errorf("provider type is required")
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	return bp.ListBatches(ctx, limit, after)
+}
+
+// CancelBatch routes native batch cancellation to a provider type.
+func (r *Router) CancelBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, fmt.Errorf("provider type is required")
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	resp, err := bp.CancelBatch(ctx, id)
+	if err == nil && resp != nil {
+		resp.Provider = providerType
+	}
+	return resp, err
+}
+
+// GetBatchResults routes native batch results lookup to a provider type.
+func (r *Router) GetBatchResults(ctx context.Context, providerType, id string) (*core.BatchResultsResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, fmt.Errorf("provider type is required")
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for provider type: %s", providerType)
+	}
+	bp, ok := provider.(core.NativeBatchProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support native batch processing", providerType), nil)
+	}
+	return bp.GetBatchResults(ctx, id)
+}

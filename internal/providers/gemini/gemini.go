@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,10 +44,10 @@ func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 		modelsURL: defaultModelsBaseURL,
 	}
 	cfg := llmclient.Config{
-		ProviderName: "gemini",
-		BaseURL:      defaultOpenAICompatibleBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "gemini",
+		BaseURL:        defaultOpenAICompatibleBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -229,4 +231,83 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
 	return providers.StreamResponsesViaChat(ctx, p, req, "gemini")
+}
+
+// CreateBatch creates a native Gemini batch job through its OpenAI-compatible endpoint.
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatch retrieves a native Gemini batch job.
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/batches/" + url.PathEscape(id),
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// ListBatches lists native Gemini batch jobs.
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("after", after)
+	}
+	endpoint := "/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp core.BatchListResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// CancelBatch cancels a native Gemini batch job.
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatchResults returns an explicit error for Gemini-style providers.
+func (p *Provider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
+	return nil, core.NewInvalidRequestError("provider does not support direct batch results endpoint; fetch via output file APIs", nil)
 }

@@ -5,6 +5,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 
 	"gomodel/internal/core"
 	"gomodel/internal/llmclient"
@@ -31,10 +33,10 @@ type Provider struct {
 func New(apiKey string, opts providers.ProviderOptions) core.Provider {
 	p := &Provider{apiKey: apiKey}
 	cfg := llmclient.Config{
-		ProviderName: "xai",
-		BaseURL:      defaultBaseURL,
-		Retry:        opts.Resilience.Retry,
-		Hooks:        opts.Hooks,
+		ProviderName:   "xai",
+		BaseURL:        defaultBaseURL,
+		Retry:          opts.Resilience.Retry,
+		Hooks:          opts.Hooks,
 		CircuitBreaker: opts.Resilience.CircuitBreaker,
 	}
 	p.client = llmclient.New(cfg, p.setHeaders)
@@ -149,4 +151,83 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 		resp.Model = req.Model
 	}
 	return &resp, nil
+}
+
+// CreateBatch creates a native xAI batch job.
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches",
+		Body:     req,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatch retrieves a native xAI batch job.
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/batches/" + url.PathEscape(id),
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// ListBatches lists native xAI batch jobs.
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("after", after)
+	}
+	endpoint := "/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp core.BatchListResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// CancelBatch cancels a native xAI batch job.
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+// GetBatchResults returns an explicit error for xAI-style providers.
+func (p *Provider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
+	return nil, core.NewInvalidRequestError("provider does not support direct batch results endpoint; fetch via output file APIs", nil)
 }

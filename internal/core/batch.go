@@ -11,7 +11,7 @@ import "encoding/json"
 //   - metadata
 //
 // Gateway extension:
-//   - requests (inline payloads for immediate execution without files API)
+//   - requests (inline payloads for providers that support native inline batch bodies)
 type BatchRequest struct {
 	InputFileID      string             `json:"input_file_id,omitempty"`
 	Endpoint         string             `json:"endpoint,omitempty"`
@@ -28,22 +28,44 @@ type BatchRequestItem struct {
 	Body     json.RawMessage `json:"body"`
 }
 
-// BatchResponse uses OpenAI-compatible batch fields and adds inline execution data.
+// BatchResponse uses OpenAI-compatible batch fields and includes provider mapping plus optional cached results.
 type BatchResponse struct {
 	ID               string             `json:"id"`
 	Object           string             `json:"object"`
+	Provider         string             `json:"provider,omitempty"`
+	ProviderBatchID  string             `json:"provider_batch_id,omitempty"`
 	Endpoint         string             `json:"endpoint"`
 	InputFileID      string             `json:"input_file_id,omitempty"`
 	CompletionWindow string             `json:"completion_window,omitempty"`
 	Status           string             `json:"status"`
 	CreatedAt        int64              `json:"created_at"`
+	InProgressAt     *int64             `json:"in_progress_at,omitempty"`
 	CompletedAt      *int64             `json:"completed_at,omitempty"`
+	FailedAt         *int64             `json:"failed_at,omitempty"`
+	CancellingAt     *int64             `json:"cancelling_at,omitempty"`
+	CancelledAt      *int64             `json:"cancelled_at,omitempty"`
 	RequestCounts    BatchRequestCounts `json:"request_counts"`
 	Metadata         map[string]string  `json:"metadata,omitempty"`
 
-	// Gateway extension: inline execution details.
+	// Gateway extension: optional usage/result snapshots persisted by the gateway.
 	Usage   BatchUsageSummary `json:"usage"`
 	Results []BatchResultItem `json:"results,omitempty"`
+}
+
+// BatchListResponse is returned by GET /v1/batches.
+type BatchListResponse struct {
+	Object  string          `json:"object"`
+	Data    []BatchResponse `json:"data"`
+	HasMore bool            `json:"has_more"`
+	FirstID string          `json:"first_id,omitempty"`
+	LastID  string          `json:"last_id,omitempty"`
+}
+
+// BatchResultsResponse is returned by GET /v1/batches/{id}/results.
+type BatchResultsResponse struct {
+	Object  string            `json:"object"`
+	BatchID string            `json:"batch_id"`
+	Data    []BatchResultItem `json:"data"`
 }
 
 // BatchRequestCounts is OpenAI-compatible aggregate batch status.

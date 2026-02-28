@@ -27,6 +27,26 @@ type Provider interface {
 	Embeddings(ctx context.Context, req *EmbeddingRequest) (*EmbeddingResponse, error)
 }
 
+// NativeBatchProvider is implemented by providers that support native discounted batching.
+// This is intentionally separate from Provider so unsupported providers can still implement
+// regular synchronous APIs without batch capabilities.
+type NativeBatchProvider interface {
+	CreateBatch(ctx context.Context, req *BatchRequest) (*BatchResponse, error)
+	GetBatch(ctx context.Context, id string) (*BatchResponse, error)
+	ListBatches(ctx context.Context, limit int, after string) (*BatchListResponse, error)
+	CancelBatch(ctx context.Context, id string) (*BatchResponse, error)
+	GetBatchResults(ctx context.Context, id string) (*BatchResultsResponse, error)
+}
+
+// NativeBatchRoutableProvider extends routing with native batch operations.
+type NativeBatchRoutableProvider interface {
+	CreateBatch(ctx context.Context, providerType string, req *BatchRequest) (*BatchResponse, error)
+	GetBatch(ctx context.Context, providerType, id string) (*BatchResponse, error)
+	ListBatches(ctx context.Context, providerType string, limit int, after string) (*BatchListResponse, error)
+	CancelBatch(ctx context.Context, providerType, id string) (*BatchResponse, error)
+	GetBatchResults(ctx context.Context, providerType, id string) (*BatchResultsResponse, error)
+}
+
 // RoutableProvider extends Provider with routing capability.
 // This is implemented by the Router which uses a model registry
 // to determine if a model is supported.

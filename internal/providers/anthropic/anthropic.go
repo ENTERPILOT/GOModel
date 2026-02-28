@@ -10,6 +10,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -181,6 +183,52 @@ type anthropicModelsResponse struct {
 	FirstID string               `json:"first_id"`
 	HasMore bool                 `json:"has_more"`
 	LastID  string               `json:"last_id"`
+}
+
+type anthropicBatchCreateRequest struct {
+	Requests []anthropicBatchRequest `json:"requests"`
+}
+
+type anthropicBatchRequest struct {
+	CustomID string           `json:"custom_id"`
+	Params   anthropicRequest `json:"params"`
+}
+
+type anthropicBatchRequestCounts struct {
+	Processing int `json:"processing"`
+	Succeeded  int `json:"succeeded"`
+	Errored    int `json:"errored"`
+	Canceled   int `json:"canceled"`
+	Expired    int `json:"expired"`
+}
+
+type anthropicBatchResponse struct {
+	ID                string                      `json:"id"`
+	Type              string                      `json:"type"`
+	ProcessingStatus  string                      `json:"processing_status"`
+	RequestCounts     anthropicBatchRequestCounts `json:"request_counts"`
+	CreatedAt         string                      `json:"created_at"`
+	EndedAt           string                      `json:"ended_at"`
+	CancelInitiatedAt string                      `json:"cancel_initiated_at"`
+}
+
+type anthropicBatchListResponse struct {
+	Data    []anthropicBatchResponse `json:"data"`
+	FirstID string                   `json:"first_id"`
+	LastID  string                   `json:"last_id"`
+	HasMore bool                     `json:"has_more"`
+}
+
+type anthropicBatchResultLine struct {
+	CustomID string `json:"custom_id"`
+	Result   struct {
+		Type    string          `json:"type"`
+		Message json.RawMessage `json:"message,omitempty"`
+		Error   *struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error,omitempty"`
+	} `json:"result"`
 }
 
 // normalizeEffort maps effort to gateway-supported values. Anthropic Opus 4.6
@@ -710,6 +758,307 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 	}
 
 	return convertAnthropicResponseToResponses(&anthropicResp, req.Model), nil
+}
+
+func parseOptionalUnix(ts string) *int64 {
+	ts = strings.TrimSpace(ts)
+	if ts == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, ts)
+	if err != nil {
+		return nil
+	}
+	u := t.Unix()
+	return &u
+}
+
+func mapAnthropicBatchResponse(resp *anthropicBatchResponse) *core.BatchResponse {
+	if resp == nil {
+		return nil
+	}
+
+	total := resp.RequestCounts.Processing + resp.RequestCounts.Succeeded + resp.RequestCounts.Errored + resp.RequestCounts.Canceled + resp.RequestCounts.Expired
+	failed := resp.RequestCounts.Errored + resp.RequestCounts.Canceled + resp.RequestCounts.Expired
+
+	status := "in_progress"
+	switch resp.ProcessingStatus {
+	case "canceling":
+		status = "cancelling"
+	case "ended":
+		switch {
+		case resp.RequestCounts.Canceled > 0 && resp.RequestCounts.Succeeded == 0 && resp.RequestCounts.Errored == 0:
+			status = "cancelled"
+		case resp.RequestCounts.Errored > 0 && resp.RequestCounts.Succeeded == 0:
+			status = "failed"
+		default:
+			status = "completed"
+		}
+	}
+
+	return &core.BatchResponse{
+		ID:           resp.ID,
+		Object:       "batch",
+		Status:       status,
+		CreatedAt:    parseCreatedAt(resp.CreatedAt),
+		CompletedAt:  parseOptionalUnix(resp.EndedAt),
+		CancellingAt: parseOptionalUnix(resp.CancelInitiatedAt),
+		RequestCounts: core.BatchRequestCounts{
+			Total:     total,
+			Completed: resp.RequestCounts.Succeeded,
+			Failed:    failed,
+		},
+	}
+}
+
+func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCreateRequest, error) {
+	if len(req.Requests) == 0 {
+		return nil, core.NewInvalidRequestError("requests is required for anthropic batch processing", nil)
+	}
+
+	out := &anthropicBatchCreateRequest{
+		Requests: make([]anthropicBatchRequest, 0, len(req.Requests)),
+	}
+
+	for i, item := range req.Requests {
+		method := strings.ToUpper(strings.TrimSpace(item.Method))
+		if method == "" {
+			method = http.MethodPost
+		}
+		if method != http.MethodPost {
+			return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: only POST is supported", i), nil)
+		}
+
+		endpoint := strings.TrimSpace(item.URL)
+		if endpoint == "" {
+			endpoint = strings.TrimSpace(req.Endpoint)
+		}
+		endpoint = strings.TrimRight(endpoint, "/")
+		if endpoint == "" {
+			return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: url is required", i), nil)
+		}
+
+		var params *anthropicRequest
+		switch endpoint {
+		case "/v1/chat/completions":
+			var chatReq core.ChatRequest
+			if err := json.Unmarshal(item.Body, &chatReq); err != nil {
+				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid chat body: %v", i, err), err)
+			}
+			if chatReq.Stream {
+				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
+			}
+			params = convertToAnthropicRequest(&chatReq)
+			params.Stream = false
+		case "/v1/responses":
+			var respReq core.ResponsesRequest
+			if err := json.Unmarshal(item.Body, &respReq); err != nil {
+				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid responses body: %v", i, err), err)
+			}
+			if respReq.Stream {
+				return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
+			}
+			params = convertResponsesRequestToAnthropic(&respReq)
+			params.Stream = false
+		case "/v1/embeddings":
+			return nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
+		default:
+			return nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", endpoint), nil)
+		}
+
+		customID := strings.TrimSpace(item.CustomID)
+		if customID == "" {
+			customID = fmt.Sprintf("req-%d", i)
+		}
+		out.Requests = append(out.Requests, anthropicBatchRequest{
+			CustomID: customID,
+			Params:   *params,
+		})
+	}
+
+	return out, nil
+}
+
+// CreateBatch creates an Anthropic native message batch.
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	anthropicReq, err := buildAnthropicBatchCreateRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp anthropicBatchResponse
+	err = p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/messages/batches",
+		Body:     anthropicReq,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	mapped := mapAnthropicBatchResponse(&resp)
+	if mapped == nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to map anthropic batch response", nil)
+	}
+	mapped.ProviderBatchID = mapped.ID
+	return mapped, nil
+}
+
+// GetBatch retrieves an Anthropic native message batch.
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp anthropicBatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/messages/batches/" + url.PathEscape(id),
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	mapped := mapAnthropicBatchResponse(&resp)
+	if mapped == nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to map anthropic batch response", nil)
+	}
+	mapped.ProviderBatchID = mapped.ID
+	return mapped, nil
+}
+
+// ListBatches lists Anthropic native message batches.
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("before_id", after)
+	}
+	endpoint := "/messages/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp anthropicBatchListResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+
+	data := make([]core.BatchResponse, 0, len(resp.Data))
+	for _, row := range resp.Data {
+		mapped := mapAnthropicBatchResponse(&row)
+		if mapped == nil {
+			continue
+		}
+		mapped.ProviderBatchID = mapped.ID
+		data = append(data, *mapped)
+	}
+
+	return &core.BatchListResponse{
+		Object:  "list",
+		Data:    data,
+		HasMore: resp.HasMore,
+		FirstID: resp.FirstID,
+		LastID:  resp.LastID,
+	}, nil
+}
+
+// CancelBatch cancels an Anthropic native message batch.
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp anthropicBatchResponse
+	err := p.client.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/messages/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp)
+	if err != nil {
+		return nil, err
+	}
+	mapped := mapAnthropicBatchResponse(&resp)
+	if mapped == nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to map anthropic batch response", nil)
+	}
+	mapped.ProviderBatchID = mapped.ID
+	return mapped, nil
+}
+
+// GetBatchResults retrieves Anthropic native message batch results.
+func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
+	raw, err := p.client.DoRaw(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/messages/batches/" + url.PathEscape(id) + "/results",
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	scanner := bufio.NewScanner(bytes.NewReader(raw.Body))
+	// Allow larger result lines than Scanner's default 64K.
+	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+
+	results := make([]core.BatchResultItem, 0)
+	index := 0
+	for scanner.Scan() {
+		line := bytes.TrimSpace(scanner.Bytes())
+		if len(line) == 0 {
+			continue
+		}
+
+		var row anthropicBatchResultLine
+		if err := json.Unmarshal(line, &row); err != nil {
+			continue
+		}
+
+		item := core.BatchResultItem{
+			Index:    index,
+			CustomID: row.CustomID,
+			URL:      "/v1/chat/completions",
+			Provider: "anthropic",
+		}
+		switch row.Result.Type {
+		case "succeeded":
+			item.StatusCode = http.StatusOK
+			if len(row.Result.Message) > 0 {
+				var payload map[string]any
+				if err := json.Unmarshal(row.Result.Message, &payload); err == nil {
+					item.Response = payload
+					if model, ok := payload["model"].(string); ok {
+						item.Model = model
+					}
+				} else {
+					item.Response = string(row.Result.Message)
+				}
+			}
+		default:
+			item.StatusCode = http.StatusBadRequest
+			errType := row.Result.Type
+			errMsg := "batch item failed"
+			if row.Result.Error != nil {
+				if row.Result.Error.Type != "" {
+					errType = row.Result.Error.Type
+				}
+				if row.Result.Error.Message != "" {
+					errMsg = row.Result.Error.Message
+				}
+			}
+			item.Error = &core.BatchError{
+				Type:    errType,
+				Message: errMsg,
+			}
+		}
+
+		results = append(results, item)
+		index++
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to parse anthropic batch results", err)
+	}
+
+	return &core.BatchResultsResponse{
+		Object:  "list",
+		BatchID: id,
+		Data:    results,
+	}, nil
 }
 
 // Embeddings returns an error because Anthropic does not natively support embeddings.

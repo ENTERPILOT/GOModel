@@ -14,6 +14,7 @@ import (
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/auditlog"
+	"gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
@@ -29,6 +30,7 @@ type App struct {
 	providers *providers.InitResult
 	audit     *auditlog.Result
 	usage     *usage.Result
+	batch     *batch.Result
 	server    *server.Server
 
 	shutdownMu sync.Mutex
@@ -102,6 +104,24 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.usage = usageResult
 
+	// Initialize batch lifecycle storage.
+	var batchResult *batch.Result
+	if auditResult.Storage != nil {
+		batchResult, err = batch.NewWithSharedStorage(ctx, appCfg, auditResult.Storage)
+	} else if usageResult.Storage != nil {
+		batchResult, err = batch.NewWithSharedStorage(ctx, appCfg, usageResult.Storage)
+	} else {
+		batchResult, err = batch.New(ctx, appCfg)
+	}
+	if err != nil {
+		closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to initialize batch storage: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to initialize batch storage: %w", err)
+	}
+	app.batch = batchResult
+
 	// Log configuration status
 	app.logStartupInfo()
 
@@ -131,6 +151,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		AuditLogger:              auditResult.Logger,
 		UsageLogger:              usageResult.Logger,
 		PricingResolver:          providerResult.Registry,
+		BatchStore:               batchResult.Store,
 		LogOnlyModelInteractions: appCfg.Logging.OnlyModelInteractions,
 		SwaggerEnabled:           appCfg.Server.SwaggerEnabled,
 	}
@@ -246,6 +267,14 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 
 	// 3. Close usage tracking (flushes pending entries)
+	if a.batch != nil {
+		if err := a.batch.Close(); err != nil {
+			slog.Error("batch store close error", "error", err)
+			errs = append(errs, fmt.Errorf("batch close: %w", err))
+		}
+	}
+
+	// 4. Close usage tracking (flushes pending entries)
 	if a.usage != nil {
 		if err := a.usage.Close(); err != nil {
 			slog.Error("usage logger close error", "error", err)
@@ -253,7 +282,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 4. Close audit logging (flushes pending logs)
+	// 5. Close audit logging (flushes pending logs)
 	if a.audit != nil {
 		if err := a.audit.Close(); err != nil {
 			slog.Error("audit logger close error", "error", err)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +25,14 @@ type mockProvider struct {
 	embeddingErr      error
 	streamData        string
 	supportedModels   []string
+	providerTypes     map[string]string
+
+	batchCreateResponse *core.BatchResponse
+	batchGetResponse    *core.BatchResponse
+	batchCancelResponse *core.BatchResponse
+	batchResults        *core.BatchResultsResponse
+	batchResultsErr     error
+	batchErr            error
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -38,6 +45,11 @@ func (m *mockProvider) Supports(model string) bool {
 }
 
 func (m *mockProvider) GetProviderType(model string) string {
+	if m.providerTypes != nil {
+		if providerType, ok := m.providerTypes[model]; ok {
+			return providerType
+		}
+	}
 	if m.Supports(model) {
 		return "mock"
 	}
@@ -87,6 +99,73 @@ func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (
 		return nil, m.err
 	}
 	return m.embeddingResponse, nil
+}
+
+func (m *mockProvider) CreateBatch(_ context.Context, _ string, _ *core.BatchRequest) (*core.BatchResponse, error) {
+	if m.batchErr != nil {
+		return nil, m.batchErr
+	}
+	if m.batchCreateResponse == nil {
+		now := int64(1000)
+		return &core.BatchResponse{
+			ID:            "provider-batch-1",
+			Object:        "batch",
+			Status:        "in_progress",
+			CreatedAt:     now,
+			RequestCounts: core.BatchRequestCounts{Total: 1, Completed: 0, Failed: 0},
+		}, nil
+	}
+	return m.batchCreateResponse, nil
+}
+
+func (m *mockProvider) GetBatch(_ context.Context, _ string, _ string) (*core.BatchResponse, error) {
+	if m.batchErr != nil {
+		return nil, m.batchErr
+	}
+	if m.batchGetResponse != nil {
+		return m.batchGetResponse, nil
+	}
+	return m.batchCreateResponse, nil
+}
+
+func (m *mockProvider) ListBatches(_ context.Context, _ string, _ int, _ string) (*core.BatchListResponse, error) {
+	if m.batchErr != nil {
+		return nil, m.batchErr
+	}
+	return &core.BatchListResponse{Object: "list"}, nil
+}
+
+func (m *mockProvider) CancelBatch(_ context.Context, _ string, _ string) (*core.BatchResponse, error) {
+	if m.batchErr != nil {
+		return nil, m.batchErr
+	}
+	if m.batchCancelResponse != nil {
+		return m.batchCancelResponse, nil
+	}
+	return &core.BatchResponse{
+		ID:     "provider-batch-1",
+		Object: "batch",
+		Status: "cancelled",
+	}, nil
+}
+
+func (m *mockProvider) GetBatchResults(_ context.Context, _ string, _ string) (*core.BatchResultsResponse, error) {
+	if m.batchResultsErr != nil {
+		return nil, m.batchResultsErr
+	}
+	if m.batchErr != nil {
+		return nil, m.batchErr
+	}
+	if m.batchResults != nil {
+		return m.batchResults, nil
+	}
+	return &core.BatchResultsResponse{
+		Object:  "list",
+		BatchID: "provider-batch-1",
+		Data: []core.BatchResultItem{
+			{Index: 0, StatusCode: 200},
+		},
+	}, nil
 }
 
 func TestChatCompletion(t *testing.T) {
@@ -697,40 +776,21 @@ func TestListModels_TypedError(t *testing.T) {
 func TestBatches(t *testing.T) {
 	mock := &mockProvider{
 		supportedModels: []string{"gpt-4o-mini"},
-		response: &core.ChatResponse{
-			ID:    "chatcmpl-batch-1",
-			Model: "gpt-4o-mini",
-			Usage: core.Usage{
-				PromptTokens:     100,
-				CompletionTokens: 50,
-				TotalTokens:      150,
+		batchCreateResponse: &core.BatchResponse{
+			ID:               "provider-batch-123",
+			Object:           "batch",
+			Status:           "in_progress",
+			Endpoint:         "/v1/chat/completions",
+			CompletionWindow: "24h",
+			CreatedAt:        1234567890,
+			RequestCounts: core.BatchRequestCounts{
+				Total: 2,
 			},
-		},
-		responsesResponse: &core.ResponsesResponse{
-			ID:    "resp-batch-1",
-			Model: "gpt-4o-mini",
-			Usage: &core.ResponsesUsage{
-				InputTokens:  200,
-				OutputTokens: 80,
-				TotalTokens:  280,
-			},
-		},
-	}
-
-	usageLog := &mockUsageLogger{
-		config: usage.Config{Enabled: true},
-	}
-	resolver := &mockPricingResolver{
-		pricing: &core.ModelPricing{
-			InputPerMtok:       floatPtr(10.0),
-			OutputPerMtok:      floatPtr(20.0),
-			BatchInputPerMtok:  floatPtr(2.0),
-			BatchOutputPerMtok: floatPtr(4.0),
 		},
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, usageLog, resolver)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{
 	  "completion_window":"24h",
@@ -740,18 +800,11 @@ func TestBatches(t *testing.T) {
 	      "method":"POST",
 	      "url":"/v1/chat/completions",
 	      "body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]}
-	    },
-	    {
-	      "custom_id":"resp-1",
-	      "method":"POST",
-	      "url":"/v1/responses",
-	      "body":{"model":"gpt-4o-mini","input":"Hi"}
 	    }
 	  ]
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Request-ID", "batch-req-1")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
@@ -772,75 +825,40 @@ func TestBatches(t *testing.T) {
 	if resp.Object != "batch" {
 		t.Errorf("Object = %q, want %q", resp.Object, "batch")
 	}
-	if resp.Status != "completed" {
-		t.Errorf("Status = %q, want %q", resp.Status, "completed")
+	if resp.Status != "in_progress" {
+		t.Errorf("Status = %q, want %q", resp.Status, "in_progress")
 	}
-	if resp.RequestCounts.Total != 2 || resp.RequestCounts.Completed != 2 || resp.RequestCounts.Failed != 0 {
-		t.Errorf("unexpected request counts: %+v", resp.RequestCounts)
+	if resp.Provider != "mock" {
+		t.Errorf("Provider = %q, want %q", resp.Provider, "mock")
 	}
-	if len(resp.Results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(resp.Results))
-	}
-	if resp.Results[0].StatusCode != http.StatusOK || resp.Results[1].StatusCode != http.StatusOK {
-		t.Errorf("expected both batch items to succeed, got statuses %d and %d", resp.Results[0].StatusCode, resp.Results[1].StatusCode)
-	}
-	if resp.Usage.InputTokens != 300 {
-		t.Errorf("InputTokens = %d, want 300", resp.Usage.InputTokens)
-	}
-	if resp.Usage.OutputTokens != 130 {
-		t.Errorf("OutputTokens = %d, want 130", resp.Usage.OutputTokens)
-	}
-	if resp.Usage.TotalTokens != 430 {
-		t.Errorf("TotalTokens = %d, want 430", resp.Usage.TotalTokens)
-	}
-
-	if resp.Usage.InputCost == nil || resp.Usage.OutputCost == nil || resp.Usage.TotalCost == nil {
-		t.Fatalf("expected usage costs to be populated")
-	}
-
-	wantInputCost := 300.0 / 1_000_000.0 * 2.0
-	wantOutputCost := 130.0 / 1_000_000.0 * 4.0
-	wantTotalCost := wantInputCost + wantOutputCost
-
-	if math.Abs(*resp.Usage.InputCost-wantInputCost) > 1e-12 {
-		t.Errorf("InputCost = %f, want %f", *resp.Usage.InputCost, wantInputCost)
-	}
-	if math.Abs(*resp.Usage.OutputCost-wantOutputCost) > 1e-12 {
-		t.Errorf("OutputCost = %f, want %f", *resp.Usage.OutputCost, wantOutputCost)
-	}
-	if math.Abs(*resp.Usage.TotalCost-wantTotalCost) > 1e-12 {
-		t.Errorf("TotalCost = %f, want %f", *resp.Usage.TotalCost, wantTotalCost)
+	if resp.ProviderBatchID != "provider-batch-123" {
+		t.Errorf("ProviderBatchID = %q, want %q", resp.ProviderBatchID, "provider-batch-123")
 	}
 }
 
-func TestBatches_PartialFailure(t *testing.T) {
+func TestBatches_MixedProviderRejected(t *testing.T) {
 	mock := &mockProvider{
-		supportedModels: []string{"gpt-4o-mini"},
-		response: &core.ChatResponse{
-			ID:    "chatcmpl-ok",
-			Model: "gpt-4o-mini",
-			Usage: core.Usage{
-				PromptTokens:     10,
-				CompletionTokens: 5,
-				TotalTokens:      15,
-			},
+		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku-20240307"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini":             "openai",
+			"claude-3-haiku-20240307": "anthropic",
 		},
 	}
 
 	e := echo.New()
-	handler := NewHandler(mock, nil, &mockUsageLogger{config: usage.Config{Enabled: true}}, nil)
+	handler := NewHandler(mock, nil, nil, nil)
 
 	reqBody := `{
 	  "requests":[
 	    {
-	      "custom_id":"ok",
+	      "custom_id":"one",
 	      "url":"/v1/chat/completions",
 	      "body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]}
 	    },
 	    {
-	      "custom_id":"bad",
-	      "url":"/v1/unknown",
-	      "body":{"model":"gpt-4o-mini"}
+	      "custom_id":"two",
+	      "url":"/v1/chat/completions",
+	      "body":{"model":"claude-3-haiku-20240307","messages":[{"role":"user","content":"Hi"}]}
 	    }
 	  ]
 	}`
@@ -853,27 +871,8 @@ func TestBatches_PartialFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected status 200, got %d", rec.Code)
-	}
-
-	var resp core.BatchResponse
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if resp.RequestCounts.Total != 2 || resp.RequestCounts.Completed != 1 || resp.RequestCounts.Failed != 1 {
-		t.Errorf("unexpected request counts: %+v", resp.RequestCounts)
-	}
-	if len(resp.Results) != 2 {
-		t.Fatalf("expected 2 results, got %d", len(resp.Results))
-	}
-
-	if resp.Results[1].Error == nil {
-		t.Fatal("expected second result to have an error")
-	}
-	if resp.Results[1].Error.Type != string(core.ErrorTypeInvalidRequest) {
-		t.Errorf("error type = %q, want %q", resp.Results[1].Error.Type, string(core.ErrorTypeInvalidRequest))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
 }
 
@@ -893,6 +892,222 @@ func TestBatches_EmptyRequests(t *testing.T) {
 	}
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
+	}
+}
+
+func TestBatches_LifecycleEndpoints(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		batchCreateResponse: &core.BatchResponse{
+			ID:               "provider-batch-1",
+			Object:           "batch",
+			Status:           "in_progress",
+			CreatedAt:        1000,
+			RequestCounts:    core.BatchRequestCounts{Total: 1},
+			CompletionWindow: "24h",
+		},
+		batchGetResponse: &core.BatchResponse{
+			ID:               "provider-batch-1",
+			Object:           "batch",
+			Status:           "completed",
+			CreatedAt:        1000,
+			RequestCounts:    core.BatchRequestCounts{Total: 1, Completed: 1},
+			CompletionWindow: "24h",
+		},
+		batchCancelResponse: &core.BatchResponse{
+			ID:               "provider-batch-1",
+			Object:           "batch",
+			Status:           "cancelled",
+			CreatedAt:        1000,
+			RequestCounts:    core.BatchRequestCounts{Total: 1, Completed: 1},
+			CompletionWindow: "24h",
+		},
+		batchResults: &core.BatchResultsResponse{
+			Object:  "list",
+			BatchID: "provider-batch-1",
+			Data: []core.BatchResultItem{
+				{Index: 0, StatusCode: 200, CustomID: "life-1"},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	// 1) Create
+	createBody := `{
+	  "endpoint":"/v1/chat/completions",
+	  "requests":[{"custom_id":"life-1","method":"POST","body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}}]
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	createCtx := e.NewContext(createReq, createRec)
+	if err := handler.Batches(createCtx); err != nil {
+		t.Fatalf("create handler returned error: %v", err)
+	}
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200", createRec.Code)
+	}
+
+	var created core.BatchResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+	if created.ID == "" {
+		t.Fatal("expected created batch id")
+	}
+
+	// 2) Get
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/batches/"+created.ID, nil)
+	getRec := httptest.NewRecorder()
+	getCtx := e.NewContext(getReq, getRec)
+	getCtx.SetPath("/v1/batches/:id")
+	getCtx.SetParamNames("id")
+	getCtx.SetParamValues(created.ID)
+	if err := handler.GetBatch(getCtx); err != nil {
+		t.Fatalf("get handler returned error: %v", err)
+	}
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200", getRec.Code)
+	}
+
+	// 3) List
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/batches?limit=10", nil)
+	listRec := httptest.NewRecorder()
+	listCtx := e.NewContext(listReq, listRec)
+	if err := handler.ListBatches(listCtx); err != nil {
+		t.Fatalf("list handler returned error: %v", err)
+	}
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", listRec.Code)
+	}
+	var listResp core.BatchListResponse
+	if err := json.Unmarshal(listRec.Body.Bytes(), &listResp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
+	if len(listResp.Data) == 0 {
+		t.Fatal("expected at least one batch in list")
+	}
+
+	// 4) Results
+	resReq := httptest.NewRequest(http.MethodGet, "/v1/batches/"+created.ID+"/results", nil)
+	resRec := httptest.NewRecorder()
+	resCtx := e.NewContext(resReq, resRec)
+	resCtx.SetPath("/v1/batches/:id/results")
+	resCtx.SetParamNames("id")
+	resCtx.SetParamValues(created.ID)
+	if err := handler.BatchResults(resCtx); err != nil {
+		t.Fatalf("results handler returned error: %v", err)
+	}
+	if resRec.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want 200", resRec.Code)
+	}
+	var resultsResp core.BatchResultsResponse
+	if err := json.Unmarshal(resRec.Body.Bytes(), &resultsResp); err != nil {
+		t.Fatalf("decode results response: %v", err)
+	}
+	if resultsResp.BatchID != created.ID {
+		t.Fatalf("results batch id = %q, want %q", resultsResp.BatchID, created.ID)
+	}
+	if len(resultsResp.Data) != 1 {
+		t.Fatalf("results len = %d, want 1", len(resultsResp.Data))
+	}
+
+	// 5) Cancel (completed batch stays completed)
+	cancelReq := httptest.NewRequest(http.MethodPost, "/v1/batches/"+created.ID+"/cancel", nil)
+	cancelRec := httptest.NewRecorder()
+	cancelCtx := e.NewContext(cancelReq, cancelRec)
+	cancelCtx.SetPath("/v1/batches/:id/cancel")
+	cancelCtx.SetParamNames("id")
+	cancelCtx.SetParamValues(created.ID)
+	if err := handler.CancelBatch(cancelCtx); err != nil {
+		t.Fatalf("cancel handler returned error: %v", err)
+	}
+	if cancelRec.Code != http.StatusOK {
+		t.Fatalf("cancel status = %d, want 200", cancelRec.Code)
+	}
+}
+
+func TestBatchResults_PendingReturnsConflict(t *testing.T) {
+	notReadyErr := core.NewNotFoundError("Message Batch msgbatch_123 has no available results.")
+	notReadyErr.Provider = "anthropic"
+
+	mock := &mockProvider{
+		supportedModels: []string{"claude-3-haiku-20240307"},
+		providerTypes: map[string]string{
+			"claude-3-haiku-20240307": "anthropic",
+		},
+		batchCreateResponse: &core.BatchResponse{
+			ID:            "msgbatch_123",
+			Object:        "batch",
+			Status:        "in_progress",
+			CreatedAt:     1000,
+			RequestCounts: core.BatchRequestCounts{Total: 1},
+		},
+		batchGetResponse: &core.BatchResponse{
+			ID:            "msgbatch_123",
+			Object:        "batch",
+			Status:        "in_progress",
+			CreatedAt:     1000,
+			RequestCounts: core.BatchRequestCounts{Total: 1},
+		},
+		batchResultsErr: notReadyErr,
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	createBody := `{
+	  "endpoint":"/v1/chat/completions",
+	  "requests":[{"custom_id":"pending-1","method":"POST","body":{"model":"claude-3-haiku-20240307","messages":[{"role":"user","content":"hi"}]}}]
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	createCtx := e.NewContext(createReq, createRec)
+	if err := handler.Batches(createCtx); err != nil {
+		t.Fatalf("create handler returned error: %v", err)
+	}
+
+	var created core.BatchResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	resReq := httptest.NewRequest(http.MethodGet, "/v1/batches/"+created.ID+"/results", nil)
+	resRec := httptest.NewRecorder()
+	resCtx := e.NewContext(resReq, resRec)
+	resCtx.SetPath("/v1/batches/:id/results")
+	resCtx.SetParamNames("id")
+	resCtx.SetParamValues(created.ID)
+	if err := handler.BatchResults(resCtx); err != nil {
+		t.Fatalf("results handler returned error: %v", err)
+	}
+	if resRec.Code != http.StatusConflict {
+		t.Fatalf("results status = %d, want 409", resRec.Code)
+	}
+	if !strings.Contains(resRec.Body.String(), "results are not ready yet") {
+		t.Fatalf("results body should describe pending state, got: %s", resRec.Body.String())
+	}
+}
+
+func TestGetBatch_NotFound(t *testing.T) {
+	e := echo.New()
+	handler := NewHandler(&mockProvider{}, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/batches/missing", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/v1/batches/:id")
+	c.SetParamNames("id")
+	c.SetParamValues("missing")
+
+	if err := handler.GetBatch(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
 
@@ -921,8 +1136,6 @@ type mockPricingResolver struct {
 func (m *mockPricingResolver) ResolvePricing(_, _ string) *core.ModelPricing {
 	return m.pricing
 }
-
-func floatPtr(v float64) *float64 { return &v }
 
 // capturingProvider is a mockProvider that captures the request passed to StreamResponses/StreamChatCompletion.
 type capturingProvider struct {
