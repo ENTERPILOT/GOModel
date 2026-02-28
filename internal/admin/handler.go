@@ -320,7 +320,7 @@ func (h *Handler) UsageLog(c echo.Context) error {
 // @Param        path         query     string  false  "Filter by request path"
 // @Param        error_type   query     string  false  "Filter by error type"
 // @Param        status_code  query     int     false  "Filter by status code"
-// @Param        stream       query     string  false  "Filter by stream mode (true/false)"
+// @Param        stream       query     bool    false  "Filter by stream mode (true/false)"
 // @Param        search       query     string  false  "Search across request_id/model/provider/method/path/error_type"
 // @Param        limit        query     int     false  "Page size (default 25, max 100)"
 // @Param        offset       query     int     false  "Offset for pagination"
@@ -422,6 +422,9 @@ func (h *Handler) AuditConversation(c echo.Context) error {
 		parsed, err := strconv.Atoi(l)
 		if err != nil {
 			return handleError(c, core.NewInvalidRequestError("invalid limit, expected integer", nil))
+		}
+		if parsed < 1 || parsed > 200 {
+			return handleError(c, core.NewInvalidRequestError("invalid limit parameter: limit must be between 1 and 200", nil))
 		}
 		limit = parsed
 	}

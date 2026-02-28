@@ -68,9 +68,12 @@
             },
 
             statusCodeClass(statusCode) {
-                if (statusCode >= 500) return 'status-error';
-                if (statusCode >= 400) return 'status-warning';
-                if (statusCode >= 300) return 'status-neutral';
+                if (statusCode === null || statusCode === undefined || statusCode === '') return 'status-unknown';
+                const parsedStatus = Number(statusCode);
+                if (!Number.isFinite(parsedStatus)) return 'status-unknown';
+                if (parsedStatus >= 500) return 'status-error';
+                if (parsedStatus >= 400) return 'status-warning';
+                if (parsedStatus >= 300) return 'status-neutral';
                 return 'status-success';
             },
 

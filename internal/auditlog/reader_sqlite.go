@@ -184,7 +184,7 @@ func (r *SQLiteReader) GetConversation(ctx context.Context, logID string, limit 
 		if _, ok := seen[parent.ID]; ok {
 			break
 		}
-		thread = append([]*LogEntry{parent}, thread...)
+		thread = append(thread, parent)
 		seen[parent.ID] = struct{}{}
 		current = parent
 	}

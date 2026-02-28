@@ -136,7 +136,7 @@ const docTemplate = `{
                         "in": "query"
                     },
                     {
-                        "type": "string",
+                        "type": "boolean",
                         "description": "Filter by stream mode (true/false)",
                         "name": "stream",
                         "in": "query"

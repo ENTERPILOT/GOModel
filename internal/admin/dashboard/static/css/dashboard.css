@@ -1127,6 +1127,11 @@ td.col-price {
     color: var(--text-muted);
 }
 
+.audit-status-badge.status-unknown {
+    color: var(--text-muted);
+    border-color: color-mix(in srgb, var(--border) 75%, transparent);
+}
+
 .audit-entry-details {
     border-top: 1px solid transparent;
     padding: 0 12px;
@@ -1207,7 +1212,6 @@ td.col-price {
 .audit-json-body {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-    word-break: break-word;
 }
 
 .conversation-body-highlight {
@@ -1375,11 +1379,11 @@ td.col-price {
 }
 
 .chat-content {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     font-size: 13px;
     line-height: 1.5;
     white-space: pre-wrap;
-    word-break: break-word;
+    overflow-wrap: break-word;
     color: var(--text);
 }
 

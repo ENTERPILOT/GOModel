@@ -17,6 +17,40 @@ type MongoDBReader struct {
 	collection *mongo.Collection
 }
 
+type mongoLogRow struct {
+	ID         string    `bson:"_id"`
+	Timestamp  time.Time `bson:"timestamp"`
+	DurationNs int64     `bson:"duration_ns"`
+	Model      string    `bson:"model"`
+	Provider   string    `bson:"provider"`
+	StatusCode int       `bson:"status_code"`
+	RequestID  string    `bson:"request_id"`
+	ClientIP   string    `bson:"client_ip"`
+	Method     string    `bson:"method"`
+	Path       string    `bson:"path"`
+	Stream     bool      `bson:"stream"`
+	ErrorType  string    `bson:"error_type"`
+	Data       *LogData  `bson:"data"`
+}
+
+func (r mongoLogRow) toLogEntry() *LogEntry {
+	return &LogEntry{
+		ID:         r.ID,
+		Timestamp:  r.Timestamp,
+		DurationNs: r.DurationNs,
+		Model:      r.Model,
+		Provider:   r.Provider,
+		StatusCode: r.StatusCode,
+		RequestID:  r.RequestID,
+		ClientIP:   r.ClientIP,
+		Method:     r.Method,
+		Path:       r.Path,
+		Stream:     r.Stream,
+		ErrorType:  r.ErrorType,
+		Data:       r.Data,
+	}
+}
+
 // NewMongoDBReader creates a new MongoDB audit log reader.
 func NewMongoDBReader(database *mongo.Database) (*MongoDBReader, error) {
 	if database == nil {
@@ -180,21 +214,7 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 
 // GetLogByID returns a single audit log entry by ID.
 func (r *MongoDBReader) GetLogByID(ctx context.Context, id string) (*LogEntry, error) {
-	var row struct {
-		ID         string    `bson:"_id"`
-		Timestamp  time.Time `bson:"timestamp"`
-		DurationNs int64     `bson:"duration_ns"`
-		Model      string    `bson:"model"`
-		Provider   string    `bson:"provider"`
-		StatusCode int       `bson:"status_code"`
-		RequestID  string    `bson:"request_id"`
-		ClientIP   string    `bson:"client_ip"`
-		Method     string    `bson:"method"`
-		Path       string    `bson:"path"`
-		Stream     bool      `bson:"stream"`
-		ErrorType  string    `bson:"error_type"`
-		Data       *LogData  `bson:"data"`
-	}
+	var row mongoLogRow
 
 	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&row)
 	if err != nil {
@@ -204,21 +224,7 @@ func (r *MongoDBReader) GetLogByID(ctx context.Context, id string) (*LogEntry, e
 		return nil, fmt.Errorf("failed to query audit log by id: %w", err)
 	}
 
-	return &LogEntry{
-		ID:         row.ID,
-		Timestamp:  row.Timestamp,
-		DurationNs: row.DurationNs,
-		Model:      row.Model,
-		Provider:   row.Provider,
-		StatusCode: row.StatusCode,
-		RequestID:  row.RequestID,
-		ClientIP:   row.ClientIP,
-		Method:     row.Method,
-		Path:       row.Path,
-		Stream:     row.Stream,
-		ErrorType:  row.ErrorType,
-		Data:       row.Data,
-	}, nil
+	return row.toLogEntry(), nil
 }
 
 // GetConversation returns a linear conversation thread around a seed log entry.
@@ -318,21 +324,7 @@ func (r *MongoDBReader) findByResponseID(ctx context.Context, responseID string)
 	filter := bson.D{{Key: "data.response_body.id", Value: responseID}}
 	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: 1}})
 
-	var row struct {
-		ID         string    `bson:"_id"`
-		Timestamp  time.Time `bson:"timestamp"`
-		DurationNs int64     `bson:"duration_ns"`
-		Model      string    `bson:"model"`
-		Provider   string    `bson:"provider"`
-		StatusCode int       `bson:"status_code"`
-		RequestID  string    `bson:"request_id"`
-		ClientIP   string    `bson:"client_ip"`
-		Method     string    `bson:"method"`
-		Path       string    `bson:"path"`
-		Stream     bool      `bson:"stream"`
-		ErrorType  string    `bson:"error_type"`
-		Data       *LogData  `bson:"data"`
-	}
+	var row mongoLogRow
 
 	if err := r.collection.FindOne(ctx, filter, opts).Decode(&row); err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -341,42 +333,14 @@ func (r *MongoDBReader) findByResponseID(ctx context.Context, responseID string)
 		return nil, fmt.Errorf("failed to query audit log by response id: %w", err)
 	}
 
-	return &LogEntry{
-		ID:         row.ID,
-		Timestamp:  row.Timestamp,
-		DurationNs: row.DurationNs,
-		Model:      row.Model,
-		Provider:   row.Provider,
-		StatusCode: row.StatusCode,
-		RequestID:  row.RequestID,
-		ClientIP:   row.ClientIP,
-		Method:     row.Method,
-		Path:       row.Path,
-		Stream:     row.Stream,
-		ErrorType:  row.ErrorType,
-		Data:       row.Data,
-	}, nil
+	return row.toLogEntry(), nil
 }
 
 func (r *MongoDBReader) findByPreviousResponseID(ctx context.Context, previousResponseID string) (*LogEntry, error) {
 	filter := bson.D{{Key: "data.request_body.previous_response_id", Value: previousResponseID}}
 	opts := options.FindOne().SetSort(bson.D{{Key: "timestamp", Value: 1}})
 
-	var row struct {
-		ID         string    `bson:"_id"`
-		Timestamp  time.Time `bson:"timestamp"`
-		DurationNs int64     `bson:"duration_ns"`
-		Model      string    `bson:"model"`
-		Provider   string    `bson:"provider"`
-		StatusCode int       `bson:"status_code"`
-		RequestID  string    `bson:"request_id"`
-		ClientIP   string    `bson:"client_ip"`
-		Method     string    `bson:"method"`
-		Path       string    `bson:"path"`
-		Stream     bool      `bson:"stream"`
-		ErrorType  string    `bson:"error_type"`
-		Data       *LogData  `bson:"data"`
-	}
+	var row mongoLogRow
 
 	if err := r.collection.FindOne(ctx, filter, opts).Decode(&row); err != nil {
 		if err == mongo.ErrNoDocuments {
@@ -385,19 +349,5 @@ func (r *MongoDBReader) findByPreviousResponseID(ctx context.Context, previousRe
 		return nil, fmt.Errorf("failed to query audit log by previous_response_id: %w", err)
 	}
 
-	return &LogEntry{
-		ID:         row.ID,
-		Timestamp:  row.Timestamp,
-		DurationNs: row.DurationNs,
-		Model:      row.Model,
-		Provider:   row.Provider,
-		StatusCode: row.StatusCode,
-		RequestID:  row.RequestID,
-		ClientIP:   row.ClientIP,
-		Method:     row.Method,
-		Path:       row.Path,
-		Stream:     row.Stream,
-		ErrorType:  row.ErrorType,
-		Data:       row.Data,
-	}, nil
+	return row.toLogEntry(), nil
 }
