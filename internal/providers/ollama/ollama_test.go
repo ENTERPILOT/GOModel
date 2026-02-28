@@ -830,8 +830,12 @@ func TestEmbeddings(t *testing.T) {
 	if resp.Data[0].Object != "embedding" {
 		t.Errorf("Data[0].Object = %q, want %q", resp.Data[0].Object, "embedding")
 	}
-	if len(resp.Data[0].Embedding) != 3 {
-		t.Errorf("len(Data[0].Embedding) = %d, want 3", len(resp.Data[0].Embedding))
+	var floats []float64
+	if err := json.Unmarshal(resp.Data[0].Embedding, &floats); err != nil {
+		t.Fatalf("failed to unmarshal embedding: %v", err)
+	}
+	if len(floats) != 3 {
+		t.Errorf("len(embedding floats) = %d, want 3", len(floats))
 	}
 	if resp.Data[1].Index != 1 {
 		t.Errorf("Data[1].Index = %d, want 1", resp.Data[1].Index)

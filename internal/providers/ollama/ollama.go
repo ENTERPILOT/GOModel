@@ -3,6 +3,7 @@ package ollama
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"strings"
@@ -184,9 +185,10 @@ func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (
 
 	data := make([]core.EmbeddingData, len(ollamaResp.Embeddings))
 	for i, emb := range ollamaResp.Embeddings {
+		raw, _ := json.Marshal(emb)
 		data[i] = core.EmbeddingData{
 			Object:    "embedding",
-			Embedding: emb,
+			Embedding: raw,
 			Index:     i,
 		}
 	}

@@ -1,5 +1,7 @@
 package core
 
+import "encoding/json"
+
 // StreamOptions controls streaming behavior options.
 // This is used to request usage data in streaming responses.
 type StreamOptions struct {
@@ -231,10 +233,11 @@ type EmbeddingResponse struct {
 }
 
 // EmbeddingData represents a single embedding data point.
+// Embedding is json.RawMessage to support both float arrays and base64-encoded strings.
 type EmbeddingData struct {
-	Object    string    `json:"object"`
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
+	Object    string          `json:"object"`
+	Embedding json.RawMessage `json:"embedding"`
+	Index     int             `json:"index"`
 }
 
 // EmbeddingUsage represents token usage information for embeddings.

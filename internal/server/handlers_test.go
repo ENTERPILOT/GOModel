@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -515,7 +516,7 @@ func TestEmbeddings(t *testing.T) {
 		embeddingResponse: &core.EmbeddingResponse{
 			Object: "list",
 			Data: []core.EmbeddingData{
-				{Object: "embedding", Embedding: []float64{0.1, 0.2, 0.3}, Index: 0},
+				{Object: "embedding", Embedding: json.RawMessage(`[0.1,0.2,0.3]`), Index: 0},
 			},
 			Model:    "text-embedding-3-small",
 			Provider: "openai",

@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"testing"
@@ -322,7 +323,7 @@ func TestRouterEmbeddings(t *testing.T) {
 		Model:    "text-embedding-3-small",
 		Provider: "openai",
 		Data: []core.EmbeddingData{
-			{Object: "embedding", Embedding: []float64{0.1, 0.2}, Index: 0},
+			{Object: "embedding", Embedding: json.RawMessage(`[0.1,0.2]`), Index: 0},
 		},
 	}
 	provider := &mockProvider{name: "openai", embeddingResponse: expectedResp}
