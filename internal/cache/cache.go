@@ -13,7 +13,7 @@ import (
 type ModelCache struct {
 	Version       int                    `json:"version"`
 	UpdatedAt     time.Time              `json:"updated_at"`
-	Models map[string]CachedModel `json:"models"`
+	Models        []CachedModel          `json:"models"`
 	// ModelListData holds the raw JSON model registry bytes for cache persistence,
 	// allowing the registry to restore its full model list without re-fetching.
 	ModelListData json.RawMessage `json:"model_list_data,omitempty"`
@@ -21,6 +21,8 @@ type ModelCache struct {
 
 // CachedModel represents a single cached model entry.
 type CachedModel struct {
+	ModelID      string `json:"model_id"`
+	Provider     string `json:"provider"`
 	ProviderType string `json:"provider_type"`
 	Object       string `json:"object"`
 	OwnedBy      string `json:"owned_by"`

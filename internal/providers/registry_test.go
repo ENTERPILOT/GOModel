@@ -220,8 +220,8 @@ func TestModelRegistry(t *testing.T) {
 				},
 			},
 		}
-		registry.RegisterProvider(mock1)
-		registry.RegisterProvider(mock2)
+		registry.RegisterProviderWithNameAndType(mock1, "provider1", "openai")
+		registry.RegisterProviderWithNameAndType(mock2, "provider2", "openai")
 		_ = registry.Initialize(context.Background())
 
 		if registry.ModelCount() != 1 {
@@ -231,6 +231,10 @@ func TestModelRegistry(t *testing.T) {
 		provider := registry.GetProvider("shared-model")
 		if provider != mock1 {
 			t.Error("expected first provider to win for duplicate model")
+		}
+
+		if provider := registry.GetProvider("provider2/shared-model"); provider != mock2 {
+			t.Error("expected qualified lookup to resolve second provider")
 		}
 	})
 

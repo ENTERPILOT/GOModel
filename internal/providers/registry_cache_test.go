@@ -38,7 +38,7 @@ func TestCacheFile(t *testing.T) {
 				},
 			},
 		}
-		registry.RegisterProviderWithType(mock, "openai")
+		registry.RegisterProviderWithNameAndType(mock, "openai", "openai")
 		_ = registry.Initialize(context.Background())
 
 		err := registry.SaveToCache(context.Background())
@@ -62,8 +62,8 @@ func TestCacheFile(t *testing.T) {
 			t.Fatalf("failed to unmarshal cache: %v", err)
 		}
 
-		if modelCache.Version != 1 {
-			t.Errorf("expected version 1, got %d", modelCache.Version)
+		if modelCache.Version != modelCacheVersion {
+			t.Errorf("expected version %d, got %d", modelCacheVersion, modelCache.Version)
 		}
 		if len(modelCache.Models) != 2 {
 			t.Errorf("expected 2 models, got %d", len(modelCache.Models))
@@ -74,18 +74,22 @@ func TestCacheFile(t *testing.T) {
 		tmpDir := t.TempDir()
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
-		// Create a cache file (map-based structure)
+		// Create a cache file
 		modelCache := cache.ModelCache{
-			Version:   1,
+			Version:   modelCacheVersion,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]cache.CachedModel{
-				"gpt-4o": {
+			Models: []cache.CachedModel{
+				{
+					ModelID:      "gpt-4o",
+					Provider:     "openai-main",
 					ProviderType: "openai",
 					Object:       "model",
 					OwnedBy:      "openai",
 					Created:      1234567890,
 				},
-				"claude-3-5-sonnet": {
+				{
+					ModelID:      "claude-3-5-sonnet",
+					Provider:     "anthropic-main",
 					ProviderType: "anthropic",
 					Object:       "model",
 					OwnedBy:      "anthropic",
@@ -111,8 +115,8 @@ func TestCacheFile(t *testing.T) {
 			name:           "anthropic",
 			modelsResponse: &core.ModelsResponse{Object: "list"},
 		}
-		registry.RegisterProviderWithType(openaiMock, "openai")
-		registry.RegisterProviderWithType(anthropicMock, "anthropic")
+		registry.RegisterProviderWithNameAndType(openaiMock, "openai-main", "openai")
+		registry.RegisterProviderWithNameAndType(anthropicMock, "anthropic-main", "anthropic")
 
 		// Load from cache
 		loaded, err := registry.LoadFromCache(context.Background())
@@ -144,21 +148,79 @@ func TestCacheFile(t *testing.T) {
 		}
 	})
 
+	t.Run("LoadFromCachePreservesProviderInstancesWithSameType", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cacheFile := filepath.Join(tmpDir, "models.json")
+
+		modelCache := cache.ModelCache{
+			Version:   modelCacheVersion,
+			UpdatedAt: time.Now().UTC(),
+			Models: []cache.CachedModel{
+				{
+					ModelID:      "gpt-4o",
+					Provider:     "openai-east",
+					ProviderType: "openai",
+					Object:       "model",
+					OwnedBy:      "openai",
+				},
+				{
+					ModelID:      "gpt-4o",
+					Provider:     "openai-west",
+					ProviderType: "openai",
+					Object:       "model",
+					OwnedBy:      "openai",
+				},
+			},
+		}
+		data, _ := json.Marshal(modelCache)
+		if err := os.WriteFile(cacheFile, data, 0o644); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		registry := NewModelRegistry()
+		localCache := cache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
+
+		east := &registryMockProvider{name: "openai-east"}
+		west := &registryMockProvider{name: "openai-west"}
+		registry.RegisterProviderWithNameAndType(east, "openai-east", "openai")
+		registry.RegisterProviderWithNameAndType(west, "openai-west", "openai")
+
+		loaded, err := registry.LoadFromCache(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if loaded != 1 {
+			t.Fatalf("expected 1 unqualified model loaded, got %d", loaded)
+		}
+
+		if provider := registry.GetProvider("openai-east/gpt-4o"); provider != east {
+			t.Fatal("expected openai-east/gpt-4o to map to openai-east provider")
+		}
+		if provider := registry.GetProvider("openai-west/gpt-4o"); provider != west {
+			t.Fatal("expected openai-west/gpt-4o to map to openai-west provider")
+		}
+	})
+
 	t.Run("LoadFromCacheSkipsUnconfiguredProviders", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cacheFile := filepath.Join(tmpDir, "models.json")
 
 		// Create cache with models from multiple providers
 		modelCache := cache.ModelCache{
-			Version:   1,
+			Version:   modelCacheVersion,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]cache.CachedModel{
-				"gpt-4o": {
+			Models: []cache.CachedModel{
+				{
+					ModelID:      "gpt-4o",
+					Provider:     "openai-main",
 					ProviderType: "openai",
 					Object:       "model",
 					OwnedBy:      "openai",
 				},
-				"claude-3": {
+				{
+					ModelID:      "claude-3",
+					Provider:     "anthropic-main",
 					ProviderType: "anthropic", // This provider won't be configured
 					Object:       "model",
 					OwnedBy:      "anthropic",
@@ -173,7 +235,7 @@ func TestCacheFile(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 		openaiMock := &registryMockProvider{name: "openai"}
-		registry.RegisterProviderWithType(openaiMock, "openai")
+		registry.RegisterProviderWithNameAndType(openaiMock, "openai-main", "openai")
 
 		loaded, err := registry.LoadFromCache(context.Background())
 		if err != nil {
@@ -268,10 +330,12 @@ func TestInitializeAsync(t *testing.T) {
 
 		// Create a cache file
 		modelCache := cache.ModelCache{
-			Version:   1,
+			Version:   modelCacheVersion,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]cache.CachedModel{
-				"cached-model": {
+			Models: []cache.CachedModel{
+				{
+					ModelID:      "cached-model",
+					Provider:     "test",
 					ProviderType: "test",
 					Object:       "model",
 					OwnedBy:      "test",
@@ -296,7 +360,7 @@ func TestInitializeAsync(t *testing.T) {
 				},
 			},
 		}
-		registry.RegisterProviderWithType(mock, "test")
+		registry.RegisterProviderWithNameAndType(mock, "test", "test")
 
 		// InitializeAsync should return immediately after loading cache
 		registry.InitializeAsync(context.Background())
@@ -327,7 +391,7 @@ func TestInitializeAsync(t *testing.T) {
 				},
 			},
 		}
-		registry.RegisterProviderWithType(mock, "test")
+		registry.RegisterProviderWithNameAndType(mock, "test", "test")
 
 		// InitializeAsync should start background fetch
 		registry.InitializeAsync(context.Background())
@@ -363,7 +427,7 @@ func TestInitializeAsync(t *testing.T) {
 				},
 			},
 		}
-		registry.RegisterProviderWithType(mock, "test")
+		registry.RegisterProviderWithNameAndType(mock, "test", "test")
 
 		// InitializeAsync should save to cache after network fetch
 		registry.InitializeAsync(context.Background())
@@ -384,7 +448,7 @@ func TestInitializeAsync(t *testing.T) {
 		if len(modelCache.Models) != 1 {
 			t.Fatalf("expected 1 model in cache, got %d", len(modelCache.Models))
 		}
-		if _, ok := modelCache.Models["new-model"]; !ok {
+		if modelCache.Models[0].ModelID != "new-model" {
 			t.Errorf("expected new-model in cache, got %v", modelCache.Models)
 		}
 	})
@@ -425,10 +489,12 @@ func TestIsInitialized(t *testing.T) {
 
 		// Create a cache file
 		modelCache := cache.ModelCache{
-			Version:   1,
+			Version:   modelCacheVersion,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]cache.CachedModel{
-				"cached-model": {
+			Models: []cache.CachedModel{
+				{
+					ModelID:      "cached-model",
+					Provider:     "test",
 					ProviderType: "test",
 					Object:       "model",
 					OwnedBy:      "test",
@@ -442,7 +508,7 @@ func TestIsInitialized(t *testing.T) {
 		localCache := cache.NewLocalCache(cacheFile)
 		registry.SetCache(localCache)
 		mock := &registryMockProvider{name: "test"}
-		registry.RegisterProviderWithType(mock, "test")
+		registry.RegisterProviderWithNameAndType(mock, "test", "test")
 
 		_, _ = registry.LoadFromCache(context.Background())
 

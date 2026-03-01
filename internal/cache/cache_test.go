@@ -30,8 +30,10 @@ func TestLocalCache(t *testing.T) {
 		data := &ModelCache{
 			Version:   1,
 			UpdatedAt: time.Now().UTC(),
-			Models: map[string]CachedModel{
-				"test-model": {
+			Models: []CachedModel{
+				{
+					ModelID:      "test-model",
+					Provider:     "openai",
 					ProviderType: "openai",
 					Object:       "model",
 					OwnedBy:      "openai",
@@ -59,8 +61,8 @@ func TestLocalCache(t *testing.T) {
 		if len(result.Models) != 1 {
 			t.Errorf("expected 1 model, got %d", len(result.Models))
 		}
-		if _, ok := result.Models["test-model"]; !ok {
-			t.Error("expected test-model in cache")
+		if result.Models[0].ModelID != "test-model" {
+			t.Errorf("expected test-model in cache, got %q", result.Models[0].ModelID)
 		}
 	})
 
@@ -73,7 +75,7 @@ func TestLocalCache(t *testing.T) {
 
 		data := &ModelCache{
 			Version: 1,
-			Models:  map[string]CachedModel{},
+			Models:  []CachedModel{},
 		}
 
 		err := cache.Set(ctx, data)
@@ -140,14 +142,18 @@ func TestModelCacheSerialization(t *testing.T) {
 		original := &ModelCache{
 			Version:   1,
 			UpdatedAt: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			Models: map[string]CachedModel{
-				"gpt-4": {
+			Models: []CachedModel{
+				{
+					ModelID:      "gpt-4",
+					Provider:     "openai-main",
 					ProviderType: "openai",
 					Object:       "model",
 					OwnedBy:      "openai",
 					Created:      1234567890,
 				},
-				"claude-3": {
+				{
+					ModelID:      "claude-3",
+					Provider:     "anthropic-main",
 					ProviderType: "anthropic",
 					Object:       "model",
 					OwnedBy:      "anthropic",
@@ -172,11 +178,14 @@ func TestModelCacheSerialization(t *testing.T) {
 		if len(restored.Models) != len(original.Models) {
 			t.Errorf("model count mismatch: got %d, want %d", len(restored.Models), len(original.Models))
 		}
-		if restored.Models["gpt-4"].ProviderType != "openai" {
-			t.Error("gpt-4 provider type not preserved")
+		if restored.Models[0].ModelID != original.Models[0].ModelID {
+			t.Errorf("first model ID mismatch: got %q, want %q", restored.Models[0].ModelID, original.Models[0].ModelID)
 		}
-		if restored.Models["claude-3"].ProviderType != "anthropic" {
-			t.Error("claude-3 provider type not preserved")
+		if restored.Models[0].Provider != original.Models[0].Provider {
+			t.Errorf("first provider mismatch: got %q, want %q", restored.Models[0].Provider, original.Models[0].Provider)
+		}
+		if restored.Models[1].ProviderType != original.Models[1].ProviderType {
+			t.Errorf("second provider type mismatch: got %q, want %q", restored.Models[1].ProviderType, original.Models[1].ProviderType)
 		}
 	})
 }

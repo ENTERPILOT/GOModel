@@ -214,7 +214,7 @@ func initializeProviders(providerMap map[string]ProviderConfig, factory *Provide
 			cancel()
 		}
 
-		registry.RegisterProviderWithType(p, pCfg.Type)
+		registry.RegisterProviderWithNameAndType(p, name, pCfg.Type)
 		count++
 		slog.Info("provider initialized", "name", name, "type", pCfg.Type)
 	}
