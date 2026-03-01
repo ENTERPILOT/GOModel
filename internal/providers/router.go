@@ -55,13 +55,21 @@ func (r *Router) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*co
 	if err := r.checkReady(); err != nil {
 		return nil, err
 	}
-	provider := r.lookup.GetProvider(req.Model)
-	if provider == nil {
-		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, core.NewInvalidRequestError(err.Error(), err)
 	}
-	resp, err := provider.ChatCompletion(ctx, req)
+	lookupModel := selector.QualifiedModel()
+	provider := r.lookup.GetProvider(lookupModel)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", lookupModel)
+	}
+	forwardReq := *req
+	forwardReq.Model = selector.Model
+	forwardReq.Provider = ""
+	resp, err := provider.ChatCompletion(ctx, &forwardReq)
 	if err == nil && resp != nil {
-		resp.Provider = r.GetProviderType(req.Model)
+		resp.Provider = r.GetProviderType(lookupModel)
 	}
 	return resp, err
 }
@@ -72,11 +80,19 @@ func (r *Router) StreamChatCompletion(ctx context.Context, req *core.ChatRequest
 	if err := r.checkReady(); err != nil {
 		return nil, err
 	}
-	provider := r.lookup.GetProvider(req.Model)
-	if provider == nil {
-		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, core.NewInvalidRequestError(err.Error(), err)
 	}
-	return provider.StreamChatCompletion(ctx, req)
+	lookupModel := selector.QualifiedModel()
+	provider := r.lookup.GetProvider(lookupModel)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", lookupModel)
+	}
+	forwardReq := *req
+	forwardReq.Model = selector.Model
+	forwardReq.Provider = ""
+	return provider.StreamChatCompletion(ctx, &forwardReq)
 }
 
 // ListModels returns all models from the lookup.
@@ -98,13 +114,21 @@ func (r *Router) Responses(ctx context.Context, req *core.ResponsesRequest) (*co
 	if err := r.checkReady(); err != nil {
 		return nil, err
 	}
-	provider := r.lookup.GetProvider(req.Model)
-	if provider == nil {
-		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, core.NewInvalidRequestError(err.Error(), err)
 	}
-	resp, err := provider.Responses(ctx, req)
+	lookupModel := selector.QualifiedModel()
+	provider := r.lookup.GetProvider(lookupModel)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", lookupModel)
+	}
+	forwardReq := *req
+	forwardReq.Model = selector.Model
+	forwardReq.Provider = ""
+	resp, err := provider.Responses(ctx, &forwardReq)
 	if err == nil && resp != nil {
-		resp.Provider = r.GetProviderType(req.Model)
+		resp.Provider = r.GetProviderType(lookupModel)
 	}
 	return resp, err
 }
@@ -115,11 +139,19 @@ func (r *Router) StreamResponses(ctx context.Context, req *core.ResponsesRequest
 	if err := r.checkReady(); err != nil {
 		return nil, err
 	}
-	provider := r.lookup.GetProvider(req.Model)
-	if provider == nil {
-		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, core.NewInvalidRequestError(err.Error(), err)
 	}
-	return provider.StreamResponses(ctx, req)
+	lookupModel := selector.QualifiedModel()
+	provider := r.lookup.GetProvider(lookupModel)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", lookupModel)
+	}
+	forwardReq := *req
+	forwardReq.Model = selector.Model
+	forwardReq.Provider = ""
+	return provider.StreamResponses(ctx, &forwardReq)
 }
 
 // Embeddings routes the embeddings request to the appropriate provider.
@@ -127,13 +159,21 @@ func (r *Router) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*c
 	if err := r.checkReady(); err != nil {
 		return nil, err
 	}
-	provider := r.lookup.GetProvider(req.Model)
-	if provider == nil {
-		return nil, fmt.Errorf("no provider found for model: %s", req.Model)
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, core.NewInvalidRequestError(err.Error(), err)
 	}
-	resp, err := provider.Embeddings(ctx, req)
+	lookupModel := selector.QualifiedModel()
+	provider := r.lookup.GetProvider(lookupModel)
+	if provider == nil {
+		return nil, fmt.Errorf("no provider found for model: %s", lookupModel)
+	}
+	forwardReq := *req
+	forwardReq.Model = selector.Model
+	forwardReq.Provider = ""
+	resp, err := provider.Embeddings(ctx, &forwardReq)
 	if err == nil && resp != nil {
-		resp.Provider = r.GetProviderType(req.Model)
+		resp.Provider = r.GetProviderType(lookupModel)
 	}
 	return resp, err
 }

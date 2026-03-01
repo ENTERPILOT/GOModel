@@ -34,6 +34,22 @@ func TestModelValidation(t *testing.T) {
 			handlerCalled:  true,
 		},
 		{
+			name:           "valid provider/model selector",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{"model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
+			name:           "valid model with provider field",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{"provider":"openai","model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
+		},
+		{
 			name:           "valid model on embeddings",
 			method:         http.MethodPost,
 			path:           "/v1/embeddings",
@@ -90,6 +106,15 @@ func TestModelValidation(t *testing.T) {
 			body:           `{"model":"unsupported-model","messages":[{"role":"user","content":"hi"}]}`,
 			expectedStatus: http.StatusBadRequest,
 			expectedBody:   "unsupported model",
+			handlerCalled:  false,
+		},
+		{
+			name:           "provider field conflict returns 400",
+			method:         http.MethodPost,
+			path:           "/v1/chat/completions",
+			body:           `{"provider":"anthropic","model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "conflicts",
 			handlerCalled:  false,
 		},
 		{
