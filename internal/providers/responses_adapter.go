@@ -22,6 +22,7 @@ type ChatProvider interface {
 func ConvertResponsesRequestToChat(req *core.ResponsesRequest) *core.ChatRequest {
 	chatReq := &core.ChatRequest{
 		Model:       req.Model,
+		Provider:    req.Provider,
 		Messages:    make([]core.Message, 0),
 		Temperature: req.Temperature,
 		Stream:      req.Stream,

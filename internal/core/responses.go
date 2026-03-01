@@ -4,6 +4,7 @@ package core
 // This is the OpenAI-compatible /v1/responses endpoint.
 type ResponsesRequest struct {
 	Model           string            `json:"model"`
+	Provider        string            `json:"provider,omitempty"`
 	Input           interface{}       `json:"input" swaggertype:"string" example:"Tell me a joke"` // string or []ResponsesInputItem — see docs for array form
 	Instructions    string            `json:"instructions,omitempty"`
 	Tools           []map[string]any  `json:"tools,omitempty"`
@@ -20,6 +21,7 @@ type ResponsesRequest struct {
 func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
 	return &ResponsesRequest{
 		Model:           r.Model,
+		Provider:        r.Provider,
 		Input:           r.Input,
 		Instructions:    r.Instructions,
 		Tools:           r.Tools,
@@ -81,7 +83,7 @@ type ResponsesUsage struct {
 	TotalTokens             int                      `json:"total_tokens"`
 	PromptTokensDetails     *PromptTokensDetails     `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *CompletionTokensDetails `json:"completion_tokens_details,omitempty"`
-	RawUsage                map[string]any            `json:"raw_usage,omitempty"`
+	RawUsage                map[string]any           `json:"raw_usage,omitempty"`
 }
 
 // ResponsesError represents an error in the response.

@@ -1779,6 +1779,9 @@ const docTemplate = `{
                 "model": {
                     "type": "string"
                 },
+                "provider": {
+                    "type": "string"
+                },
                 "reasoning": {
                     "$ref": "#/definitions/core.Reasoning"
                 },
@@ -1878,6 +1881,9 @@ const docTemplate = `{
                 },
                 "input": {},
                 "model": {
+                    "type": "string"
+                },
+                "provider": {
                     "type": "string"
                 }
             }
@@ -2325,6 +2331,9 @@ const docTemplate = `{
                     }
                 },
                 "model": {
+                    "type": "string"
+                },
+                "provider": {
                     "type": "string"
                 },
                 "reasoning": {

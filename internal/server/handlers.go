@@ -131,6 +131,12 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+	req.Model = selector.Model
+	req.Provider = selector.Provider
 
 	ctx, providerType := ModelCtx(c)
 	requestID := c.Request().Header.Get("X-Request-ID")
@@ -662,6 +668,12 @@ func (h *Handler) Responses(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+	req.Model = selector.Model
+	req.Provider = selector.Provider
 
 	ctx, providerType := ModelCtx(c)
 	requestID := c.Request().Header.Get("X-Request-ID")
@@ -710,6 +722,12 @@ func (h *Handler) Embeddings(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
+	selector, err := core.ParseModelSelector(req.Model, req.Provider)
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+	req.Model = selector.Model
+	req.Provider = selector.Provider
 
 	ctx, providerType := ModelCtx(c)
 	requestID := c.Request().Header.Get("X-Request-ID")
@@ -887,19 +905,31 @@ func extractBatchItemModel(endpoint, method string, body json.RawMessage) (strin
 		if err := json.Unmarshal(body, &req); err != nil {
 			return "", fmt.Errorf("invalid chat request body: %w", err)
 		}
-		return req.Model, nil
+		selector, err := core.ParseModelSelector(req.Model, req.Provider)
+		if err != nil {
+			return "", err
+		}
+		return selector.QualifiedModel(), nil
 	case "/v1/responses":
 		var req core.ResponsesRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			return "", fmt.Errorf("invalid responses request body: %w", err)
 		}
-		return req.Model, nil
+		selector, err := core.ParseModelSelector(req.Model, req.Provider)
+		if err != nil {
+			return "", err
+		}
+		return selector.QualifiedModel(), nil
 	case "/v1/embeddings":
 		var req core.EmbeddingRequest
 		if err := json.Unmarshal(body, &req); err != nil {
 			return "", fmt.Errorf("invalid embeddings request body: %w", err)
 		}
-		return req.Model, nil
+		selector, err := core.ParseModelSelector(req.Model, req.Provider)
+		if err != nil {
+			return "", err
+		}
+		return selector.QualifiedModel(), nil
 	default:
 		return "", fmt.Errorf("unsupported batch item url: %s", normalized)
 	}

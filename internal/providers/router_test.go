@@ -60,9 +60,13 @@ type mockProvider struct {
 	responsesResponse *core.ResponsesResponse
 	embeddingResponse *core.EmbeddingResponse
 	err               error
+	lastChatReq       *core.ChatRequest
+	lastResponsesReq  *core.ResponsesRequest
+	lastEmbeddingReq  *core.EmbeddingRequest
 }
 
-func (m *mockProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+func (m *mockProvider) ChatCompletion(_ context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+	m.lastChatReq = req
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -80,7 +84,8 @@ func (m *mockProvider) ListModels(_ context.Context) (*core.ModelsResponse, erro
 	return nil, nil
 }
 
-func (m *mockProvider) Responses(_ context.Context, _ *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+func (m *mockProvider) Responses(_ context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	m.lastResponsesReq = req
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -94,7 +99,8 @@ func (m *mockProvider) StreamResponses(_ context.Context, _ *core.ResponsesReque
 	return io.NopCloser(nil), nil
 }
 
-func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+func (m *mockProvider) Embeddings(_ context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	m.lastEmbeddingReq = req
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -308,12 +314,88 @@ func TestRouterChatCompletion(t *testing.T) {
 	}
 }
 
+func TestRouterChatCompletion_ProviderSelector(t *testing.T) {
+	eastResp := &core.ChatResponse{ID: "east", Model: "gpt-4o"}
+	westResp := &core.ChatResponse{ID: "west", Model: "gpt-4o"}
+	east := &mockProvider{name: "openai-east", chatResponse: eastResp}
+	west := &mockProvider{name: "openai-west", chatResponse: westResp}
+
+	lookup := newMockLookup()
+	lookup.addModel("gpt-4o", east, "openai")
+	lookup.addModel("openai-west/gpt-4o", west, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	resp, err := router.ChatCompletion(context.Background(), &core.ChatRequest{
+		Model:    "gpt-4o",
+		Provider: "openai-west",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ID != "west" {
+		t.Fatalf("expected west provider response, got %q", resp.ID)
+	}
+	if west.lastChatReq == nil || west.lastChatReq.Model != "gpt-4o" {
+		t.Fatalf("expected upstream model to be unqualified gpt-4o, got %#v", west.lastChatReq)
+	}
+	if west.lastChatReq.Provider != "" {
+		t.Fatalf("expected provider field to be stripped upstream, got %q", west.lastChatReq.Provider)
+	}
+}
+
+func TestRouterChatCompletion_PrefixedModelSelector(t *testing.T) {
+	westResp := &core.ChatResponse{ID: "west", Model: "gpt-4o"}
+	west := &mockProvider{name: "openai-west", chatResponse: westResp}
+
+	lookup := newMockLookup()
+	lookup.addModel("openai-west/gpt-4o", west, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	resp, err := router.ChatCompletion(context.Background(), &core.ChatRequest{Model: "openai-west/gpt-4o"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.ID != "west" {
+		t.Fatalf("expected west provider response, got %q", resp.ID)
+	}
+	if west.lastChatReq == nil || west.lastChatReq.Model != "gpt-4o" {
+		t.Fatalf("expected upstream model to be unqualified gpt-4o, got %#v", west.lastChatReq)
+	}
+}
+
+func TestRouterChatCompletion_ProviderConflict(t *testing.T) {
+	lookup := newMockLookup()
+	lookup.addModel("openai/gpt-4o", &mockProvider{}, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	_, err := router.ChatCompletion(context.Background(), &core.ChatRequest{
+		Model:    "openai/gpt-4o",
+		Provider: "anthropic",
+	})
+	if err == nil {
+		t.Fatal("expected provider conflict error")
+	}
+	var gwErr *core.GatewayError
+	if !errors.As(err, &gwErr) {
+		t.Fatalf("expected GatewayError, got %T: %v", err, err)
+	}
+	if gwErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("expected 400 status, got %d", gwErr.HTTPStatusCode())
+	}
+}
+
 func TestRouterResponses(t *testing.T) {
 	expectedResp := &core.ResponsesResponse{ID: "resp-123"}
 	provider := &mockProvider{name: "openai", responsesResponse: expectedResp}
+	altResp := &core.ResponsesResponse{ID: "resp-456"}
+	altProvider := &mockProvider{name: "openai-alt", responsesResponse: altResp}
 
 	lookup := newMockLookup()
 	lookup.addModel("gpt-4o", provider, "openai")
+	lookup.addModel("openai-alt/gpt-4o", altProvider, "openai")
 
 	router, _ := NewRouter(lookup)
 
@@ -336,6 +418,23 @@ func TestRouterResponses(t *testing.T) {
 		_, err := router.Responses(context.Background(), req)
 		if err == nil {
 			t.Error("expected error for unknown model")
+		}
+	})
+
+	t.Run("provider selector routes and strips provider before upstream", func(t *testing.T) {
+		req := &core.ResponsesRequest{Model: "gpt-4o", Provider: "openai-alt"}
+		resp, err := router.Responses(context.Background(), req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if resp.ID != altResp.ID {
+			t.Fatalf("got ID %q, want %q", resp.ID, altResp.ID)
+		}
+		if altProvider.lastResponsesReq == nil || altProvider.lastResponsesReq.Model != "gpt-4o" {
+			t.Fatalf("expected upstream model gpt-4o, got %#v", altProvider.lastResponsesReq)
+		}
+		if altProvider.lastResponsesReq.Provider != "" {
+			t.Fatalf("expected provider field stripped upstream, got %q", altProvider.lastResponsesReq.Provider)
 		}
 	})
 }
@@ -512,9 +611,11 @@ func TestRouterEmbeddings(t *testing.T) {
 		},
 	}
 	provider := &mockProvider{name: "openai", embeddingResponse: expectedResp}
+	altProvider := &mockProvider{name: "openai-alt", embeddingResponse: expectedResp}
 
 	lookup := newMockLookup()
 	lookup.addModel("text-embedding-3-small", provider, "openai")
+	lookup.addModel("openai-alt/text-embedding-3-small", altProvider, "openai")
 
 	router, _ := NewRouter(lookup)
 
@@ -537,6 +638,24 @@ func TestRouterEmbeddings(t *testing.T) {
 		_, err := router.Embeddings(context.Background(), req)
 		if err == nil {
 			t.Error("expected error for unknown model")
+		}
+	})
+
+	t.Run("provider selector routes and strips provider before upstream", func(t *testing.T) {
+		req := &core.EmbeddingRequest{
+			Model:    "text-embedding-3-small",
+			Provider: "openai-alt",
+			Input:    "hello",
+		}
+		_, err := router.Embeddings(context.Background(), req)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if altProvider.lastEmbeddingReq == nil || altProvider.lastEmbeddingReq.Model != "text-embedding-3-small" {
+			t.Fatalf("expected upstream model text-embedding-3-small, got %#v", altProvider.lastEmbeddingReq)
+		}
+		if altProvider.lastEmbeddingReq.Provider != "" {
+			t.Fatalf("expected provider field stripped upstream, got %q", altProvider.lastEmbeddingReq.Provider)
 		}
 	})
 }

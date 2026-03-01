@@ -40,23 +40,25 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 			c.Request().Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 			var peek struct {
-				Model string `json:"model"`
+				Model    string `json:"model"`
+				Provider string `json:"provider"`
 			}
 			if err := json.Unmarshal(bodyBytes, &peek); err != nil {
 				return next(c)
 			}
 
-			if peek.Model == "" {
-				return handleError(c, core.NewInvalidRequestError("model is required", nil))
+			selector, err := core.ParseModelSelector(peek.Model, peek.Provider)
+			if err != nil {
+				return handleError(c, core.NewInvalidRequestError(err.Error(), err))
 			}
 
-			if !provider.Supports(peek.Model) {
-				return handleError(c, core.NewInvalidRequestError("unsupported model: "+peek.Model, nil))
+			if !provider.Supports(selector.QualifiedModel()) {
+				return handleError(c, core.NewInvalidRequestError("unsupported model: "+selector.QualifiedModel(), nil))
 			}
 
-			providerType := provider.GetProviderType(peek.Model)
+			providerType := provider.GetProviderType(selector.QualifiedModel())
 			c.Set(string(providerTypeKey), providerType)
-			auditlog.EnrichEntry(c, peek.Model, providerType)
+			auditlog.EnrichEntry(c, selector.Model, providerType)
 
 			requestID := c.Request().Header.Get("X-Request-ID")
 			ctx := core.WithRequestID(c.Request().Context(), requestID)

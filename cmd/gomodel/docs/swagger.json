@@ -1775,6 +1775,9 @@
                 "model": {
                     "type": "string"
                 },
+                "provider": {
+                    "type": "string"
+                },
                 "reasoning": {
                     "$ref": "#/definitions/core.Reasoning"
                 },
@@ -1874,6 +1877,9 @@
                 },
                 "input": {},
                 "model": {
+                    "type": "string"
+                },
+                "provider": {
                     "type": "string"
                 }
             }
@@ -2321,6 +2327,9 @@
                     }
                 },
                 "model": {
+                    "type": "string"
+                },
+                "provider": {
                     "type": "string"
                 },
                 "reasoning": {

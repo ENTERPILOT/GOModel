@@ -49,6 +49,10 @@ type mockProvider struct {
 }
 
 func (m *mockProvider) Supports(model string) bool {
+	selector, err := core.ParseModelSelector(model, "")
+	if err == nil {
+		model = selector.Model
+	}
 	for _, supported := range m.supportedModels {
 		if model == supported {
 			return true
@@ -58,6 +62,16 @@ func (m *mockProvider) Supports(model string) bool {
 }
 
 func (m *mockProvider) GetProviderType(model string) string {
+	selector, err := core.ParseModelSelector(model, "")
+	if err == nil && selector.Provider != "" {
+		if m.providerTypes != nil {
+			if providerType, ok := m.providerTypes[selector.QualifiedModel()]; ok {
+				return providerType
+			}
+		}
+		model = selector.Model
+	}
+
 	if m.providerTypes != nil {
 		if providerType, ok := m.providerTypes[model]; ok {
 			return providerType

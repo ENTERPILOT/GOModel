@@ -23,6 +23,7 @@ type ChatRequest struct {
 	Temperature   *float64       `json:"temperature,omitempty"`
 	MaxTokens     *int           `json:"max_tokens,omitempty"`
 	Model         string         `json:"model"`
+	Provider      string         `json:"provider,omitempty"`
 	Messages      []Message      `json:"messages"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
@@ -36,6 +37,7 @@ func (r *ChatRequest) WithStreaming() *ChatRequest {
 		Temperature:   r.Temperature,
 		MaxTokens:     r.MaxTokens,
 		Model:         r.Model,
+		Provider:      r.Provider,
 		Messages:      r.Messages,
 		Stream:        true,
 		StreamOptions: r.StreamOptions,
@@ -232,6 +234,7 @@ type ModelsResponse struct {
 // EmbeddingRequest represents the incoming embeddings request (OpenAI-compatible).
 type EmbeddingRequest struct {
 	Model          string `json:"model"`
+	Provider       string `json:"provider,omitempty"`
 	Input          any    `json:"input"`
 	EncodingFormat string `json:"encoding_format,omitempty"`
 	Dimensions     *int   `json:"dimensions,omitempty"`
