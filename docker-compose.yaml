@@ -14,6 +14,9 @@ services:
       - REDIS_KEY=gomodel:models
       # Metrics
       - METRICS_ENABLED=true
+      # Request flow planning and admin UI
+      - FLOW_ENABLED=true
+      - FLOW_ADMIN_ENABLED=true
       # Storage configuration (PostgreSQL for audit logs)
       - POSTGRES_URL=postgres://gomodel:gomodel@postgres:5432/gomodel
       # MongoDB configuration (uncomment to use MongoDB instead)

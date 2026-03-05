@@ -18,6 +18,7 @@ import (
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
 	"gomodel/internal/providers"
+	"gomodel/internal/requestflow"
 	"gomodel/internal/server"
 	"gomodel/internal/storage"
 	"gomodel/internal/usage"
@@ -31,6 +32,7 @@ type App struct {
 	audit     *auditlog.Result
 	usage     *usage.Result
 	batch     *batch.Result
+	flow      *requestflow.Result
 	server    *server.Server
 
 	shutdownMu sync.Mutex
@@ -122,19 +124,46 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.batch = batchResult
 
+	// Initialize request flow planning and execution tracking.
+	var sharedStorage storage.Storage
+	if auditResult.Storage != nil {
+		sharedStorage = auditResult.Storage
+	} else if usageResult.Storage != nil {
+		sharedStorage = usageResult.Storage
+	}
+	flowResult, err := requestflow.New(ctx, appCfg, sharedStorage)
+	if err != nil {
+		closeErr := errors.Join(app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to initialize request flows: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to initialize request flows: %w", err)
+	}
+	app.flow = flowResult
+
 	// Log configuration status
 	app.logStartupInfo()
 
 	// Build the provider chain: router optionally wrapped with guardrails
 	var provider core.RoutableProvider = app.providers.Router
-	if appCfg.Guardrails.Enabled {
+	if flowResult != nil && flowResult.Manager != nil {
+		provider = requestflow.NewProvider(provider, flowResult.Manager)
+		slog.Info("request flows enabled",
+			"source", appCfg.Flow.Source,
+			"track_executions", appCfg.Flow.TrackExecutions,
+		)
+	} else if appCfg.Guardrails.Enabled {
 		pipeline, err := buildGuardrailsPipeline(appCfg.Guardrails)
 		if err != nil {
 			var batchCloseErr error
 			if app.batch != nil {
 				batchCloseErr = app.batch.Close()
 			}
-			closeErr := errors.Join(batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
+			var flowCloseErr error
+			if app.flow != nil {
+				flowCloseErr = app.flow.Close()
+			}
+			closeErr := errors.Join(batchCloseErr, flowCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
 			if closeErr != nil {
 				return nil, fmt.Errorf("failed to build guardrails: %w (also: close error: %v)", err, closeErr)
 			}
@@ -173,12 +202,14 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		adminCfg.UIEnabled = false
 	}
 	if adminCfg.EndpointsEnabled {
-		adminHandler, dashHandler, adminErr := initAdmin(auditResult.Storage, usageResult.Storage, providerResult.Registry, adminCfg.UIEnabled)
+		flowAdminEnabled := appCfg.Flow.Enabled && appCfg.Flow.AdminEnabled && flowResult != nil && flowResult.Manager != nil
+		adminHandler, dashHandler, adminErr := initAdmin(auditResult.Storage, usageResult.Storage, providerResult.Registry, adminCfg.UIEnabled, flowResult, flowAdminEnabled)
 		if adminErr != nil {
 			slog.Warn("failed to initialize admin", "error", adminErr)
 		} else {
 			serverCfg.AdminEndpointsEnabled = true
 			serverCfg.AdminHandler = adminHandler
+			serverCfg.FlowAdminEnabled = flowAdminEnabled
 			slog.Info("admin API enabled", "api", "/admin/api/v1")
 			if adminCfg.UIEnabled {
 				serverCfg.AdminUIEnabled = true
@@ -288,6 +319,14 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 
 	// 4. Close usage tracking (flushes pending entries)
+	if a.flow != nil {
+		if err := a.flow.Close(); err != nil {
+			slog.Error("request flow close error", "error", err)
+			errs = append(errs, fmt.Errorf("flow close: %w", err))
+		}
+	}
+
+	// 5. Close usage tracking (flushes pending entries)
 	if a.usage != nil {
 		if err := a.usage.Close(); err != nil {
 			slog.Error("usage logger close error", "error", err)
@@ -295,7 +334,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 5. Close audit logging (flushes pending logs)
+	// 6. Close audit logging (flushes pending logs)
 	if a.audit != nil {
 		if err := a.audit.Close(); err != nil {
 			slog.Error("audit logger close error", "error", err)
@@ -356,11 +395,22 @@ func (a *App) logStartupInfo() {
 		slog.Info("usage tracking disabled")
 	}
 
+	if cfg.Flow.Enabled {
+		slog.Info("request flow planning enabled",
+			"source", cfg.Flow.Source,
+			"yaml_path", cfg.Flow.YAMLPath,
+			"track_executions", cfg.Flow.TrackExecutions,
+			"admin_enabled", cfg.Flow.AdminEnabled,
+		)
+	} else {
+		slog.Info("request flow planning disabled")
+	}
+
 }
 
 // initAdmin creates the admin API handler and optionally the dashboard handler.
 // Returns nil dashboard handler if uiEnabled is false.
-func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.ModelRegistry, uiEnabled bool) (*admin.Handler, *dashboard.Handler, error) {
+func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.ModelRegistry, uiEnabled bool, flowResult *requestflow.Result, flowAdminEnabled bool) (*admin.Handler, *dashboard.Handler, error) {
 	// Find a storage connection for reading usage data
 	var store storage.Storage
 	if auditStorage != nil {
@@ -390,12 +440,22 @@ func initAdmin(auditStorage, usageStorage storage.Storage, registry *providers.M
 		}
 	}
 
-	adminHandler := admin.NewHandler(reader, registry, admin.WithAuditReader(auditReader))
+	var flowManager *requestflow.Manager
+	if flowResult != nil {
+		flowManager = flowResult.Manager
+	}
+
+	options := []admin.Option{admin.WithAuditReader(auditReader)}
+	if flowAdminEnabled && flowManager != nil {
+		options = append(options, admin.WithFlowManager(flowManager))
+	}
+
+	adminHandler := admin.NewHandler(reader, registry, options...)
 
 	var dashHandler *dashboard.Handler
 	if uiEnabled {
 		var err error
-		dashHandler, err = dashboard.New()
+		dashHandler, err = dashboard.New(dashboard.Options{FlowEnabled: flowAdminEnabled && flowManager != nil})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to initialize dashboard: %w", err)
 		}

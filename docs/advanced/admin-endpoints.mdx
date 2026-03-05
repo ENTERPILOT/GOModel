@@ -20,6 +20,8 @@ Both are on by default because observability shouldn't be opt-in. If you don't n
 | ------------------------- | ------------------------------------ | ------- |
 | `ADMIN_ENDPOINTS_ENABLED` | Enable the admin REST API            | `true`  |
 | `ADMIN_UI_ENABLED`        | Enable the admin dashboard UI        | `true`  |
+| `FLOW_ENABLED`            | Enable request-flow planning/runtime | `true`  |
+| `FLOW_ADMIN_ENABLED`      | Expose flow plan/execution admin UI  | `true`  |
 
 Or in YAML:
 
@@ -152,6 +154,22 @@ Returns all registered models with their provider type.
 
 This differs from the standard `/v1/models` endpoint: the admin version includes `provider_type` for each model, making it useful for understanding which provider serves which model.
 
+### GET /admin/api/v1/flows/plans
+
+Returns the editable request-flow plan set currently active for the gateway. Plans can come from YAML, DB, or both depending on `FLOW_SOURCE`.
+
+### PUT /admin/api/v1/flows/plans/{id}
+
+Creates or updates a DB-backed request-flow plan. This endpoint is available only when `FLOW_ENABLED=true`, `FLOW_ADMIN_ENABLED=true`, and the flow source includes a writable DB layer (`db` or `hybrid`).
+
+### DELETE /admin/api/v1/flows/plans/{id}
+
+Deletes a DB-backed request-flow plan.
+
+### GET /admin/api/v1/flows/executions
+
+Returns recent per-request flow execution records, including the matched plan, applied guardrails, retry count, and whether failover was armed or used.
+
 ## Admin Dashboard
 
 The dashboard is a server-rendered HTML page embedded in the GOModel binary. Access it at:
@@ -161,6 +179,8 @@ http://localhost:8080/admin/dashboard
 ```
 
 It provides a visual overview of usage statistics and registered models using the same data as the REST API endpoints above.
+
+When request flows are enabled, the dashboard also exposes a `Flows` page for editing DB-backed plans and browsing recent flow execution history.
 
 ## Disabling Admin Features
 

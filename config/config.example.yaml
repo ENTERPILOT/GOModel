@@ -98,6 +98,18 @@ guardrails:
     #     mode: "inject"
     #     content: "Follow safety guidelines."
 
+flow:
+  enabled: true
+  admin_enabled: true
+  source: "yaml" # "yaml", "db", or "hybrid"
+  yaml_path: "config/flow.yaml"
+  cache_ttl_seconds: 300
+  track_executions: true
+  buffer_size: 1000
+  flush_interval: 5
+  retention_days: 30
+  db_fallback_to_yaml: true
+
 providers:
   openai:
     type: openai

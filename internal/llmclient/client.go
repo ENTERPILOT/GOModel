@@ -20,6 +20,7 @@ import (
 	"gomodel/config"
 	"gomodel/internal/core"
 	"gomodel/internal/httpclient"
+	"gomodel/internal/requestflow"
 )
 
 // RequestInfo contains metadata about a request for observability hooks
@@ -248,7 +249,11 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 
 	var lastErr error
 	var lastStatusCode int
-	maxAttempts := c.config.Retry.MaxRetries + 1
+	effectiveRetry := c.config.Retry
+	if override, ok := requestflow.RetryOverrideFromContext(ctx); ok {
+		effectiveRetry = override
+	}
+	maxAttempts := effectiveRetry.MaxRetries + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
@@ -256,7 +261,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			// Calculate backoff duration with jitter
-			backoff := c.calculateBackoff(attempt)
+			backoff := c.calculateBackoffFor(effectiveRetry, attempt)
 			select {
 			case <-ctx.Done():
 				callEndHook(0, ctx.Err())
@@ -265,6 +270,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 			}
 		}
 
+		requestflow.RecordAttempt(ctx, c.config.ProviderName)
 		resp, err := c.doRequest(ctx, req)
 		if err != nil {
 			lastErr = err
@@ -377,6 +383,7 @@ func (c *Client) DoStream(ctx context.Context, req Request) (io.ReadCloser, erro
 	}
 
 	resp, err := c.httpClient.Do(httpReq)
+	requestflow.RecordAttempt(ctx, c.config.ProviderName)
 	if err != nil {
 		if c.circuitBreaker != nil {
 			c.circuitBreaker.RecordFailure()
@@ -567,7 +574,10 @@ func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, 
 
 // calculateBackoff calculates the backoff duration for a given attempt with jitter
 func (c *Client) calculateBackoff(attempt int) time.Duration {
-	retry := c.config.Retry
+	return c.calculateBackoffFor(c.config.Retry, attempt)
+}
+
+func (c *Client) calculateBackoffFor(retry config.RetryConfig, attempt int) time.Duration {
 	backoff := float64(retry.InitialBackoff) * math.Pow(retry.BackoffFactor, float64(attempt-1))
 	if backoff > float64(retry.MaxBackoff) {
 		backoff = float64(retry.MaxBackoff)

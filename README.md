@@ -6,6 +6,8 @@
 
 A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
 
+GOModel can now plan request flows per app and per model, with cached resolution, editable DB-backed plans in the admin UI, YAML-backed defaults in `config/flow.yaml`, and per-request execution history covering guardrails, retries, and failover state.
+
 ## Quick Start
 
 **Step 1:** Start GOModel

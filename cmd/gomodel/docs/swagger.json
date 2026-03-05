@@ -178,6 +178,219 @@
                 }
             }
         },
+        "/admin/api/v1/flows/executions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List request flow executions",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Search by request_id, model, provider, plan, or status",
+                        "name": "search",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by request ID",
+                        "name": "request_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by model",
+                        "name": "model",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Row offset",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/requestflow.ExecutionLogResult"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/flows/plans": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "List request flow plans",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/requestflow.DefinitionListResult"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
+        "/admin/api/v1/flows/plans/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create or update a request flow plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Request flow plan",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/requestflow.Definition"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/requestflow.Definition"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Delete a request flow plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Plan ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                }
+            }
+        },
         "/admin/api/v1/models": {
             "get": {
                 "security": [
@@ -2482,6 +2695,259 @@
                     "$ref": "#/definitions/core.Model"
                 },
                 "provider_type": {
+                    "type": "string"
+                }
+            }
+        },
+        "requestflow.Definition": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "match": {
+                    "$ref": "#/definitions/requestflow.MatchCriteria"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "spec": {
+                    "$ref": "#/definitions/requestflow.PlanSpec"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "requestflow.DefinitionListResult": {
+            "type": "object",
+            "properties": {
+                "plans": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/requestflow.Definition"
+                    }
+                },
+                "source_mode": {
+                    "type": "string"
+                },
+                "writable": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "requestflow.Execution": {
+            "type": "object",
+            "properties": {
+                "duration_ns": {
+                    "type": "integer"
+                },
+                "endpoint": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "failover_enabled": {
+                    "type": "boolean"
+                },
+                "failover_used": {
+                    "type": "boolean"
+                },
+                "guardrail_rejected": {
+                    "type": "boolean"
+                },
+                "guardrails_applied": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "guardrails_configured": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "plan_ids": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "plan_name": {
+                    "type": "string"
+                },
+                "plan_sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "provider": {
+                    "type": "string"
+                },
+                "request_id": {
+                    "type": "string"
+                },
+                "retries_made": {
+                    "type": "integer"
+                },
+                "retry_configured": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "timestamp": {
+                    "type": "string"
+                },
+                "upstream_attempts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "requestflow.ExecutionLogResult": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/requestflow.Execution"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "requestflow.FailoverPolicy": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "strategy": {
+                    "type": "string"
+                }
+            }
+        },
+        "requestflow.GuardrailRule": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "system_prompt": {
+                    "$ref": "#/definitions/requestflow.SystemPromptSettings"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "requestflow.GuardrailSpec": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "type": "string"
+                },
+                "rules": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/requestflow.GuardrailRule"
+                    }
+                }
+            }
+        },
+        "requestflow.MatchCriteria": {
+            "type": "object",
+            "properties": {
+                "api_key_hash": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "team": {
+                    "type": "string"
+                },
+                "user": {
+                    "type": "string"
+                }
+            }
+        },
+        "requestflow.PlanSpec": {
+            "type": "object",
+            "properties": {
+                "failover": {
+                    "$ref": "#/definitions/requestflow.FailoverPolicy"
+                },
+                "guardrails": {
+                    "$ref": "#/definitions/requestflow.GuardrailSpec"
+                },
+                "retry": {
+                    "$ref": "#/definitions/requestflow.RetryPolicy"
+                }
+            }
+        },
+        "requestflow.RetryPolicy": {
+            "type": "object",
+            "properties": {
+                "backoff_factor": {
+                    "type": "number"
+                },
+                "initial_backoff": {
+                    "type": "string"
+                },
+                "jitter_factor": {
+                    "type": "number"
+                },
+                "max_backoff": {
+                    "type": "string"
+                },
+                "max_retries": {
+                    "type": "integer"
+                }
+            }
+        },
+        "requestflow.SystemPromptSettings": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "mode": {
                     "type": "string"
                 }
             }

@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"gomodel/internal/auditlog"
 	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
+	"gomodel/internal/requestflow"
 	"gomodel/internal/usage"
 )
 
@@ -134,6 +136,15 @@ func resolveModelSelector(model, provider *string) error {
 	return nil
 }
 
+func enrichRequestContext(c echo.Context, ctx context.Context) context.Context {
+	requestID := strings.TrimSpace(c.Request().Header.Get("X-Request-ID"))
+	ctx = core.WithRequestID(ctx, requestID)
+	selector := requestflow.SelectorContext{
+		APIKeyHash: requestflow.HashAPIKey(c.Request().Header.Get("Authorization")),
+	}
+	return requestflow.WithSelectorContext(ctx, selector)
+}
+
 // ChatCompletion handles POST /v1/chat/completions
 //
 // @Summary      Create a chat completion
@@ -159,8 +170,8 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 	}
 
 	ctx, providerType := ModelCtx(c)
+	ctx = enrichRequestContext(c, ctx)
 	requestID := c.Request().Header.Get("X-Request-ID")
-	ctx = core.WithRequestID(ctx, requestID)
 
 	if req.Stream {
 		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
@@ -630,6 +641,7 @@ func (h *Handler) Responses(c echo.Context) error {
 	}
 
 	ctx, providerType := ModelCtx(c)
+	ctx = enrichRequestContext(c, ctx)
 	requestID := c.Request().Header.Get("X-Request-ID")
 
 	if req.Stream {
@@ -674,6 +686,7 @@ func (h *Handler) Embeddings(c echo.Context) error {
 	}
 
 	ctx, providerType := ModelCtx(c)
+	ctx = enrichRequestContext(c, ctx)
 	requestID := c.Request().Header.Get("X-Request-ID")
 
 	resp, err := h.provider.Embeddings(ctx, &req)
@@ -711,7 +724,7 @@ func (h *Handler) Batches(c echo.Context) error {
 	}
 
 	requestID := c.Request().Header.Get("X-Request-ID")
-	ctx := core.WithRequestID(c.Request().Context(), requestID)
+	ctx := enrichRequestContext(c, c.Request().Context())
 
 	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
 	if !ok {

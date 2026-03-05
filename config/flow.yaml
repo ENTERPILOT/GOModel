@@ -1,50 +1,47 @@
-flow:
-  name: llm_pipeline_with_parallel_and_guardrail_router
+version: 1
+plans:
+  - id: app-defaults
+    name: App Defaults
+    enabled: true
+    priority: 10
+    match: {}
+    spec:
+      guardrails:
+        mode: append
+        rules:
+          - name: app-safety
+            type: system_prompt
+            order: 0
+            system_prompt:
+              mode: inject
+              content: Always answer safely and decline clearly when policy requires it.
+      retry:
+        max_retries: 3
+        initial_backoff: 1s
+        max_backoff: 30s
+      failover:
+        enabled: false
+        strategy: same_model
 
-config:
-  # the config will be taken from this file all times the app starts.
-  source_of_flow: "config_file"
-
-input:
-  - name: user_query
-    type: string
-
-steps:
-  # 1. Parallel pre-processing (no logic in YAML)
-  - name: pre_processing
-    type: parallel
-    branches:
-      normalize_text:
-        steps:
-          - name: normalize
-            type: normalize_text_step
-
-      extract_metadata:
-        steps:
-          - name: metadata
-            type: extract_metadata_step
-
-  # 2. Guardrail router step (logic inside the step implementation)
-  - name: guardrail_router
-    type: guardrail_router_step
-    input:
-      text: "{{ user_query }}"
-
-  # 3. Guardrail executor (step chooses which guardrail to call)
-  - name: guardrail_executor
-    type: guardrail_executor_step
-    input:
-      router_output: "{{ guardrail_router.output }}"
-      normalized: "{{ pre_processing.normalize_text.output }}"
-      metadata: "{{ pre_processing.extract_metadata.output }}"
-
-  # 4. LLM model call
-  - name: call_model
-    type: llm_call_step
-    input:
-      text: "{{ guardrail_executor.cleaned_text }}"
-      metadata: "{{ guardrail_executor.metadata }}"
-      guardrail: "{{ guardrail_executor.guardrail_summary }}"
-
-output:
-  value: "{{ call_model.response }}"
+  - id: gpt-4o-strict
+    name: GPT-4o Strict
+    enabled: true
+    priority: 100
+    match:
+      model: gpt-4o
+    spec:
+      guardrails:
+        mode: replace
+        rules:
+          - name: gpt-4o-system
+            type: system_prompt
+            order: 0
+            system_prompt:
+              mode: override
+              content: You are the strict gateway path for GPT-4o. Be concise, safe, and deterministic.
+      retry:
+        max_retries: 1
+        initial_backoff: 500ms
+      failover:
+        enabled: true
+        strategy: same_model

@@ -10,19 +10,19 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 	if h == nil {
-		t.Fatal("New() returned nil handler")
+		t.Fatal("New(Options{}) returned nil handler")
 	}
 }
 
 func TestIndex_ReturnsHTML(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 
 	e := echo.New()
@@ -53,9 +53,9 @@ func TestIndex_ReturnsHTML(t *testing.T) {
 }
 
 func TestStatic_ServesCSS(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 
 	e := echo.New()
@@ -76,9 +76,9 @@ func TestStatic_ServesCSS(t *testing.T) {
 }
 
 func TestStatic_ServesJS(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 
 	e := echo.New()
@@ -99,9 +99,9 @@ func TestStatic_ServesJS(t *testing.T) {
 }
 
 func TestStatic_ServesModuleJS(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 
 	e := echo.New()
@@ -122,9 +122,9 @@ func TestStatic_ServesModuleJS(t *testing.T) {
 }
 
 func TestStatic_ServesFavicon(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 
 	e := echo.New()
@@ -145,9 +145,9 @@ func TestStatic_ServesFavicon(t *testing.T) {
 }
 
 func TestStatic_NotFound(t *testing.T) {
-	h, err := New()
+	h, err := New(Options{})
 	if err != nil {
-		t.Fatalf("New() returned error: %v", err)
+		t.Fatalf("New(Options{}) returned error: %v", err)
 	}
 
 	e := echo.New()
