@@ -43,6 +43,7 @@ type Config struct {
 	AdminUIEnabled           bool                     // Whether admin dashboard UI is enabled
 	AdminHandler             *admin.Handler           // Admin API handler (nil if disabled)
 	DashboardHandler         *dashboard.Handler       // Dashboard UI handler (nil if disabled)
+	FlowAdminEnabled         bool                     // Whether request flow admin endpoints are enabled
 	SwaggerEnabled           bool                     // Whether to expose the Swagger UI at /swagger/index.html
 }
 
@@ -201,6 +202,12 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		adminAPI.GET("/audit/conversation", cfg.AdminHandler.AuditConversation)
 		adminAPI.GET("/models", cfg.AdminHandler.ListModels)
 		adminAPI.GET("/models/categories", cfg.AdminHandler.ListCategories)
+		if cfg.FlowAdminEnabled {
+			adminAPI.GET("/flows/plans", cfg.AdminHandler.FlowPlans)
+			adminAPI.PUT("/flows/plans/:id", cfg.AdminHandler.UpsertFlowPlan)
+			adminAPI.DELETE("/flows/plans/:id", cfg.AdminHandler.DeleteFlowPlan)
+			adminAPI.GET("/flows/executions", cfg.AdminHandler.FlowExecutions)
+		}
 	}
 
 	// Admin dashboard UI routes (behind ADMIN_UI_ENABLED flag)

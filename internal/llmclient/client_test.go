@@ -14,6 +14,7 @@ import (
 
 	goconfig "gomodel/config"
 	"gomodel/internal/core"
+	"gomodel/internal/requestflow"
 )
 
 func TestClient_Do_Success(t *testing.T) {
@@ -43,6 +44,52 @@ func TestClient_Do_Success(t *testing.T) {
 	}
 	if result.Message != "hello" {
 		t.Errorf("expected message 'hello', got '%s'", result.Message)
+	}
+}
+
+func TestClient_DoRaw_UsesRequestFlowRetryOverride(t *testing.T) {
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := atomic.AddInt32(&attempts, 1)
+		if count < 3 {
+			http.Error(w, "retry", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	defer server.Close()
+
+	client := New(Config{
+		ProviderName: "test",
+		BaseURL:      server.URL,
+		Retry: goconfig.RetryConfig{
+			MaxRetries:     0,
+			InitialBackoff: 1 * time.Millisecond,
+			MaxBackoff:     1 * time.Millisecond,
+			BackoffFactor:  1,
+			JitterFactor:   0,
+		},
+	}, nil)
+
+	override := goconfig.RetryConfig{
+		MaxRetries:     2,
+		InitialBackoff: 1 * time.Millisecond,
+		MaxBackoff:     1 * time.Millisecond,
+		BackoffFactor:  1,
+		JitterFactor:   0,
+	}
+	ctx := requestflow.WithExecutionState(context.Background(), &requestflow.Execution{}, override)
+
+	resp, err := client.DoRaw(ctx, Request{Method: http.MethodGet, Endpoint: "/retry"})
+	if err != nil {
+		t.Fatalf("DoRaw() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	if got := atomic.LoadInt32(&attempts); got != 3 {
+		t.Fatalf("expected 3 attempts from override, got %d", got)
 	}
 }
 

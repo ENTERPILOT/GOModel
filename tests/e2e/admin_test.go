@@ -54,7 +54,7 @@ func setupAdminServer(t *testing.T, masterKey string, endpointsEnabled, uiEnable
 
 	if uiEnabled {
 		cfg.AdminUIEnabled = true
-		dashHandler, dashErr := dashboard.New()
+		dashHandler, dashErr := dashboard.New(dashboard.Options{})
 		if dashErr != nil {
 			t.Fatalf("Failed to create dashboard handler: %v", dashErr)
 		}

@@ -1,8 +1,9 @@
 // GOModel Dashboard — Alpine.js + Chart.js logic
 
-function dashboard() {
+function dashboard(flowEnabled) {
     const base = {
         // State
+        flowEnabled: !!flowEnabled,
         page: 'overview',
         days: '30',
         loading: false,
@@ -68,11 +69,17 @@ function dashboard() {
         conversationReturnFocusEl: null,
         bodyPointerStart: null,
 
+        // Flow page state
+        flowPlans: { plans: [], writable: false, source_mode: 'yaml' },
+        flowExecutions: { entries: [], total: 0, limit: 25, offset: 0 },
+        flowSearch: '',
+        flowEditor: null,
+
         _parseRoute(pathname) {
             const path = pathname.replace(/\/$/, '');
             const rest = path.replace('/admin/dashboard', '').replace(/^\//, '');
             const parts = rest.split('/');
-            const page = (['overview', 'usage', 'models', 'audit'].includes(parts[0])) ? parts[0] : 'overview';
+            const page = (['overview', 'usage', 'models', 'audit', 'flows'].includes(parts[0])) ? parts[0] : 'overview';
             const sub = parts[1] || null;
             return { page, sub };
         },
@@ -85,8 +92,10 @@ function dashboard() {
 
             const { page, sub } = this._parseRoute(window.location.pathname);
             this.page = page;
+            this.flowEditor = this.emptyFlowPlan();
             if (page === 'usage' && sub === 'costs') this.usageMode = 'costs';
             if (page === 'audit') this.fetchAuditLog(true);
+            if (page === 'flows' && this.flowEnabled) this.fetchFlowPage();
 
             window.addEventListener('popstate', () => {
                 const { page: p, sub: s } = this._parseRoute(window.location.pathname);
@@ -97,6 +106,7 @@ function dashboard() {
                 }
                 if (p === 'overview') this.renderChart();
                 if (p === 'audit') this.fetchAuditLog(true);
+                if (p === 'flows' && this.flowEnabled) this.fetchFlowPage();
             });
 
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
@@ -121,6 +131,7 @@ function dashboard() {
             if (page === 'overview') this.renderChart();
             if (page === 'usage') this.fetchUsagePage();
             if (page === 'audit') this.fetchAuditLog(true);
+            if (page === 'flows' && this.flowEnabled) this.fetchFlowPage();
         },
 
         setTheme(t) {
@@ -307,6 +318,174 @@ function dashboard() {
                 String(d.getHours()).padStart(2, '0') + ':' +
                 String(d.getMinutes()).padStart(2, '0') + ':' +
                 String(d.getSeconds()).padStart(2, '0');
+        },
+
+        emptyFlowPlan() {
+            return {
+                id: '',
+                name: '',
+                description: '',
+                enabled: true,
+                priority: 100,
+                match: { model: '' },
+                spec: {
+                    guardrails: { mode: 'append', rules: [] },
+                    retry: { max_retries: 0, initial_backoff: '1s', max_backoff: '30s' },
+                    failover: { enabled: false, strategy: 'same_model' }
+                },
+                source: 'db'
+            };
+        },
+
+        flowMatchLabel(plan) {
+            if (plan?.match?.model) return plan.match.model;
+            return 'app-wide';
+        },
+
+        newFlowPlan() {
+            this.flowEditor = this.emptyFlowPlan();
+        },
+
+        selectFlowPlan(plan) {
+            this.flowEditor = JSON.parse(JSON.stringify(plan));
+            if (!this.flowEditor.spec) this.flowEditor.spec = {};
+            if (!this.flowEditor.spec.guardrails) this.flowEditor.spec.guardrails = { mode: 'append', rules: [] };
+            if (!this.flowEditor.spec.guardrails.rules) this.flowEditor.spec.guardrails.rules = [];
+            if (!this.flowEditor.spec.retry) this.flowEditor.spec.retry = {};
+            if (!this.flowEditor.spec.failover) this.flowEditor.spec.failover = { enabled: false, strategy: 'same_model' };
+            if (!this.flowEditor.match) this.flowEditor.match = { model: '' };
+        },
+
+        addFlowGuardrail() {
+            if (!this.flowEditor?.spec?.guardrails?.rules) this.flowEditor.spec.guardrails.rules = [];
+            this.flowEditor.spec.guardrails.rules.push({
+                name: '',
+                type: 'system_prompt',
+                order: 0,
+                system_prompt: { mode: 'inject', content: '' }
+            });
+        },
+
+        removeFlowGuardrail(index) {
+            this.flowEditor.spec.guardrails.rules.splice(index, 1);
+        },
+
+        normalizeFlowPayload() {
+            const payload = JSON.parse(JSON.stringify(this.flowEditor || this.emptyFlowPlan()));
+            if (!payload.match) payload.match = { model: '' };
+            if (!payload.spec) payload.spec = {};
+            if (!payload.spec.guardrails) payload.spec.guardrails = { mode: 'append', rules: [] };
+            if (!payload.spec.retry) payload.spec.retry = {};
+            if (!payload.spec.failover) payload.spec.failover = {};
+            payload.name = (payload.name || '').trim();
+            payload.description = (payload.description || '').trim();
+            payload.match.model = (payload.match.model || '').trim();
+            payload.spec.guardrails.mode = payload.spec.guardrails.mode || 'append';
+            payload.spec.guardrails.rules = (payload.spec.guardrails.rules || []).map((rule) => ({
+                name: (rule.name || '').trim(),
+                type: rule.type || 'system_prompt',
+                order: Number(rule.order || 0),
+                system_prompt: {
+                    mode: rule.system_prompt?.mode || 'inject',
+                    content: rule.system_prompt?.content || ''
+                }
+            })).filter((rule) => rule.name || rule.system_prompt.content);
+            if (payload.spec.retry.max_retries === '' || payload.spec.retry.max_retries == null) delete payload.spec.retry.max_retries;
+            if (!payload.spec.retry.initial_backoff) delete payload.spec.retry.initial_backoff;
+            if (!payload.spec.retry.max_backoff) delete payload.spec.retry.max_backoff;
+            if (payload.spec.failover.enabled == null) payload.spec.failover.enabled = false;
+            return payload;
+        },
+
+        async fetchFlowPlans() {
+            if (!this.flowEnabled) return;
+            try {
+                const res = await fetch('/admin/api/v1/flows/plans', { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'request flow plans')) {
+                    this.flowPlans = { plans: [], writable: false, source_mode: 'yaml' };
+                    return;
+                }
+                const result = await res.json();
+                this.flowPlans = result;
+                if (!this.flowEditor?.id && result.plans?.length > 0) {
+                    this.selectFlowPlan(result.plans[0]);
+                }
+            } catch (e) {
+                console.error('Failed to fetch request flow plans:', e);
+                this.flowPlans = { plans: [], writable: false, source_mode: 'yaml' };
+            }
+        },
+
+        async fetchFlowExecutions(reset = false) {
+            if (!this.flowEnabled) return;
+            if (reset) this.flowExecutions.offset = 0;
+            const params = new URLSearchParams({
+                limit: String(this.flowExecutions.limit),
+                offset: String(this.flowExecutions.offset)
+            });
+            if (this.flowSearch) params.set('search', this.flowSearch);
+            try {
+                const res = await fetch('/admin/api/v1/flows/executions?' + params.toString(), { headers: this.headers() });
+                if (!this.handleFetchResponse(res, 'request flow executions')) {
+                    this.flowExecutions = { entries: [], total: 0, limit: 25, offset: 0 };
+                    return;
+                }
+                this.flowExecutions = await res.json();
+            } catch (e) {
+                console.error('Failed to fetch request flow executions:', e);
+                this.flowExecutions = { entries: [], total: 0, limit: 25, offset: 0 };
+            }
+        },
+
+        async fetchFlowPage() {
+            await Promise.all([this.fetchFlowPlans(), this.fetchFlowExecutions()]);
+        },
+
+        async saveFlowPlan() {
+            if (!this.flowPlans.writable) return;
+            const payload = this.normalizeFlowPayload();
+            const id = payload.id || (payload.name || 'flow').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'flow-plan';
+            payload.id = id;
+            try {
+                const res = await fetch('/admin/api/v1/flows/plans/' + encodeURIComponent(id), {
+                    method: 'PUT',
+                    headers: this.headers(),
+                    body: JSON.stringify(payload)
+                });
+                if (!this.handleFetchResponse(res, 'save request flow plan')) return;
+                const saved = await res.json();
+                await this.fetchFlowPlans();
+                this.selectFlowPlan(saved);
+            } catch (e) {
+                console.error('Failed to save request flow plan:', e);
+            }
+        },
+
+        async deleteFlowPlan(id) {
+            if (!this.flowPlans.writable || !id) return;
+            try {
+                const res = await fetch('/admin/api/v1/flows/plans/' + encodeURIComponent(id), {
+                    method: 'DELETE',
+                    headers: this.headers()
+                });
+                if (res.status !== 204 && !this.handleFetchResponse(res, 'delete request flow plan')) return;
+                this.newFlowPlan();
+                await this.fetchFlowPlans();
+            } catch (e) {
+                console.error('Failed to delete request flow plan:', e);
+            }
+        },
+
+        flowExecutionsPrevPage() {
+            if (this.flowExecutions.offset === 0) return;
+            this.flowExecutions.offset = Math.max(0, this.flowExecutions.offset - this.flowExecutions.limit);
+            this.fetchFlowExecutions();
+        },
+
+        flowExecutionsNextPage() {
+            if (this.flowExecutions.offset + this.flowExecutions.limit >= this.flowExecutions.total) return;
+            this.flowExecutions.offset += this.flowExecutions.limit;
+            this.fetchFlowExecutions();
         }
     };
 

@@ -108,6 +108,21 @@ Storage is shared by audit logging, usage tracking, and future features like IAM
 | `ADMIN_ENDPOINTS_ENABLED` | Enable the admin REST API     | `true`  |
 | `ADMIN_UI_ENABLED`        | Enable the admin dashboard UI | `true`  |
 
+#### Request Flows
+
+| Variable                   | Description                                                   | Default            |
+| -------------------------- | ------------------------------------------------------------- | ------------------ |
+| `FLOW_ENABLED`             | Enable request-flow planning and per-request flow application | `true`             |
+| `FLOW_ADMIN_ENABLED`       | Enable flow plan and execution endpoints in the admin layer   | `true`             |
+| `FLOW_SOURCE`              | Flow source: `yaml`, `db`, or `hybrid`                        | `yaml`             |
+| `FLOW_YAML_PATH`           | Path to the flow definition file                              | `config/flow.yaml` |
+| `FLOW_CACHE_TTL_SECONDS`   | Resolved-plan cache TTL in seconds                            | `300`              |
+| `FLOW_TRACK_EXECUTIONS`    | Persist per-request flow execution history                    | `true`             |
+| `FLOW_BUFFER_SIZE`         | Async execution logger buffer size                            | `1000`             |
+| `FLOW_FLUSH_INTERVAL`      | Async execution logger flush interval in seconds              | `5`                |
+| `FLOW_RETENTION_DAYS`      | Retention for flow execution history                          | `30`               |
+| `FLOW_DB_FALLBACK_TO_YAML` | Keep YAML plans active when `FLOW_SOURCE=db`                  | `true`             |
+
 #### HTTP Client
 
 These control timeouts for upstream API requests to LLM providers.
@@ -178,6 +193,11 @@ cache:
   type: redis
   redis:
     url: "redis://my-redis:6379"
+
+flow:
+  enabled: true
+  source: hybrid
+  yaml_path: config/flow.yaml
 
 providers:
   openai:

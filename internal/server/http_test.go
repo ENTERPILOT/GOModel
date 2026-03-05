@@ -259,7 +259,7 @@ func TestServerWithMasterKeyAndMetrics(t *testing.T) {
 
 func newDashboardHandler(t *testing.T) *dashboard.Handler {
 	t.Helper()
-	h, err := dashboard.New()
+	h, err := dashboard.New(dashboard.Options{})
 	if err != nil {
 		t.Fatalf("failed to create dashboard handler: %v", err)
 	}
@@ -283,6 +283,47 @@ func TestAdminEndpoints_Enabled(t *testing.T) {
 			t.Errorf("expected 200 for %s, got %d", path, rec.Code)
 		}
 	}
+}
+
+func TestFlowAdminEndpoints_GatedByFlag(t *testing.T) {
+	mock := &mockProvider{}
+	adminHandler := admin.NewHandler(nil, nil)
+
+	t.Run("enabled", func(t *testing.T) {
+		srv := New(mock, &Config{
+			AdminEndpointsEnabled: true,
+			FlowAdminEnabled:      true,
+			AdminHandler:          adminHandler,
+		})
+
+		for _, path := range []string{"/admin/api/v1/flows/plans", "/admin/api/v1/flows/executions"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Errorf("expected 200 for %s, got %d", path, rec.Code)
+			}
+		}
+	})
+
+	t.Run("disabled", func(t *testing.T) {
+		srv := New(mock, &Config{
+			AdminEndpointsEnabled: true,
+			FlowAdminEnabled:      false,
+			AdminHandler:          adminHandler,
+		})
+
+		for _, path := range []string{"/admin/api/v1/flows/plans", "/admin/api/v1/flows/executions"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusNotFound {
+				t.Errorf("expected 404 for %s, got %d", path, rec.Code)
+			}
+		}
+	})
 }
 
 func TestAdminEndpoints_Disabled(t *testing.T) {

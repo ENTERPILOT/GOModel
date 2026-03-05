@@ -36,6 +36,7 @@ type Config struct {
 	HTTP       HTTPConfig       `yaml:"http"`
 	Admin      AdminConfig      `yaml:"admin"`
 	Guardrails GuardrailsConfig `yaml:"guardrails"`
+	Flow       FlowConfig       `yaml:"flow"`
 	Resilience ResilienceConfig `yaml:"resilience"`
 }
 
@@ -112,6 +113,49 @@ type GuardrailsConfig struct {
 	// instances of the same type are allowed (e.g. two system_prompt guardrails
 	// with different content).
 	Rules []GuardrailRuleConfig `yaml:"rules"`
+}
+
+// FlowConfig configures request flow planning, persistence, and admin editing.
+type FlowConfig struct {
+	// Enabled turns request-flow planning on for request handling and admin APIs.
+	// Default: true
+	Enabled bool `yaml:"enabled" env:"FLOW_ENABLED"`
+
+	// AdminEnabled exposes flow plan and execution endpoints in the admin API/UI.
+	// Default: true
+	AdminEnabled bool `yaml:"admin_enabled" env:"FLOW_ADMIN_ENABLED"`
+
+	// Source selects where editable plans come from: "yaml", "db", or "hybrid".
+	// Default: "yaml"
+	Source string `yaml:"source" env:"FLOW_SOURCE"`
+
+	// YAMLPath points to the optional flow definitions file.
+	// Default: "config/flow.yaml"
+	YAMLPath string `yaml:"yaml_path" env:"FLOW_YAML_PATH"`
+
+	// CacheTTLSeconds controls resolved plan cache lifetime in seconds.
+	// Default: 300
+	CacheTTLSeconds int `yaml:"cache_ttl_seconds" env:"FLOW_CACHE_TTL_SECONDS"`
+
+	// TrackExecutions enables per-request flow execution history.
+	// Default: true
+	TrackExecutions bool `yaml:"track_executions" env:"FLOW_TRACK_EXECUTIONS"`
+
+	// BufferSize controls the async execution logger buffer size.
+	// Default: 1000
+	BufferSize int `yaml:"buffer_size" env:"FLOW_BUFFER_SIZE"`
+
+	// FlushInterval controls how often execution records flush to storage, in seconds.
+	// Default: 5
+	FlushInterval int `yaml:"flush_interval" env:"FLOW_FLUSH_INTERVAL"`
+
+	// RetentionDays keeps flow execution records for the given number of days.
+	// Default: 30
+	RetentionDays int `yaml:"retention_days" env:"FLOW_RETENTION_DAYS"`
+
+	// DBFallbackToYAML allows DB mode to keep YAML defaults active as a fallback layer.
+	// Default: true
+	DBFallbackToYAML bool `yaml:"db_fallback_to_yaml" env:"FLOW_DB_FALLBACK_TO_YAML"`
 }
 
 // GuardrailRuleConfig defines a single guardrail instance.
@@ -400,6 +444,18 @@ func buildDefaultConfig() *Config {
 		HTTP: HTTPConfig{
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
+		},
+		Flow: FlowConfig{
+			Enabled:          true,
+			AdminEnabled:     true,
+			Source:           "yaml",
+			YAMLPath:         "config/flow.yaml",
+			CacheTTLSeconds:  300,
+			TrackExecutions:  true,
+			BufferSize:       1000,
+			FlushInterval:    5,
+			RetentionDays:    30,
+			DBFallbackToYAML: true,
 		},
 		Resilience: ResilienceConfig{
 			Retry:          DefaultRetryConfig(),

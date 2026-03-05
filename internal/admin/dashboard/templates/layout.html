@@ -13,7 +13,7 @@
     <script src="https://unpkg.com/htmx.org@2.0.8/dist/htmx.min.js"></script>
     <link rel="stylesheet" href="/admin/static/css/dashboard.css">
 </head>
-<body x-data="dashboard()" x-init="init()">
+<body x-data="dashboard({{if .FlowEnabled}}true{{else}}false{{end}})" x-init="init()">
     <div class="app">
         <aside class="sidebar" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
             <div class="sidebar-header">
@@ -44,6 +44,12 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/><path d="M9 3h6"/></svg>
                     <span>Audit Logs</span>
                 </a>
+                {{if .FlowEnabled}}
+                <a href="/admin/dashboard/flows" class="nav-item" :class="{ active: page === 'flows' }" title="Request Flows" @click.prevent="navigate('flows')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 7h6M13 7h6M8 7v10M16 7v4M16 15v2M8 17h8"/></svg>
+                    <span>Flows</span>
+                </a>
+                {{end}}
             </nav>
             <div class="sidebar-footer">
                 <div class="theme-toggle">

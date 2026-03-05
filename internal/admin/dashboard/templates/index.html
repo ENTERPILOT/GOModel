@@ -322,9 +322,231 @@
         </table>
     </div>
 
-    <p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && (activeCategory === 'all' || !activeCategory)">No models registered.</p>
-    <p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && activeCategory && activeCategory !== 'all'">No models in this category.</p>
-    <p class="empty-state" x-show="models.length > 0 && filteredModels.length === 0 && modelFilter">No models match your filter.</p>
+<p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && (activeCategory === 'all' || !activeCategory)">No models registered.</p>
+<p class="empty-state" x-show="models.length === 0 && !loading && !authError && !modelFilter && activeCategory && activeCategory !== 'all'">No models in this category.</p>
+<p class="empty-state" x-show="models.length > 0 && filteredModels.length === 0 && modelFilter">No models match your filter.</p>
+</div>
+
+<!-- Flows Page -->
+<div x-show="page==='flows' && flowEnabled">
+    <div class="page-header">
+        <h2>Request Flows</h2>
+        <div class="page-header-controls">
+            <button class="pagination-btn" @click="newFlowPlan()" x-show="flowPlans.writable">New Plan</button>
+            <button class="pagination-btn" @click="fetchFlowPage()">Refresh</button>
+        </div>
+    </div>
+
+    <div class="alert alert-warning" x-show="authError">
+        Authentication required. Enter your API key in the sidebar to view data.
+    </div>
+
+    <div class="cards flow-summary-cards">
+        <div class="card">
+            <div class="card-label">Source Mode</div>
+            <div class="card-value" x-text="flowPlans.source_mode || '-'"></div>
+        </div>
+        <div class="card">
+            <div class="card-label">Plan Count</div>
+            <div class="card-value" x-text="formatNumber(flowPlans.plans.length)"></div>
+        </div>
+        <div class="card">
+            <div class="card-label">Writable</div>
+            <div class="card-value" x-text="flowPlans.writable ? 'Yes' : 'Read only'"></div>
+        </div>
+        <div class="card">
+            <div class="card-label">Recent Executions</div>
+            <div class="card-value" x-text="formatNumber(flowExecutions.total)"></div>
+        </div>
+    </div>
+
+    <div class="flow-layout">
+        <section class="flow-panel">
+            <div class="audit-pane-head">
+                <h3>Plans</h3>
+                <span class="provider-badge" x-show="!flowPlans.writable">YAML-backed</span>
+            </div>
+            <div class="table-wrapper" x-show="flowPlans.plans.length > 0">
+                <table class="data-table flow-plan-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Match</th>
+                            <th>Priority</th>
+                            <th>Guardrails</th>
+                            <th>Retry</th>
+                            <th>Source</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="plan in flowPlans.plans" :key="plan.id">
+                            <tr @click="selectFlowPlan(plan)" class="flow-plan-row" :class="{ active: flowEditor.id === plan.id }">
+                                <td>
+                                    <div x-text="plan.name"></div>
+                                    <div class="flow-plan-meta" x-text="plan.enabled ? 'enabled' : 'disabled'"></div>
+                                </td>
+                                <td class="mono" x-text="flowMatchLabel(plan)"></td>
+                                <td x-text="plan.priority"></td>
+                                <td x-text="(plan.spec?.guardrails?.rules || []).length"></td>
+                                <td x-text="plan.spec?.retry?.max_retries ?? '-'"></td>
+                                <td><span class="provider-badge" x-text="plan.source"></span></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            <p class="empty-state" x-show="flowPlans.plans.length === 0 && !loading && !authError">No flow plans configured.</p>
+        </section>
+
+        <section class="flow-panel">
+            <div class="audit-pane-head">
+                <h3 x-text="flowEditor.id ? 'Edit Plan' : 'New Plan'"></h3>
+                <div class="pagination-buttons">
+                    <button class="pagination-btn" @click="saveFlowPlan()" :disabled="!flowPlans.writable" x-show="flowPlans.writable">Save</button>
+                    <button class="pagination-btn" @click="deleteFlowPlan(flowEditor.id)" :disabled="!flowPlans.writable || !flowEditor.id || flowEditor.source === 'yaml'" x-show="flowPlans.writable && flowEditor.id">Delete</button>
+                </div>
+            </div>
+            <div class="flow-form-grid">
+                <label class="flow-field">
+                    <span>Name</span>
+                    <input type="text" x-model="flowEditor.name" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                </label>
+                <label class="flow-field">
+                    <span>Enabled</span>
+                    <select x-model="flowEditor.enabled" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                        <option :value="true">Enabled</option>
+                        <option :value="false">Disabled</option>
+                    </select>
+                </label>
+                <label class="flow-field">
+                    <span>Priority</span>
+                    <input type="number" x-model.number="flowEditor.priority" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                </label>
+                <label class="flow-field">
+                    <span>Model Match</span>
+                    <input type="text" placeholder="app-wide when empty" x-model="flowEditor.match.model" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                </label>
+                <label class="flow-field">
+                    <span>Guardrail Mode</span>
+                    <select x-model="flowEditor.spec.guardrails.mode" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                        <option value="append">Append</option>
+                        <option value="replace">Replace</option>
+                    </select>
+                </label>
+                <label class="flow-field">
+                    <span>Max Retries</span>
+                    <input type="number" min="0" x-model.number="flowEditor.spec.retry.max_retries" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                </label>
+                <label class="flow-field">
+                    <span>Initial Backoff</span>
+                    <input type="text" placeholder="1s" x-model="flowEditor.spec.retry.initial_backoff" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                </label>
+                <label class="flow-field">
+                    <span>Max Backoff</span>
+                    <input type="text" placeholder="30s" x-model="flowEditor.spec.retry.max_backoff" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                </label>
+                <label class="flow-field">
+                    <span>Failover</span>
+                    <select x-model="flowEditor.spec.failover.enabled" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                        <option :value="false">Disabled</option>
+                        <option :value="true">Enabled</option>
+                    </select>
+                </label>
+                <label class="flow-field flow-field-wide">
+                    <span>Description</span>
+                    <textarea rows="2" x-model="flowEditor.description" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'"></textarea>
+                </label>
+            </div>
+
+            <div class="flow-guardrails">
+                <div class="audit-pane-head">
+                    <h4>Guardrails</h4>
+                    <button class="pagination-btn" @click="addFlowGuardrail()" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'" x-show="flowPlans.writable">Add Guardrail</button>
+                </div>
+                <template x-for="(rule, index) in flowEditor.spec.guardrails.rules" :key="index">
+                    <div class="flow-guardrail-card">
+                        <div class="flow-form-grid">
+                            <label class="flow-field">
+                                <span>Name</span>
+                                <input type="text" x-model="rule.name" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                            </label>
+                            <label class="flow-field">
+                                <span>Order</span>
+                                <input type="number" x-model.number="rule.order" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                            </label>
+                            <label class="flow-field">
+                                <span>Type</span>
+                                <select x-model="rule.type" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                                    <option value="system_prompt">system_prompt</option>
+                                </select>
+                            </label>
+                            <label class="flow-field">
+                                <span>System Prompt Mode</span>
+                                <select x-model="rule.system_prompt.mode" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'">
+                                    <option value="inject">inject</option>
+                                    <option value="override">override</option>
+                                    <option value="decorator">decorator</option>
+                                </select>
+                            </label>
+                            <label class="flow-field flow-field-wide">
+                                <span>Content</span>
+                                <textarea rows="3" x-model="rule.system_prompt.content" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'"></textarea>
+                            </label>
+                        </div>
+                        <button class="pagination-btn" @click="removeFlowGuardrail(index)" :disabled="!flowPlans.writable || flowEditor.source === 'yaml'" x-show="flowPlans.writable">Remove</button>
+                    </div>
+                </template>
+                <p class="empty-state" x-show="(flowEditor.spec.guardrails.rules || []).length === 0">No guardrails in this plan.</p>
+            </div>
+        </section>
+    </div>
+
+    <section class="flow-panel flow-executions-panel">
+        <div class="audit-pane-head">
+            <h3>Execution History</h3>
+            <div class="usage-log-toolbar">
+                <input type="text" placeholder="Search by request ID, model, provider, status..." x-model="flowSearch" @input.debounce.300ms="fetchFlowExecutions(true)" class="filter-input">
+            </div>
+        </div>
+        <div class="table-wrapper" x-show="flowExecutions.entries.length > 0">
+            <table class="data-table flow-executions-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Request ID</th>
+                        <th>Model</th>
+                        <th>Plan</th>
+                        <th>Guardrails</th>
+                        <th>Retries</th>
+                        <th>Failover</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template x-for="entry in flowExecutions.entries" :key="entry.id">
+                        <tr>
+                            <td class="mono" x-text="formatTimestamp(entry.timestamp)"></td>
+                            <td class="mono" x-text="entry.request_id || '-'"></td>
+                            <td class="mono" x-text="entry.model || '-'"></td>
+                            <td x-text="entry.plan_name || 'defaults'"></td>
+                            <td x-text="(entry.guardrails_applied || []).join(', ') || '-'"></td>
+                            <td x-text="entry.retries_made + ' / ' + entry.retry_configured"></td>
+                            <td x-text="entry.failover_used ? 'used' : (entry.failover_enabled ? 'armed' : 'off')"></td>
+                            <td><span class="provider-badge" x-text="entry.status"></span></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+        <p class="empty-state" x-show="flowExecutions.entries.length === 0 && !loading && !authError">No flow executions recorded yet.</p>
+        <div class="pagination" x-show="flowExecutions.total > 0">
+            <span class="pagination-info" x-text="'Showing ' + (flowExecutions.offset + 1) + '-' + Math.min(flowExecutions.offset + flowExecutions.limit, flowExecutions.total) + ' of ' + flowExecutions.total"></span>
+            <div class="pagination-buttons">
+                <button class="pagination-btn" :disabled="flowExecutions.offset === 0" @click="flowExecutionsPrevPage()">Prev</button>
+                <button class="pagination-btn" :disabled="flowExecutions.offset + flowExecutions.limit >= flowExecutions.total" @click="flowExecutionsNextPage()">Next</button>
+            </div>
+        </div>
+    </section>
 </div>
 
 <!-- Audit Logs Page -->

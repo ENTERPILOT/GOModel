@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,10 +12,13 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"gomodel/config"
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/providers"
+	"gomodel/internal/requestflow"
+	"gomodel/internal/storage"
 	"gomodel/internal/usage"
 )
 
@@ -1365,5 +1369,101 @@ var _ = func() usage.UsageQueryParams {
 		StartDate: time.Time{},
 		EndDate:   time.Time{},
 		Interval:  "daily",
+	}
+}
+
+func newFlowManager(t *testing.T) (*requestflow.Manager, func()) {
+	t.Helper()
+	store, err := storage.NewSQLite(storage.SQLiteConfig{Path: t.TempDir() + "/flow.db"})
+	if err != nil {
+		t.Fatalf("failed to create sqlite storage: %v", err)
+	}
+	flowStore, err := requestflow.NewSQLiteStore(store.SQLiteDB(), 30)
+	if err != nil {
+		_ = store.Close()
+		t.Fatalf("failed to create request flow store: %v", err)
+	}
+	manager := requestflow.NewManager(requestflow.Options{
+		Store:      flowStore,
+		Logger:     &requestflow.NoopLogger{},
+		BaseRetry:  config.DefaultRetryConfig(),
+		SourceMode: "db",
+		Writable:   true,
+	})
+	cleanup := func() {
+		_ = manager.Close()
+		_ = flowStore.Close()
+		_ = store.Close()
+	}
+	return manager, cleanup
+}
+
+func TestFlowPlans_CRUD(t *testing.T) {
+	manager, cleanup := newFlowManager(t)
+	defer cleanup()
+
+	h := NewHandler(nil, nil, WithFlowManager(manager))
+	e := echo.New()
+
+	payload := requestflow.Definition{
+		Name:     "default flow",
+		Enabled:  true,
+		Priority: 100,
+		Spec: requestflow.PlanSpec{
+			Guardrails: requestflow.GuardrailSpec{Rules: []requestflow.GuardrailRule{{
+				Name:         "default-system",
+				Type:         "system_prompt",
+				Order:        0,
+				SystemPrompt: requestflow.SystemPromptSettings{Mode: "inject", Content: "hello"},
+			}}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("failed to marshal payload: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPut, "/admin/api/v1/flows/plans/default-flow", bytes.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues("default-flow")
+
+	if err := h.UpsertFlowPlan(c); err != nil {
+		t.Fatalf("UpsertFlowPlan() error = %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	listCtx, listRec := newHandlerContext("/admin/api/v1/flows/plans")
+	if err := h.FlowPlans(listCtx); err != nil {
+		t.Fatalf("FlowPlans() error = %v", err)
+	}
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", listRec.Code)
+	}
+	var result requestflow.DefinitionListResult
+	if err := json.Unmarshal(listRec.Body.Bytes(), &result); err != nil {
+		t.Fatalf("failed to unmarshal plans response: %v", err)
+	}
+	if len(result.Plans) != 1 {
+		t.Fatalf("expected 1 plan, got %d", len(result.Plans))
+	}
+	if result.Plans[0].Name != "default flow" {
+		t.Fatalf("expected saved plan name, got %q", result.Plans[0].Name)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/api/v1/flows/plans/default-flow", nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetParamNames("id")
+	deleteCtx.SetParamValues("default-flow")
+	if err := h.DeleteFlowPlan(deleteCtx); err != nil {
+		t.Fatalf("DeleteFlowPlan() error = %v", err)
+	}
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", deleteRec.Code)
 	}
 }

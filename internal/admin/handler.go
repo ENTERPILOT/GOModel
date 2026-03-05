@@ -13,6 +13,7 @@ import (
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/providers"
+	"gomodel/internal/requestflow"
 	"gomodel/internal/usage"
 )
 
@@ -21,6 +22,7 @@ type Handler struct {
 	usageReader usage.UsageReader
 	auditReader auditlog.Reader
 	registry    *providers.ModelRegistry
+	flowManager *requestflow.Manager
 }
 
 // Option configures the admin API handler.
@@ -30,6 +32,13 @@ type Option func(*Handler)
 func WithAuditReader(reader auditlog.Reader) Option {
 	return func(h *Handler) {
 		h.auditReader = reader
+	}
+}
+
+// WithFlowManager enables request flow admin endpoints.
+func WithFlowManager(manager *requestflow.Manager) Option {
+	return func(h *Handler) {
+		h.flowManager = manager
 	}
 }
 
@@ -172,6 +181,136 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, summary)
+}
+
+// FlowPlans handles GET /admin/api/v1/flows/plans
+//
+// @Summary      List request flow plans
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  requestflow.DefinitionListResult
+// @Failure      401  {object}  core.GatewayError
+// @Failure      500  {object}  core.GatewayError
+// @Router       /admin/api/v1/flows/plans [get]
+func (h *Handler) FlowPlans(c echo.Context) error {
+	if h.flowManager == nil {
+		return c.JSON(http.StatusOK, requestflow.DefinitionListResult{Plans: []*requestflow.Definition{}})
+	}
+	result, err := h.flowManager.ListDefinitions(c.Request().Context())
+	if err != nil {
+		return handleError(c, err)
+	}
+	return c.JSON(http.StatusOK, result)
+}
+
+// UpsertFlowPlan handles PUT /admin/api/v1/flows/plans/:id
+//
+// @Summary      Create or update a request flow plan
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id       path      string                  true  "Plan ID"
+// @Param        request  body      requestflow.Definition  true  "Request flow plan"
+// @Success      200      {object}  requestflow.Definition
+// @Failure      400      {object}  core.GatewayError
+// @Failure      401      {object}  core.GatewayError
+// @Failure      500      {object}  core.GatewayError
+// @Router       /admin/api/v1/flows/plans/{id} [put]
+func (h *Handler) UpsertFlowPlan(c echo.Context) error {
+	if h.flowManager == nil {
+		return c.JSON(http.StatusNotFound, map[string]any{"error": map[string]any{"type": "not_found", "message": "request flow admin is not enabled"}})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("plan id is required", nil))
+	}
+	var def requestflow.Definition
+	if err := c.Bind(&def); err != nil {
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
+	}
+	def.ID = id
+	saved, err := h.flowManager.UpsertDefinition(c.Request().Context(), &def)
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+	return c.JSON(http.StatusOK, saved)
+}
+
+// DeleteFlowPlan handles DELETE /admin/api/v1/flows/plans/:id
+//
+// @Summary      Delete a request flow plan
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Plan ID"
+// @Success      204
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Failure      500  {object}  core.GatewayError
+// @Router       /admin/api/v1/flows/plans/{id} [delete]
+func (h *Handler) DeleteFlowPlan(c echo.Context) error {
+	if h.flowManager == nil {
+		return c.JSON(http.StatusNotFound, map[string]any{"error": map[string]any{"type": "not_found", "message": "request flow admin is not enabled"}})
+	}
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("plan id is required", nil))
+	}
+	if err := h.flowManager.DeleteDefinition(c.Request().Context(), id); err != nil {
+		if errors.Is(err, requestflow.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("request flow plan not found: "+id))
+		}
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// FlowExecutions handles GET /admin/api/v1/flows/executions
+//
+// @Summary      List request flow executions
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        search      query     string  false  "Search by request_id, model, provider, plan, or status"
+// @Param        request_id  query     string  false  "Filter by request ID"
+// @Param        model       query     string  false  "Filter by model"
+// @Param        limit       query     int     false  "Page size (default 50, max 200)"
+// @Param        offset      query     int     false  "Row offset"
+// @Success      200         {object}  requestflow.ExecutionLogResult
+// @Failure      401         {object}  core.GatewayError
+// @Failure      500         {object}  core.GatewayError
+// @Router       /admin/api/v1/flows/executions [get]
+func (h *Handler) FlowExecutions(c echo.Context) error {
+	if h.flowManager == nil {
+		return c.JSON(http.StatusOK, requestflow.ExecutionLogResult{Entries: []*requestflow.Execution{}, Limit: 50})
+	}
+	limit := 50
+	if raw := strings.TrimSpace(c.QueryParam("limit")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err == nil {
+			limit = parsed
+		}
+	}
+	offset := 0
+	if raw := strings.TrimSpace(c.QueryParam("offset")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err == nil {
+			offset = parsed
+		}
+	}
+	result, err := h.flowManager.ListExecutions(c.Request().Context(), requestflow.ExecutionQueryParams{
+		Search:    strings.TrimSpace(c.QueryParam("search")),
+		RequestID: strings.TrimSpace(c.QueryParam("request_id")),
+		Model:     strings.TrimSpace(c.QueryParam("model")),
+		Limit:     limit,
+		Offset:    offset,
+	})
+	if err != nil {
+		return handleError(c, err)
+	}
+	return c.JSON(http.StatusOK, result)
 }
 
 // DailyUsage handles GET /admin/api/v1/usage/daily

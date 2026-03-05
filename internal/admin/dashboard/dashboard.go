@@ -18,10 +18,21 @@ var content embed.FS
 type Handler struct {
 	indexTmpl *template.Template
 	staticFS  http.Handler
+	data      ViewData
+}
+
+// Options configures the dashboard handler.
+type Options struct {
+	FlowEnabled bool
+}
+
+// ViewData is passed to templates for feature gating.
+type ViewData struct {
+	FlowEnabled bool
 }
 
 // New creates a new dashboard handler with parsed templates and static file server.
-func New() (*Handler, error) {
+func New(opts Options) (*Handler, error) {
 	tmpl, err := template.ParseFS(content, "templates/layout.html", "templates/index.html", "templates/date-picker.html")
 	if err != nil {
 		return nil, err
@@ -35,13 +46,14 @@ func New() (*Handler, error) {
 	return &Handler{
 		indexTmpl: tmpl,
 		staticFS:  http.StripPrefix("/admin/static/", http.FileServer(http.FS(staticSub))),
+		data:      ViewData(opts),
 	}, nil
 }
 
 // Index serves GET /admin/dashboard — the main dashboard page.
 func (h *Handler) Index(c echo.Context) error {
 	var buf bytes.Buffer
-	if err := h.indexTmpl.ExecuteTemplate(&buf, "layout", nil); err != nil {
+	if err := h.indexTmpl.ExecuteTemplate(&buf, "layout", h.data); err != nil {
 		return err
 	}
 	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
