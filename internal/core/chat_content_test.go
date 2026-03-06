@@ -109,6 +109,29 @@ func TestMessageMarshalJSON_PreservesNullContentForToolCalls(t *testing.T) {
 	}
 }
 
+func TestMessageMarshalJSON_PreservesNullContentForToolCallsWhenContentIsEmptyString(t *testing.T) {
+	body, err := json.Marshal(Message{
+		Role:    "assistant",
+		Content: "",
+		ToolCalls: []ToolCall{
+			{
+				ID:   "call_123",
+				Type: "function",
+				Function: FunctionCall{
+					Name:      "lookup",
+					Arguments: "{}",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if !strings.Contains(string(body), `"content":null`) {
+		t.Fatalf("expected content:null, got %s", string(body))
+	}
+}
+
 func TestResponseMessageMarshalJSON_PreservesNullContentForToolCalls(t *testing.T) {
 	body, err := json.Marshal(ResponseMessage{
 		Role:    "assistant",
@@ -139,5 +162,15 @@ func TestResponseMessageUnmarshalJSON_PreservesNullContentForToolCalls(t *testin
 	}
 	if msg.Content != nil {
 		t.Fatalf("Content = %#v, want nil", msg.Content)
+	}
+}
+
+func TestNormalizeMessageContent_RejectsEmptyTypedTextPart(t *testing.T) {
+	_, err := NormalizeMessageContent([]ContentPart{{Type: "text", Text: ""}})
+	if err == nil {
+		t.Fatal("NormalizeMessageContent() succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "text part is missing text") {
+		t.Fatalf("error = %v, want text validation error", err)
 	}
 }

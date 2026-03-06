@@ -6,16 +6,16 @@ type ResponsesRequest struct {
 	Model    string      `json:"model"`
 	Provider string      `json:"provider,omitempty"`
 	Input    interface{} `json:"input"` // string or []ResponsesInputItem — see docs for array form
-	//nolint:govet // Intentional duplicate json tag for Swagger docs: input is string OR []ContentPart.
-	InputSchema     []ContentPart     `json:"input,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
-	Instructions    string            `json:"instructions,omitempty"`
-	Tools           []map[string]any  `json:"tools,omitempty"`
-	Temperature     *float64          `json:"temperature,omitempty"`
-	MaxOutputTokens *int              `json:"max_output_tokens,omitempty"`
-	Stream          bool              `json:"stream,omitempty"`
-	StreamOptions   *StreamOptions    `json:"stream_options,omitempty"`
-	Metadata        map[string]string `json:"metadata,omitempty"`
-	Reasoning       *Reasoning        `json:"reasoning,omitempty"`
+	//nolint:govet // Intentional duplicate json tag for Swagger docs: input is string OR []ResponsesInputItem.
+	InputSchema     []ResponsesInputItem `json:"input,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesInputItem\"}}]"`
+	Instructions    string               `json:"instructions,omitempty"`
+	Tools           []map[string]any     `json:"tools,omitempty"`
+	Temperature     *float64             `json:"temperature,omitempty"`
+	MaxOutputTokens *int                 `json:"max_output_tokens,omitempty"`
+	Stream          bool                 `json:"stream,omitempty"`
+	StreamOptions   *StreamOptions       `json:"stream_options,omitempty"`
+	Metadata        map[string]string    `json:"metadata,omitempty"`
+	Reasoning       *Reasoning           `json:"reasoning,omitempty"`
 }
 
 // WithStreaming returns a shallow copy of the request with Stream set to true.

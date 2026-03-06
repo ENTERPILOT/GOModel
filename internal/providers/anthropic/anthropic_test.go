@@ -1929,6 +1929,37 @@ func TestConvertToAnthropicRequest_MultimodalImageContent(t *testing.T) {
 	}
 }
 
+func TestConvertToAnthropicRequest_MultimodalImageContent_DataURLWithExtraMetadata(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{
+						Type: "image_url",
+						ImageURL: &core.ImageURLContent{
+							URL: "data:image/png;charset=utf-8;BASE64,ZmFrZQ==",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := convertToAnthropicRequest(req)
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v", err)
+	}
+	blocks, ok := result.Messages[0].Content.([]anthropicContentBlock)
+	if !ok || len(blocks) != 1 || blocks[0].Source == nil {
+		t.Fatalf("unexpected image block: %#v", result.Messages[0].Content)
+	}
+	if blocks[0].Source.Type != "base64" || blocks[0].Source.MediaType != "image/png" || blocks[0].Source.Data != "ZmFrZQ==" {
+		t.Fatalf("unexpected image source: %+v", blocks[0].Source)
+	}
+}
+
 func TestConvertToAnthropicRequest_RejectsInputAudio(t *testing.T) {
 	req := &core.ChatRequest{
 		Model: "claude-sonnet-4-5-20250929",
@@ -2136,6 +2167,27 @@ func TestConvertResponsesRequestToAnthropic_RejectsUnsupportedInputType(t *testi
 	}
 	if !strings.Contains(err.Error(), "invalid responses input: unsupported type") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_TrimsRoleBeforeAppend(t *testing.T) {
+	req, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []interface{}{
+			map[string]interface{}{
+				"role":    "  user  ",
+				"content": "hello",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertResponsesRequestToAnthropic() error = %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+	}
+	if req.Messages[0].Role != "user" {
+		t.Fatalf("Messages[0].Role = %q, want user", req.Messages[0].Role)
 	}
 }
 

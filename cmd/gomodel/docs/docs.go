@@ -2307,7 +2307,13 @@ const docTemplate = `{
         "core.ResponseMessage": {
             "type": "object",
             "properties": {
-                "content": {},
+                "content": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/core.ContentPart"
+                    },
+                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"
+                },
                 "role": {
                     "type": "string"
                 },
@@ -2348,6 +2354,17 @@ const docTemplate = `{
                 }
             }
         },
+        "core.ResponsesInputItem": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "description": "Can be string or []ResponsesContentPart"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
         "core.ResponsesOutputItem": {
             "type": "object",
             "properties": {
@@ -2378,9 +2395,9 @@ const docTemplate = `{
                 "input": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/core.ContentPart"
+                        "$ref": "#/definitions/core.ResponsesInputItem"
                     },
-                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"
+                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesInputItem\"}}]"
                 },
                 "instructions": {
                     "type": "string"

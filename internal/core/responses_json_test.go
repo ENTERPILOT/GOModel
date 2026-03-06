@@ -54,7 +54,41 @@ func TestResponsesRequestMarshalJSON_PreservesInput(t *testing.T) {
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		t.Fatalf("json.Unmarshal() error = %v", err)
 	}
-	if _, ok := decoded["input"]; !ok {
+	inputRaw, ok := decoded["input"]
+	if !ok {
 		t.Fatalf("marshal output missing input: %s", string(body))
+	}
+
+	input, ok := inputRaw.([]interface{})
+	if !ok || len(input) != 1 {
+		t.Fatalf("decoded input = %#v, want []interface{} len=1", inputRaw)
+	}
+
+	firstMsg, ok := input[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first input item = %#v, want object", input[0])
+	}
+	if role, _ := firstMsg["role"].(string); role != "user" {
+		t.Fatalf("first input role = %#v, want user", firstMsg["role"])
+	}
+
+	contentRaw, ok := firstMsg["content"]
+	if !ok {
+		t.Fatalf("first input missing content: %#v", firstMsg)
+	}
+	content, ok := contentRaw.([]interface{})
+	if !ok || len(content) != 1 {
+		t.Fatalf("first input content = %#v, want []interface{} len=1", contentRaw)
+	}
+
+	firstPart, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("first content part = %#v, want object", content[0])
+	}
+	if typ, _ := firstPart["type"].(string); typ != "input_text" {
+		t.Fatalf("first content type = %#v, want input_text", firstPart["type"])
+	}
+	if text, _ := firstPart["text"].(string); text != "hello" {
+		t.Fatalf("first content text = %#v, want hello", firstPart["text"])
 	}
 }

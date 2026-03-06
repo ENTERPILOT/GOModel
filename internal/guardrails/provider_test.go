@@ -322,6 +322,9 @@ func TestGuardedProvider_ChatCompletion_MixedMultimodalAndTextPreservesTextRewri
 	if !ok || len(parts) != 2 || parts[1].Type != "image_url" {
 		t.Fatalf("expected first message multimodal content preserved, got %#v", inner.chatReq.Messages[0].Content)
 	}
+	if parts[0].Type != "text" || parts[0].Text != "describe [rewritten]" {
+		t.Fatalf("expected rewritten text merged into multimodal content, got %#v", parts[0])
+	}
 	if got := core.ExtractTextContent(inner.chatReq.Messages[1].Content); got != "plain text [rewritten]" {
 		t.Fatalf("expected rewritten text-only message, got %q", got)
 	}

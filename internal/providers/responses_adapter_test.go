@@ -160,6 +160,26 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 			},
 		},
 		{
+			name: "array input trims role before append",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []interface{}{
+					map[string]interface{}{
+						"role":    "  user  ",
+						"content": "Hello",
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 1 {
+					t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+				}
+				if req.Messages[0].Role != "user" {
+					t.Fatalf("Messages[0].Role = %q, want user", req.Messages[0].Role)
+				}
+			},
+		},
+		{
 			name: "array input with malformed item fails",
 			input: &core.ResponsesRequest{
 				Model: "test-model",
@@ -187,6 +207,14 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 			input: &core.ResponsesRequest{
 				Model: "test-model",
 				Input: 123,
+			},
+			expectErr: true,
+		},
+		{
+			name: "nil input fails",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: nil,
 			},
 			expectErr: true,
 		},

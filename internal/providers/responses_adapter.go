@@ -56,7 +56,8 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatReques
 			}
 
 			role, _ := msgMap["role"].(string)
-			if strings.TrimSpace(role) == "" {
+			role = strings.TrimSpace(role)
+			if role == "" {
 				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", i), nil)
 			}
 

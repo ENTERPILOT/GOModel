@@ -94,9 +94,11 @@ type Choice struct {
 
 // ResponseMessage represents a single assistant message in a chat response.
 type ResponseMessage struct {
-	Role      string         `json:"role"`
-	Content   MessageContent `json:"content"`
-	ToolCalls []ToolCall     `json:"tool_calls,omitempty"`
+	Role    string         `json:"role"`
+	Content MessageContent `json:"content"`
+	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is string OR []ContentPart.
+	ContentSchema []ContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
+	ToolCalls     []ToolCall    `json:"tool_calls,omitempty"`
 }
 
 // PromptTokensDetails holds extended input token breakdown (OpenAI/xAI).

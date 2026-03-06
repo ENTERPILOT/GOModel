@@ -295,7 +295,7 @@ func (g *GuardedProvider) processChat(ctx context.Context, req *core.ChatRequest
 		return nil, err
 	}
 	if chatHasNonTextContent(req) {
-		return applySystemMessagesToMultimodalChat(req, modified), nil
+		return applySystemMessagesToMultimodalChat(req, modified)
 	}
 	return applyMessagesToChat(req, modified), nil
 }
@@ -335,7 +335,7 @@ func applyMessagesToChat(req *core.ChatRequest, msgs []Message) *core.ChatReques
 // applySystemMessagesToMultimodalChat applies system-message updates and preserves
 // original content only for messages that contain non-text multimodal parts.
 // Text-only messages keep guardrail-rewritten text.
-func applySystemMessagesToMultimodalChat(req *core.ChatRequest, msgs []Message) *core.ChatRequest {
+func applySystemMessagesToMultimodalChat(req *core.ChatRequest, msgs []Message) (*core.ChatRequest, error) {
 	nonSystemOriginal := make([]core.Message, 0, len(req.Messages))
 	for _, original := range req.Messages {
 		if original.Role != "system" {
@@ -355,7 +355,11 @@ func applySystemMessagesToMultimodalChat(req *core.ChatRequest, msgs []Message) 
 		}
 		original := nonSystemOriginal[nextNonSystem]
 		if core.HasNonTextContent(original.Content) {
-			coreMessages = append(coreMessages, original)
+			mergedContent, err := mergeMultimodalContentWithTextRewrite(original.Content, modified.Content)
+			if err != nil {
+				return nil, err
+			}
+			coreMessages = append(coreMessages, core.Message{Role: modified.Role, Content: mergedContent})
 		} else {
 			coreMessages = append(coreMessages, core.Message{Role: modified.Role, Content: modified.Content})
 		}
@@ -371,7 +375,42 @@ func applySystemMessagesToMultimodalChat(req *core.ChatRequest, msgs []Message) 
 
 	result := *req
 	result.Messages = coreMessages
-	return &result
+	return &result, nil
+}
+
+func mergeMultimodalContentWithTextRewrite(originalContent any, rewrittenText string) (any, error) {
+	parts, ok := core.NormalizeContentParts(originalContent)
+	if !ok {
+		return nil, core.NewInvalidRequestError("guardrails cannot merge rewritten text into multimodal message", nil)
+	}
+
+	merged := make([]core.ContentPart, 0, len(parts)+1)
+	hadTextPart := false
+	insertedRewrittenText := false
+
+	for _, part := range parts {
+		if part.Type == "text" {
+			hadTextPart = true
+			if !insertedRewrittenText {
+				if rewrittenText != "" {
+					merged = append(merged, core.ContentPart{Type: "text", Text: rewrittenText})
+				}
+				insertedRewrittenText = true
+			}
+			continue
+		}
+		merged = append(merged, part)
+	}
+
+	if !hadTextPart && rewrittenText != "" {
+		merged = append([]core.ContentPart{{Type: "text", Text: rewrittenText}}, merged...)
+	}
+
+	if len(merged) == 0 {
+		return nil, core.NewInvalidRequestError("guardrails produced empty multimodal message after rewrite", nil)
+	}
+
+	return merged, nil
 }
 
 func chatHasNonTextContent(req *core.ChatRequest) bool {

@@ -224,6 +224,9 @@ func unmarshalContentPart(data []byte) (ContentPart, error) {
 func normalizeTypedContentPart(part ContentPart) (ContentPart, error) {
 	switch part.Type {
 	case "text", "input_text":
+		if part.Text == "" {
+			return ContentPart{}, fmt.Errorf("text part is missing text")
+		}
 		return ContentPart{Type: "text", Text: part.Text}, nil
 	case "image_url", "input_image":
 		if part.ImageURL == nil || part.ImageURL.URL == "" {

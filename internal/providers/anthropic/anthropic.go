@@ -738,7 +738,8 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicR
 			}
 
 			role, _ := msgMap["role"].(string)
-			if strings.TrimSpace(role) == "" {
+			role = strings.TrimSpace(role)
+			if role == "" {
 				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", i), nil)
 			}
 
@@ -833,14 +834,27 @@ func anthropicImageSource(raw, mediaTypeHint string) (*anthropicContentSource, e
 		}
 
 		meta := raw[len("data:"):comma]
-		if !strings.Contains(meta, ";base64") {
-			return nil, core.NewInvalidRequestError("anthropic image data URL must be base64-encoded", nil)
+		tokens := strings.Split(meta, ";")
+		if len(tokens) == 0 {
+			return nil, core.NewInvalidRequestError("anthropic image data URL is missing a media type", nil)
 		}
 
-		mediaType := strings.TrimSuffix(meta, ";base64")
+		mediaType := strings.TrimSpace(tokens[0])
 		if mediaType == "" {
 			mediaType = strings.TrimSpace(mediaTypeHint)
 		}
+
+		hasBase64 := false
+		for _, token := range tokens[1:] {
+			if strings.EqualFold(strings.TrimSpace(token), "base64") {
+				hasBase64 = true
+				break
+			}
+		}
+		if !hasBase64 {
+			return nil, core.NewInvalidRequestError("anthropic image data URL must be base64-encoded", nil)
+		}
+
 		if mediaType == "" {
 			return nil, core.NewInvalidRequestError("anthropic image data URL is missing a media type", nil)
 		}

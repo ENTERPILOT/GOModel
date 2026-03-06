@@ -1,6 +1,9 @@
 package core
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // UnmarshalJSON validates chat request message content while preserving multimodal payloads.
 func (m *Message) UnmarshalJSON(data []byte) error {
@@ -89,7 +92,7 @@ func marshalMessageContent(raw MessageContent, toolCalls []ToolCall) (any, error
 	)
 
 	// OpenAI-compatible tool-call assistant messages use `content: null`.
-	if len(toolCalls) > 0 && raw == nil {
+	if len(toolCalls) > 0 && isNullEquivalentToolCallContent(raw) {
 		content = nil
 	} else {
 		content, err = NormalizeMessageContent(raw)
@@ -98,4 +101,15 @@ func marshalMessageContent(raw MessageContent, toolCalls []ToolCall) (any, error
 		}
 	}
 	return content, nil
+}
+
+func isNullEquivalentToolCallContent(raw MessageContent) bool {
+	if raw == nil {
+		return true
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(text) == ""
 }
