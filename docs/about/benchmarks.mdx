@@ -1,0 +1,83 @@
+---
+title: "Benchmarks"
+description: "A summary of GOModel benchmark results, with links to full write-ups and methodology."
+---
+
+## Benchmark snapshot
+
+This page is a short reference for one public benchmark run comparing GOModel
+and LiteLLM on OpenAI-compatible traffic.
+
+The full article contains the complete write-up, all charts, and the original
+discussion:
+[GoModel vs LiteLLM Benchmark: Speed, Throughput, and Resource Usage](https://enterpilot.io/blog/gomodel-vs-litellm-benchmark/).
+
+<Note>
+  This benchmark is a point-in-time snapshot published on March 5, 2026. Treat
+  it as data, not dogma. Gateway performance depends on workload, provider mix,
+  deployment setup, and tuning.
+</Note>
+
+## Visual snapshot
+
+![Benchmark dashboard from the original blog post](./images/benchmark-dashboard.png)
+
+Chart source and full context:
+[Original benchmark post](https://enterpilot.io/blog/gomodel-vs-litellm-benchmark/).
+
+## At a glance
+
+In this benchmark run, GOModel came out ahead on the main operational signals
+most teams care about:
+
+- Added latency
+- Throughput under concurrency
+- CPU overhead
+- Memory overhead
+
+## Test shape
+
+The comparison used a simple like-for-like setup:
+
+- OpenAI-compatible `/v1/chat/completions`
+- The same prompt and request shape on both sides
+- Concurrency levels of `1`, `4`, and `8`
+- A focus on clean runs with `0%` errors
+- Metrics including req/s, latency percentiles, CPU usage, and RSS memory
+
+This docs page keeps only the primary comparison matrix from the blog post.
+
+## Reference table
+
+| Gateway | Concurrency | Success | Error % | Req/s | p50 ms | p95 ms | p99 ms | CPU avg % | RSS avg MB |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| GOModel | `1` | `12/12` | `0.00` | `9.61` | `86.4` | `141.1` | `144.4` | `0.81` | `45.4` |
+| GOModel | `4` | `12/12` | `0.00` | `44.66` | `56.1` | `139.5` | `139.5` | `0.23` | `46.0` |
+| GOModel | `8` | `12/12` | `0.00` | `52.75` | `98.4` | `130.6` | `131.1` | `1.13` | `46.0` |
+| LiteLLM | `1` | `12/12` | `0.00` | `8.64` | `96.2` | `190.3` | `213.9` | `9.21` | `320.3` |
+| LiteLLM | `4` | `12/12` | `0.00` | `36.82` | `104.7` | `149.5` | `149.5` | `5.20` | `320.8` |
+| LiteLLM | `8` | `12/12` | `0.00` | `35.81` | `188.7` | `244.4` | `244.9` | `5.95` | `321.5` |
+
+## Key readouts
+
+Some useful reads from that March 5, 2026 run:
+
+- GOModel posted lower p95 latency at every tested concurrency level.
+- GOModel reached higher throughput across the benchmark matrix.
+- GOModel stayed near `45-46 MB` RSS, while LiteLLM stayed near `320-321 MB`.
+- GOModel also used less CPU in these runs.
+
+At the highest tested concurrency, GOModel reached `52.75 req/s` versus
+LiteLLM at `35.81 req/s`.
+
+## Why this page is short
+
+This page is intentionally shorter and more operational than the blog version.
+
+It exists so docs readers can see the benchmark result quickly without reading a
+full article inside the product docs. If you want the full narrative, more
+charts, and the original context, use the source post.
+
+No single benchmark settles the question for every environment. If you are
+evaluating gateways seriously, reproduce the test against your own traffic and
+infrastructure.

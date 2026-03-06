@@ -1,0 +1,71 @@
+---
+title: "Technical Philosophy"
+description: "The engineering ideas that shape how GOModel is designed and maintained."
+---
+
+## Postel's Law
+
+Be conservative in what you send, and liberal in what you accept.
+
+As an AI gateway, GOModel sits between clients and providers that do not always
+behave the same way. We want strict, predictable behavior on our side without
+becoming brittle when the outside world is messy.
+
+## Good defaults
+
+GOModel should be useful with minimal setup.
+
+Defaults are not filler. They are part of the product. A gateway should start
+fast, work locally, and make the obvious path easy before asking users to learn
+every knob.
+
+## Twelve-Factor influence
+
+We are broadly aligned with the
+[Twelve-Factor App](https://12factor.net/).
+
+Not as blind doctrine, but as a useful baseline for building software that is
+portable, operationally clear, and easy to run across environments.
+
+## Explicit over clever
+
+We prefer explicit, maintainable implementation over abstraction for its own
+sake.
+
+That means provider registration is deliberate, routing behavior is visible, and
+core system behavior should be easy to trace in code.
+
+## Predictable routing
+
+A gateway should not feel magical.
+
+Model registration should happen before routing. Provider behavior should be
+deterministic. When a request goes somewhere, operators should be able to
+understand why.
+
+## Typed failures
+
+Errors should preserve meaning.
+
+Upstream failures, gateway failures, and client mistakes should not get blurred
+together. Clear error types make the system easier to operate, debug, and trust.
+
+## Safe observability
+
+Visibility matters, but secrets matter more.
+
+Audit logs and admin tools should help operators understand the system without
+leaking credentials or other sensitive data.
+
+## Configuration should have one clear precedence
+
+Configuration should be easy to reason about.
+
+GOModel follows a simple order:
+
+- Code defaults
+- YAML configuration
+- Environment variables win
+
+That lets local development stay simple while keeping production overrides
+obvious.

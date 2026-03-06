@@ -9,7 +9,7 @@
         "pages": [
             {
                 "group": "About",
-                "pages": ["about/values"]
+                "pages": ["about/values", "about/technical-philosophy", "about/benchmarks"]
             },
             {
                 "group": "Getting Started",
