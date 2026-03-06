@@ -316,7 +316,7 @@ func chatToMessages(req *core.ChatRequest) []Message {
 		msgs[i] = Message{
 			Role:       m.Role,
 			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
+			ToolCalls:  cloneToolCalls(m.ToolCalls),
 			ToolCallID: m.ToolCallID,
 		}
 	}
@@ -330,7 +330,7 @@ func applyMessagesToChat(req *core.ChatRequest, msgs []Message) *core.ChatReques
 		coreMessages[i] = core.Message{
 			Role:       m.Role,
 			Content:    m.Content,
-			ToolCalls:  m.ToolCalls,
+			ToolCalls:  cloneToolCalls(m.ToolCalls),
 			ToolCallID: m.ToolCallID,
 		}
 	}
@@ -364,4 +364,13 @@ func applyMessagesToResponses(req *core.ResponsesRequest, msgs []Message) *core.
 	}
 	result.Instructions = instructions
 	return &result
+}
+
+func cloneToolCalls(toolCalls []core.ToolCall) []core.ToolCall {
+	if len(toolCalls) == 0 {
+		return nil
+	}
+	cloned := make([]core.ToolCall, len(toolCalls))
+	copy(cloned, toolCalls)
+	return cloned
 }

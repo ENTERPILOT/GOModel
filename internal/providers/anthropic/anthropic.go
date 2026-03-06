@@ -462,20 +462,20 @@ func applyParallelToolCalls(choice *anthropicToolChoice, parallelToolCalls *bool
 	return &out
 }
 
-func parseToolCallArguments(arguments string) any {
+func parseToolCallArguments(arguments string) (any, error) {
 	trimmed := strings.TrimSpace(arguments)
 	if trimmed == "" {
-		return map[string]any{}
+		return map[string]any{}, nil
 	}
 
 	var parsed any
 	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
-		return map[string]any{}
+		return nil, err
 	}
-	return parsed
+	return parsed, nil
 }
 
-func buildAnthropicMessageContent(msg core.Message) any {
+func buildAnthropicMessageContent(msg core.Message) (any, error) {
 	if msg.Role == "tool" {
 		return []anthropicMessageContentBlock{
 			{
@@ -483,11 +483,11 @@ func buildAnthropicMessageContent(msg core.Message) any {
 				ToolUseID: msg.ToolCallID,
 				Content:   msg.Content,
 			},
-		}
+		}, nil
 	}
 
 	if len(msg.ToolCalls) == 0 {
-		return msg.Content
+		return msg.Content, nil
 	}
 
 	blocks := make([]anthropicMessageContentBlock, 0, len(msg.ToolCalls)+1)
@@ -498,18 +498,22 @@ func buildAnthropicMessageContent(msg core.Message) any {
 		})
 	}
 	for _, toolCall := range msg.ToolCalls {
+		input, err := parseToolCallArguments(toolCall.Function.Arguments)
+		if err != nil {
+			return nil, err
+		}
 		blocks = append(blocks, anthropicMessageContentBlock{
 			Type:  "tool_use",
 			ID:    toolCall.ID,
 			Name:  toolCall.Function.Name,
-			Input: parseToolCallArguments(toolCall.Function.Arguments),
+			Input: input,
 		})
 	}
-	return blocks
+	return blocks, nil
 }
 
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
-func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
+func convertToAnthropicRequest(req *core.ChatRequest) (*anthropicRequest, error) {
 	anthropicReq := &anthropicRequest{
 		Model:       req.Model,
 		Messages:    make([]anthropicMessage, 0, len(req.Messages)),
@@ -541,6 +545,10 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 		if msg.Role == "system" {
 			anthropicReq.System = msg.Content
 		} else {
+			content, err := buildAnthropicMessageContent(msg)
+			if err != nil {
+				return nil, core.NewInvalidRequestError("invalid tool_call.function.arguments JSON", err)
+			}
 			anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
 				Role: func() string {
 					if msg.Role == "tool" {
@@ -548,12 +556,12 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 					}
 					return msg.Role
 				}(),
-				Content: buildAnthropicMessageContent(msg),
+				Content: content,
 			})
 		}
 	}
 
-	return anthropicReq
+	return anthropicReq, nil
 }
 
 // convertFromAnthropicResponse converts Anthropic response to core.ChatResponse
@@ -599,10 +607,13 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 
 // ChatCompletion sends a chat completion request to Anthropic
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	anthropicReq := convertToAnthropicRequest(req)
+	anthropicReq, err := convertToAnthropicRequest(req)
+	if err != nil {
+		return nil, err
+	}
 
 	var anthropicResp anthropicResponse
-	err := p.client.Do(ctx, llmclient.Request{
+	err = p.client.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/messages",
 		Body:     anthropicReq,
@@ -616,7 +627,10 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	anthropicReq := convertToAnthropicRequest(req)
+	anthropicReq, err := convertToAnthropicRequest(req)
+	if err != nil {
+		return nil, err
+	}
 	anthropicReq.Stream = true
 
 	stream, err := p.client.DoStream(ctx, llmclient.Request{
@@ -755,10 +769,16 @@ func extractInitialToolArguments(input json.RawMessage) string {
 }
 
 func normalizeAnthropicStopReason(stopReason string) string {
-	if stopReason == "tool_use" {
+	switch stopReason {
+	case "tool_use":
 		return "tool_calls"
+	case "end_turn", "stop_sequence":
+		return "stop"
+	case "max_tokens":
+		return "length"
+	default:
+		return stopReason
 	}
-	return stopReason
 }
 
 func (sc *streamConverter) formatChatChunk(delta map[string]any, finishReason any, usage *anthropicUsage) string {
@@ -924,7 +944,7 @@ func parseCreatedAt(createdAt string) int64 {
 }
 
 // convertResponsesRequestToAnthropic converts a ResponsesRequest to Anthropic format
-func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRequest {
+func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicRequest, error) {
 	chatReq := providers.ConvertResponsesRequestToChat(req)
 
 	anthropicReq := &anthropicRequest{
@@ -959,6 +979,10 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 			anthropicReq.System = msg.Content
 			continue
 		}
+		content, err := buildAnthropicMessageContent(msg)
+		if err != nil {
+			return nil, core.NewInvalidRequestError("invalid tool_call.function.arguments JSON", err)
+		}
 		anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
 			Role: func() string {
 				if msg.Role == "tool" {
@@ -966,11 +990,11 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 				}
 				return msg.Role
 			}(),
-			Content: buildAnthropicMessageContent(msg),
+			Content: content,
 		})
 	}
 
-	return anthropicReq
+	return anthropicReq, nil
 }
 
 // extractTextContent returns the text from the last "text" content block.
@@ -1099,10 +1123,13 @@ func buildAnthropicResponsesUsage(u anthropicUsage) *core.ResponsesUsage {
 
 // Responses sends a Responses API request to Anthropic (converted to messages format)
 func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
-	anthropicReq := convertResponsesRequestToAnthropic(req)
+	anthropicReq, err := convertResponsesRequestToAnthropic(req)
+	if err != nil {
+		return nil, err
+	}
 
 	var anthropicResp anthropicResponse
-	err := p.client.Do(ctx, llmclient.Request{
+	err = p.client.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/messages",
 		Body:     anthropicReq,
@@ -1206,7 +1233,11 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 			if chatReq.Stream {
 				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
 			}
-			params = convertToAnthropicRequest(&chatReq)
+			var err error
+			params, err = convertToAnthropicRequest(&chatReq)
+			if err != nil {
+				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid tool_call.function.arguments JSON", i), err)
+			}
 			params.Stream = false
 		case "/v1/responses":
 			var respReq core.ResponsesRequest
@@ -1216,7 +1247,11 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 			if respReq.Stream {
 				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
 			}
-			params = convertResponsesRequestToAnthropic(&respReq)
+			var err error
+			params, err = convertResponsesRequestToAnthropic(&respReq)
+			if err != nil {
+				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid tool_call.function.arguments JSON", i), err)
+			}
 			params.Stream = false
 		case "/v1/embeddings":
 			return nil, nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
@@ -1451,7 +1486,10 @@ func (p *Provider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (*cor
 
 // StreamResponses returns a raw response body for streaming Responses API (caller must close)
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
-	anthropicReq := convertResponsesRequestToAnthropic(req)
+	anthropicReq, err := convertResponsesRequestToAnthropic(req)
+	if err != nil {
+		return nil, err
+	}
 	anthropicReq.Stream = true
 
 	stream, err := p.client.DoStream(ctx, llmclient.Request{
@@ -1474,6 +1512,7 @@ type responsesStreamConverter struct {
 	model           string
 	responseID      string
 	nextOutputIndex int
+	messageReserved bool
 	toolCalls       map[int]*responsesToolCallState
 	buffer          []byte
 	closed          bool
@@ -1611,6 +1650,14 @@ func (sc *responsesStreamConverter) writeResponsesEvent(eventName string, payloa
 	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventName, jsonData)
 }
 
+func (sc *responsesStreamConverter) reserveAssistantMessageOutput() {
+	if sc.messageReserved {
+		return
+	}
+	sc.messageReserved = true
+	sc.nextOutputIndex++
+}
+
 func (sc *responsesStreamConverter) newResponsesToolCallState(contentBlock *anthropicContent) *responsesToolCallState {
 	callID := providers.ResponsesFunctionCallCallID(contentBlock.ID)
 	state := &responsesToolCallState{
@@ -1683,6 +1730,7 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		switch event.Delta.Type {
 		case "text_delta":
 			if event.Delta.Text != "" {
+				sc.reserveAssistantMessageOutput()
 				deltaEvent := map[string]interface{}{
 					"type":  "response.output_text.delta",
 					"delta": event.Delta.Text,
@@ -1733,6 +1781,9 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		// Capture usage data for inclusion in response.completed
 		if event.Usage != nil {
 			sc.cachedUsage = event.Usage
+		}
+		if !sc.messageReserved && len(sc.toolCalls) == 0 {
+			sc.reserveAssistantMessageOutput()
 		}
 		return ""
 

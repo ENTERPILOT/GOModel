@@ -29,6 +29,8 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) *core.ChatRequest
 		ToolChoice:        req.ToolChoice,
 		ParallelToolCalls: req.ParallelToolCalls,
 		Temperature:       req.Temperature,
+		StreamOptions:     req.StreamOptions,
+		Reasoning:         req.Reasoning,
 		Stream:            req.Stream,
 	}
 
@@ -54,6 +56,12 @@ func ConvertResponsesInputToMessages(input interface{}) []core.Message {
 	switch in := input.(type) {
 	case string:
 		return []core.Message{{Role: "user", Content: in}}
+	case []map[string]any:
+		items := make([]interface{}, 0, len(in))
+		for _, item := range in {
+			items = append(items, item)
+		}
+		return convertResponsesInputItems(items)
 	case []interface{}:
 		return convertResponsesInputItems(in)
 	case []core.ResponsesInputItem:

@@ -238,6 +238,61 @@ func TestChatCompletionStreaming(t *testing.T) {
 		content := extractStreamContent(chunks)
 		assert.NotEmpty(t, content)
 	})
+
+	t.Run("streaming tool calls", func(t *testing.T) {
+		parallelToolCalls := false
+		payload := core.ChatRequest{
+			Model:  "gpt-4",
+			Stream: true,
+			Messages: []core.Message{
+				{Role: "user", Content: "What's the weather in Warsaw?"},
+			},
+			Tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name": "lookup_weather",
+						"parameters": map[string]any{
+							"type": "object",
+						},
+					},
+				},
+			},
+			ToolChoice:        map[string]any{"type": "function", "function": map[string]any{"name": "lookup_weather"}},
+			ParallelToolCalls: &parallelToolCalls,
+		}
+
+		resp := sendChatRequest(t, payload)
+		defer closeBody(resp)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		chunks := readStreamingResponse(t, resp.Body)
+		require.NotEmpty(t, chunks)
+
+		foundToolCall := false
+		foundFinishReason := false
+		for _, chunk := range chunks {
+			if chunk.Done || len(chunk.Choices) == 0 {
+				continue
+			}
+			delta, _ := chunk.Choices[0]["delta"].(map[string]interface{})
+			if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) == 1 {
+				toolCall, _ := toolCalls[0].(map[string]interface{})
+				function, _ := toolCall["function"].(map[string]interface{})
+				if toolCall["id"] == "call_mock_123" && toolCall["type"] == "function" && function["name"] == "lookup_weather" && function["arguments"] == `{"city":"Warsaw"}` {
+					foundToolCall = true
+				}
+			}
+			if chunk.Choices[0]["finish_reason"] == "tool_calls" {
+				foundFinishReason = true
+			}
+		}
+
+		assert.True(t, foundToolCall, "expected streamed tool_call delta")
+		assert.True(t, foundFinishReason, "expected final tool_calls finish_reason")
+		assert.True(t, chunks[len(chunks)-1].Done, "Last chunk should be [DONE]")
+	})
 }
 
 func TestChatCompletionErrors(t *testing.T) {

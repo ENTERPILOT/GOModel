@@ -34,6 +34,7 @@ func TestResponsesFunctionCallIDs(t *testing.T) {
 func TestConvertResponsesRequestToChat(t *testing.T) {
 	temp := 0.7
 	maxTokens := 1024
+	includeUsage := true
 
 	tests := []struct {
 		name    string
@@ -87,6 +88,8 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				Input:           "Hello",
 				Temperature:     &temp,
 				MaxOutputTokens: &maxTokens,
+				Reasoning:       &core.Reasoning{Effort: "high"},
+				StreamOptions:   &core.StreamOptions{IncludeUsage: includeUsage},
 			},
 			checkFn: func(t *testing.T, req *core.ChatRequest) {
 				if req.Temperature == nil || *req.Temperature != 0.7 {
@@ -94,6 +97,12 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if req.MaxTokens == nil || *req.MaxTokens != 1024 {
 					t.Errorf("MaxTokens = %v, want 1024", req.MaxTokens)
+				}
+				if req.Reasoning == nil || req.Reasoning.Effort != "high" {
+					t.Errorf("Reasoning = %+v, want high effort", req.Reasoning)
+				}
+				if req.StreamOptions == nil || !req.StreamOptions.IncludeUsage {
+					t.Errorf("StreamOptions = %+v, want include_usage=true", req.StreamOptions)
 				}
 			},
 		},
@@ -215,6 +224,38 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if req.Messages[1].Content != `{"temperature_c":21}` {
 					t.Fatalf("Messages[1].Content = %q, want canonical JSON", req.Messages[1].Content)
+				}
+			},
+		},
+		{
+			name: "array input with []map[string]any",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []map[string]any{
+					{
+						"role":    "user",
+						"content": "Hello",
+					},
+					{
+						"type":      "function_call",
+						"call_id":   "call_123",
+						"name":      "lookup_weather",
+						"arguments": `{"city":"Warsaw"}`,
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+				if req.Messages[0].Role != "user" || req.Messages[0].Content != "Hello" {
+					t.Fatalf("Messages[0] = %+v, want user/Hello", req.Messages[0])
+				}
+				if req.Messages[1].Role != "assistant" {
+					t.Fatalf("Messages[1].Role = %q, want assistant", req.Messages[1].Role)
+				}
+				if len(req.Messages[1].ToolCalls) != 1 || req.Messages[1].ToolCalls[0].Function.Name != "lookup_weather" {
+					t.Fatalf("Messages[1].ToolCalls = %+v, want lookup_weather", req.Messages[1].ToolCalls)
 				}
 			},
 		},

@@ -1795,7 +1795,14 @@
                 },
                 "tool_choice": {
                     "description": "string or object",
-                    "type": "object"
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "object"
+                        }
+                    ]
                 },
                 "tools": {
                     "type": "array",
@@ -2375,7 +2382,14 @@
                 },
                 "tool_choice": {
                     "description": "string or object",
-                    "type": "object"
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "object"
+                        }
+                    ]
                 },
                 "tools": {
                     "type": "array",

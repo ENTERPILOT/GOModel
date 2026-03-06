@@ -224,6 +224,38 @@ func TestGuardedProvider_ChatPreservesFields(t *testing.T) {
 	}
 }
 
+func TestChatAdaptersCloneToolCalls(t *testing.T) {
+	req := &core.ChatRequest{
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `{"city":"Warsaw"}`,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	msgs := chatToMessages(req)
+	req.Messages[0].ToolCalls[0].Function.Name = "mutated"
+	if msgs[0].ToolCalls[0].Function.Name != "lookup_weather" {
+		t.Fatalf("chatToMessages should clone tool calls, got %+v", msgs[0].ToolCalls)
+	}
+
+	chatReq := applyMessagesToChat(&core.ChatRequest{}, msgs)
+	msgs[0].ToolCalls[0].Function.Name = "mutated-again"
+	if chatReq.Messages[0].ToolCalls[0].Function.Name != "lookup_weather" {
+		t.Fatalf("applyMessagesToChat should clone tool calls, got %+v", chatReq.Messages[0].ToolCalls)
+	}
+}
+
 // --- Responses adapter integration tests ---
 
 func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {

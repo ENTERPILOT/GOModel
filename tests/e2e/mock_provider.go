@@ -149,6 +149,10 @@ func (m *MockLLMServer) handleChatCompletion(w http.ResponseWriter, r *http.Requ
 
 	// Check for streaming
 	if req.Stream {
+		if toolName := forcedToolName(req); toolName != "" {
+			m.handleStreamingToolResponse(w, req, toolName)
+			return
+		}
 		m.handleStreamingResponse(w, req)
 		return
 	}
@@ -264,6 +268,69 @@ func (m *MockLLMServer) handleStreamingResponse(w http.ResponseWriter, req core.
 	}
 
 	// Send done marker
+	_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
+	flusher.Flush()
+}
+
+func (m *MockLLMServer) handleStreamingToolResponse(w http.ResponseWriter, req core.ChatRequest, toolName string) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		return
+	}
+
+	toolCall := core.ToolCall{
+		ID:   "call_mock_123",
+		Type: "function",
+		Function: core.FunctionCall{
+			Name:      toolName,
+			Arguments: `{"city":"Warsaw"}`,
+		},
+	}
+
+	firstChunk := map[string]interface{}{
+		"id":      "chatcmpl-test-stream",
+		"object":  "chat.completion.chunk",
+		"model":   req.Model,
+		"created": time.Now().Unix(),
+		"choices": []map[string]interface{}{
+			{
+				"index": 0,
+				"delta": map[string]interface{}{
+					"tool_calls": []core.ToolCall{toolCall},
+				},
+				"finish_reason": nil,
+			},
+		},
+	}
+
+	data, _ := json.Marshal(firstChunk)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+	time.Sleep(10 * time.Millisecond)
+
+	finalChunk := map[string]interface{}{
+		"id":      "chatcmpl-test-stream",
+		"object":  "chat.completion.chunk",
+		"model":   req.Model,
+		"created": time.Now().Unix(),
+		"choices": []map[string]interface{}{
+			{
+				"index":         0,
+				"delta":         map[string]interface{}{},
+				"finish_reason": "tool_calls",
+			},
+		},
+	}
+
+	data, _ = json.Marshal(finalChunk)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	flusher.Flush()
+
 	_, _ = fmt.Fprintf(w, "data: [DONE]\n\n")
 	flusher.Flush()
 }

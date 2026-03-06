@@ -1799,7 +1799,14 @@ const docTemplate = `{
                 },
                 "tool_choice": {
                     "description": "string or object",
-                    "type": "object"
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "object"
+                        }
+                    ]
                 },
                 "tools": {
                     "type": "array",
@@ -2379,7 +2386,14 @@ const docTemplate = `{
                 },
                 "tool_choice": {
                     "description": "string or object",
-                    "type": "object"
+                    "oneOf": [
+                        {
+                            "type": "string"
+                        },
+                        {
+                            "type": "object"
+                        }
+                    ]
                 },
                 "tools": {
                     "type": "array",

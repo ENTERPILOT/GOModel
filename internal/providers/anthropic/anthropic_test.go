@@ -833,9 +833,43 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertToAnthropicRequest(tt.input)
+			result, err := convertToAnthropicRequest(tt.input)
+			if err != nil {
+				t.Fatalf("convertToAnthropicRequest() error = %v, want nil", err)
+			}
 			tt.checkFn(t, result)
 		})
+	}
+}
+
+func TestConvertToAnthropicRequest_InvalidToolArguments(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `{"city":"Warsaw"`,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
 	}
 }
 
@@ -875,8 +909,8 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	if result.Choices[0].Message.Role != "assistant" {
 		t.Errorf("Message role = %q, want %q", result.Choices[0].Message.Role, "assistant")
 	}
-	if result.Choices[0].FinishReason != "end_turn" {
-		t.Errorf("FinishReason = %q, want %q", result.Choices[0].FinishReason, "end_turn")
+	if result.Choices[0].FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", result.Choices[0].FinishReason, "stop")
 	}
 	if result.Usage.PromptTokens != 10 {
 		t.Errorf("PromptTokens = %d, want 10", result.Usage.PromptTokens)
@@ -923,6 +957,34 @@ func TestConvertFromAnthropicResponse_WithToolUseStopReason(t *testing.T) {
 	}
 	if result.Choices[0].Message.ToolCalls[0].ID != "toolu_123" {
 		t.Fatalf("ToolCalls[0].ID = %q, want toolu_123", result.Choices[0].Message.ToolCalls[0].ID)
+	}
+	if result.Choices[0].Message.ToolCalls[0].Function.Name != "lookup_weather" {
+		t.Fatalf("ToolCalls[0].Function.Name = %q, want lookup_weather", result.Choices[0].Message.ToolCalls[0].Function.Name)
+	}
+	if result.Choices[0].Message.ToolCalls[0].Function.Arguments != `{"city":"Warsaw"}` {
+		t.Fatalf("ToolCalls[0].Function.Arguments = %q, want canonical JSON", result.Choices[0].Message.ToolCalls[0].Function.Arguments)
+	}
+}
+
+func TestNormalizeAnthropicStopReason(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "tool use", in: "tool_use", want: "tool_calls"},
+		{name: "end turn", in: "end_turn", want: "stop"},
+		{name: "stop sequence", in: "stop_sequence", want: "stop"},
+		{name: "max tokens", in: "max_tokens", want: "length"},
+		{name: "unknown", in: "pause_turn", want: "pause_turn"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeAnthropicStopReason(tt.in); got != tt.want {
+				t.Fatalf("normalizeAnthropicStopReason(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -1549,6 +1611,9 @@ func TestStreamResponses_WithToolCalls(t *testing.T) {
 		_, _ = w.Write([]byte(`event: message_start
 data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
 
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I'll check that for you."}}
+
 event: content_block_start
 data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
 
@@ -1597,6 +1662,7 @@ data: {"type":"message_stop"}
 
 	events := parseTestSSEEvents(t, string(raw))
 	foundAdded := false
+	foundTextDelta := false
 	foundArgumentsDelta := false
 	foundArgumentsDone := false
 	foundItemDone := false
@@ -1606,9 +1672,13 @@ data: {"type":"message_stop"}
 			continue
 		}
 		switch event.Name {
+		case "response.output_text.delta":
+			if event.Payload["delta"] == "I'll check that for you." {
+				foundTextDelta = true
+			}
 		case "response.output_item.added":
 			item, _ := event.Payload["item"].(map[string]interface{})
-			if item["type"] == "function_call" && item["call_id"] == "toolu_123" && item["name"] == "lookup_weather" {
+			if item["type"] == "function_call" && item["call_id"] == "toolu_123" && item["name"] == "lookup_weather" && event.Payload["output_index"] == float64(1) {
 				foundAdded = true
 			}
 		case "response.function_call_arguments.delta":
@@ -1629,6 +1699,9 @@ data: {"type":"message_stop"}
 
 	if !foundAdded {
 		t.Fatal("expected response.output_item.added for function_call")
+	}
+	if !foundTextDelta {
+		t.Fatal("expected response.output_text.delta for assistant preamble")
 	}
 	if !foundArgumentsDelta {
 		t.Fatal("expected response.function_call_arguments.delta for function_call")
@@ -1833,9 +1906,36 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertResponsesRequestToAnthropic(tt.input)
+			result, err := convertResponsesRequestToAnthropic(tt.input)
+			if err != nil {
+				t.Fatalf("convertResponsesRequestToAnthropic() error = %v, want nil", err)
+			}
 			tt.checkFn(t, result)
 		})
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_InvalidToolArguments(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_123",
+				"name":      "lookup_weather",
+				"arguments": `{"city":"Warsaw"`,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
 	}
 }
 
@@ -2171,7 +2271,10 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 				req.Temperature = &temp
 			}
 
-			result := convertToAnthropicRequest(req)
+			result, err := convertToAnthropicRequest(req)
+			if err != nil {
+				t.Fatalf("convertToAnthropicRequest() error = %v, want nil", err)
+			}
 
 			if tt.expectedThinkType == "" {
 				if result.Thinking != nil {
@@ -2334,7 +2437,10 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 				req.Temperature = &temp
 			}
 
-			result := convertResponsesRequestToAnthropic(req)
+			result, err := convertResponsesRequestToAnthropic(req)
+			if err != nil {
+				t.Fatalf("convertResponsesRequestToAnthropic() error = %v, want nil", err)
+			}
 
 			if tt.expectedThinkType == "" {
 				if result.Thinking != nil {
