@@ -51,8 +51,8 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) *core.ChatRequest
 		for _, item := range input {
 			if msgMap, ok := item.(map[string]interface{}); ok {
 				role, _ := msgMap["role"].(string)
-				content := ExtractContentFromInput(msgMap["content"])
-				if role != "" && content != "" {
+				content, ok := ConvertResponsesContentToChatContent(msgMap["content"])
+				if role != "" && ok {
 					chatReq.Messages = append(chatReq.Messages, core.Message{
 						Role:    role,
 						Content: content,
@@ -65,24 +65,101 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) *core.ChatRequest
 	return chatReq
 }
 
-// ExtractContentFromInput extracts text content from responses input.
-func ExtractContentFromInput(content interface{}) string {
+// ConvertResponsesContentToChatContent maps Responses input content to Chat content.
+// Text-only arrays are flattened to strings for broader provider compatibility.
+// Any non-text part preserves the array form so multimodal payloads survive routing.
+func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 	switch c := content.(type) {
 	case string:
-		return c
+		return c, true
 	case []interface{}:
-		// Array of content parts - extract text
-		var texts []string
+		parts := make([]core.ContentPart, 0, len(c))
+		texts := make([]string, 0, len(c))
+		textOnly := true
 		for _, part := range c {
 			if partMap, ok := part.(map[string]interface{}); ok {
-				if text, ok := partMap["text"].(string); ok {
-					texts = append(texts, text)
+				switch partType, _ := partMap["type"].(string); partType {
+				case "text", "input_text":
+					if text, ok := partMap["text"].(string); ok && text != "" {
+						parts = append(parts, core.ContentPart{
+							Type: "text",
+							Text: text,
+						})
+						texts = append(texts, text)
+					}
+				case "image_url", "input_image":
+					imageURL, detail, ok := extractResponsesImageURL(partMap["image_url"])
+					if !ok {
+						continue
+					}
+					textOnly = false
+					parts = append(parts, core.ContentPart{
+						Type: "image_url",
+						ImageURL: &core.ImageURLContent{
+							URL:    imageURL,
+							Detail: detail,
+						},
+					})
+				case "input_audio":
+					data, format, ok := extractResponsesInputAudio(partMap["input_audio"])
+					if !ok {
+						continue
+					}
+					textOnly = false
+					parts = append(parts, core.ContentPart{
+						Type: "input_audio",
+						InputAudio: &core.InputAudioContent{
+							Data:   data,
+							Format: format,
+						},
+					})
 				}
 			}
 		}
-		return strings.Join(texts, " ")
+		if len(parts) == 0 {
+			return nil, false
+		}
+		if textOnly {
+			return strings.Join(texts, " "), true
+		}
+		return parts, true
 	}
-	return ""
+	return nil, false
+}
+
+func extractResponsesImageURL(value interface{}) (url string, detail string, ok bool) {
+	switch v := value.(type) {
+	case string:
+		if v == "" {
+			return "", "", false
+		}
+		return v, "", true
+	case map[string]string:
+		url = v["url"]
+		detail = v["detail"]
+		return url, detail, url != ""
+	case map[string]interface{}:
+		url, _ = v["url"].(string)
+		detail, _ = v["detail"].(string)
+		return url, detail, url != ""
+	default:
+		return "", "", false
+	}
+}
+
+func extractResponsesInputAudio(value interface{}) (data string, format string, ok bool) {
+	switch v := value.(type) {
+	case map[string]string:
+		data = v["data"]
+		format = v["format"]
+		return data, format, data != "" && format != ""
+	case map[string]interface{}:
+		data, _ = v["data"].(string)
+		format, _ = v["format"].(string)
+		return data, format, data != "" && format != ""
+	default:
+		return "", "", false
+	}
 }
 
 // ConvertChatResponseToResponses converts a ChatResponse to a ResponsesResponse.

@@ -140,7 +140,7 @@ func (m *MockLLMServer) handleChatCompletion(w http.ResponseWriter, r *http.Requ
 		Choices: []core.Choice{
 			{
 				Index: 0,
-				Message: core.Message{
+				Message: core.ResponseMessage{
 					Role:    "assistant",
 					Content: responseContent,
 				},
@@ -386,7 +386,7 @@ func generateMockResponse(req core.ChatRequest) string {
 		return "Hello! How can I help you today?"
 	}
 
-	lastMessage := req.Messages[len(req.Messages)-1].Content
+	lastMessage := core.ExtractTextContent(req.Messages[len(req.Messages)-1].Content)
 
 	// Echo-style response for testing
 	return fmt.Sprintf("Mock response to: %s", lastMessage)

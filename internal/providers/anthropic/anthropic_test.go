@@ -559,7 +559,10 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertToAnthropicRequest(tt.input)
+			result, err := convertToAnthropicRequest(tt.input)
+			if err != nil {
+				t.Fatalf("convertToAnthropicRequest() error = %v", err)
+			}
 			tt.checkFn(t, result)
 		})
 	}
@@ -1350,7 +1353,10 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertResponsesRequestToAnthropic(tt.input)
+			result, err := convertResponsesRequestToAnthropic(tt.input)
+			if err != nil {
+				t.Fatalf("convertResponsesRequestToAnthropic() error = %v", err)
+			}
 			tt.checkFn(t, result)
 		})
 	}
@@ -1472,18 +1478,18 @@ func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
 
 func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 	tests := []struct {
-		name                string
-		model               string
-		reasoning           *core.Reasoning
-		maxTokens           *int
-		setTemperature      bool
-		setTemperatureOne   bool
-		expectedThinkType   string
-		expectedBudget      int
-		expectedEffort      string
-		expectedMaxTokens   int
-		expectNilTemp       bool
-		expectedTemp        *float64
+		name              string
+		model             string
+		reasoning         *core.Reasoning
+		maxTokens         *int
+		setTemperature    bool
+		setTemperatureOne bool
+		expectedThinkType string
+		expectedBudget    int
+		expectedEffort    string
+		expectedMaxTokens int
+		expectNilTemp     bool
+		expectedTemp      *float64
 	}{
 		{
 			name:              "reasoning nil - no thinking",
@@ -1561,16 +1567,16 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 			expectNilTemp:     true,
 		},
 		{
-			name:                "legacy model - preserves temperature=1.0 with reasoning",
-			model:               "claude-3-5-sonnet-20241022",
-			reasoning:           &core.Reasoning{Effort: "medium"},
-			maxTokens:           intPtr(15000),
-			setTemperatureOne:   true,
-			expectedThinkType:   "enabled",
-			expectedBudget:      10000,
-			expectedMaxTokens:   15000,
-			expectNilTemp:       false,
-			expectedTemp:        float64Ptr(1.0),
+			name:              "legacy model - preserves temperature=1.0 with reasoning",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxTokens:         intPtr(15000),
+			setTemperatureOne: true,
+			expectedThinkType: "enabled",
+			expectedBudget:    10000,
+			expectedMaxTokens: 15000,
+			expectNilTemp:     false,
+			expectedTemp:      float64Ptr(1.0),
 		},
 		{
 			name:              "4.6 model - adaptive thinking with high effort",
@@ -1641,7 +1647,10 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 				req.Temperature = &temp
 			}
 
-			result := convertToAnthropicRequest(req)
+			result, err := convertToAnthropicRequest(req)
+			if err != nil {
+				t.Fatalf("convertToAnthropicRequest() error = %v", err)
+			}
 
 			if tt.expectedThinkType == "" {
 				if result.Thinking != nil {
@@ -1804,7 +1813,10 @@ func TestConvertResponsesRequestToAnthropic_ReasoningEffort(t *testing.T) {
 				req.Temperature = &temp
 			}
 
-			result := convertResponsesRequestToAnthropic(req)
+			result, err := convertResponsesRequestToAnthropic(req)
+			if err != nil {
+				t.Fatalf("convertResponsesRequestToAnthropic() error = %v", err)
+			}
 
 			if tt.expectedThinkType == "" {
 				if result.Thinking != nil {
@@ -1872,6 +1884,76 @@ func TestIsAdaptiveThinkingModel(t *testing.T) {
 				t.Errorf("isAdaptiveThinkingModel(%q) = %v, want %v", tt.model, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestConvertToAnthropicRequest_MultimodalImageContent(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "Describe the image."},
+					{
+						Type: "image_url",
+						ImageURL: &core.ImageURLContent{
+							URL: "data:image/png;base64,ZmFrZQ==",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := convertToAnthropicRequest(req)
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+
+	blocks, ok := result.Messages[0].Content.([]anthropicContentBlock)
+	if !ok {
+		t.Fatalf("message content type = %T, want []anthropicContentBlock", result.Messages[0].Content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len(blocks) = %d, want 2", len(blocks))
+	}
+	if blocks[0].Type != "text" || blocks[0].Text != "Describe the image." {
+		t.Fatalf("unexpected first block: %+v", blocks[0])
+	}
+	if blocks[1].Type != "image" || blocks[1].Source == nil || blocks[1].Source.MediaType != "image/png" || blocks[1].Source.Data != "ZmFrZQ==" {
+		t.Fatalf("unexpected second block: %+v", blocks[1])
+	}
+}
+
+func TestConvertToAnthropicRequest_RejectsInputAudio(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{
+						Type: "input_audio",
+						InputAudio: &core.InputAudioContent{
+							Data:   "abc",
+							Format: "wav",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err := convertToAnthropicRequest(req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "input_audio") {
+		t.Fatalf("expected input_audio error, got %v", err)
 	}
 }
 

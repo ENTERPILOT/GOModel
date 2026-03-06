@@ -67,6 +67,35 @@ func TestChatCompletion(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 	})
+
+	t.Run("multimodal content array", func(t *testing.T) {
+		payload := core.ChatRequest{
+			Model: "gpt-4",
+			Messages: []core.Message{
+				{
+					Role: "user",
+					Content: []core.ContentPart{
+						{Type: "text", Text: "What is in this image?"},
+						{
+							Type: "image_url",
+							ImageURL: &core.ImageURLContent{
+								URL: "https://example.com/image.png",
+							},
+						},
+					},
+				},
+			},
+		}
+
+		resp := sendChatRequest(t, payload)
+		defer closeBody(resp)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var chatResp core.ChatResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&chatResp))
+		assert.Contains(t, chatResp.Choices[0].Message.Content, "What is in this image?")
+	})
 }
 
 func TestChatCompletionParameters(t *testing.T) {

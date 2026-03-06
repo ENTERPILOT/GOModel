@@ -47,8 +47,10 @@ func (r *ChatRequest) WithStreaming() *ChatRequest {
 
 // Message represents a single message in the chat
 type Message struct {
-	Role      string     `json:"role"`
-	Content   string     `json:"content"`
+	Role string `json:"role"`
+	// Content accepts either a plain string or an array of ContentPart values.
+	// This preserves OpenAI-compatible multimodal chat payloads.
+	Content   any        `json:"content"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
@@ -78,9 +80,16 @@ type ChatResponse struct {
 
 // Choice represents a single completion choice
 type Choice struct {
-	Message      Message `json:"message"`
-	FinishReason string  `json:"finish_reason"`
-	Index        int     `json:"index"`
+	Message      ResponseMessage `json:"message"`
+	FinishReason string          `json:"finish_reason"`
+	Index        int             `json:"index"`
+}
+
+// ResponseMessage represents a single assistant message in a chat response.
+type ResponseMessage struct {
+	Role      string     `json:"role"`
+	Content   string     `json:"content"`
+	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
 }
 
 // PromptTokensDetails holds extended input token breakdown (OpenAI/xAI).

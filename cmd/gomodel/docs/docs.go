@@ -1835,7 +1835,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "message": {
-                    "$ref": "#/definitions/core.Message"
+                    "$ref": "#/definitions/core.ResponseMessage"
                 }
             }
         },
@@ -2035,7 +2035,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "content": {
-                    "type": "string"
+                    "description": "Content accepts either a plain string or an array of ContentPart values.\nThis preserves OpenAI-compatible multimodal chat payloads."
                 },
                 "role": {
                     "type": "string"
@@ -2254,6 +2254,23 @@ const docTemplate = `{
                 "effort": {
                     "description": "Effort controls how much reasoning effort the model should use.\nValid values are \"low\", \"medium\", and \"high\".",
                     "type": "string"
+                }
+            }
+        },
+        "core.ResponseMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "tool_calls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/core.ToolCall"
+                    }
                 }
             }
         },

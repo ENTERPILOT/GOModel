@@ -187,6 +187,90 @@ func TestGuardedProvider_ChatPreservesFields(t *testing.T) {
 	}
 }
 
+func TestGuardedProvider_ChatCompletion_AppliesGuardrailsToTextOnlyContentArray(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "hello"},
+				},
+			},
+		},
+	}
+
+	_, err := guarded.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inner.chatReq == nil {
+		t.Fatal("inner provider was not called")
+	}
+	if len(inner.chatReq.Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(inner.chatReq.Messages))
+	}
+	if inner.chatReq.Messages[0].Role != "system" || inner.chatReq.Messages[0].Content != "guardrail system" {
+		t.Fatalf("expected injected system message, got %+v", inner.chatReq.Messages[0])
+	}
+	if got := core.ExtractTextContent(inner.chatReq.Messages[1].Content); got != "hello" {
+		t.Fatalf("user content = %q, want hello", got)
+	}
+
+	parts, ok := req.Messages[0].Content.([]core.ContentPart)
+	if !ok || len(parts) != 1 || parts[0].Text != "hello" {
+		t.Fatalf("original request content mutated: %#v", req.Messages[0].Content)
+	}
+}
+
+func TestGuardedProvider_ChatCompletion_PreservesNonTextMultimodalRequests(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProvider(inner, pipeline)
+
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "hello"},
+					{Type: "image_url", ImageURL: &core.ImageURLContent{URL: "https://example.com/image.png"}},
+				},
+			},
+		},
+	}
+
+	_, err := guarded.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if inner.chatReq == nil {
+		t.Fatal("inner provider was not called")
+	}
+	if len(inner.chatReq.Messages) != 1 {
+		t.Fatalf("expected unmodified multimodal request, got %d messages", len(inner.chatReq.Messages))
+	}
+	parts, ok := inner.chatReq.Messages[0].Content.([]core.ContentPart)
+	if !ok || len(parts) != 2 || parts[1].Type != "image_url" {
+		t.Fatalf("expected preserved multimodal content, got %#v", inner.chatReq.Messages[0].Content)
+	}
+}
+
 // --- Responses adapter integration tests ---
 
 func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {
@@ -351,6 +435,44 @@ func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled(t *testing.T) {
 	}
 	if len(chatReq.Messages) != 2 || chatReq.Messages[0].Role != "system" {
 		t.Fatalf("expected guarded batch chat request, got: %+v", chatReq.Messages)
+	}
+}
+
+func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_TextOnlyContentArray(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
+	pipeline.Add(g, 0)
+	guarded := NewGuardedProviderWithOptions(inner, pipeline, Options{EnableForBatchProcessing: true})
+
+	req := &core.BatchRequest{
+		Endpoint: "/v1/chat/completions",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "/v1/chat/completions",
+				Body:   json.RawMessage(`{"model":"gpt-4","messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`),
+			},
+		},
+	}
+
+	_, err := guarded.CreateBatch(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.batchReq == nil || len(inner.batchReq.Requests) != 1 {
+		t.Fatalf("expected delegated batch request")
+	}
+
+	var chatReq core.ChatRequest
+	if err := json.Unmarshal(inner.batchReq.Requests[0].Body, &chatReq); err != nil {
+		t.Fatal(err)
+	}
+	if len(chatReq.Messages) != 2 || chatReq.Messages[0].Role != "system" {
+		t.Fatalf("expected guarded batch chat request, got: %+v", chatReq.Messages)
+	}
+	if got := core.ExtractTextContent(chatReq.Messages[1].Content); got != "hello" {
+		t.Fatalf("batch user content = %q, want hello", got)
 	}
 }
 

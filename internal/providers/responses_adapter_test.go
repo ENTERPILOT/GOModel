@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"reflect"
 	"testing"
 
 	"gomodel/internal/core"
@@ -31,8 +32,8 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				if req.Messages[0].Role != "user" {
 					t.Errorf("Messages[0].Role = %q, want %q", req.Messages[0].Role, "user")
 				}
-				if req.Messages[0].Content != "Hello" {
-					t.Errorf("Messages[0].Content = %q, want %q", req.Messages[0].Content, "Hello")
+				if got := core.ExtractTextContent(req.Messages[0].Content); got != "Hello" {
+					t.Errorf("Messages[0].Content = %q, want %q", got, "Hello")
 				}
 			},
 		},
@@ -50,8 +51,8 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				if req.Messages[0].Role != "system" {
 					t.Errorf("Messages[0].Role = %q, want %q", req.Messages[0].Role, "system")
 				}
-				if req.Messages[0].Content != "Be helpful" {
-					t.Errorf("Messages[0].Content = %q, want %q", req.Messages[0].Content, "Be helpful")
+				if got := core.ExtractTextContent(req.Messages[0].Content); got != "Be helpful" {
+					t.Errorf("Messages[0].Content = %q, want %q", got, "Be helpful")
 				}
 			},
 		},
@@ -107,11 +108,53 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				if req.Messages[0].Role != "user" {
 					t.Errorf("Messages[0].Role = %q, want %q", req.Messages[0].Role, "user")
 				}
-				if req.Messages[0].Content != "Hello" {
-					t.Errorf("Messages[0].Content = %q, want %q", req.Messages[0].Content, "Hello")
+				if got := core.ExtractTextContent(req.Messages[0].Content); got != "Hello" {
+					t.Errorf("Messages[0].Content = %q, want %q", got, "Hello")
 				}
 				if req.Messages[1].Role != "assistant" {
 					t.Errorf("Messages[1].Role = %q, want %q", req.Messages[1].Role, "assistant")
+				}
+			},
+		},
+		{
+			name: "array input with multimodal parts",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []interface{}{
+					map[string]interface{}{
+						"role": "user",
+						"content": []interface{}{
+							map[string]interface{}{
+								"type": "input_text",
+								"text": "Describe the image.",
+							},
+							map[string]interface{}{
+								"type": "input_image",
+								"image_url": map[string]interface{}{
+									"url":    "https://example.com/image.png",
+									"detail": "high",
+								},
+							},
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 1 {
+					t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+				}
+				parts, ok := req.Messages[0].Content.([]core.ContentPart)
+				if !ok {
+					t.Fatalf("Messages[0].Content type = %T, want []core.ContentPart", req.Messages[0].Content)
+				}
+				if len(parts) != 2 {
+					t.Fatalf("len(parts) = %d, want 2", len(parts))
+				}
+				if parts[0].Type != "text" || parts[0].Text != "Describe the image." {
+					t.Fatalf("unexpected text part: %+v", parts[0])
+				}
+				if parts[1].Type != "image_url" || parts[1].ImageURL == nil || parts[1].ImageURL.URL != "https://example.com/image.png" {
+					t.Fatalf("unexpected image part: %+v", parts[1])
 				}
 			},
 		},
@@ -134,7 +177,7 @@ func TestConvertChatResponseToResponses(t *testing.T) {
 		Choices: []core.Choice{
 			{
 				Index: 0,
-				Message: core.Message{
+				Message: core.ResponseMessage{
 					Role:    "assistant",
 					Content: "Hello! How can I help you today?",
 				},
@@ -222,58 +265,104 @@ func TestConvertChatResponseToResponses_EmptyChoices(t *testing.T) {
 	}
 }
 
-func TestExtractContentFromInput(t *testing.T) {
+func TestConvertResponsesContentToChatContent(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    interface{}
-		expected string
+		expected any
+		ok       bool
 	}{
 		{
 			name:     "string input",
 			input:    "Hello world",
 			expected: "Hello world",
+			ok:       true,
 		},
 		{
 			name: "array with text parts",
 			input: []interface{}{
 				map[string]interface{}{
-					"type": "text",
+					"type": "input_text",
 					"text": "Hello",
 				},
 				map[string]interface{}{
-					"type": "text",
+					"type": "input_text",
 					"text": "world",
 				},
 			},
 			expected: "Hello world",
+			ok:       true,
 		},
 		{
-			name:     "nil input",
-			input:    nil,
-			expected: "",
+			name:  "nil input",
+			input: nil,
+			ok:    false,
 		},
 		{
-			name:     "unsupported type",
-			input:    12345,
-			expected: "",
+			name:  "unsupported type",
+			input: 12345,
+			ok:    false,
 		},
 		{
-			name: "array with non-text parts",
+			name: "array with multimodal parts",
 			input: []interface{}{
 				map[string]interface{}{
-					"type": "image",
-					"url":  "http://example.com/image.png",
+					"type": "input_text",
+					"text": "Look",
+				},
+				map[string]interface{}{
+					"type": "input_image",
+					"image_url": map[string]interface{}{
+						"url": "http://example.com/image.png",
+					},
 				},
 			},
-			expected: "",
+			expected: []core.ContentPart{
+				{Type: "text", Text: "Look"},
+				{
+					Type: "image_url",
+					ImageURL: &core.ImageURLContent{
+						URL: "http://example.com/image.png",
+					},
+				},
+			},
+			ok: true,
+		},
+		{
+			name: "array with input audio part",
+			input: []interface{}{
+				map[string]interface{}{
+					"type": "input_audio",
+					"input_audio": map[string]interface{}{
+						"data":   "abc",
+						"format": "wav",
+					},
+				},
+			},
+			expected: []core.ContentPart{
+				{
+					Type: "input_audio",
+					InputAudio: &core.InputAudioContent{
+						Data:   "abc",
+						Format: "wav",
+					},
+				},
+			},
+			ok: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := ExtractContentFromInput(tt.input)
-			if result != tt.expected {
-				t.Errorf("ExtractContentFromInput(%v) = %q, want %q", tt.input, result, tt.expected)
+			result, ok := ConvertResponsesContentToChatContent(tt.input)
+			if ok != tt.ok {
+				t.Fatalf("ConvertResponsesContentToChatContent(%v) ok = %v, want %v", tt.input, ok, tt.ok)
+			}
+			if !tt.ok {
+				return
+			}
+			if !reflect.DeepEqual(result, tt.expected) {
+				t.Errorf("ConvertResponsesContentToChatContent(%v) = %#v, want %#v", tt.input, result, tt.expected)
 			}
 		})
 	}

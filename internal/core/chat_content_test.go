@@ -1,0 +1,74 @@
+package core
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+)
+
+func TestMessageUnmarshalJSON_StringContent(t *testing.T) {
+	var msg Message
+	if err := json.Unmarshal([]byte(`{"role":"user","content":"hello"}`), &msg); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if msg.Role != "user" {
+		t.Fatalf("Role = %q, want user", msg.Role)
+	}
+	if msg.Content != "hello" {
+		t.Fatalf("Content = %#v, want hello", msg.Content)
+	}
+}
+
+func TestMessageUnmarshalJSON_MultimodalContent(t *testing.T) {
+	var msg Message
+	err := json.Unmarshal([]byte(`{"role":"user","content":[{"type":"text","text":"Describe this image"},{"type":"image_url","image_url":{"url":"https://example.com/image.png","detail":"high"}}]}`), &msg)
+	if err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	parts, ok := msg.Content.([]ContentPart)
+	if !ok {
+		t.Fatalf("Content type = %T, want []ContentPart", msg.Content)
+	}
+	if len(parts) != 2 {
+		t.Fatalf("len(parts) = %d, want 2", len(parts))
+	}
+	if parts[0].Type != "text" || parts[0].Text != "Describe this image" {
+		t.Fatalf("unexpected first part: %+v", parts[0])
+	}
+	if parts[1].Type != "image_url" || parts[1].ImageURL == nil || parts[1].ImageURL.URL != "https://example.com/image.png" {
+		t.Fatalf("unexpected second part: %+v", parts[1])
+	}
+}
+
+func TestMessageUnmarshalJSON_RejectsUnsupportedContentTypes(t *testing.T) {
+	tests := []string{
+		`{"role":"user","content":123}`,
+		`{"role":"user","content":{"foo":"bar"}}`,
+		`{"role":"user","content":[{"type":"unknown"}]}`,
+	}
+
+	for _, payload := range tests {
+		t.Run(payload, func(t *testing.T) {
+			var msg Message
+			err := json.Unmarshal([]byte(payload), &msg)
+			if err == nil {
+				t.Fatal("json.Unmarshal() succeeded, want error")
+			}
+			if !strings.Contains(err.Error(), "content") && !strings.Contains(err.Error(), "must be a string or array of content parts") {
+				t.Fatalf("error = %v, want content validation error", err)
+			}
+		})
+	}
+}
+
+func TestMessageMarshalJSON_RejectsUnsupportedContentType(t *testing.T) {
+	_, err := json.Marshal(Message{Role: "user", Content: 123})
+	if err == nil {
+		t.Fatal("json.Marshal() succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "must be a string or array of content parts") {
+		t.Fatalf("error = %v, want content validation error", err)
+	}
+}

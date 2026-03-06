@@ -289,6 +289,11 @@ func (g *GuardedProvider) GetFileContent(ctx context.Context, providerType, id s
 
 // processChat runs the pipeline for a ChatRequest via the message adapter.
 func (g *GuardedProvider) processChat(ctx context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
+	if chatHasNonTextContent(req) {
+		// Guardrails operate on text-only DTOs today. Preserve requests that
+		// include image/audio parts until the pipeline can safely rewrite them.
+		return req, nil
+	}
 	msgs := chatToMessages(req)
 	modified, err := g.pipeline.Process(ctx, msgs)
 	if err != nil {
@@ -313,7 +318,7 @@ func (g *GuardedProvider) processResponses(ctx context.Context, req *core.Respon
 func chatToMessages(req *core.ChatRequest) []Message {
 	msgs := make([]Message, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = Message{Role: m.Role, Content: m.Content}
+		msgs[i] = Message{Role: m.Role, Content: core.ExtractTextContent(m.Content)}
 	}
 	return msgs
 }
@@ -327,6 +332,15 @@ func applyMessagesToChat(req *core.ChatRequest, msgs []Message) *core.ChatReques
 	result := *req
 	result.Messages = coreMessages
 	return &result
+}
+
+func chatHasNonTextContent(req *core.ChatRequest) bool {
+	for _, msg := range req.Messages {
+		if core.HasNonTextContent(msg.Content) {
+			return true
+		}
+	}
+	return false
 }
 
 // responsesToMessages extracts the normalized message list from a ResponsesRequest.

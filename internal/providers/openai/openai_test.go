@@ -166,6 +166,94 @@ func TestChatCompletion(t *testing.T) {
 	}
 }
 
+func TestChatCompletion_PreservesMultimodalContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var req map[string]interface{}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+
+		messages, ok := req["messages"].([]interface{})
+		if !ok || len(messages) != 1 {
+			t.Fatalf("messages = %#v, want single message", req["messages"])
+		}
+		message, ok := messages[0].(map[string]interface{})
+		if !ok {
+			t.Fatalf("message type = %T", messages[0])
+		}
+		content, ok := message["content"].([]interface{})
+		if !ok {
+			t.Fatalf("content type = %T, want []interface{}", message["content"])
+		}
+		if len(content) != 2 {
+			t.Fatalf("len(content) = %d, want 2", len(content))
+		}
+		second, ok := content[1].(map[string]interface{})
+		if !ok {
+			t.Fatalf("second part type = %T", content[1])
+		}
+		if second["type"] != "image_url" {
+			t.Fatalf("second part type = %v, want image_url", second["type"])
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-123",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "gpt-4o-mini",
+			"choices": [{
+				"index": 0,
+				"message": {
+					"role": "assistant",
+					"content": "ok"
+				},
+				"finish_reason": "stop"
+			}],
+			"usage": {
+				"prompt_tokens": 10,
+				"completion_tokens": 20,
+				"total_tokens": 30
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", server.Client(), llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	req := &core.ChatRequest{
+		Model: "gpt-4o-mini",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "Describe the image."},
+					{
+						Type: "image_url",
+						ImageURL: &core.ImageURLContent{
+							URL: "https://example.com/image.png",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := provider.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Choices[0].Message.Content != "ok" {
+		t.Fatalf("response content = %q, want ok", resp.Choices[0].Message.Content)
+	}
+}
+
 func TestStreamChatCompletion(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -952,8 +1040,8 @@ data: [DONE]
 	provider.SetBaseURL(server.URL)
 
 	req := &core.ChatRequest{
-		Model:    "o4-mini",
-		Messages: []core.Message{{Role: "user", Content: "Hello"}},
+		Model:     "o4-mini",
+		Messages:  []core.Message{{Role: "user", Content: "Hello"}},
 		MaxTokens: &maxTokens,
 	}
 
