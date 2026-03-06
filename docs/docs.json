@@ -18,6 +18,10 @@
             {
                 "group": "Advanced",
                 "pages": ["advanced/configuration", "advanced/guardrails", "advanced/admin-endpoints"]
+            },
+            {
+                "group": "About",
+                "pages": ["about/who-we-are", "about/values", "about/technical-philosophy", "about/benchmarks"]
             }
         ]
     }
