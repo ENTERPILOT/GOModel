@@ -384,7 +384,15 @@ func mergeMultimodalContentWithTextRewrite(originalContent any, rewrittenText st
 		return nil, core.NewInvalidRequestError("guardrails cannot merge rewritten text into multimodal message", nil)
 	}
 
-	merged := make([]core.ContentPart, 0, len(parts)+1)
+	// Guard against pathological numbers of content parts that could cause size
+	// computations for allocations to overflow on some platforms.
+	const maxContentParts = 1_000_000
+	if len(parts) >= maxContentParts {
+		return nil, core.NewInvalidRequestError("guardrails cannot merge multimodal message with too many content parts", nil)
+	}
+
+	capacity := len(parts) + 1
+	merged := make([]core.ContentPart, 0, capacity)
 	hadTextPart := false
 	insertedRewrittenText := false
 
