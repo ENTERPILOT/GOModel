@@ -7,8 +7,16 @@ import (
 
 var responsesDoneMarker = []byte("data: [DONE]\n\n")
 
+var responsesDoneLine = []byte("data: [DONE]")
+
+var responsesCompletionPatterns = [][]byte{
+	[]byte(`"type":"response.completed"`),
+	[]byte(`"type":"response.done"`),
+}
+
 // EnsureResponsesDone normalizes Responses API streams so clients always receive
-// a terminal data: [DONE] marker, even when the upstream stream ends at EOF.
+// a terminal data: [DONE] marker when the upstream stream reaches a completed
+// Responses event but closes at EOF before sending the final marker.
 func EnsureResponsesDone(stream io.ReadCloser) io.ReadCloser {
 	if stream == nil {
 		return nil
@@ -16,16 +24,17 @@ func EnsureResponsesDone(stream io.ReadCloser) io.ReadCloser {
 
 	return &responsesDoneWrapper{
 		ReadCloser: stream,
-		tail:       make([]byte, 0, len(responsesDoneMarker)-1),
+		tail:       make([]byte, 0, responsesDoneTrackOverlap()),
 	}
 }
 
 type responsesDoneWrapper struct {
 	io.ReadCloser
-	tail    []byte
-	pending []byte
-	sawDone bool
-	emitted bool
+	tail         []byte
+	pending      []byte
+	sawDone      bool
+	sawCompleted bool
+	emitted      bool
 }
 
 func (w *responsesDoneWrapper) Read(p []byte) (int, error) {
@@ -55,6 +64,13 @@ func (w *responsesDoneWrapper) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 
+		if !w.sawCompleted {
+			if n > 0 {
+				return n, nil
+			}
+			return 0, io.EOF
+		}
+
 		if n > 0 {
 			w.pending = append(w.pending[:0], responsesDoneMarker...)
 			return n, nil
@@ -74,20 +90,37 @@ func (w *responsesDoneWrapper) Read(p []byte) (int, error) {
 }
 
 func (w *responsesDoneWrapper) trackDone(data []byte) {
-	if w.sawDone {
+	if w.sawDone && w.sawCompleted {
 		return
 	}
 
 	combined := append(append([]byte(nil), w.tail...), data...)
-	if bytes.Contains(combined, responsesDoneMarker) {
+	if !w.sawDone && bytes.Contains(combined, responsesDoneLine) {
 		w.sawDone = true
-		return
+	}
+	if !w.sawCompleted {
+		for _, pattern := range responsesCompletionPatterns {
+			if bytes.Contains(combined, pattern) {
+				w.sawCompleted = true
+				break
+			}
+		}
 	}
 
-	overlap := len(responsesDoneMarker) - 1
+	overlap := responsesDoneTrackOverlap()
 	if len(combined) > overlap {
 		combined = combined[len(combined)-overlap:]
 	}
 
 	w.tail = append(w.tail[:0], combined...)
+}
+
+func responsesDoneTrackOverlap() int {
+	overlap := len(responsesDoneLine) - 1
+	for _, pattern := range responsesCompletionPatterns {
+		if n := len(pattern) - 1; n > overlap {
+			overlap = n
+		}
+	}
+	return overlap
 }

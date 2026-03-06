@@ -78,3 +78,35 @@ func TestEnsureResponsesDone_PreservesSplitDoneMarker(t *testing.T) {
 		t.Fatalf("expected exactly one done marker, got %q", got)
 	}
 }
+
+func TestEnsureResponsesDone_DoesNotMaskIncompleteStream(t *testing.T) {
+	stream := io.NopCloser(strings.NewReader("event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"hel\"}\n\n"))
+
+	data, err := io.ReadAll(EnsureResponsesDone(stream))
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+
+	got := string(data)
+	if strings.Contains(got, "[DONE]") {
+		t.Fatalf("expected incomplete stream to remain incomplete, got %q", got)
+	}
+}
+
+func TestEnsureResponsesDone_PreservesEOFTerminatedDoneMarker(t *testing.T) {
+	stream := io.NopCloser(strings.NewReader("event: response.completed\ndata: {\"type\":\"response.completed\"}\n\ndata: [DONE]\n"))
+
+	data, err := io.ReadAll(EnsureResponsesDone(stream))
+	if err != nil {
+		t.Fatalf("read stream: %v", err)
+	}
+
+	got := string(data)
+	want := "event: response.completed\ndata: {\"type\":\"response.completed\"}\n\ndata: [DONE]\n"
+	if got != want {
+		t.Fatalf("expected EOF-terminated done marker to pass through unchanged, got %q", got)
+	}
+	if strings.Count(got, "[DONE]") != 1 {
+		t.Fatalf("expected exactly one done marker, got %q", got)
+	}
+}
