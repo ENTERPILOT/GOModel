@@ -73,6 +73,39 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 			},
 		},
 		{
+			name: "with tool configuration",
+			input: &core.ResponsesRequest{
+				Model:      "test-model",
+				Input:      "Hello",
+				Tools:      []map[string]any{{"type": "function", "function": map[string]any{"name": "lookup_weather"}}},
+				ToolChoice: map[string]any{"type": "function", "function": map[string]any{"name": "lookup_weather"}},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Tools) != 1 {
+					t.Fatalf("len(Tools) = %d, want 1", len(req.Tools))
+				}
+				if req.ToolChoice == nil {
+					t.Fatal("ToolChoice should not be nil")
+				}
+			},
+		},
+		{
+			name: "with parallel tool calls disabled",
+			input: func() *core.ResponsesRequest {
+				parallelToolCalls := false
+				return &core.ResponsesRequest{
+					Model:             "test-model",
+					Input:             "Hello",
+					ParallelToolCalls: &parallelToolCalls,
+				}
+			}(),
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if req.ParallelToolCalls == nil || *req.ParallelToolCalls {
+					t.Fatalf("ParallelToolCalls = %#v, want false", req.ParallelToolCalls)
+				}
+			},
+		},
+		{
 			name: "with streaming enabled",
 			input: &core.ResponsesRequest{
 				Model:  "test-model",
@@ -112,6 +145,51 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if req.Messages[1].Role != "assistant" {
 					t.Errorf("Messages[1].Role = %q, want %q", req.Messages[1].Role, "assistant")
+				}
+			},
+		},
+		{
+			name: "array input with function call loop items",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []interface{}{
+					map[string]interface{}{
+						"type":      "function_call",
+						"call_id":   "call_123",
+						"name":      "lookup_weather",
+						"arguments": `{"city":"Warsaw"}`,
+					},
+					map[string]interface{}{
+						"type":    "function_call_output",
+						"call_id": "call_123",
+						"output":  map[string]interface{}{"temperature_c": 21},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+				if req.Messages[0].Role != "assistant" {
+					t.Fatalf("Messages[0].Role = %q, want assistant", req.Messages[0].Role)
+				}
+				if len(req.Messages[0].ToolCalls) != 1 {
+					t.Fatalf("len(Messages[0].ToolCalls) = %d, want 1", len(req.Messages[0].ToolCalls))
+				}
+				if req.Messages[0].ToolCalls[0].ID != "call_123" {
+					t.Fatalf("ToolCall ID = %q, want call_123", req.Messages[0].ToolCalls[0].ID)
+				}
+				if req.Messages[0].ToolCalls[0].Function.Name != "lookup_weather" {
+					t.Fatalf("ToolCall name = %q, want lookup_weather", req.Messages[0].ToolCalls[0].Function.Name)
+				}
+				if req.Messages[1].Role != "tool" {
+					t.Fatalf("Messages[1].Role = %q, want tool", req.Messages[1].Role)
+				}
+				if req.Messages[1].ToolCallID != "call_123" {
+					t.Fatalf("Messages[1].ToolCallID = %q, want call_123", req.Messages[1].ToolCallID)
+				}
+				if req.Messages[1].Content != `{"temperature_c":21}` {
+					t.Fatalf("Messages[1].Content = %q, want canonical JSON", req.Messages[1].Content)
 				}
 			},
 		},
@@ -194,6 +272,58 @@ func TestConvertChatResponseToResponses(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 30 {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
+	}
+}
+
+func TestConvertChatResponseToResponses_WithToolCalls(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:      "chatcmpl-123",
+		Object:  "chat.completion",
+		Model:   "test-model",
+		Created: 1677652288,
+		Choices: []core.Choice{
+			{
+				Index: 0,
+				Message: core.Message{
+					Role:    "assistant",
+					Content: "I'll call the weather tool.",
+					ToolCalls: []core.ToolCall{
+						{
+							ID:   "call_123",
+							Type: "function",
+							Function: core.FunctionCall{
+								Name:      "lookup_weather",
+								Arguments: `{"city":"Warsaw"}`,
+							},
+						},
+					},
+				},
+				FinishReason: "tool_calls",
+			},
+		},
+		Usage: core.Usage{
+			PromptTokens:     10,
+			CompletionTokens: 20,
+			TotalTokens:      30,
+		},
+	}
+
+	result := ConvertChatResponseToResponses(resp)
+
+	if len(result.Output) != 2 {
+		t.Fatalf("len(Output) = %d, want 2", len(result.Output))
+	}
+	if result.Output[1].Type != "function_call" {
+		t.Fatalf("Output[1].Type = %q, want function_call", result.Output[1].Type)
+	}
+	if result.Output[1].CallID != "call_123" {
+		t.Fatalf("Output[1].CallID = %q, want call_123", result.Output[1].CallID)
+	}
+	if result.Output[1].Name != "lookup_weather" {
+		t.Fatalf("Output[1].Name = %q, want lookup_weather", result.Output[1].Name)
+	}
+	if result.Output[1].Arguments != `{"city":"Warsaw"}` {
+		t.Fatalf("Output[1].Arguments = %q, want tool arguments", result.Output[1].Arguments)
 	}
 }
 

@@ -154,12 +154,26 @@ type anthropicOutputConfig struct {
 type anthropicRequest struct {
 	Model        string                 `json:"model"`
 	Messages     []anthropicMessage     `json:"messages"`
+	Tools        []anthropicTool        `json:"tools,omitempty"`
+	ToolChoice   *anthropicToolChoice   `json:"tool_choice,omitempty"`
 	MaxTokens    int                    `json:"max_tokens"`
 	Temperature  *float64               `json:"temperature,omitempty"`
 	System       string                 `json:"system,omitempty"`
 	Stream       bool                   `json:"stream,omitempty"`
 	Thinking     *anthropicThinking     `json:"thinking,omitempty"`
 	OutputConfig *anthropicOutputConfig `json:"output_config,omitempty"`
+}
+
+type anthropicTool struct {
+	Name        string         `json:"name"`
+	Description string         `json:"description,omitempty"`
+	InputSchema map[string]any `json:"input_schema"`
+}
+
+type anthropicToolChoice struct {
+	Type                   string `json:"type"`
+	Name                   string `json:"name,omitempty"`
+	DisableParallelToolUse *bool  `json:"disable_parallel_tool_use,omitempty"`
 }
 
 var adaptiveThinkingPrefixes = []string{
@@ -179,7 +193,18 @@ func isAdaptiveThinkingModel(model string) bool {
 // anthropicMessage represents a message in Anthropic format
 type anthropicMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+type anthropicMessageContentBlock struct {
+	Type      string `json:"type"`
+	Text      string `json:"text,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Input     any    `json:"input,omitempty"`
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	Content   any    `json:"content,omitempty"`
+	IsError   bool   `json:"is_error,omitempty"`
 }
 
 // anthropicResponse represents the Anthropic API response format
@@ -222,9 +247,10 @@ type anthropicStreamEvent struct {
 
 // anthropicDelta represents a delta in streaming response
 type anthropicDelta struct {
-	Type       string `json:"type"`
-	Text       string `json:"text,omitempty"`
-	StopReason string `json:"stop_reason,omitempty"`
+	Type        string `json:"type"`
+	Text        string `json:"text,omitempty"`
+	PartialJSON string `json:"partial_json,omitempty"`
+	StopReason  string `json:"stop_reason,omitempty"`
 }
 
 // anthropicModelInfo represents a model in Anthropic's models API response
@@ -345,6 +371,143 @@ func reasoningEffortToBudgetTokens(effort string) int {
 	}
 }
 
+func convertOpenAIToolsToAnthropic(tools []map[string]any) []anthropicTool {
+	out := make([]anthropicTool, 0, len(tools))
+	for _, tool := range tools {
+		toolType, _ := tool["type"].(string)
+		if toolType != "function" {
+			continue
+		}
+
+		function, ok := tool["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		name, _ := function["name"].(string)
+		if name == "" {
+			continue
+		}
+
+		description, _ := function["description"].(string)
+		inputSchema, ok := function["parameters"].(map[string]any)
+		if !ok || inputSchema == nil {
+			inputSchema = map[string]any{
+				"type":       "object",
+				"properties": map[string]any{},
+			}
+		}
+
+		out = append(out, anthropicTool{
+			Name:        name,
+			Description: description,
+			InputSchema: inputSchema,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func convertOpenAIToolChoiceToAnthropic(choice any) (*anthropicToolChoice, bool) {
+	switch c := choice.(type) {
+	case nil:
+		return nil, false
+	case string:
+		switch strings.TrimSpace(c) {
+		case "", "auto":
+			return &anthropicToolChoice{Type: "auto"}, false
+		case "required":
+			return &anthropicToolChoice{Type: "any"}, false
+		case "none":
+			return nil, true
+		}
+	case map[string]any:
+		choiceType, _ := c["type"].(string)
+		switch choiceType {
+		case "auto", "any":
+			return &anthropicToolChoice{Type: choiceType}, false
+		case "none":
+			return nil, true
+		case "function":
+			if function, ok := c["function"].(map[string]any); ok {
+				name, _ := function["name"].(string)
+				if name != "" {
+					return &anthropicToolChoice{Type: "tool", Name: name}, false
+				}
+			}
+		case "tool":
+			name, _ := c["name"].(string)
+			if name == "" {
+				if function, ok := c["function"].(map[string]any); ok {
+					name, _ = function["name"].(string)
+				}
+			}
+			return &anthropicToolChoice{Type: "tool", Name: name}, false
+		}
+	}
+
+	return nil, false
+}
+
+func applyParallelToolCalls(choice *anthropicToolChoice, parallelToolCalls *bool) *anthropicToolChoice {
+	if choice == nil || parallelToolCalls == nil || *parallelToolCalls {
+		return choice
+	}
+
+	out := *choice
+	disableParallelToolUse := true
+	out.DisableParallelToolUse = &disableParallelToolUse
+	return &out
+}
+
+func parseToolCallArguments(arguments string) any {
+	trimmed := strings.TrimSpace(arguments)
+	if trimmed == "" {
+		return map[string]any{}
+	}
+
+	var parsed any
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		return map[string]any{}
+	}
+	return parsed
+}
+
+func buildAnthropicMessageContent(msg core.Message) any {
+	if msg.Role == "tool" {
+		return []anthropicMessageContentBlock{
+			{
+				Type:      "tool_result",
+				ToolUseID: msg.ToolCallID,
+				Content:   msg.Content,
+			},
+		}
+	}
+
+	if len(msg.ToolCalls) == 0 {
+		return msg.Content
+	}
+
+	blocks := make([]anthropicMessageContentBlock, 0, len(msg.ToolCalls)+1)
+	if strings.TrimSpace(msg.Content) != "" {
+		blocks = append(blocks, anthropicMessageContentBlock{
+			Type: "text",
+			Text: msg.Content,
+		})
+	}
+	for _, toolCall := range msg.ToolCalls {
+		blocks = append(blocks, anthropicMessageContentBlock{
+			Type:  "tool_use",
+			ID:    toolCall.ID,
+			Name:  toolCall.Function.Name,
+			Input: parseToolCallArguments(toolCall.Function.Arguments),
+		})
+	}
+	return blocks
+}
+
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format
 func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 	anthropicReq := &anthropicRequest{
@@ -363,13 +526,29 @@ func convertToAnthropicRequest(req *core.ChatRequest) *anthropicRequest {
 		applyReasoning(anthropicReq, req.Model, req.Reasoning.Effort)
 	}
 
+	anthropicReq.Tools = convertOpenAIToolsToAnthropic(req.Tools)
+	if toolChoice, disableTools := convertOpenAIToolChoiceToAnthropic(req.ToolChoice); disableTools {
+		anthropicReq.Tools = nil
+	} else if len(anthropicReq.Tools) > 0 {
+		if toolChoice == nil && req.ParallelToolCalls != nil && !*req.ParallelToolCalls {
+			toolChoice = &anthropicToolChoice{Type: "auto"}
+		}
+		toolChoice = applyParallelToolCalls(toolChoice, req.ParallelToolCalls)
+		anthropicReq.ToolChoice = toolChoice
+	}
+
 	for _, msg := range req.Messages {
 		if msg.Role == "system" {
 			anthropicReq.System = msg.Content
 		} else {
 			anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-				Role:    msg.Role,
-				Content: msg.Content,
+				Role: func() string {
+					if msg.Role == "tool" {
+						return "user"
+					}
+					return msg.Role
+				}(),
+				Content: buildAnthropicMessageContent(msg),
 			})
 		}
 	}
@@ -382,7 +561,7 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	content := extractTextContent(resp.Content)
 	toolCalls := extractToolCalls(resp.Content)
 
-	finishReason := resp.StopReason
+	finishReason := normalizeAnthropicStopReason(resp.StopReason)
 	if finishReason == "" {
 		finishReason = "stop"
 	}
@@ -455,20 +634,30 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 
 // streamConverter wraps an Anthropic stream and converts it to OpenAI format
 type streamConverter struct {
-	reader *bufio.Reader
-	body   io.ReadCloser
-	model  string
-	msgID  string
-	buffer []byte
-	closed bool
+	reader            *bufio.Reader
+	body              io.ReadCloser
+	model             string
+	msgID             string
+	nextToolCallIndex int
+	toolCalls         map[int]*streamToolCallState
+	buffer            []byte
+	closed            bool
+}
+
+type streamToolCallState struct {
+	ID        string
+	Name      string
+	Arguments strings.Builder
+	Index     int
 }
 
 func newStreamConverter(body io.ReadCloser, model string) *streamConverter {
 	return &streamConverter{
-		reader: bufio.NewReader(body),
-		body:   body,
-		model:  model,
-		buffer: make([]byte, 0, 1024),
+		reader:    bufio.NewReader(body),
+		body:      body,
+		model:     model,
+		toolCalls: make(map[int]*streamToolCallState),
+		buffer:    make([]byte, 0, 1024),
 	}
 }
 
@@ -542,6 +731,68 @@ func (sc *streamConverter) Close() error {
 	return sc.body.Close()
 }
 
+func extractInitialToolArguments(input json.RawMessage) string {
+	if len(input) == 0 {
+		return ""
+	}
+
+	trimmed := strings.TrimSpace(string(input))
+	if trimmed == "" || trimmed == "{}" || trimmed == "null" {
+		return ""
+	}
+
+	var parsed any
+	if err := json.Unmarshal(input, &parsed); err != nil {
+		return trimmed
+	}
+
+	canonical, err := json.Marshal(parsed)
+	if err != nil {
+		return trimmed
+	}
+
+	return string(canonical)
+}
+
+func normalizeAnthropicStopReason(stopReason string) string {
+	if stopReason == "tool_use" {
+		return "tool_calls"
+	}
+	return stopReason
+}
+
+func (sc *streamConverter) formatChatChunk(delta map[string]any, finishReason any, usage *anthropicUsage) string {
+	chunk := map[string]any{
+		"id":       sc.msgID,
+		"object":   "chat.completion.chunk",
+		"created":  time.Now().Unix(),
+		"model":    sc.model,
+		"provider": "anthropic",
+		"choices": []map[string]any{
+			{
+				"index":         0,
+				"delta":         delta,
+				"finish_reason": finishReason,
+			},
+		},
+	}
+	if usage != nil {
+		chunk["usage"] = map[string]any{
+			"prompt_tokens":     usage.InputTokens,
+			"completion_tokens": usage.OutputTokens,
+			"total_tokens":      usage.InputTokens + usage.OutputTokens,
+		}
+	}
+
+	jsonData, err := json.Marshal(chunk)
+	if err != nil {
+		slog.Error("failed to marshal chat completion chunk", "error", err, "msg_id", sc.msgID)
+		return ""
+	}
+
+	return fmt.Sprintf("data: %s\n\n", jsonData)
+}
+
 func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 	switch event.Type {
 	case "message_start":
@@ -551,32 +802,67 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		return ""
 
 	case "content_block_start":
+		if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
+			state := &streamToolCallState{
+				ID:    event.ContentBlock.ID,
+				Name:  event.ContentBlock.Name,
+				Index: sc.nextToolCallIndex,
+			}
+			sc.nextToolCallIndex++
+
+			initialArguments := extractInitialToolArguments(event.ContentBlock.Input)
+			if initialArguments != "" {
+				_, _ = state.Arguments.WriteString(initialArguments)
+			}
+			sc.toolCalls[event.Index] = state
+
+			return sc.formatChatChunk(map[string]any{
+				"tool_calls": []map[string]any{
+					{
+						"index": state.Index,
+						"id":    state.ID,
+						"type":  "function",
+						"function": map[string]any{
+							"name":      state.Name,
+							"arguments": initialArguments,
+						},
+					},
+				},
+			}, nil, nil)
+		}
 		return ""
 
 	case "content_block_delta":
-		if event.Delta != nil && event.Delta.Text != "" {
-			chunk := map[string]interface{}{
-				"id":       sc.msgID,
-				"object":   "chat.completion.chunk",
-				"created":  time.Now().Unix(),
-				"model":    sc.model,
-				"provider": "anthropic",
-				"choices": []map[string]interface{}{
-					{
-						"index": 0,
-						"delta": map[string]interface{}{
-							"content": event.Delta.Text,
-						},
-						"finish_reason": nil,
-					},
-				},
+		if event.Delta == nil {
+			return ""
+		}
+
+		switch event.Delta.Type {
+		case "text_delta":
+			if event.Delta.Text != "" {
+				return sc.formatChatChunk(map[string]any{
+					"content": event.Delta.Text,
+				}, nil, nil)
 			}
-			jsonData, err := json.Marshal(chunk)
-			if err != nil {
-				slog.Error("failed to marshal content_block_delta chunk", "error", err, "msg_id", sc.msgID)
+		case "input_json_delta":
+			if event.Delta.PartialJSON == "" {
 				return ""
 			}
-			return fmt.Sprintf("data: %s\n\n", string(jsonData))
+			state := sc.toolCalls[event.Index]
+			if state == nil {
+				return ""
+			}
+			_, _ = state.Arguments.WriteString(event.Delta.PartialJSON)
+			return sc.formatChatChunk(map[string]any{
+				"tool_calls": []map[string]any{
+					{
+						"index": state.Index,
+						"function": map[string]any{
+							"arguments": event.Delta.PartialJSON,
+						},
+					},
+				},
+			}, nil, nil)
 		}
 
 	case "content_block_stop":
@@ -587,36 +873,9 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		if (event.Delta != nil && event.Delta.StopReason != "") || event.Usage != nil {
 			var finishReason interface{}
 			if event.Delta != nil && event.Delta.StopReason != "" {
-				finishReason = event.Delta.StopReason
+				finishReason = normalizeAnthropicStopReason(event.Delta.StopReason)
 			}
-			chunk := map[string]interface{}{
-				"id":       sc.msgID,
-				"object":   "chat.completion.chunk",
-				"created":  time.Now().Unix(),
-				"model":    sc.model,
-				"provider": "anthropic",
-				"choices": []map[string]interface{}{
-					{
-						"index":         0,
-						"delta":         map[string]interface{}{},
-						"finish_reason": finishReason,
-					},
-				},
-			}
-			// Include usage data if present (OpenAI format)
-			if event.Usage != nil {
-				chunk["usage"] = map[string]interface{}{
-					"prompt_tokens":     event.Usage.InputTokens,
-					"completion_tokens": event.Usage.OutputTokens,
-					"total_tokens":      event.Usage.InputTokens + event.Usage.OutputTokens,
-				}
-			}
-			jsonData, err := json.Marshal(chunk)
-			if err != nil {
-				slog.Error("failed to marshal message_delta chunk", "error", err, "msg_id", sc.msgID)
-				return ""
-			}
-			return fmt.Sprintf("data: %s\n\n", string(jsonData))
+			return sc.formatChatChunk(map[string]any{}, finishReason, event.Usage)
 		}
 
 	case "message_stop":
@@ -666,9 +925,11 @@ func parseCreatedAt(createdAt string) int64 {
 
 // convertResponsesRequestToAnthropic converts a ResponsesRequest to Anthropic format
 func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRequest {
+	chatReq := providers.ConvertResponsesRequestToChat(req)
+
 	anthropicReq := &anthropicRequest{
 		Model:       req.Model,
-		Messages:    make([]anthropicMessage, 0),
+		Messages:    make([]anthropicMessage, 0, len(chatReq.Messages)),
 		MaxTokens:   4096, // Default max tokens
 		Temperature: req.Temperature,
 		Stream:      req.Stream,
@@ -682,54 +943,34 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) *anthropicRe
 		applyReasoning(anthropicReq, req.Model, req.Reasoning.Effort)
 	}
 
-	// Set system instruction if provided
-	if req.Instructions != "" {
-		anthropicReq.System = req.Instructions
+	anthropicReq.Tools = convertOpenAIToolsToAnthropic(chatReq.Tools)
+	if toolChoice, disableTools := convertOpenAIToolChoiceToAnthropic(chatReq.ToolChoice); disableTools {
+		anthropicReq.Tools = nil
+	} else if len(anthropicReq.Tools) > 0 {
+		if toolChoice == nil && chatReq.ParallelToolCalls != nil && !*chatReq.ParallelToolCalls {
+			toolChoice = &anthropicToolChoice{Type: "auto"}
+		}
+		toolChoice = applyParallelToolCalls(toolChoice, chatReq.ParallelToolCalls)
+		anthropicReq.ToolChoice = toolChoice
 	}
 
-	// Convert input to messages
-	switch input := req.Input.(type) {
-	case string:
-		anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-			Role:    "user",
-			Content: input,
-		})
-	case []interface{}:
-		for _, item := range input {
-			if msgMap, ok := item.(map[string]interface{}); ok {
-				role, _ := msgMap["role"].(string)
-				content := extractContentFromResponsesInput(msgMap["content"])
-				if role != "" && content != "" {
-					anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-						Role:    role,
-						Content: content,
-					})
-				}
-			}
+	for _, msg := range chatReq.Messages {
+		if msg.Role == "system" {
+			anthropicReq.System = msg.Content
+			continue
 		}
+		anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
+			Role: func() string {
+				if msg.Role == "tool" {
+					return "user"
+				}
+				return msg.Role
+			}(),
+			Content: buildAnthropicMessageContent(msg),
+		})
 	}
 
 	return anthropicReq
-}
-
-// extractContentFromResponsesInput extracts text content from responses input
-func extractContentFromResponsesInput(content interface{}) string {
-	switch c := content.(type) {
-	case string:
-		return c
-	case []interface{}:
-		// Array of content parts - extract text
-		var texts []string
-		for _, part := range c {
-			if partMap, ok := part.(map[string]interface{}); ok {
-				if text, ok := partMap["text"].(string); ok {
-					texts = append(texts, text)
-				}
-			}
-		}
-		return strings.Join(texts, " ")
-	}
-	return ""
 }
 
 // extractTextContent returns the text from the last "text" content block.
@@ -786,6 +1027,35 @@ func extractToolCalls(blocks []anthropicContent) []core.ToolCall {
 // convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse
 func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) *core.ResponsesResponse {
 	content := extractTextContent(resp.Content)
+	toolCalls := extractToolCalls(resp.Content)
+
+	output := make([]core.ResponsesOutputItem, 0, len(toolCalls)+1)
+	if content != "" || len(toolCalls) == 0 {
+		output = append(output, core.ResponsesOutputItem{
+			ID:     "msg_" + uuid.New().String(),
+			Type:   "message",
+			Role:   "assistant",
+			Status: "completed",
+			Content: []core.ResponsesContentItem{
+				{
+					Type:        "output_text",
+					Text:        content,
+					Annotations: []string{},
+				},
+			},
+		})
+	}
+	for _, toolCall := range toolCalls {
+		callID := responsesFunctionCallCallID(toolCall.ID)
+		output = append(output, core.ResponsesOutputItem{
+			ID:        responsesFunctionCallItemID(callID),
+			Type:      "function_call",
+			Status:    "completed",
+			CallID:    callID,
+			Name:      toolCall.Function.Name,
+			Arguments: toolCall.Function.Arguments,
+		})
+	}
 
 	return &core.ResponsesResponse{
 		ID:        resp.ID,
@@ -793,22 +1063,8 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		CreatedAt: time.Now().Unix(),
 		Model:     model,
 		Status:    "completed",
-		Output: []core.ResponsesOutputItem{
-			{
-				ID:     "msg_" + uuid.New().String(),
-				Type:   "message",
-				Role:   "assistant",
-				Status: "completed",
-				Content: []core.ResponsesContentItem{
-					{
-						Type:        "output_text",
-						Text:        content,
-						Annotations: []string{},
-					},
-				},
-			},
-		},
-		Usage: buildAnthropicResponsesUsage(resp.Usage),
+		Output:    output,
+		Usage:     buildAnthropicResponsesUsage(resp.Usage),
 	}
 }
 
@@ -1213,14 +1469,25 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 
 // responsesStreamConverter wraps an Anthropic stream and converts it to Responses API format
 type responsesStreamConverter struct {
-	reader      *bufio.Reader
-	body        io.ReadCloser
-	model       string
-	responseID  string
-	buffer      []byte
-	closed      bool
-	sentDone    bool
-	cachedUsage *anthropicUsage // Stores usage from message_delta for inclusion in response.completed
+	reader          *bufio.Reader
+	body            io.ReadCloser
+	model           string
+	responseID      string
+	nextOutputIndex int
+	toolCalls       map[int]*responsesToolCallState
+	buffer          []byte
+	closed          bool
+	sentDone        bool
+	cachedUsage     *anthropicUsage // Stores usage from message_delta for inclusion in response.completed
+}
+
+type responsesToolCallState struct {
+	ID          string
+	CallID      string
+	Name        string
+	OutputIndex int
+	Arguments   strings.Builder
+	Completed   bool
 }
 
 func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
@@ -1229,6 +1496,7 @@ func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStr
 		body:       body,
 		model:      model,
 		responseID: "resp_" + uuid.New().String(),
+		toolCalls:  make(map[int]*responsesToolCallState),
 		buffer:     make([]byte, 0, 1024),
 	}
 }
@@ -1334,6 +1602,60 @@ func (sc *responsesStreamConverter) Close() error {
 	return sc.body.Close()
 }
 
+func responsesFunctionCallCallID(callID string) string {
+	if strings.TrimSpace(callID) != "" {
+		return callID
+	}
+	return "call_" + uuid.New().String()
+}
+
+func responsesFunctionCallItemID(callID string) string {
+	normalizedCallID := strings.TrimSpace(callID)
+	if normalizedCallID == "" {
+		normalizedCallID = "call_" + uuid.New().String()
+	}
+	return "fc_" + normalizedCallID
+}
+
+func (sc *responsesStreamConverter) writeResponsesEvent(eventName string, payload map[string]any) string {
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		slog.Error("failed to marshal responses stream event", "error", err, "event", eventName, "response_id", sc.responseID)
+		return ""
+	}
+	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventName, jsonData)
+}
+
+func (sc *responsesStreamConverter) newResponsesToolCallState(contentBlock *anthropicContent) *responsesToolCallState {
+	callID := responsesFunctionCallCallID(contentBlock.ID)
+	state := &responsesToolCallState{
+		ID:          responsesFunctionCallItemID(callID),
+		CallID:      callID,
+		Name:        contentBlock.Name,
+		OutputIndex: sc.nextOutputIndex,
+	}
+	sc.nextOutputIndex++
+
+	initialArguments := extractInitialToolArguments(contentBlock.Input)
+	if initialArguments != "" {
+		_, _ = state.Arguments.WriteString(initialArguments)
+	}
+
+	return state
+}
+
+func (sc *responsesStreamConverter) renderResponsesToolCallItem(state *responsesToolCallState, status string) map[string]any {
+	item := map[string]any{
+		"id":        state.ID,
+		"type":      "function_call",
+		"status":    status,
+		"call_id":   state.CallID,
+		"name":      state.Name,
+		"arguments": state.Arguments.String(),
+	}
+	return item
+}
+
 func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) string {
 	switch event.Type {
 	case "message_start":
@@ -1356,19 +1678,71 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		}
 		return fmt.Sprintf("event: response.created\ndata: %s\n\n", jsonData)
 
+	case "content_block_start":
+		if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
+			state := sc.newResponsesToolCallState(event.ContentBlock)
+			sc.toolCalls[event.Index] = state
+			return sc.writeResponsesEvent("response.output_item.added", map[string]any{
+				"type":         "response.output_item.added",
+				"item":         sc.renderResponsesToolCallItem(state, "in_progress"),
+				"output_index": state.OutputIndex,
+			})
+		}
+		return ""
+
 	case "content_block_delta":
-		if event.Delta != nil && event.Delta.Text != "" {
-			deltaEvent := map[string]interface{}{
-				"type":  "response.output_text.delta",
-				"delta": event.Delta.Text,
+		if event.Delta == nil {
+			return ""
+		}
+
+		switch event.Delta.Type {
+		case "text_delta":
+			if event.Delta.Text != "" {
+				deltaEvent := map[string]interface{}{
+					"type":  "response.output_text.delta",
+					"delta": event.Delta.Text,
+				}
+				jsonData, err := json.Marshal(deltaEvent)
+				if err != nil {
+					slog.Error("failed to marshal content delta event", "error", err, "response_id", sc.responseID)
+					return ""
+				}
+				return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
 			}
-			jsonData, err := json.Marshal(deltaEvent)
-			if err != nil {
-				slog.Error("failed to marshal content delta event", "error", err, "response_id", sc.responseID)
+		case "input_json_delta":
+			if event.Delta.PartialJSON == "" {
 				return ""
 			}
-			return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
+			state := sc.toolCalls[event.Index]
+			if state == nil {
+				return ""
+			}
+			_, _ = state.Arguments.WriteString(event.Delta.PartialJSON)
+			return sc.writeResponsesEvent("response.function_call_arguments.delta", map[string]any{
+				"type":         "response.function_call_arguments.delta",
+				"item_id":      state.ID,
+				"output_index": state.OutputIndex,
+				"delta":        event.Delta.PartialJSON,
+			})
 		}
+		return ""
+
+	case "content_block_stop":
+		state := sc.toolCalls[event.Index]
+		if state == nil || state.Completed {
+			return ""
+		}
+		state.Completed = true
+		return sc.writeResponsesEvent("response.function_call_arguments.done", map[string]any{
+			"type":         "response.function_call_arguments.done",
+			"item_id":      state.ID,
+			"output_index": state.OutputIndex,
+			"arguments":    state.Arguments.String(),
+		}) + sc.writeResponsesEvent("response.output_item.done", map[string]any{
+			"type":         "response.output_item.done",
+			"item":         sc.renderResponsesToolCallItem(state, "completed"),
+			"output_index": state.OutputIndex,
+		})
 
 	case "message_delta":
 		// Capture usage data for inclusion in response.completed

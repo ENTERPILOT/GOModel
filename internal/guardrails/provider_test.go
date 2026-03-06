@@ -155,13 +155,32 @@ func TestGuardedProvider_ChatPreservesFields(t *testing.T) {
 
 	temp := 0.7
 	maxTok := 100
+	parallelToolCalls := false
 	req := &core.ChatRequest{
-		Model:       "gpt-4",
-		Temperature: &temp,
-		MaxTokens:   &maxTok,
-		Messages:    []core.Message{{Role: "user", Content: "hello"}},
-		Stream:      true,
-		Reasoning:   &core.Reasoning{Effort: "high"},
+		Model:             "gpt-4",
+		Temperature:       &temp,
+		MaxTokens:         &maxTok,
+		Tools:             []map[string]any{{"type": "function"}},
+		ToolChoice:        map[string]any{"type": "function", "function": map[string]any{"name": "lookup_weather"}},
+		ParallelToolCalls: &parallelToolCalls,
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `{"city":"Warsaw"}`,
+						},
+					},
+				},
+			},
+			{Role: "tool", ToolCallID: "call_123", Content: `{"temperature_c":21}`},
+		},
+		Stream:    true,
+		Reasoning: &core.Reasoning{Effort: "high"},
 	}
 
 	_, err := guarded.ChatCompletion(context.Background(), req)
@@ -179,11 +198,29 @@ func TestGuardedProvider_ChatPreservesFields(t *testing.T) {
 	if got.MaxTokens == nil || *got.MaxTokens != 100 {
 		t.Errorf("max_tokens not preserved")
 	}
+	if len(got.Tools) != 1 {
+		t.Errorf("tools not preserved")
+	}
+	if got.ToolChoice == nil {
+		t.Errorf("tool_choice not preserved")
+	}
+	if got.ParallelToolCalls == nil || *got.ParallelToolCalls {
+		t.Errorf("parallel_tool_calls not preserved")
+	}
 	if !got.Stream {
 		t.Errorf("stream not preserved")
 	}
 	if got.Reasoning == nil || got.Reasoning.Effort != "high" {
 		t.Errorf("reasoning not preserved")
+	}
+	if len(got.Messages) != 3 {
+		t.Fatalf("len(messages) = %d, want 3", len(got.Messages))
+	}
+	if len(got.Messages[1].ToolCalls) != 1 || got.Messages[1].ToolCalls[0].ID != "call_123" {
+		t.Errorf("assistant tool_calls not preserved: %+v", got.Messages[1].ToolCalls)
+	}
+	if got.Messages[2].ToolCallID != "call_123" {
+		t.Errorf("tool_call_id not preserved: %+v", got.Messages[2])
 	}
 }
 

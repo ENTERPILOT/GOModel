@@ -1779,6 +1779,9 @@ const docTemplate = `{
                 "model": {
                     "type": "string"
                 },
+                "parallel_tool_calls": {
+                    "type": "boolean"
+                },
                 "provider": {
                     "type": "string"
                 },
@@ -1793,6 +1796,17 @@ const docTemplate = `{
                 },
                 "temperature": {
                     "type": "number"
+                },
+                "tool_choice": {
+                    "description": "string or object",
+                    "type": "object"
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
                 }
             }
         },
@@ -2038,6 +2052,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "tool_call_id": {
                     "type": "string"
                 },
                 "tool_calls": {
@@ -2289,6 +2306,12 @@ const docTemplate = `{
         "core.ResponsesOutputItem": {
             "type": "object",
             "properties": {
+                "arguments": {
+                    "type": "string"
+                },
+                "call_id": {
+                    "type": "string"
+                },
                 "content": {
                     "type": "array",
                     "items": {
@@ -2296,6 +2319,9 @@ const docTemplate = `{
                     }
                 },
                 "id": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 },
                 "role": {
@@ -2333,6 +2359,9 @@ const docTemplate = `{
                 "model": {
                     "type": "string"
                 },
+                "parallel_tool_calls": {
+                    "type": "boolean"
+                },
                 "provider": {
                     "type": "string"
                 },
@@ -2347,6 +2376,10 @@ const docTemplate = `{
                 },
                 "temperature": {
                     "type": "number"
+                },
+                "tool_choice": {
+                    "description": "string or object",
+                    "type": "object"
                 },
                 "tools": {
                     "type": "array",

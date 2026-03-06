@@ -304,6 +304,164 @@ data: {"type":"message_stop"}
 	}
 }
 
+func TestStreamChatCompletion_WithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"War"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"saw\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "What's the weather?"},
+		},
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundToolStart := false
+	foundArgumentsDelta := false
+	foundFinish := false
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+
+		choices, ok := event.Payload["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if finishReason, _ := choice["finish_reason"].(string); finishReason == "tool_calls" {
+			foundFinish = true
+		}
+
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		toolCalls, ok := delta["tool_calls"].([]interface{})
+		if !ok || len(toolCalls) == 0 {
+			continue
+		}
+		toolCall, ok := toolCalls[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		function, _ := toolCall["function"].(map[string]interface{})
+
+		if toolCall["id"] == "toolu_123" && function["name"] == "lookup_weather" && function["arguments"] == "" {
+			foundToolStart = true
+		}
+		if function["arguments"] == "{\"city\":\"War" || function["arguments"] == "saw\"}" {
+			foundArgumentsDelta = true
+		}
+	}
+
+	if !foundToolStart {
+		t.Fatal("expected a streaming tool call header chunk")
+	}
+	if !foundArgumentsDelta {
+		t.Fatal("expected a streaming tool call arguments delta chunk")
+	}
+	if !foundFinish {
+		t.Fatal("expected a final tool_calls finish_reason chunk")
+	}
+}
+
+type testSSEEvent struct {
+	Name    string
+	Payload map[string]interface{}
+	Done    bool
+}
+
+func parseTestSSEEvents(t *testing.T, raw string) []testSSEEvent {
+	t.Helper()
+
+	lines := strings.Split(raw, "\n")
+	events := make([]testSSEEvent, 0)
+	currentEventName := ""
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "event:") {
+			currentEventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			events = append(events, testSSEEvent{Name: currentEventName, Done: true})
+			currentEventName = ""
+			continue
+		}
+
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			t.Fatalf("failed to unmarshal SSE payload %q: %v", data, err)
+		}
+
+		events = append(events, testSSEEvent{
+			Name:    currentEventName,
+			Payload: payload,
+		})
+		currentEventName = ""
+	}
+
+	return events
+}
+
 func TestListModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request path and method
@@ -555,6 +713,122 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "request with function tools",
+			input: &core.ChatRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Tools: []map[string]any{
+					{
+						"type": "function",
+						"function": map[string]any{
+							"name":        "lookup_weather",
+							"description": "Get the weather for a city.",
+							"parameters": map[string]any{
+								"type": "object",
+							},
+						},
+					},
+				},
+				ToolChoice: map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name": "lookup_weather",
+					},
+				},
+				Messages: []core.Message{
+					{Role: "user", Content: "What's the weather?"},
+				},
+			},
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Tools) != 1 {
+					t.Fatalf("len(Tools) = %d, want 1", len(req.Tools))
+				}
+				if req.Tools[0].Name != "lookup_weather" {
+					t.Fatalf("tool name = %q, want lookup_weather", req.Tools[0].Name)
+				}
+				if req.ToolChoice == nil || req.ToolChoice.Type != "tool" || req.ToolChoice.Name != "lookup_weather" {
+					t.Fatalf("tool choice = %+v, want named tool choice", req.ToolChoice)
+				}
+			},
+		},
+		{
+			name: "request disables parallel tool use",
+			input: func() *core.ChatRequest {
+				parallelToolCalls := false
+				return &core.ChatRequest{
+					Model: "claude-sonnet-4-5-20250929",
+					Tools: []map[string]any{
+						{
+							"type": "function",
+							"function": map[string]any{
+								"name": "lookup_weather",
+							},
+						},
+					},
+					ParallelToolCalls: &parallelToolCalls,
+					Messages: []core.Message{
+						{Role: "user", Content: "What's the weather?"},
+					},
+				}
+			}(),
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if req.ToolChoice == nil {
+					t.Fatal("ToolChoice should not be nil when parallel_tool_calls=false")
+				}
+				if req.ToolChoice.Type != "auto" {
+					t.Fatalf("tool choice type = %q, want auto", req.ToolChoice.Type)
+				}
+				if req.ToolChoice.DisableParallelToolUse == nil || !*req.ToolChoice.DisableParallelToolUse {
+					t.Fatalf("disable_parallel_tool_use = %#v, want true", req.ToolChoice.DisableParallelToolUse)
+				}
+			},
+		},
+		{
+			name: "request with tool result messages",
+			input: &core.ChatRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Messages: []core.Message{
+					{
+						Role: "assistant",
+						ToolCalls: []core.ToolCall{
+							{
+								ID:   "call_123",
+								Type: "function",
+								Function: core.FunctionCall{
+									Name:      "lookup_weather",
+									Arguments: `{"city":"Warsaw"}`,
+								},
+							},
+						},
+					},
+					{Role: "tool", ToolCallID: "call_123", Content: `{"temperature_c":21}`},
+				},
+			},
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+
+				assistantBlocks, ok := req.Messages[0].Content.([]anthropicMessageContentBlock)
+				if !ok || len(assistantBlocks) != 1 {
+					t.Fatalf("assistant content = %#v, want one tool_use block", req.Messages[0].Content)
+				}
+				if assistantBlocks[0].Type != "tool_use" || assistantBlocks[0].Name != "lookup_weather" || assistantBlocks[0].ID != "call_123" {
+					t.Fatalf("assistant tool block = %+v, want lookup_weather/call_123", assistantBlocks[0])
+				}
+
+				toolBlocks, ok := req.Messages[1].Content.([]anthropicMessageContentBlock)
+				if !ok || len(toolBlocks) != 1 {
+					t.Fatalf("tool content = %#v, want one tool_result block", req.Messages[1].Content)
+				}
+				if req.Messages[1].Role != "user" {
+					t.Fatalf("tool role = %q, want user", req.Messages[1].Role)
+				}
+				if toolBlocks[0].Type != "tool_result" || toolBlocks[0].ToolUseID != "call_123" || toolBlocks[0].Content != `{"temperature_c":21}` {
+					t.Fatalf("tool result block = %+v, want call_123 payload", toolBlocks[0])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -612,6 +886,43 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 30 {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
+	}
+}
+
+func TestConvertFromAnthropicResponse_WithToolUseStopReason(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_tool_use",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{
+				Type:  "tool_use",
+				ID:    "toolu_123",
+				Name:  "lookup_weather",
+				Input: json.RawMessage(`{"city":"Warsaw"}`),
+			},
+		},
+		StopReason: "tool_use",
+		Usage: anthropicUsage{
+			InputTokens:  12,
+			OutputTokens: 7,
+		},
+	}
+
+	result := convertFromAnthropicResponse(resp)
+
+	if len(result.Choices) != 1 {
+		t.Fatalf("len(Choices) = %d, want 1", len(result.Choices))
+	}
+	if result.Choices[0].FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", result.Choices[0].FinishReason)
+	}
+	if len(result.Choices[0].Message.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(result.Choices[0].Message.ToolCalls))
+	}
+	if result.Choices[0].Message.ToolCalls[0].ID != "toolu_123" {
+		t.Fatalf("ToolCalls[0].ID = %q, want toolu_123", result.Choices[0].Message.ToolCalls[0].ID)
 	}
 }
 
@@ -1232,6 +1543,104 @@ data: {"type":"message_stop"}
 	}
 }
 
+func TestStreamResponses_WithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"War"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"saw\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: "What's the weather?",
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundAdded := false
+	foundArgumentsDelta := false
+	foundArgumentsDone := false
+	foundItemDone := false
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+		switch event.Name {
+		case "response.output_item.added":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "function_call" && item["call_id"] == "toolu_123" && item["name"] == "lookup_weather" {
+				foundAdded = true
+			}
+		case "response.function_call_arguments.delta":
+			if event.Payload["delta"] == "{\"city\":\"War" || event.Payload["delta"] == "saw\"}" {
+				foundArgumentsDelta = true
+			}
+		case "response.function_call_arguments.done":
+			if event.Payload["arguments"] == `{"city":"Warsaw"}` {
+				foundArgumentsDone = true
+			}
+		case "response.output_item.done":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "function_call" && item["arguments"] == `{"city":"Warsaw"}` {
+				foundItemDone = true
+			}
+		}
+	}
+
+	if !foundAdded {
+		t.Fatal("expected response.output_item.added for function_call")
+	}
+	if !foundArgumentsDelta {
+		t.Fatal("expected response.function_call_arguments.delta for function_call")
+	}
+	if !foundArgumentsDone {
+		t.Fatal("expected response.function_call_arguments.done for function_call")
+	}
+	if !foundItemDone {
+		t.Fatal("expected response.output_item.done for function_call")
+	}
+}
+
 func TestResponsesWithContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simulate a slow response
@@ -1346,6 +1755,80 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "with tools and parallel tool calls disabled",
+			input: func() *core.ResponsesRequest {
+				parallelToolCalls := false
+				return &core.ResponsesRequest{
+					Model: "claude-sonnet-4-5-20250929",
+					Input: "Hello",
+					Tools: []map[string]any{
+						{
+							"type": "function",
+							"function": map[string]any{
+								"name": "lookup_weather",
+							},
+						},
+					},
+					ToolChoice:        "auto",
+					ParallelToolCalls: &parallelToolCalls,
+				}
+			}(),
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Tools) != 1 {
+					t.Fatalf("len(Tools) = %d, want 1", len(req.Tools))
+				}
+				if req.ToolChoice == nil {
+					t.Fatal("ToolChoice should not be nil")
+				}
+				if req.ToolChoice.DisableParallelToolUse == nil || !*req.ToolChoice.DisableParallelToolUse {
+					t.Fatalf("disable_parallel_tool_use = %#v, want true", req.ToolChoice.DisableParallelToolUse)
+				}
+			},
+		},
+		{
+			name: "with function call loop input items",
+			input: &core.ResponsesRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Input: []interface{}{
+					map[string]interface{}{
+						"type":      "function_call",
+						"call_id":   "call_123",
+						"name":      "lookup_weather",
+						"arguments": `{"city":"Warsaw"}`,
+					},
+					map[string]interface{}{
+						"type":    "function_call_output",
+						"call_id": "call_123",
+						"output":  map[string]interface{}{"temperature_c": 21},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+
+				assistantBlocks, ok := req.Messages[0].Content.([]anthropicMessageContentBlock)
+				if !ok || len(assistantBlocks) != 1 {
+					t.Fatalf("assistant content = %#v, want one tool_use block", req.Messages[0].Content)
+				}
+				if assistantBlocks[0].Type != "tool_use" || assistantBlocks[0].ID != "call_123" || assistantBlocks[0].Name != "lookup_weather" {
+					t.Fatalf("assistant tool block = %+v, want lookup_weather/call_123", assistantBlocks[0])
+				}
+
+				toolBlocks, ok := req.Messages[1].Content.([]anthropicMessageContentBlock)
+				if !ok || len(toolBlocks) != 1 {
+					t.Fatalf("tool content = %#v, want one tool_result block", req.Messages[1].Content)
+				}
+				if req.Messages[1].Role != "user" {
+					t.Fatalf("tool role = %q, want user", req.Messages[1].Role)
+				}
+				if toolBlocks[0].Type != "tool_result" || toolBlocks[0].ToolUseID != "call_123" || toolBlocks[0].Content != `{"temperature_c":21}` {
+					t.Fatalf("tool result block = %+v, want call_123 payload", toolBlocks[0])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1415,6 +1898,53 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	}
 }
 
+func TestConvertAnthropicResponseToResponses_WithToolUse(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_123",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{Type: "text", Text: "I'll check that for you."},
+			{
+				Type:  "tool_use",
+				ID:    "toolu_123",
+				Name:  "lookup_weather",
+				Input: json.RawMessage(`{"city":"Warsaw"}`),
+			},
+		},
+		StopReason: "tool_use",
+		Usage: anthropicUsage{
+			InputTokens:  10,
+			OutputTokens: 20,
+		},
+	}
+
+	result := convertAnthropicResponseToResponses(resp, "claude-sonnet-4-5-20250929")
+
+	if len(result.Output) != 2 {
+		t.Fatalf("len(Output) = %d, want 2", len(result.Output))
+	}
+	if result.Output[0].Type != "message" {
+		t.Fatalf("Output[0].Type = %q, want message", result.Output[0].Type)
+	}
+	if result.Output[0].Content[0].Text != "I'll check that for you." {
+		t.Fatalf("Output[0].Content[0].Text = %q, want tool preamble", result.Output[0].Content[0].Text)
+	}
+	if result.Output[1].Type != "function_call" {
+		t.Fatalf("Output[1].Type = %q, want function_call", result.Output[1].Type)
+	}
+	if result.Output[1].CallID != "toolu_123" {
+		t.Fatalf("Output[1].CallID = %q, want toolu_123", result.Output[1].CallID)
+	}
+	if result.Output[1].Name != "lookup_weather" {
+		t.Fatalf("Output[1].Name = %q, want lookup_weather", result.Output[1].Name)
+	}
+	if result.Output[1].Arguments != `{"city":"Warsaw"}` {
+		t.Fatalf("Output[1].Arguments = %q, want canonical JSON", result.Output[1].Arguments)
+	}
+}
+
 func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -1472,18 +2002,18 @@ func TestConvertAnthropicResponseToResponses_WithThinkingBlocks(t *testing.T) {
 
 func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 	tests := []struct {
-		name                string
-		model               string
-		reasoning           *core.Reasoning
-		maxTokens           *int
-		setTemperature      bool
-		setTemperatureOne   bool
-		expectedThinkType   string
-		expectedBudget      int
-		expectedEffort      string
-		expectedMaxTokens   int
-		expectNilTemp       bool
-		expectedTemp        *float64
+		name              string
+		model             string
+		reasoning         *core.Reasoning
+		maxTokens         *int
+		setTemperature    bool
+		setTemperatureOne bool
+		expectedThinkType string
+		expectedBudget    int
+		expectedEffort    string
+		expectedMaxTokens int
+		expectNilTemp     bool
+		expectedTemp      *float64
 	}{
 		{
 			name:              "reasoning nil - no thinking",
@@ -1561,16 +2091,16 @@ func TestConvertToAnthropicRequest_ReasoningEffort(t *testing.T) {
 			expectNilTemp:     true,
 		},
 		{
-			name:                "legacy model - preserves temperature=1.0 with reasoning",
-			model:               "claude-3-5-sonnet-20241022",
-			reasoning:           &core.Reasoning{Effort: "medium"},
-			maxTokens:           intPtr(15000),
-			setTemperatureOne:   true,
-			expectedThinkType:   "enabled",
-			expectedBudget:      10000,
-			expectedMaxTokens:   15000,
-			expectNilTemp:       false,
-			expectedTemp:        float64Ptr(1.0),
+			name:              "legacy model - preserves temperature=1.0 with reasoning",
+			model:             "claude-3-5-sonnet-20241022",
+			reasoning:         &core.Reasoning{Effort: "medium"},
+			maxTokens:         intPtr(15000),
+			setTemperatureOne: true,
+			expectedThinkType: "enabled",
+			expectedBudget:    10000,
+			expectedMaxTokens: 15000,
+			expectNilTemp:     false,
+			expectedTemp:      float64Ptr(1.0),
 		},
 		{
 			name:              "4.6 model - adaptive thinking with high effort",

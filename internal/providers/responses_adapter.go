@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"strings"
 
@@ -21,11 +22,14 @@ type ChatProvider interface {
 // ConvertResponsesRequestToChat converts a ResponsesRequest to a ChatRequest.
 func ConvertResponsesRequestToChat(req *core.ResponsesRequest) *core.ChatRequest {
 	chatReq := &core.ChatRequest{
-		Model:       req.Model,
-		Provider:    req.Provider,
-		Messages:    make([]core.Message, 0),
-		Temperature: req.Temperature,
-		Stream:      req.Stream,
+		Model:             req.Model,
+		Provider:          req.Provider,
+		Messages:          make([]core.Message, 0),
+		Tools:             req.Tools,
+		ToolChoice:        req.ToolChoice,
+		ParallelToolCalls: req.ParallelToolCalls,
+		Temperature:       req.Temperature,
+		Stream:            req.Stream,
 	}
 
 	if req.MaxOutputTokens != nil {
@@ -40,29 +44,122 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) *core.ChatRequest
 		})
 	}
 
-	// Convert input to messages
-	switch input := req.Input.(type) {
-	case string:
-		chatReq.Messages = append(chatReq.Messages, core.Message{
-			Role:    "user",
-			Content: input,
-		})
-	case []interface{}:
-		for _, item := range input {
-			if msgMap, ok := item.(map[string]interface{}); ok {
-				role, _ := msgMap["role"].(string)
-				content := ExtractContentFromInput(msgMap["content"])
-				if role != "" && content != "" {
-					chatReq.Messages = append(chatReq.Messages, core.Message{
-						Role:    role,
-						Content: content,
-					})
-				}
-			}
-		}
-	}
+	chatReq.Messages = append(chatReq.Messages, ConvertResponsesInputToMessages(req.Input)...)
 
 	return chatReq
+}
+
+// ConvertResponsesInputToMessages converts a Responses API input payload into Chat API messages.
+func ConvertResponsesInputToMessages(input interface{}) []core.Message {
+	switch in := input.(type) {
+	case string:
+		return []core.Message{{Role: "user", Content: in}}
+	case []interface{}:
+		return convertResponsesInputItems(in)
+	case []core.ResponsesInputItem:
+		items := make([]interface{}, 0, len(in))
+		for _, item := range in {
+			items = append(items, item)
+		}
+		return convertResponsesInputItems(items)
+	default:
+		return nil
+	}
+}
+
+func convertResponsesInputItems(items []interface{}) []core.Message {
+	messages := make([]core.Message, 0, len(items))
+	for _, item := range items {
+		if msg, ok := convertResponsesInputItem(item); ok {
+			messages = append(messages, msg)
+		}
+	}
+	return messages
+}
+
+func convertResponsesInputItem(item interface{}) (core.Message, bool) {
+	switch typed := item.(type) {
+	case core.ResponsesInputItem:
+		content := ExtractContentFromInput(typed.Content)
+		if typed.Role == "" || content == "" {
+			return core.Message{}, false
+		}
+		return core.Message{Role: typed.Role, Content: content}, true
+	case map[string]interface{}:
+		return convertResponsesInputMap(typed)
+	default:
+		return core.Message{}, false
+	}
+}
+
+func convertResponsesInputMap(item map[string]interface{}) (core.Message, bool) {
+	itemType, _ := item["type"].(string)
+	switch itemType {
+	case "function_call":
+		name, _ := item["name"].(string)
+		callID := firstNonEmptyString(item, "call_id", "id")
+		if name == "" {
+			return core.Message{}, false
+		}
+		return core.Message{
+			Role: "assistant",
+			ToolCalls: []core.ToolCall{
+				{
+					ID:   callID,
+					Type: "function",
+					Function: core.FunctionCall{
+						Name:      name,
+						Arguments: stringifyResponsesInputValue(item["arguments"]),
+					},
+				},
+			},
+		}, true
+	case "function_call_output":
+		callID := firstNonEmptyString(item, "call_id")
+		if callID == "" {
+			return core.Message{}, false
+		}
+		return core.Message{
+			Role:       "tool",
+			ToolCallID: callID,
+			Content:    stringifyResponsesInputValue(item["output"]),
+		}, true
+	}
+
+	role, _ := item["role"].(string)
+	content := ExtractContentFromInput(item["content"])
+	if role == "" || content == "" {
+		return core.Message{}, false
+	}
+	return core.Message{
+		Role:    role,
+		Content: content,
+	}, true
+}
+
+func firstNonEmptyString(item map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		value, _ := item[key].(string)
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringifyResponsesInputValue(value interface{}) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		return string(encoded)
+	}
 }
 
 // ExtractContentFromInput extracts text content from responses input.
@@ -70,6 +167,14 @@ func ExtractContentFromInput(content interface{}) string {
 	switch c := content.(type) {
 	case string:
 		return c
+	case []core.ResponsesContentPart:
+		var texts []string
+		for _, part := range c {
+			if part.Text != "" {
+				texts = append(texts, part.Text)
+			}
+		}
+		return strings.Join(texts, " ")
 	case []interface{}:
 		// Array of content parts - extract text
 		var texts []string
@@ -85,11 +190,71 @@ func ExtractContentFromInput(content interface{}) string {
 	return ""
 }
 
+func responsesFunctionCallCallID(callID string) string {
+	if strings.TrimSpace(callID) != "" {
+		return callID
+	}
+	return "call_" + uuid.New().String()
+}
+
+func responsesFunctionCallItemID(callID string) string {
+	normalizedCallID := strings.TrimSpace(callID)
+	if normalizedCallID == "" {
+		normalizedCallID = "call_" + uuid.New().String()
+	}
+	return "fc_" + normalizedCallID
+}
+
+func buildResponsesOutputItems(msg core.Message) []core.ResponsesOutputItem {
+	output := make([]core.ResponsesOutputItem, 0, len(msg.ToolCalls)+1)
+	if msg.Content != "" || len(msg.ToolCalls) == 0 {
+		output = append(output, core.ResponsesOutputItem{
+			ID:     "msg_" + uuid.New().String(),
+			Type:   "message",
+			Role:   "assistant",
+			Status: "completed",
+			Content: []core.ResponsesContentItem{
+				{
+					Type:        "output_text",
+					Text:        msg.Content,
+					Annotations: []string{},
+				},
+			},
+		})
+	}
+	for _, toolCall := range msg.ToolCalls {
+		callID := responsesFunctionCallCallID(toolCall.ID)
+		output = append(output, core.ResponsesOutputItem{
+			ID:        responsesFunctionCallItemID(callID),
+			Type:      "function_call",
+			Status:    "completed",
+			CallID:    callID,
+			Name:      toolCall.Function.Name,
+			Arguments: toolCall.Function.Arguments,
+		})
+	}
+	return output
+}
+
 // ConvertChatResponseToResponses converts a ChatResponse to a ResponsesResponse.
 func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResponse {
-	content := ""
+	output := []core.ResponsesOutputItem{
+		{
+			ID:     "msg_" + uuid.New().String(),
+			Type:   "message",
+			Role:   "assistant",
+			Status: "completed",
+			Content: []core.ResponsesContentItem{
+				{
+					Type:        "output_text",
+					Text:        "",
+					Annotations: []string{},
+				},
+			},
+		},
+	}
 	if len(resp.Choices) > 0 {
-		content = resp.Choices[0].Message.Content
+		output = buildResponsesOutputItems(resp.Choices[0].Message)
 	}
 
 	return &core.ResponsesResponse{
@@ -99,21 +264,7 @@ func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 		Model:     resp.Model,
 		Provider:  resp.Provider,
 		Status:    "completed",
-		Output: []core.ResponsesOutputItem{
-			{
-				ID:     "msg_" + uuid.New().String(),
-				Type:   "message",
-				Role:   "assistant",
-				Status: "completed",
-				Content: []core.ResponsesContentItem{
-					{
-						Type:        "output_text",
-						Text:        content,
-						Annotations: []string{},
-					},
-				},
-			},
-		},
+		Output:    output,
 		Usage: &core.ResponsesUsage{
 			InputTokens:  resp.Usage.PromptTokens,
 			OutputTokens: resp.Usage.CompletionTokens,

@@ -67,6 +67,99 @@ func TestChatCompletion(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 	})
+
+	t.Run("function calling preserves tools and tool_choice", func(t *testing.T) {
+		mockServer.ResetRequests()
+
+		parallelToolCalls := false
+		payload := core.ChatRequest{
+			Model: "gpt-4",
+			Messages: []core.Message{
+				{Role: "user", Content: "What's the weather in Warsaw?"},
+			},
+			Tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name":        "lookup_weather",
+						"description": "Get the weather for a city.",
+						"parameters": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"city": map[string]any{"type": "string"},
+							},
+							"required": []string{"city"},
+						},
+					},
+				},
+			},
+			ToolChoice:        map[string]any{"type": "function", "function": map[string]any{"name": "lookup_weather"}},
+			ParallelToolCalls: &parallelToolCalls,
+		}
+
+		resp := sendChatRequest(t, payload)
+		defer closeBody(resp)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var chatResp core.ChatResponse
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&chatResp))
+
+		require.Len(t, chatResp.Choices, 1)
+		assert.Equal(t, "tool_calls", chatResp.Choices[0].FinishReason)
+		require.Len(t, chatResp.Choices[0].Message.ToolCalls, 1)
+		assert.Equal(t, "lookup_weather", chatResp.Choices[0].Message.ToolCalls[0].Function.Name)
+
+		requests := mockServer.Requests()
+		require.NotEmpty(t, requests)
+
+		var upstream core.ChatRequest
+		require.NoError(t, json.Unmarshal(requests[len(requests)-1].Body, &upstream))
+		require.Len(t, upstream.Tools, 1)
+		require.NotNil(t, upstream.ToolChoice)
+		require.NotNil(t, upstream.ParallelToolCalls)
+		assert.False(t, *upstream.ParallelToolCalls)
+	})
+
+	t.Run("tool result messages preserve tool_call_id", func(t *testing.T) {
+		mockServer.ResetRequests()
+
+		payload := core.ChatRequest{
+			Model: "gpt-4",
+			Messages: []core.Message{
+				{Role: "user", Content: "What's the weather in Warsaw?"},
+				{
+					Role: "assistant",
+					ToolCalls: []core.ToolCall{
+						{
+							ID:   "call_mock_123",
+							Type: "function",
+							Function: core.FunctionCall{
+								Name:      "lookup_weather",
+								Arguments: `{"city":"Warsaw"}`,
+							},
+						},
+					},
+				},
+				{Role: "tool", ToolCallID: "call_mock_123", Content: `{"temperature_c":21}`},
+			},
+		}
+
+		resp := sendChatRequest(t, payload)
+		defer closeBody(resp)
+
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		requests := mockServer.Requests()
+		require.NotEmpty(t, requests)
+
+		var upstream core.ChatRequest
+		require.NoError(t, json.Unmarshal(requests[len(requests)-1].Body, &upstream))
+		require.Len(t, upstream.Messages, 3)
+		assert.Equal(t, "call_mock_123", upstream.Messages[2].ToolCallID)
+		require.Len(t, upstream.Messages[1].ToolCalls, 1)
+		assert.Equal(t, "call_mock_123", upstream.Messages[1].ToolCalls[0].ID)
+	})
 }
 
 func TestChatCompletionParameters(t *testing.T) {

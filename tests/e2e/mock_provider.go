@@ -36,6 +36,30 @@ type RecordedRequest struct {
 	Body    []byte
 }
 
+func (m *MockLLMServer) Requests() []RecordedRequest {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	out := make([]RecordedRequest, len(m.requests))
+	for i, req := range m.requests {
+		body := make([]byte, len(req.Body))
+		copy(body, req.Body)
+		out[i] = RecordedRequest{
+			Method:  req.Method,
+			Path:    req.Path,
+			Headers: req.Headers.Clone(),
+			Body:    body,
+		}
+	}
+	return out
+}
+
+func (m *MockLLMServer) ResetRequests() {
+	m.mu.Lock()
+	m.requests = m.requests[:0]
+	m.mu.Unlock()
+}
+
 // NewMockLLMServer creates a new mock LLM server.
 func NewMockLLMServer() *MockLLMServer {
 	m := &MockLLMServer{
@@ -126,6 +150,43 @@ func (m *MockLLMServer) handleChatCompletion(w http.ResponseWriter, r *http.Requ
 	// Check for streaming
 	if req.Stream {
 		m.handleStreamingResponse(w, req)
+		return
+	}
+
+	if toolName := forcedToolName(req); toolName != "" {
+		response := core.ChatResponse{
+			ID:      "chatcmpl-test-" + time.Now().Format("20060102150405"),
+			Object:  "chat.completion",
+			Model:   req.Model,
+			Created: time.Now().Unix(),
+			Choices: []core.Choice{
+				{
+					Index: 0,
+					Message: core.Message{
+						Role: "assistant",
+						ToolCalls: []core.ToolCall{
+							{
+								ID:   "call_mock_123",
+								Type: "function",
+								Function: core.FunctionCall{
+									Name:      toolName,
+									Arguments: `{"city":"Warsaw"}`,
+								},
+							},
+						},
+					},
+					FinishReason: "tool_calls",
+				},
+			},
+			Usage: core.Usage{
+				PromptTokens:     10,
+				CompletionTokens: 20,
+				TotalTokens:      30,
+			},
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(response)
 		return
 	}
 
@@ -390,6 +451,29 @@ func generateMockResponse(req core.ChatRequest) string {
 
 	// Echo-style response for testing
 	return fmt.Sprintf("Mock response to: %s", lastMessage)
+}
+
+func forcedToolName(req core.ChatRequest) string {
+	switch choice := req.ToolChoice.(type) {
+	case map[string]interface{}:
+		if choiceType, _ := choice["type"].(string); choiceType == "function" {
+			if function, ok := choice["function"].(map[string]interface{}); ok {
+				if name, _ := function["name"].(string); name != "" {
+					return name
+				}
+			}
+		}
+	case string:
+		if choice == "required" && len(req.Tools) > 0 {
+			if function, ok := req.Tools[0]["function"].(map[string]interface{}); ok {
+				if name, _ := function["name"].(string); name != "" {
+					return name
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // splitIntoChunks splits a string into chunks of approximately n characters.

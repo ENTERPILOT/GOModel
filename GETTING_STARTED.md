@@ -254,6 +254,39 @@ curl http://localhost:8080/v1/chat/completions \
   }'
 ```
 
+#### Chat Completion with Function Calling
+
+```bash
+curl http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [
+      {"role": "user", "content": "What is the weather in Warsaw?"}
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "lookup_weather",
+          "description": "Get the weather for a city.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {"type": "string"}
+            },
+            "required": ["city"]
+          }
+        }
+      }
+    ],
+    "tool_choice": {
+      "type": "function",
+      "function": {"name": "lookup_weather"}
+    }
+  }'
+```
+
 #### Streaming Response
 
 ```bash
@@ -618,4 +651,3 @@ console.log(embedding.data[0].embedding.slice(0, 5)); // first 5 dimensions
 5. **Max tokens**: Anthropic requires `max_tokens` to be set. If not provided, the gateway defaults to 4096. OpenAI and Gemini treat it as optional.
 6. **Responses API**: The `/v1/responses` endpoint provides a unified interface across all providers. Providers that do not natively support the Responses API convert requests internally.
 7. **Embeddings**: The `/v1/embeddings` endpoint is supported by OpenAI, Gemini, Groq, xAI, and Ollama. Anthropic does not offer embeddings natively.
-

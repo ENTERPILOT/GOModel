@@ -313,7 +313,12 @@ func (g *GuardedProvider) processResponses(ctx context.Context, req *core.Respon
 func chatToMessages(req *core.ChatRequest) []Message {
 	msgs := make([]Message, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = Message{Role: m.Role, Content: m.Content}
+		msgs[i] = Message{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  m.ToolCalls,
+			ToolCallID: m.ToolCallID,
+		}
 	}
 	return msgs
 }
@@ -322,7 +327,12 @@ func chatToMessages(req *core.ChatRequest) []Message {
 func applyMessagesToChat(req *core.ChatRequest, msgs []Message) *core.ChatRequest {
 	coreMessages := make([]core.Message, len(msgs))
 	for i, m := range msgs {
-		coreMessages[i] = core.Message{Role: m.Role, Content: m.Content}
+		coreMessages[i] = core.Message{
+			Role:       m.Role,
+			Content:    m.Content,
+			ToolCalls:  m.ToolCalls,
+			ToolCallID: m.ToolCallID,
+		}
 	}
 	result := *req
 	result.Messages = coreMessages

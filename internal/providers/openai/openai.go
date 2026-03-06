@@ -102,6 +102,9 @@ func isOSeriesModel(model string) bool {
 type oSeriesChatRequest struct {
 	Model               string              `json:"model"`
 	Messages            []core.Message      `json:"messages"`
+	Tools               []map[string]any    `json:"tools,omitempty"`
+	ToolChoice          any                 `json:"tool_choice,omitempty"`
+	ParallelToolCalls   *bool               `json:"parallel_tool_calls,omitempty"`
 	Stream              bool                `json:"stream,omitempty"`
 	StreamOptions       *core.StreamOptions `json:"stream_options,omitempty"`
 	Reasoning           *core.Reasoning     `json:"reasoning,omitempty"`
@@ -114,6 +117,9 @@ func adaptForOSeries(req *core.ChatRequest) *oSeriesChatRequest {
 	return &oSeriesChatRequest{
 		Model:               req.Model,
 		Messages:            req.Messages,
+		Tools:               req.Tools,
+		ToolChoice:          req.ToolChoice,
+		ParallelToolCalls:   req.ParallelToolCalls,
 		Stream:              req.Stream,
 		StreamOptions:       req.StreamOptions,
 		Reasoning:           req.Reasoning,

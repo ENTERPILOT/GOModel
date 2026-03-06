@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,12 +20,23 @@ type OpenAIResponsesStreamConverter struct {
 	model       string
 	provider    string
 	responseID  string
+	toolCalls   map[int]*openAIResponsesToolCallState
 	buffer      []byte
 	lineBuffer  []byte
 	closed      bool
 	sentCreate  bool
 	sentDone    bool
 	cachedUsage map[string]interface{} // Stores usage from final chunk for inclusion in response.completed
+}
+
+type openAIResponsesToolCallState struct {
+	ItemID      string
+	CallID      string
+	Name        string
+	Arguments   bytes.Buffer
+	OutputIndex int
+	Started     bool
+	Completed   bool
 }
 
 // NewOpenAIResponsesStreamConverter creates a new converter that transforms
@@ -35,9 +47,133 @@ func NewOpenAIResponsesStreamConverter(reader io.ReadCloser, model, provider str
 		model:      model,
 		provider:   provider,
 		responseID: "resp_" + uuid.New().String(),
+		toolCalls:  make(map[int]*openAIResponsesToolCallState),
 		buffer:     make([]byte, 0, 4096),
 		lineBuffer: make([]byte, 0, 1024),
 	}
+}
+
+func (sc *OpenAIResponsesStreamConverter) writeEvent(eventName string, payload map[string]interface{}) string {
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		slog.Error("failed to marshal responses stream event", "error", err, "event", eventName, "response_id", sc.responseID)
+		return ""
+	}
+	return fmt.Sprintf("event: %s\ndata: %s\n\n", eventName, jsonData)
+}
+
+func normalizeToolCallIndex(value interface{}) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case float64:
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
+func (sc *OpenAIResponsesStreamConverter) renderToolCallItem(state *openAIResponsesToolCallState, status string) map[string]interface{} {
+	return map[string]interface{}{
+		"id":        state.ItemID,
+		"type":      "function_call",
+		"status":    status,
+		"call_id":   state.CallID,
+		"name":      state.Name,
+		"arguments": state.Arguments.String(),
+	}
+}
+
+func (sc *OpenAIResponsesStreamConverter) ensureToolCallState(index int) *openAIResponsesToolCallState {
+	state := sc.toolCalls[index]
+	if state == nil {
+		state = &openAIResponsesToolCallState{OutputIndex: index}
+		sc.toolCalls[index] = state
+	}
+	return state
+}
+
+func (sc *OpenAIResponsesStreamConverter) startToolCall(state *openAIResponsesToolCallState) string {
+	if state.Started {
+		return ""
+	}
+	state.CallID = responsesFunctionCallCallID(state.CallID)
+	state.ItemID = responsesFunctionCallItemID(state.CallID)
+	state.Started = true
+	return sc.writeEvent("response.output_item.added", map[string]interface{}{
+		"type":         "response.output_item.added",
+		"item":         sc.renderToolCallItem(state, "in_progress"),
+		"output_index": state.OutputIndex,
+	})
+}
+
+func (sc *OpenAIResponsesStreamConverter) completePendingToolCalls() string {
+	indices := make([]int, 0, len(sc.toolCalls))
+	for index := range sc.toolCalls {
+		indices = append(indices, index)
+	}
+	sort.Ints(indices)
+
+	var out bytes.Buffer
+	for _, index := range indices {
+		state := sc.toolCalls[index]
+		if state == nil || !state.Started || state.Completed {
+			continue
+		}
+		state.Completed = true
+		out.WriteString(sc.writeEvent("response.function_call_arguments.done", map[string]interface{}{
+			"type":         "response.function_call_arguments.done",
+			"item_id":      state.ItemID,
+			"output_index": state.OutputIndex,
+			"arguments":    state.Arguments.String(),
+		}))
+		out.WriteString(sc.writeEvent("response.output_item.done", map[string]interface{}{
+			"type":         "response.output_item.done",
+			"item":         sc.renderToolCallItem(state, "completed"),
+			"output_index": state.OutputIndex,
+		}))
+	}
+
+	return out.String()
+}
+
+func (sc *OpenAIResponsesStreamConverter) handleToolCallDeltas(toolCalls []interface{}) string {
+	var out bytes.Buffer
+
+	for _, item := range toolCalls {
+		toolCall, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		index, ok := normalizeToolCallIndex(toolCall["index"])
+		if !ok {
+			continue
+		}
+
+		state := sc.ensureToolCallState(index)
+		if callID, _ := toolCall["id"].(string); callID != "" {
+			state.CallID = callID
+		}
+
+		function, _ := toolCall["function"].(map[string]interface{})
+		if name, _ := function["name"].(string); name != "" {
+			state.Name = name
+		}
+
+		out.WriteString(sc.startToolCall(state))
+
+		if arguments, _ := function["arguments"].(string); arguments != "" {
+			_, _ = state.Arguments.WriteString(arguments)
+			out.WriteString(sc.writeEvent("response.function_call_arguments.delta", map[string]interface{}{
+				"type":         "response.function_call_arguments.delta",
+				"item_id":      state.ItemID,
+				"output_index": state.OutputIndex,
+				"delta":        arguments,
+			}))
+		}
+	}
+
+	return out.String()
 }
 
 func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
@@ -105,6 +241,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 					// Send done event
 					if !sc.sentDone {
 						sc.sentDone = true
+						sc.buffer = append(sc.buffer, []byte(sc.completePendingToolCalls())...)
 						responseData := map[string]interface{}{
 							"id":         sc.responseID,
 							"object":     "response",
@@ -147,6 +284,9 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 				if choices, ok := chunk["choices"].([]interface{}); ok && len(choices) > 0 {
 					if choice, ok := choices[0].(map[string]interface{}); ok {
 						if delta, ok := choice["delta"].(map[string]interface{}); ok {
+							if toolCalls, ok := delta["tool_calls"].([]interface{}); ok && len(toolCalls) > 0 {
+								sc.buffer = append(sc.buffer, []byte(sc.handleToolCallDeltas(toolCalls))...)
+							}
 							if content, ok := delta["content"].(string); ok && content != "" {
 								deltaEvent := map[string]interface{}{
 									"type":  "response.output_text.delta",
@@ -160,6 +300,9 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 								sc.buffer = append(sc.buffer, []byte(fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData))...)
 							}
 						}
+						if finishReason, _ := choice["finish_reason"].(string); finishReason == "tool_calls" {
+							sc.buffer = append(sc.buffer, []byte(sc.completePendingToolCalls())...)
+						}
 					}
 				}
 			}
@@ -171,6 +314,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 			// Send final done event if we haven't already
 			if !sc.sentDone {
 				sc.sentDone = true
+				sc.buffer = append(sc.buffer, []byte(sc.completePendingToolCalls())...)
 				responseData := map[string]interface{}{
 					"id":         sc.responseID,
 					"object":     "response",
