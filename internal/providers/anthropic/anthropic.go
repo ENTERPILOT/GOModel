@@ -1046,9 +1046,9 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		})
 	}
 	for _, toolCall := range toolCalls {
-		callID := responsesFunctionCallCallID(toolCall.ID)
+		callID := providers.ResponsesFunctionCallCallID(toolCall.ID)
 		output = append(output, core.ResponsesOutputItem{
-			ID:        responsesFunctionCallItemID(callID),
+			ID:        providers.ResponsesFunctionCallItemID(callID),
 			Type:      "function_call",
 			Status:    "completed",
 			CallID:    callID,
@@ -1602,21 +1602,6 @@ func (sc *responsesStreamConverter) Close() error {
 	return sc.body.Close()
 }
 
-func responsesFunctionCallCallID(callID string) string {
-	if strings.TrimSpace(callID) != "" {
-		return callID
-	}
-	return "call_" + uuid.New().String()
-}
-
-func responsesFunctionCallItemID(callID string) string {
-	normalizedCallID := strings.TrimSpace(callID)
-	if normalizedCallID == "" {
-		normalizedCallID = "call_" + uuid.New().String()
-	}
-	return "fc_" + normalizedCallID
-}
-
 func (sc *responsesStreamConverter) writeResponsesEvent(eventName string, payload map[string]any) string {
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
@@ -1627,9 +1612,9 @@ func (sc *responsesStreamConverter) writeResponsesEvent(eventName string, payloa
 }
 
 func (sc *responsesStreamConverter) newResponsesToolCallState(contentBlock *anthropicContent) *responsesToolCallState {
-	callID := responsesFunctionCallCallID(contentBlock.ID)
+	callID := providers.ResponsesFunctionCallCallID(contentBlock.ID)
 	state := &responsesToolCallState{
-		ID:          responsesFunctionCallItemID(callID),
+		ID:          providers.ResponsesFunctionCallItemID(callID),
 		CallID:      callID,
 		Name:        contentBlock.Name,
 		OutputIndex: sc.nextOutputIndex,

@@ -97,8 +97,8 @@ func (sc *OpenAIResponsesStreamConverter) startToolCall(state *openAIResponsesTo
 	if state.Started {
 		return ""
 	}
-	state.CallID = responsesFunctionCallCallID(state.CallID)
-	state.ItemID = responsesFunctionCallItemID(state.CallID)
+	state.CallID = ResponsesFunctionCallCallID(state.CallID)
+	state.ItemID = ResponsesFunctionCallItemID(state.CallID)
 	state.Started = true
 	return sc.writeEvent("response.output_item.added", map[string]interface{}{
 		"type":         "response.output_item.added",

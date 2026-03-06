@@ -190,14 +190,16 @@ func ExtractContentFromInput(content interface{}) string {
 	return ""
 }
 
-func responsesFunctionCallCallID(callID string) string {
+// ResponsesFunctionCallCallID returns the call id if present or generates one.
+func ResponsesFunctionCallCallID(callID string) string {
 	if strings.TrimSpace(callID) != "" {
 		return callID
 	}
 	return "call_" + uuid.New().String()
 }
 
-func responsesFunctionCallItemID(callID string) string {
+// ResponsesFunctionCallItemID returns a stable function-call item id.
+func ResponsesFunctionCallItemID(callID string) string {
 	normalizedCallID := strings.TrimSpace(callID)
 	if normalizedCallID == "" {
 		normalizedCallID = "call_" + uuid.New().String()
@@ -223,9 +225,9 @@ func buildResponsesOutputItems(msg core.Message) []core.ResponsesOutputItem {
 		})
 	}
 	for _, toolCall := range msg.ToolCalls {
-		callID := responsesFunctionCallCallID(toolCall.ID)
+		callID := ResponsesFunctionCallCallID(toolCall.ID)
 		output = append(output, core.ResponsesOutputItem{
-			ID:        responsesFunctionCallItemID(callID),
+			ID:        ResponsesFunctionCallItemID(callID),
 			Type:      "function_call",
 			Status:    "completed",
 			CallID:    callID,

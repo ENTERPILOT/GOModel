@@ -1,10 +1,35 @@
 package providers
 
 import (
+	"strings"
 	"testing"
 
 	"gomodel/internal/core"
 )
+
+func TestResponsesFunctionCallIDs(t *testing.T) {
+	t.Run("preserve explicit call id", func(t *testing.T) {
+		const callID = "call_123"
+		if got := ResponsesFunctionCallCallID(callID); got != callID {
+			t.Fatalf("ResponsesFunctionCallCallID(%q) = %q, want %q", callID, got, callID)
+		}
+		if got := ResponsesFunctionCallItemID(callID); got != "fc_"+callID {
+			t.Fatalf("ResponsesFunctionCallItemID(%q) = %q, want %q", callID, got, "fc_"+callID)
+		}
+	})
+
+	t.Run("generate ids when empty", func(t *testing.T) {
+		callID := ResponsesFunctionCallCallID("  ")
+		if !strings.HasPrefix(callID, "call_") {
+			t.Fatalf("generated call id = %q, want prefix call_", callID)
+		}
+
+		itemID := ResponsesFunctionCallItemID("")
+		if !strings.HasPrefix(itemID, "fc_call_") {
+			t.Fatalf("generated item id = %q, want prefix fc_call_", itemID)
+		}
+	})
+}
 
 func TestConvertResponsesRequestToChat(t *testing.T) {
 	temp := 0.7
