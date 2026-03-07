@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -117,7 +118,13 @@ func isStreamingRequest(path string, body []byte) bool {
 	if path == "/v1/embeddings" {
 		return false
 	}
-	return bytes.Contains(body, []byte(`"stream":true`)) || bytes.Contains(body, []byte(`"stream": true`))
+	var p struct {
+		Stream *bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &p); err != nil {
+		return false
+	}
+	return p.Stream != nil && *p.Stream
 }
 
 func hashRequest(path string, body []byte) string {

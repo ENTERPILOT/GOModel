@@ -107,6 +107,32 @@ func TestSimpleCacheMiddleware_SkipsStreaming(t *testing.T) {
 	}
 }
 
+func TestIsStreamingRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		body string
+		want bool
+	}{
+		{"stream true compact", "/v1/chat/completions", `{"stream":true}`, true},
+		{"stream true with spaces", "/v1/chat/completions", `{"stream" : true}`, true},
+		{"stream false", "/v1/chat/completions", `{"stream":false}`, false},
+		{"stream absent", "/v1/chat/completions", `{"model":"gpt-4"}`, false},
+		{"embeddings path always false", "/v1/embeddings", `{"stream":true}`, false},
+		{"stream in prompt text not a bool", "/v1/chat/completions", `{"messages":[{"content":"say stream:true please"}]}`, false},
+		{"invalid json", "/v1/chat/completions", `not json`, false},
+		{"stream null", "/v1/chat/completions", `{"stream":null}`, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isStreamingRequest(tt.path, []byte(tt.body))
+			if got != tt.want {
+				t.Errorf("isStreamingRequest(%q, %q) = %v, want %v", tt.path, tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestSimpleCacheMiddleware_SkipsNoCache(t *testing.T) {
 	store := cache.NewMapStore()
 	defer store.Close()
