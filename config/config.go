@@ -302,6 +302,11 @@ type ModelListConfig struct {
 	URL string `yaml:"url" env:"MODEL_LIST_URL"`
 }
 
+// ValidateCacheConfig validates the cache configuration in c.
+// For the model cache, exactly one backend (Local or Redis) must be configured;
+// having both or neither is an error. When Redis is selected, its URL must be
+// non-empty. Returns a descriptive error if any constraint is violated, or nil
+// if the configuration is valid.
 func ValidateCacheConfig(c *CacheConfig) error {
 	m := &c.Model
 	hasLocal := m.Local != nil
