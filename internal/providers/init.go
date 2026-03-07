@@ -161,7 +161,7 @@ func initCache(cfg *config.Config) (modelcache.Cache, error) {
 		if key == "" {
 			key = modelcache.DefaultRedisKey
 		}
-		slog.Info("using redis cache", "url", m.Redis.URL, "key", key)
+		slog.Info("using redis cache", "key", key)
 		return mc, nil
 	}
 	if m.Local != nil {
