@@ -27,15 +27,19 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig) (*ResponseCacheM
 	if ttl == 0 {
 		ttl = time.Hour
 	}
+	prefix := cfg.Simple.Redis.Key
+	if prefix == "" {
+		prefix = responseCachePrefix
+	}
 	store, err := cache.NewRedisStore(cache.RedisStoreConfig{
 		URL:    cfg.Simple.Redis.URL,
-		Prefix: responseCachePrefix,
+		Prefix: prefix,
 		TTL:    ttl,
 	})
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("response cache enabled", "ttl_seconds", cfg.Simple.Redis.TTL)
+	slog.Info("response cache enabled", "ttl_seconds", cfg.Simple.Redis.TTL, "prefix", prefix)
 	return &ResponseCacheMiddleware{
 		inner: newSimpleCacheMiddleware(store, ttl),
 	}, nil
