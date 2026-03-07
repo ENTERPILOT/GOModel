@@ -197,7 +197,11 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 
 	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response)
 	if err != nil {
-		closeErr := errors.Join(app.usage.Close(), app.audit.Close(), app.providers.Close())
+		var batchCloseErr error
+		if app.batch != nil {
+			batchCloseErr = app.batch.Close()
+		}
+		closeErr := errors.Join(batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to initialize response cache: %w (also: close error: %v)", err, closeErr)
 		}
