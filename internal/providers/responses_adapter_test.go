@@ -10,6 +10,8 @@ import (
 func TestConvertResponsesRequestToChat(t *testing.T) {
 	temp := 0.7
 	maxTokens := 1024
+	reasoning := &core.Reasoning{Effort: "high"}
+	streamOptions := &core.StreamOptions{IncludeUsage: true}
 
 	tests := []struct {
 		name      string
@@ -64,6 +66,8 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				Input:           "Hello",
 				Temperature:     &temp,
 				MaxOutputTokens: &maxTokens,
+				Reasoning:       reasoning,
+				StreamOptions:   streamOptions,
 			},
 			checkFn: func(t *testing.T, req *core.ChatRequest) {
 				if req.Temperature == nil || *req.Temperature != 0.7 {
@@ -71,6 +75,12 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if req.MaxTokens == nil || *req.MaxTokens != 1024 {
 					t.Errorf("MaxTokens = %v, want 1024", req.MaxTokens)
+				}
+				if req.Reasoning != reasoning {
+					t.Errorf("Reasoning = %+v, want %+v", req.Reasoning, reasoning)
+				}
+				if req.StreamOptions != streamOptions {
+					t.Errorf("StreamOptions = %+v, want %+v", req.StreamOptions, streamOptions)
 				}
 			},
 		},
@@ -299,6 +309,16 @@ func TestConvertChatResponseToResponses(t *testing.T) {
 			PromptTokens:     10,
 			CompletionTokens: 20,
 			TotalTokens:      30,
+			PromptTokensDetails: &core.PromptTokensDetails{
+				CachedTokens: 1,
+				TextTokens:   9,
+			},
+			CompletionTokensDetails: &core.CompletionTokensDetails{
+				ReasoningTokens: 3,
+			},
+			RawUsage: map[string]any{
+				"provider": "test",
+			},
 		},
 	}
 
@@ -348,6 +368,15 @@ func TestConvertChatResponseToResponses(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 30 {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
+	}
+	if result.Usage.PromptTokensDetails == nil || result.Usage.PromptTokensDetails.CachedTokens != 1 {
+		t.Errorf("PromptTokensDetails = %+v, want cached_tokens=1", result.Usage.PromptTokensDetails)
+	}
+	if result.Usage.CompletionTokensDetails == nil || result.Usage.CompletionTokensDetails.ReasoningTokens != 3 {
+		t.Errorf("CompletionTokensDetails = %+v, want reasoning_tokens=3", result.Usage.CompletionTokensDetails)
+	}
+	if result.Usage.RawUsage["provider"] != "test" {
+		t.Errorf("RawUsage = %+v, want provider=test", result.Usage.RawUsage)
 	}
 }
 

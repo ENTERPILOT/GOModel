@@ -289,12 +289,15 @@ func (g *GuardedProvider) GetFileContent(ctx context.Context, providerType, id s
 
 // processChat runs the pipeline for a ChatRequest via the message adapter.
 func (g *GuardedProvider) processChat(ctx context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-	msgs := chatToMessages(req)
+	msgs, err := chatToMessages(req)
+	if err != nil {
+		return nil, err
+	}
 	modified, err := g.pipeline.Process(ctx, msgs)
 	if err != nil {
 		return nil, err
 	}
-	if chatHasNonTextContent(req) {
+	if chatNeedsEnvelopePreservation(req) {
 		return applySystemMessagesToMultimodalChat(req, modified)
 	}
 	return applyMessagesToChat(req, modified), nil
@@ -313,12 +316,16 @@ func (g *GuardedProvider) processResponses(ctx context.Context, req *core.Respon
 // --- Adapters: concrete requests ↔ normalized []Message ---
 
 // chatToMessages extracts the normalized message list from a ChatRequest.
-func chatToMessages(req *core.ChatRequest) []Message {
+func chatToMessages(req *core.ChatRequest) ([]Message, error) {
 	msgs := make([]Message, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = Message{Role: m.Role, Content: core.ExtractTextContent(m.Content)}
+		text, err := normalizeGuardrailMessageText(m.Content)
+		if err != nil {
+			return nil, core.NewInvalidRequestError("invalid chat message content", err)
+		}
+		msgs[i] = Message{Role: m.Role, Content: text}
 	}
-	return msgs
+	return msgs, nil
 }
 
 // applyMessagesToChat returns a shallow copy of req with messages replaced.
@@ -435,6 +442,27 @@ func chatHasNonTextContent(req *core.ChatRequest) bool {
 		}
 	}
 	return false
+}
+
+func chatHasToolCalls(req *core.ChatRequest) bool {
+	for _, msg := range req.Messages {
+		if len(msg.ToolCalls) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func chatNeedsEnvelopePreservation(req *core.ChatRequest) bool {
+	return chatHasNonTextContent(req) || chatHasToolCalls(req)
+}
+
+func normalizeGuardrailMessageText(content any) (string, error) {
+	normalized, err := core.NormalizeMessageContent(content)
+	if err != nil {
+		return "", err
+	}
+	return core.ExtractTextContent(normalized), nil
 }
 
 // responsesToMessages extracts the normalized message list from a ResponsesRequest.

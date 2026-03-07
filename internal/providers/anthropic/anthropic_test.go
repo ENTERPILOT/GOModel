@@ -1929,6 +1929,35 @@ func TestConvertToAnthropicRequest_MultimodalImageContent(t *testing.T) {
 	}
 }
 
+func TestConvertToAnthropicRequest_PreservesAllSystemMessages(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "system", Content: "first system"},
+			{Role: "system", Content: "second system"},
+			{Role: "user", Content: "hello"},
+		},
+	}
+
+	result, err := convertToAnthropicRequest(req)
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v", err)
+	}
+	if result.System != "first system\n\nsecond system" {
+		t.Fatalf("System = %q, want merged system text", result.System)
+	}
+}
+
+func TestConvertToAnthropicRequest_RejectsNilRequest(t *testing.T) {
+	_, err := convertToAnthropicRequest(nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "anthropic chat request is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestConvertToAnthropicRequest_MultimodalImageContent_DataURLWithExtraMetadata(t *testing.T) {
 	req := &core.ChatRequest{
 		Model: "claude-sonnet-4-5-20250929",
@@ -2225,6 +2254,39 @@ func TestConvertResponsesRequestToAnthropic_TrimsRoleBeforeAppend(t *testing.T) 
 	}
 	if req.Messages[0].Role != "user" {
 		t.Fatalf("Messages[0].Role = %q, want user", req.Messages[0].Role)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_PreservesAllSystemMessages(t *testing.T) {
+	req, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model:        "claude-sonnet-4-5-20250929",
+		Instructions: "instruction system",
+		Input: []core.ResponsesInputItem{
+			{
+				Role:    "system",
+				Content: "input system",
+			},
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertResponsesRequestToAnthropic() error = %v", err)
+	}
+	if req.System != "instruction system\n\ninput system" {
+		t.Fatalf("System = %q, want merged system text", req.System)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_RejectsNilRequest(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(nil)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "anthropic responses request is required") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -20,13 +20,17 @@ type ChatProvider interface {
 }
 
 // ConvertResponsesRequestToChat converts a ResponsesRequest to a ChatRequest.
+// It also validates the supported Responses input shapes and returns an error
+// when the request cannot be converted safely.
 func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatRequest, error) {
 	chatReq := &core.ChatRequest{
-		Model:       req.Model,
-		Provider:    req.Provider,
-		Messages:    make([]core.Message, 0),
-		Temperature: req.Temperature,
-		Stream:      req.Stream,
+		Model:         req.Model,
+		Provider:      req.Provider,
+		Messages:      make([]core.Message, 0),
+		Temperature:   req.Temperature,
+		Stream:        req.Stream,
+		StreamOptions: req.StreamOptions,
+		Reasoning:     req.Reasoning,
 	}
 
 	if req.MaxOutputTokens != nil {
@@ -315,9 +319,12 @@ func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 			},
 		},
 		Usage: &core.ResponsesUsage{
-			InputTokens:  resp.Usage.PromptTokens,
-			OutputTokens: resp.Usage.CompletionTokens,
-			TotalTokens:  resp.Usage.TotalTokens,
+			InputTokens:             resp.Usage.PromptTokens,
+			OutputTokens:            resp.Usage.CompletionTokens,
+			TotalTokens:             resp.Usage.TotalTokens,
+			PromptTokensDetails:     resp.Usage.PromptTokensDetails,
+			CompletionTokensDetails: resp.Usage.CompletionTokensDetails,
+			RawUsage:                resp.Usage.RawUsage,
 		},
 	}
 }

@@ -367,6 +367,10 @@ func reasoningEffortToBudgetTokens(effort string) int {
 
 // convertToAnthropicRequest converts core.ChatRequest to Anthropic format.
 func convertToAnthropicRequest(req *core.ChatRequest) (*anthropicRequest, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("anthropic chat request is required", nil)
+	}
+
 	anthropicReq := &anthropicRequest{
 		Model:       req.Model,
 		Messages:    make([]anthropicMessage, 0, len(req.Messages)),
@@ -389,7 +393,7 @@ func convertToAnthropicRequest(req *core.ChatRequest) (*anthropicRequest, error)
 			if err != nil {
 				return nil, err
 			}
-			anthropicReq.System = systemText
+			anthropicReq.System = appendAnthropicSystemText(anthropicReq.System, systemText)
 		} else {
 			content, err := convertMessageContentToAnthropic(msg.Content)
 			if err != nil {
@@ -700,6 +704,10 @@ func parseCreatedAt(createdAt string) int64 {
 
 // convertResponsesRequestToAnthropic converts a ResponsesRequest to Anthropic format.
 func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicRequest, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("anthropic responses request is required", nil)
+	}
+
 	anthropicReq := &anthropicRequest{
 		Model:       req.Model,
 		Messages:    make([]anthropicMessage, 0),
@@ -728,7 +736,7 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicR
 			if err != nil {
 				return nil, err
 			}
-			anthropicReq.System = systemText
+			anthropicReq.System = appendAnthropicSystemText(anthropicReq.System, systemText)
 		case "user", "assistant":
 			anthropicContent, err := convertMessageContentToAnthropic(msg.Content)
 			if err != nil {
@@ -744,6 +752,16 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicR
 	}
 
 	return anthropicReq, nil
+}
+
+func appendAnthropicSystemText(existing, next string) string {
+	if next == "" {
+		return existing
+	}
+	if existing == "" {
+		return next
+	}
+	return existing + "\n\n" + next
 }
 
 func textOnlyAnthropicContent(content any) (string, error) {

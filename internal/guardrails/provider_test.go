@@ -330,6 +330,66 @@ func TestGuardedProvider_ChatCompletion_MixedMultimodalAndTextPreservesTextRewri
 	}
 }
 
+func TestGuardedProvider_ChatCompletion_PreservesToolCallsWithoutMultimodalContent(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	guarded := NewGuardedProvider(inner, NewPipeline())
+
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{
+				Role:    "assistant",
+				Content: nil,
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_1",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup",
+							Arguments: "{}",
+						},
+					},
+				},
+			},
+			{Role: "user", Content: "continue"},
+		},
+	}
+
+	_, err := guarded.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.chatReq == nil {
+		t.Fatal("inner provider was not called")
+	}
+	if len(inner.chatReq.Messages) != 2 {
+		t.Fatalf("len(Messages) = %d, want 2", len(inner.chatReq.Messages))
+	}
+	if len(inner.chatReq.Messages[0].ToolCalls) != 1 || inner.chatReq.Messages[0].ToolCalls[0].ID != "call_1" {
+		t.Fatalf("expected tool_calls to be preserved, got %+v", inner.chatReq.Messages[0].ToolCalls)
+	}
+}
+
+func TestGuardedProvider_ChatCompletion_RejectsUnsupportedContent(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	guarded := NewGuardedProvider(inner, NewPipeline())
+
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{Role: "user", Content: 123},
+		},
+	}
+
+	_, err := guarded.ChatCompletion(context.Background(), req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if inner.chatReq != nil {
+		t.Fatal("inner provider should not have been called")
+	}
+}
+
 func TestApplySystemMessagesToMultimodalChat_PreservesOriginalEnvelope(t *testing.T) {
 	req := &core.ChatRequest{
 		Messages: []core.Message{
@@ -828,7 +888,10 @@ func TestChatToMessages(t *testing.T) {
 			{Role: "user", Content: "hello"},
 		},
 	}
-	msgs := chatToMessages(req)
+	msgs, err := chatToMessages(req)
+	if err != nil {
+		t.Fatalf("chatToMessages() error = %v", err)
+	}
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))
 	}
@@ -837,6 +900,20 @@ func TestChatToMessages(t *testing.T) {
 	}
 	if msgs[1].Role != "user" || msgs[1].Content != "hello" {
 		t.Errorf("unexpected second message: %+v", msgs[1])
+	}
+}
+
+func TestChatToMessages_RejectsUnsupportedContent(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "gpt-4",
+		Messages: []core.Message{
+			{Role: "user", Content: map[string]any{"bad": "content"}},
+		},
+	}
+
+	_, err := chatToMessages(req)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 
