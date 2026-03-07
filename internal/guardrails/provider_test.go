@@ -330,6 +330,78 @@ func TestGuardedProvider_ChatCompletion_MixedMultimodalAndTextPreservesTextRewri
 	}
 }
 
+func TestApplySystemMessagesToMultimodalChat_PreservesOriginalEnvelope(t *testing.T) {
+	req := &core.ChatRequest{
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "describe"},
+					{Type: "image_url", ImageURL: &core.ImageURLContent{URL: "https://example.com/image.png"}},
+				},
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_1",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup",
+							Arguments: "{}",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := applySystemMessagesToMultimodalChat(req, []Message{
+		{Role: "assistant", Content: "describe [rewritten]"},
+	})
+	if err != nil {
+		t.Fatalf("applySystemMessagesToMultimodalChat() error = %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+	if len(result.Messages[0].ToolCalls) != 1 || result.Messages[0].ToolCalls[0].ID != "call_1" {
+		t.Fatalf("expected tool_calls to be preserved, got %+v", result.Messages[0].ToolCalls)
+	}
+	parts, ok := result.Messages[0].Content.([]core.ContentPart)
+	if !ok || len(parts) != 2 {
+		t.Fatalf("unexpected merged content: %#v", result.Messages[0].Content)
+	}
+	if parts[0].Text != "describe [rewritten]" || parts[1].Type != "image_url" {
+		t.Fatalf("unexpected merged parts: %+v", parts)
+	}
+}
+
+func TestApplySystemMessagesToMultimodalChat_DoesNotRestoreDroppedMessages(t *testing.T) {
+	req := &core.ChatRequest{
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "keep"},
+					{Type: "image_url", ImageURL: &core.ImageURLContent{URL: "https://example.com/image.png"}},
+				},
+			},
+			{Role: "assistant", Content: "drop me"},
+		},
+	}
+
+	result, err := applySystemMessagesToMultimodalChat(req, []Message{
+		{Role: "user", Content: "keep [rewritten]"},
+	})
+	if err != nil {
+		t.Fatalf("applySystemMessagesToMultimodalChat() error = %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+	if got := core.ExtractTextContent(result.Messages[0].Content); got != "keep [rewritten]" {
+		t.Fatalf("Messages[0].Content = %q, want keep [rewritten]", got)
+	}
+}
+
 // --- Responses adapter integration tests ---
 
 func TestGuardedProvider_Responses_AppliesGuardrails(t *testing.T) {

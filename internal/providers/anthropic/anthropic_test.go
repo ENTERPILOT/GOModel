@@ -2102,6 +2102,43 @@ func TestConvertToAnthropicRequest_IgnoresRemoteImageMediaTypeHint(t *testing.T)
 	}
 }
 
+func TestConvertToAnthropicRequest_RejectsInvalidRemoteImageURLs(t *testing.T) {
+	tests := []string{
+		"https:",
+		"https://",
+		"/relative/path.png",
+	}
+
+	for _, rawURL := range tests {
+		t.Run(rawURL, func(t *testing.T) {
+			req := &core.ChatRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Messages: []core.Message{
+					{
+						Role: "user",
+						Content: []core.ContentPart{
+							{
+								Type: "image_url",
+								ImageURL: &core.ImageURLContent{
+									URL: rawURL,
+								},
+							},
+						},
+					},
+				},
+			}
+
+			_, err := convertToAnthropicRequest(req)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "anthropic chat image_url must be a data: URL or http/https URL") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 func TestConvertResponsesRequestToAnthropic_RejectsInvalidInputItems(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -2188,6 +2225,57 @@ func TestConvertResponsesRequestToAnthropic_TrimsRoleBeforeAppend(t *testing.T) 
 	}
 	if req.Messages[0].Role != "user" {
 		t.Fatalf("Messages[0].Role = %q, want user", req.Messages[0].Role)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_TypedInputPromotesSystemRole(t *testing.T) {
+	req, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []core.ResponsesInputItem{
+			{
+				Role:    "system",
+				Content: "be concise",
+			},
+			{
+				Role: " user ",
+				Content: []core.ResponsesContentPart{
+					{Type: "input_text", Text: "hello"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertResponsesRequestToAnthropic() error = %v", err)
+	}
+	if req.System != "be concise" {
+		t.Fatalf("System = %q, want be concise", req.System)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+	}
+	if req.Messages[0].Role != "user" {
+		t.Fatalf("Messages[0].Role = %q, want user", req.Messages[0].Role)
+	}
+	if req.Messages[0].Content != "hello" {
+		t.Fatalf("Messages[0].Content = %#v, want hello", req.Messages[0].Content)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_RejectsUnsupportedRole(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []core.ResponsesInputItem{
+			{
+				Role:    "tool",
+				Content: "hello",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "anthropic responses input role must be user, assistant, or system") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

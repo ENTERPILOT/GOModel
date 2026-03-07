@@ -345,32 +345,39 @@ func applySystemMessagesToMultimodalChat(req *core.ChatRequest, msgs []Message) 
 
 	coreMessages := make([]core.Message, 0, len(msgs))
 	nextNonSystem := 0
+	modifiedNonSystemCount := 0
 	for _, modified := range msgs {
 		if modified.Role == "system" {
 			coreMessages = append(coreMessages, core.Message{Role: "system", Content: modified.Content})
 			continue
 		}
+		modifiedNonSystemCount++
 		if nextNonSystem >= len(nonSystemOriginal) {
 			continue
 		}
 		original := nonSystemOriginal[nextNonSystem]
+		preserved := original
+		preserved.Role = modified.Role
 		if core.HasNonTextContent(original.Content) {
 			mergedContent, err := mergeMultimodalContentWithTextRewrite(original.Content, modified.Content)
 			if err != nil {
 				return nil, err
 			}
-			coreMessages = append(coreMessages, core.Message{Role: modified.Role, Content: mergedContent})
+			preserved.Content = mergedContent
 		} else {
-			coreMessages = append(coreMessages, core.Message{Role: modified.Role, Content: modified.Content})
+			preserved.Content = modified.Content
 		}
+		coreMessages = append(coreMessages, preserved)
 		nextNonSystem++
 	}
 
-	// Preserve any trailing original non-system messages if a guardrail returned
-	// fewer user/assistant messages than provided.
-	for nextNonSystem < len(nonSystemOriginal) {
-		coreMessages = append(coreMessages, nonSystemOriginal[nextNonSystem])
-		nextNonSystem++
+	// Preserve untouched trailing originals only when the guardrail kept at least
+	// as many non-system turns as the original request.
+	if modifiedNonSystemCount >= len(nonSystemOriginal) {
+		for nextNonSystem < len(nonSystemOriginal) {
+			coreMessages = append(coreMessages, nonSystemOriginal[nextNonSystem])
+			nextNonSystem++
+		}
 	}
 
 	result := *req

@@ -174,3 +174,29 @@ func TestNormalizeMessageContent_RejectsEmptyTypedTextPart(t *testing.T) {
 		t.Fatalf("error = %v, want text validation error", err)
 	}
 }
+
+func TestMessageUnmarshalJSON_RejectsEmptyJSONTextPart(t *testing.T) {
+	var msg Message
+	err := json.Unmarshal([]byte(`{"role":"user","content":[{"type":"text","text":""}]}`), &msg)
+	if err == nil {
+		t.Fatal("json.Unmarshal() succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "text part is missing text") {
+		t.Fatalf("error = %v, want text validation error", err)
+	}
+}
+
+func TestNormalizeMessageContent_RejectsEmptyMapTextPart(t *testing.T) {
+	_, err := NormalizeMessageContent([]interface{}{
+		map[string]interface{}{
+			"type": "text",
+			"text": "",
+		},
+	})
+	if err == nil {
+		t.Fatal("NormalizeMessageContent() succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "text part is missing text") {
+		t.Fatalf("error = %v, want text validation error", err)
+	}
+}

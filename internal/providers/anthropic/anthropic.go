@@ -716,49 +716,31 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicR
 		applyReasoning(anthropicReq, req.Model, req.Reasoning.Effort)
 	}
 
-	// Set system instruction if provided
-	if req.Instructions != "" {
-		anthropicReq.System = req.Instructions
+	chatReq, err := providers.ConvertResponsesRequestToChat(req)
+	if err != nil {
+		return nil, err
 	}
 
-	// Convert input to messages
-	switch input := req.Input.(type) {
-	case nil:
-		return nil, core.NewInvalidRequestError("invalid responses input: unsupported type", nil)
-	case string:
-		anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-			Role:    "user",
-			Content: input,
-		})
-	case []interface{}:
-		for i, item := range input {
-			msgMap, ok := item.(map[string]interface{})
-			if !ok {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: expected object", i), nil)
+	for _, msg := range chatReq.Messages {
+		switch msg.Role {
+		case "system":
+			systemText, err := textOnlyAnthropicContent(msg.Content)
+			if err != nil {
+				return nil, err
 			}
-
-			role, _ := msgMap["role"].(string)
-			role = strings.TrimSpace(role)
-			if role == "" {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", i), nil)
-			}
-
-			content, ok := providers.ConvertResponsesContentToChatContent(msgMap["content"])
-			if !ok {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", i), nil)
-			}
-
-			anthropicContent, err := convertMessageContentToAnthropic(content)
+			anthropicReq.System = systemText
+		case "user", "assistant":
+			anthropicContent, err := convertMessageContentToAnthropic(msg.Content)
 			if err != nil {
 				return nil, err
 			}
 			anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-				Role:    role,
+				Role:    msg.Role,
 				Content: anthropicContent,
 			})
+		default:
+			return nil, core.NewInvalidRequestError("anthropic responses input role must be user, assistant, or system", nil)
 		}
-	default:
-		return nil, core.NewInvalidRequestError("invalid responses input: unsupported type", nil)
 	}
 
 	return anthropicReq, nil
@@ -875,7 +857,7 @@ func anthropicImageSource(raw, mediaTypeHint string) (*anthropicContentSource, e
 	}
 
 	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+	if err != nil || !parsed.IsAbs() || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 		return nil, core.NewInvalidRequestError("anthropic chat image_url must be a data: URL or http/https URL", nil)
 	}
 

@@ -50,26 +50,26 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatReques
 		})
 	case []interface{}:
 		for i, item := range input {
-			msgMap, ok := item.(map[string]interface{})
-			if !ok {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: expected object", i), nil)
+			msg, err := convertResponsesInputItemToChatMessage(item, i)
+			if err != nil {
+				return nil, err
 			}
-
-			role, _ := msgMap["role"].(string)
-			role = strings.TrimSpace(role)
-			if role == "" {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", i), nil)
-			}
-
-			content, ok := ConvertResponsesContentToChatContent(msgMap["content"])
-			if !ok {
-				return nil, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", i), nil)
-			}
-			chatReq.Messages = append(chatReq.Messages, core.Message{
-				Role:    role,
-				Content: content,
-			})
+			chatReq.Messages = append(chatReq.Messages, msg)
 		}
+	case []core.ResponsesInputItem:
+		for i, item := range input {
+			msg, err := convertResponsesInputItemToChatMessage(item, i)
+			if err != nil {
+				return nil, err
+			}
+			chatReq.Messages = append(chatReq.Messages, msg)
+		}
+	case core.ResponsesInputItem:
+		msg, err := convertResponsesInputItemToChatMessage(input, 0)
+		if err != nil {
+			return nil, err
+		}
+		chatReq.Messages = append(chatReq.Messages, msg)
 	case nil:
 		return nil, core.NewInvalidRequestError("invalid responses input: unsupported type", nil)
 	default:
@@ -77,6 +77,36 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatReques
 	}
 
 	return chatReq, nil
+}
+
+func convertResponsesInputItemToChatMessage(item any, index int) (core.Message, error) {
+	switch v := item.(type) {
+	case map[string]interface{}:
+		role, _ := v["role"].(string)
+		role = strings.TrimSpace(role)
+		if role == "" {
+			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
+		}
+
+		content, ok := ConvertResponsesContentToChatContent(v["content"])
+		if !ok {
+			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", index), nil)
+		}
+		return core.Message{Role: role, Content: content}, nil
+	case core.ResponsesInputItem:
+		role := strings.TrimSpace(v.Role)
+		if role == "" {
+			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
+		}
+
+		content, ok := ConvertResponsesContentToChatContent(v.Content)
+		if !ok {
+			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", index), nil)
+		}
+		return core.Message{Role: role, Content: content}, nil
+	default:
+		return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: expected object", index), nil)
+	}
 }
 
 // ConvertResponsesContentToChatContent maps Responses input content to Chat content.
@@ -88,8 +118,6 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 		return c, true
 	case []interface{}:
 		parts := make([]core.ContentPart, 0, len(c))
-		texts := make([]string, 0, len(c))
-		textOnly := true
 		for _, part := range c {
 			partMap, ok := part.(map[string]interface{})
 			if !ok {
@@ -107,13 +135,11 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 					Type: "text",
 					Text: text,
 				})
-				texts = append(texts, text)
 			case "image_url", "input_image":
 				imageURL, detail, mediaType, ok := extractResponsesImageURL(partMap["image_url"])
 				if !ok {
 					return nil, false
 				}
-				textOnly = false
 				parts = append(parts, core.ContentPart{
 					Type: "image_url",
 					ImageURL: &core.ImageURLContent{
@@ -127,7 +153,6 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 				if !ok {
 					return nil, false
 				}
-				textOnly = false
 				parts = append(parts, core.ContentPart{
 					Type: "input_audio",
 					InputAudio: &core.InputAudioContent{
@@ -139,15 +164,88 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 				return nil, false
 			}
 		}
-		if len(parts) == 0 {
+		return finalizeResponsesChatContent(parts)
+	case []core.ResponsesContentPart:
+		parts := make([]core.ContentPart, 0, len(c))
+		for _, part := range c {
+			normalized, ok := normalizeTypedResponsesContentPart(part)
+			if !ok {
+				return nil, false
+			}
+			parts = append(parts, normalized)
+		}
+		return finalizeResponsesChatContent(parts)
+	case core.ResponsesContentPart:
+		normalized, ok := normalizeTypedResponsesContentPart(c)
+		if !ok {
 			return nil, false
 		}
-		if textOnly {
-			return strings.Join(texts, " "), true
+		return finalizeResponsesChatContent([]core.ContentPart{normalized})
+	case []core.ContentPart:
+		normalized, err := core.NormalizeMessageContent(c)
+		if err != nil {
+			return nil, false
 		}
-		return parts, true
+		parts, ok := normalized.([]core.ContentPart)
+		if !ok {
+			return nil, false
+		}
+		return finalizeResponsesChatContent(parts)
 	}
 	return nil, false
+}
+
+func normalizeTypedResponsesContentPart(part core.ResponsesContentPart) (core.ContentPart, bool) {
+	switch part.Type {
+	case "text", "input_text":
+		if part.Text == "" {
+			return core.ContentPart{}, false
+		}
+		return core.ContentPart{
+			Type: "text",
+			Text: part.Text,
+		}, true
+	case "image_url", "input_image":
+		if part.ImageURL == nil || part.ImageURL.URL == "" {
+			return core.ContentPart{}, false
+		}
+		return core.ContentPart{
+			Type: "image_url",
+			ImageURL: &core.ImageURLContent{
+				URL:       part.ImageURL.URL,
+				Detail:    part.ImageURL.Detail,
+				MediaType: part.ImageURL.MediaType,
+			},
+		}, true
+	case "input_audio":
+		if part.InputAudio == nil || part.InputAudio.Data == "" || part.InputAudio.Format == "" {
+			return core.ContentPart{}, false
+		}
+		return core.ContentPart{
+			Type: "input_audio",
+			InputAudio: &core.InputAudioContent{
+				Data:   part.InputAudio.Data,
+				Format: part.InputAudio.Format,
+			},
+		}, true
+	default:
+		return core.ContentPart{}, false
+	}
+}
+
+func finalizeResponsesChatContent(parts []core.ContentPart) (any, bool) {
+	if len(parts) == 0 {
+		return nil, false
+	}
+
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.Type != "text" {
+			return parts, true
+		}
+		texts = append(texts, part.Text)
+	}
+	return strings.Join(texts, " "), true
 }
 
 func extractResponsesImageURL(value interface{}) (url string, detail string, mediaType string, ok bool) {

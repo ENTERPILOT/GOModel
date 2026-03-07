@@ -200,7 +200,7 @@ func unmarshalContentPart(data []byte) (ContentPart, error) {
 
 	switch raw.Type {
 	case "text", "input_text":
-		if raw.Text == nil {
+		if raw.Text == nil || *raw.Text == "" {
 			return ContentPart{}, fmt.Errorf("text part is missing text")
 		}
 		return ContentPart{Type: "text", Text: *raw.Text}, nil
@@ -272,7 +272,7 @@ func normalizeContentPartMap(partMap map[string]interface{}) (ContentPart, error
 	switch partType {
 	case "text", "input_text":
 		text, ok := partMap["text"].(string)
-		if !ok {
+		if !ok || text == "" {
 			return ContentPart{}, fmt.Errorf("text part is missing text")
 		}
 		return ContentPart{Type: "text", Text: text}, nil

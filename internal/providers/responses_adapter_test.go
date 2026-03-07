@@ -180,6 +180,48 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 			},
 		},
 		{
+			name: "typed array input with multimodal parts",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []core.ResponsesInputItem{
+					{
+						Role: " user ",
+						Content: []core.ResponsesContentPart{
+							{Type: "input_text", Text: "Describe the image."},
+							{
+								Type: "input_image",
+								ImageURL: &core.ImageURLContent{
+									URL:    "https://example.com/image.png",
+									Detail: "high",
+								},
+							},
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 1 {
+					t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+				}
+				if req.Messages[0].Role != "user" {
+					t.Fatalf("Messages[0].Role = %q, want user", req.Messages[0].Role)
+				}
+				parts, ok := req.Messages[0].Content.([]core.ContentPart)
+				if !ok {
+					t.Fatalf("Messages[0].Content type = %T, want []core.ContentPart", req.Messages[0].Content)
+				}
+				if len(parts) != 2 {
+					t.Fatalf("len(parts) = %d, want 2", len(parts))
+				}
+				if parts[0].Text != "Describe the image." {
+					t.Fatalf("unexpected text part: %+v", parts[0])
+				}
+				if parts[1].ImageURL == nil || parts[1].ImageURL.URL != "https://example.com/image.png" {
+					t.Fatalf("unexpected image part: %+v", parts[1])
+				}
+			},
+		},
+		{
 			name: "array input with malformed item fails",
 			input: &core.ResponsesRequest{
 				Model: "test-model",

@@ -54,10 +54,10 @@ type Message struct {
 	// Content accepts either a plain string or an array of ContentPart values.
 	// This preserves OpenAI-compatible multimodal chat payloads.
 	Content MessageContent `json:"content"`
-	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is string OR []ContentPart.
+	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is null OR string OR []ContentPart.
 	// ContentSchema documents that `content` accepts either a plain string
 	// or an array of ContentPart values.
-	ContentSchema []ContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
+	ContentSchema []ContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"null\"},{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
 	ToolCalls     []ToolCall    `json:"tool_calls,omitempty"`
 }
 
@@ -96,8 +96,8 @@ type Choice struct {
 type ResponseMessage struct {
 	Role    string         `json:"role"`
 	Content MessageContent `json:"content"`
-	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is string OR []ContentPart.
-	ContentSchema []ContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
+	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is null OR string OR []ContentPart.
+	ContentSchema []ContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"null\"},{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
 	ToolCalls     []ToolCall    `json:"tool_calls,omitempty"`
 }
 
