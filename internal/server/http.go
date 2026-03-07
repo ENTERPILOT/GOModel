@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"path"
@@ -235,10 +236,14 @@ func (s *Server) Start(addr string) error {
 
 // Shutdown gracefully shuts down the HTTP server and releases resources.
 func (s *Server) Shutdown(ctx context.Context) error {
+	// Stop accepting new requests first so no handler can touch the cache store
+	// after it is closed.
+	echoErr := s.echo.Shutdown(ctx)
+	var cacheErr error
 	if s.responseCacheMiddleware != nil {
-		_ = s.responseCacheMiddleware.Close()
+		cacheErr = s.responseCacheMiddleware.Close()
 	}
-	return s.echo.Shutdown(ctx)
+	return errors.Join(echoErr, cacheErr)
 }
 
 // ServeHTTP implements the http.Handler interface, allowing Server to be used with httptest
