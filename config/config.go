@@ -590,19 +590,27 @@ func parseBool(s string) bool {
 // Accepts formats like: "10M", "10MB", "1024K", "1024KB", "104857600"
 // Returns an error if the format is invalid or value is outside bounds (1KB - 100MB).
 func ValidateBodySizeLimit(s string) error {
+	_, err := ParseBodySizeLimitBytes(s)
+	return err
+}
+
+// ParseBodySizeLimitBytes parses a configured body size limit into bytes.
+// Accepts formats like: "10M", "10MB", "1024K", "1024KB", "104857600".
+// Returns an error if the format is invalid or value is outside bounds (1KB - 100MB).
+func ParseBodySizeLimitBytes(s string) (int64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil
+		return 0, nil
 	}
 
 	matches := bodySizeLimitRegex.FindStringSubmatch(s)
 	if matches == nil {
-		return fmt.Errorf("invalid format %q: expected pattern like '10M', '1024K', or '104857600'", s)
+		return 0, fmt.Errorf("invalid format %q: expected pattern like '10M', '1024K', or '104857600'", s)
 	}
 
 	value, err := strconv.ParseInt(matches[1], 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid number in %q: %w", s, err)
+		return 0, fmt.Errorf("invalid number in %q: %w", s, err)
 	}
 
 	switch strings.ToUpper(matches[2]) {
@@ -615,11 +623,11 @@ func ValidateBodySizeLimit(s string) error {
 	}
 
 	if value < MinBodySizeLimit {
-		return fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
+		return 0, fmt.Errorf("value %d bytes is below minimum of %d bytes (1KB)", value, MinBodySizeLimit)
 	}
 	if value > MaxBodySizeLimit {
-		return fmt.Errorf("value %d bytes exceeds maximum of %d bytes (100MB)", value, MaxBodySizeLimit)
+		return 0, fmt.Errorf("value %d bytes exceeds maximum of %d bytes (100MB)", value, MaxBodySizeLimit)
 	}
 
-	return nil
+	return value, nil
 }

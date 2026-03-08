@@ -8,7 +8,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -110,8 +109,6 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			// Store entry in context for potential enrichment by handlers
 			c.Set(string(LogEntryKey), entry)
 
-			resp, _ := echo.UnwrapResponse(c.Response())
-
 			// Create response body capture if logging bodies
 			var responseCapture *responseBodyCapture
 			if cfg.LogBodies {
@@ -120,7 +117,6 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 					body:           &bytes.Buffer{},
 				}
 				c.SetResponse(responseCapture)
-				resp, _ = echo.UnwrapResponse(c.Response())
 			}
 
 			// Execute the handler
@@ -129,25 +125,9 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 			// Calculate duration
 			entry.DurationNs = time.Since(start).Nanoseconds()
 
-			// Capture response metadata
-			// If the response has been committed (written to the client), use
-			// the actual status code. Otherwise, when err is an *echo.HTTPError
-			// (e.g. 405 Method Not Allowed), Echo's error handler hasn't written
-			// the response yet, so the unwrapped response still defaults to 200.
-			if resp != nil && resp.Committed {
-				entry.StatusCode = resp.Status
-			} else if err != nil {
-				var he *echo.HTTPError
-				if errors.As(err, &he) {
-					entry.StatusCode = he.Code
-				} else {
-					entry.StatusCode = http.StatusInternalServerError
-				}
-			} else if resp != nil {
-				entry.StatusCode = resp.Status
-			} else {
-				entry.StatusCode = http.StatusOK
-			}
+			// ResolveResponseStatus applies Echo v5 precedence rules for committed responses,
+			// suggested status codes, and errors implementing HTTPStatusCoder.
+			_, entry.StatusCode = echo.ResolveResponseStatus(c.Response(), err)
 
 			// Log response headers if enabled
 			if cfg.LogHeaders {

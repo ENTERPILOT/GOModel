@@ -112,7 +112,7 @@ func SetupTestServer(t *testing.T, cfg TestServerConfig) *TestServerFixture {
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
 	go func() {
 		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		_ = application.Start(addr)
+		_ = application.Start(context.Background(), addr)
 	}()
 
 	// Wait for server to be healthy

@@ -2,19 +2,16 @@ package server
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"path"
-	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"gomodel/config"
 
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
@@ -30,11 +27,6 @@ import (
 type Server struct {
 	echo    *echo.Echo
 	handler *Handler
-
-	mu       sync.Mutex
-	cancel   context.CancelFunc
-	done     chan struct{}
-	startErr error
 }
 
 // Config holds server configuration options
@@ -227,65 +219,13 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 }
 
-// Start starts the HTTP server on the given address
-func (s *Server) Start(addr string) error {
-	s.mu.Lock()
-	if s.done != nil {
-		s.mu.Unlock()
-		return fmt.Errorf("server already started")
-	}
-	startCtx, cancel := context.WithCancel(context.Background())
-	done := make(chan struct{})
-	s.cancel = cancel
-	s.done = done
-	s.startErr = nil
-	s.mu.Unlock()
-
+// Start starts the HTTP server on the given address and exits when ctx is canceled.
+func (s *Server) Start(ctx context.Context, addr string) error {
 	sc := echo.StartConfig{
 		Address:    addr,
 		HideBanner: true,
 	}
-
-	err := sc.Start(startCtx, s.echo)
-
-	s.mu.Lock()
-	s.startErr = err
-	close(done)
-	s.cancel = nil
-	s.mu.Unlock()
-
-	return err
-}
-
-// Shutdown gracefully shuts down the HTTP server.
-func (s *Server) Shutdown(ctx context.Context) error {
-	s.mu.Lock()
-	cancel := s.cancel
-	done := s.done
-	s.mu.Unlock()
-
-	if done == nil {
-		return nil
-	}
-	if cancel != nil {
-		cancel()
-	}
-
-	select {
-	case <-done:
-		s.mu.Lock()
-		err := s.startErr
-		s.done = nil
-		s.startErr = nil
-		s.mu.Unlock()
-
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return err
-		}
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return sc.Start(ctx, s.echo)
 }
 
 // ServeHTTP implements the http.Handler interface, allowing Server to be used with httptest
@@ -296,30 +236,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func parseBodySizeLimitBytes(limit string) int64 {
 	limit = strings.TrimSpace(limit)
 	if limit == "" {
-		return 10 * 1024 * 1024
+		return config.DefaultBodySizeLimit
 	}
 
-	normalized := strings.ToUpper(limit)
-	normalized = strings.TrimSuffix(normalized, "B")
-
-	multiplier := int64(1)
-	switch {
-	case strings.HasSuffix(normalized, "K"):
-		multiplier = 1024
-		normalized = strings.TrimSuffix(normalized, "K")
-	case strings.HasSuffix(normalized, "M"):
-		multiplier = 1024 * 1024
-		normalized = strings.TrimSuffix(normalized, "M")
-	case strings.HasSuffix(normalized, "G"):
-		multiplier = 1024 * 1024 * 1024
-		normalized = strings.TrimSuffix(normalized, "G")
-	}
-
-	value, err := strconv.ParseInt(strings.TrimSpace(normalized), 10, 64)
-	if err != nil || value <= 0 {
+	value, err := config.ParseBodySizeLimitBytes(limit)
+	if err != nil {
 		slog.Warn("invalid body size limit, falling back to default", "configured", limit)
-		return 10 * 1024 * 1024
+		return config.DefaultBodySizeLimit
 	}
 
-	return value * multiplier
+	return value
 }

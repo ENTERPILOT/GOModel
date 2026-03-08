@@ -109,7 +109,7 @@ func main() {
 	}()
 
 	addr := ":" + result.Config.Server.Port
-	if err := application.Start(addr); err != nil {
+	if err := application.Start(context.Background(), addr); err != nil {
 		slog.Error("application failed", "error", err)
 		os.Exit(1)
 	}

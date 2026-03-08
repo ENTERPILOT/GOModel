@@ -25,6 +25,7 @@ var (
 	mockServer  *MockLLMServer
 	testContext context.Context
 	cancelFunc  context.CancelFunc
+	serverDone  chan error
 )
 
 // TestMain sets up and tears down the test environment.
@@ -68,11 +69,10 @@ func TestMain(m *testing.M) {
 	// 5. Start the gateway server (bind to loopback only)
 	// Note: No master key for e2e tests (tests run in unsafe mode)
 	testServer = server.New(router, &server.Config{})
+	serverDone = make(chan error, 1)
 	go func() {
 		addr := fmt.Sprintf("127.0.0.1:%d", gatewayPort)
-		if err := testServer.Start(addr); err != nil && err != http.ErrServerClosed {
-			fmt.Printf("Server error: %v\n", err)
-		}
+		serverDone <- testServer.Start(testContext, addr)
 	}()
 
 	// 6. Wait for server to be healthy
@@ -93,10 +93,15 @@ func TestMain(m *testing.M) {
 // cleanup shuts down all test resources.
 func cleanup() {
 	cancelFunc()
-	if testServer != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = testServer.Shutdown(ctx)
+	if testServer != nil && serverDone != nil {
+		select {
+		case err := <-serverDone:
+			if err != nil {
+				fmt.Printf("Server shutdown error: %v\n", err)
+			}
+		case <-time.After(5 * time.Second):
+			fmt.Printf("Server shutdown timed out\n")
+		}
 	}
 	if mockServer != nil {
 		mockServer.Close()

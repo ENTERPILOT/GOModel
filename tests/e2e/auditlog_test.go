@@ -97,7 +97,7 @@ func (m *mockLogStore) WaitForAPIEntries(count int, timeout time.Duration) []*au
 }
 
 // setupAuditLogTestServer creates a test server with audit logging enabled
-func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogStore) (string, *server.Server, *auditlog.Logger) {
+func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogStore) (string, func()) {
 	t.Helper()
 
 	// Find available port (bind to loopback only for security)
@@ -127,10 +127,10 @@ func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogSt
 
 	// Start server (bind to loopback only)
 	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	serverCtx, cancel := context.WithCancel(context.Background())
+	serverDone := make(chan error, 1)
 	go func() {
-		if err := srv.Start(fmt.Sprintf("127.0.0.1:%d", port)); err != nil && err != http.ErrServerClosed {
-			t.Logf("Server error: %v", err)
-		}
+		serverDone <- srv.Start(serverCtx, fmt.Sprintf("127.0.0.1:%d", port))
 	}()
 
 	// Wait for server to be ready
@@ -146,7 +146,18 @@ func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogSt
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	return serverURL, srv, logger
+	cleanup := func() {
+		cancel()
+		select {
+		case err := <-serverDone:
+			require.NoError(t, err)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("server shutdown timed out")
+		}
+		require.NoError(t, logger.Close())
+	}
+
+	return serverURL, cleanup
 }
 
 func TestAuditLogMiddleware(t *testing.T) {
@@ -160,13 +171,8 @@ func TestAuditLogMiddleware(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request
 		payload := core.ChatRequest{
@@ -203,13 +209,8 @@ func TestAuditLogMiddleware(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request
 		payload := core.ChatRequest{
@@ -246,13 +247,8 @@ func TestAuditLogMiddleware(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request with Authorization header
 		payload := core.ChatRequest{
@@ -295,13 +291,8 @@ func TestAuditLogMiddleware(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request
 		payload := core.ChatRequest{
@@ -330,13 +321,8 @@ func TestAuditLogMiddleware(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request with Authorization header
 		payload := core.ChatRequest{
@@ -377,13 +363,8 @@ func TestAuditLogStreaming(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a streaming request
 		payload := core.ChatRequest{
@@ -419,13 +400,8 @@ func TestAuditLogStreaming(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a streaming request
 		payload := core.ChatRequest{
@@ -469,13 +445,8 @@ func TestAuditLogStreaming(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a streaming request
 		payload := core.ChatRequest{
@@ -516,13 +487,8 @@ func TestAuditLogConcurrency(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		const numRequests = 20
 		var wg sync.WaitGroup
@@ -583,13 +549,8 @@ func TestAuditLogHeaderRedaction(t *testing.T) {
 				FlushInterval: 100 * time.Millisecond,
 			}
 
-			serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-			defer func() {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer cancel()
-				_ = srv.Shutdown(ctx)
-				_ = logger.Close()
-			}()
+			serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+			defer cleanup()
 
 			payload := core.ChatRequest{
 				Model:    "gpt-4",
@@ -629,13 +590,8 @@ func TestAuditLogErrorCapture(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request with an unsupported model
 		payload := core.ChatRequest{
@@ -669,13 +625,8 @@ func TestAuditLogErrorCapture(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Send GET to a POST-only endpoint
 		resp, err := http.Get(serverURL + "/v1/chat/completions")
@@ -703,13 +654,8 @@ func TestAuditLogErrorCapture(t *testing.T) {
 			FlushInterval: 100 * time.Millisecond,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Send invalid JSON
 		resp, err := http.Post(serverURL+"/v1/chat/completions", "application/json",
@@ -739,13 +685,8 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 			OnlyModelInteractions: true,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make a request to a model endpoint
 		payload := core.ChatRequest{
@@ -777,13 +718,8 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 			OnlyModelInteractions: true,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make multiple requests to health endpoint
 		for i := 0; i < 3; i++ {
@@ -809,13 +745,8 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 			OnlyModelInteractions: false,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Note: setupAuditLogTestServer makes health check calls during startup
 		// so we may already have entries. Count before making our request.
@@ -847,13 +778,8 @@ func TestAuditLogOnlyModelInteractions(t *testing.T) {
 			OnlyModelInteractions: true,
 		}
 
-		serverURL, srv, logger := setupAuditLogTestServer(t, cfg, store)
-		defer func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = srv.Shutdown(ctx)
-			_ = logger.Close()
-		}()
+		serverURL, cleanup := setupAuditLogTestServer(t, cfg, store)
+		defer cleanup()
 
 		// Make multiple health requests (should not be logged)
 		for i := 0; i < 5; i++ {

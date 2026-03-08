@@ -35,6 +35,9 @@ type App struct {
 
 	shutdownMu sync.Mutex
 	shutdown   bool
+	serverMu   sync.Mutex
+	serverStop context.CancelFunc
+	serverDone chan error
 }
 
 // Config holds the configuration options for creating an App.
@@ -225,12 +228,35 @@ func (a *App) UsageLogger() usage.LoggerInterface {
 
 // Start starts the HTTP server on the given address.
 // This is a blocking call that returns when the server stops.
-func (a *App) Start(addr string) error {
+func (a *App) Start(ctx context.Context, addr string) error {
 	if a.server == nil {
 		return fmt.Errorf("server is not initialized")
 	}
+
+	a.serverMu.Lock()
+	if a.serverDone != nil {
+		a.serverMu.Unlock()
+		return fmt.Errorf("server is already running")
+	}
+	serverCtx, cancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	a.serverStop = cancel
+	a.serverDone = done
+	a.serverMu.Unlock()
+
 	slog.Info("starting server", "address", addr)
-	if err := a.server.Start(addr); err != nil {
+	err := a.server.Start(serverCtx, addr)
+
+	a.serverMu.Lock()
+	if a.serverDone == done {
+		done <- err
+		close(done)
+		a.serverDone = nil
+		a.serverStop = nil
+	}
+	a.serverMu.Unlock()
+
+	if err != nil {
 		if errors.Is(err, http.ErrServerClosed) {
 			slog.Info("server stopped gracefully")
 			return nil
@@ -242,7 +268,7 @@ func (a *App) Start(addr string) error {
 
 // Shutdown gracefully tears down app components in dependency order.
 // Order:
-// 1. HTTP server shutdown via server.Shutdown(ctx), honoring the passed context timeout/cancellation.
+// 1. Cancel HTTP server context and wait for the server to stop.
 // 2. Provider subsystem close (stops model refresh loop and cache resources).
 // 3. Batch store close.
 // 4. Usage logger close (flushes pending usage records).
@@ -263,11 +289,28 @@ func (a *App) Shutdown(ctx context.Context) error {
 
 	var errs []error
 
-	// 1. Shutdown HTTP server first (stop accepting new requests)
-	if a.server != nil {
-		if err := a.server.Shutdown(ctx); err != nil {
-			slog.Error("server shutdown error", "error", err)
-			errs = append(errs, fmt.Errorf("server shutdown: %w", err))
+	// 1. Stop HTTP server first (stop accepting new requests)
+	a.serverMu.Lock()
+	serverStop := a.serverStop
+	serverDone := a.serverDone
+	a.serverMu.Unlock()
+	if serverStop != nil {
+		serverStop()
+	}
+	if serverDone != nil {
+		select {
+		case err := <-serverDone:
+			a.serverMu.Lock()
+			a.serverDone = nil
+			a.serverStop = nil
+			a.serverMu.Unlock()
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				slog.Error("server shutdown error", "error", err)
+				errs = append(errs, fmt.Errorf("server shutdown: %w", err))
+			}
+		case <-ctx.Done():
+			slog.Error("server shutdown timed out", "error", ctx.Err())
+			errs = append(errs, fmt.Errorf("server shutdown: %w", ctx.Err()))
 		}
 	}
 
