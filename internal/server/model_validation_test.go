@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -149,7 +149,7 @@ func TestModelValidation(t *testing.T) {
 			handlerCalled := false
 
 			middleware := ModelValidation(provider)
-			handler := middleware(func(c echo.Context) error {
+			handler := middleware(func(c *echo.Context) error {
 				handlerCalled = true
 				return c.String(http.StatusOK, "ok")
 			})
@@ -188,7 +188,7 @@ func TestModelValidation_SetsProviderType(t *testing.T) {
 	var capturedProviderType string
 
 	middleware := ModelValidation(provider)
-	handler := middleware(func(c echo.Context) error {
+	handler := middleware(func(c *echo.Context) error {
 		capturedProviderType = GetProviderType(c)
 		return c.String(http.StatusOK, "ok")
 	})
@@ -212,7 +212,7 @@ func TestModelValidation_SetsRequestIDInContext(t *testing.T) {
 	var capturedRequestID string
 
 	middleware := ModelValidation(provider)
-	handler := middleware(func(c echo.Context) error {
+	handler := middleware(func(c *echo.Context) error {
 		capturedRequestID = core.GetRequestID(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	})
@@ -237,7 +237,7 @@ func TestModelValidation_DoesNotTreatPrefixOvermatchAsBatchPath(t *testing.T) {
 	var capturedRequestID string
 
 	middleware := ModelValidation(provider)
-	handler := middleware(func(c echo.Context) error {
+	handler := middleware(func(c *echo.Context) error {
 		capturedRequestID = core.GetRequestID(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	})
@@ -262,7 +262,7 @@ func TestModelValidation_BodyRewound(t *testing.T) {
 	var boundReq core.ChatRequest
 
 	middleware := ModelValidation(provider)
-	handler := middleware(func(c echo.Context) error {
+	handler := middleware(func(c *echo.Context) error {
 		if err := c.Bind(&boundReq); err != nil {
 			return err
 		}

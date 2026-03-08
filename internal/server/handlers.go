@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
 	batchstore "gomodel/internal/batch"
@@ -64,7 +64,7 @@ func (h *Handler) SetBatchStore(store batchstore.Store) {
 
 // handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
 // It wraps the stream with audit logging and usage tracking, and sets appropriate SSE headers.
-func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string, streamFn func() (io.ReadCloser, error)) error {
+func (h *Handler) handleStreamingResponse(c *echo.Context, model, provider string, streamFn func() (io.ReadCloser, error)) error {
 	// Call streamFn first - only mark as streaming after success
 	// This ensures failed streams are logged normally by handleError/middleware
 	stream, err := streamFn()
@@ -107,7 +107,7 @@ func (h *Handler) handleStreamingResponse(c echo.Context, model, provider string
 	}
 
 	c.Response().WriteHeader(http.StatusOK)
-	if err := flushStream(c.Response().Writer, wrappedStream); err != nil {
+	if err := flushStream(c.Response(), wrappedStream); err != nil {
 		recordStreamingError(streamEntry, model, provider, c.Request().URL.Path, requestID, err)
 	}
 	return nil
@@ -195,7 +195,7 @@ func resolveModelSelector(model, provider *string) error {
 // @Failure      429      {object}  core.GatewayError
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/chat/completions [post]
-func (h *Handler) ChatCompletion(c echo.Context) error {
+func (h *Handler) ChatCompletion(c *echo.Context) error {
 	var req core.ChatRequest
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
@@ -239,7 +239,7 @@ func (h *Handler) ChatCompletion(c echo.Context) error {
 // @Produce      json
 // @Success      200  {object}  map[string]string
 // @Router       /health [get]
-func (h *Handler) Health(c echo.Context) error {
+func (h *Handler) Health(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -253,7 +253,7 @@ func (h *Handler) Health(c echo.Context) error {
 // @Failure      401  {object}  core.GatewayError
 // @Failure      502  {object}  core.GatewayError
 // @Router       /v1/models [get]
-func (h *Handler) ListModels(c echo.Context) error {
+func (h *Handler) ListModels(c *echo.Context) error {
 	// Create context with request ID for provider
 	requestID := c.Request().Header.Get("X-Request-ID")
 	ctx := core.WithRequestID(c.Request().Context(), requestID)
@@ -274,7 +274,7 @@ func (h *Handler) nativeFileRouter() (core.NativeFileRoutableProvider, error) {
 	return nativeRouter, nil
 }
 
-func (h *Handler) fileProviderTypes(ctx echo.Context) ([]string, error) {
+func (h *Handler) fileProviderTypes(ctx *echo.Context) ([]string, error) {
 	resp, err := h.provider.ListModels(ctx.Request().Context())
 	if err != nil {
 		return nil, err
@@ -299,7 +299,7 @@ func (h *Handler) fileProviderTypes(ctx echo.Context) ([]string, error) {
 	return providers, nil
 }
 
-func resolveProviderHint(c echo.Context) string {
+func resolveProviderHint(c *echo.Context) string {
 	if provider := strings.TrimSpace(c.QueryParam("provider")); provider != "" {
 		return provider
 	}
@@ -307,9 +307,9 @@ func resolveProviderHint(c echo.Context) string {
 }
 
 func (h *Handler) fileByID(
-	c echo.Context,
+	c *echo.Context,
 	callFn func(core.NativeFileRoutableProvider, string, string) (any, error),
-	respondFn func(echo.Context, any) error,
+	respondFn func(*echo.Context, any) error,
 ) error {
 	nativeRouter, err := h.nativeFileRouter()
 	if err != nil {
@@ -411,7 +411,7 @@ func applyAfterCursor(items []core.FileObject, after string) ([]core.FileObject,
 // @Failure      401       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
 // @Router       /v1/files [post]
-func (h *Handler) CreateFile(c echo.Context) error {
+func (h *Handler) CreateFile(c *echo.Context) error {
 	nativeRouter, err := h.nativeFileRouter()
 	if err != nil {
 		return handleError(c, err)
@@ -485,7 +485,7 @@ func (h *Handler) CreateFile(c echo.Context) error {
 // @Failure      404       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
 // @Router       /v1/files [get]
-func (h *Handler) ListFiles(c echo.Context) error {
+func (h *Handler) ListFiles(c *echo.Context) error {
 	nativeRouter, err := h.nativeFileRouter()
 	if err != nil {
 		return handleError(c, err)
@@ -586,12 +586,12 @@ func (h *Handler) ListFiles(c echo.Context) error {
 // @Failure      404       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
 // @Router       /v1/files/{id} [get]
-func (h *Handler) GetFile(c echo.Context) error {
+func (h *Handler) GetFile(c *echo.Context) error {
 	return h.fileByID(c,
 		func(r core.NativeFileRoutableProvider, provider, id string) (any, error) {
 			return r.GetFile(c.Request().Context(), provider, id)
 		},
-		func(c echo.Context, result any) error {
+		func(c *echo.Context, result any) error {
 			return c.JSON(http.StatusOK, result)
 		},
 	)
@@ -611,12 +611,12 @@ func (h *Handler) GetFile(c echo.Context) error {
 // @Failure      404       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
 // @Router       /v1/files/{id} [delete]
-func (h *Handler) DeleteFile(c echo.Context) error {
+func (h *Handler) DeleteFile(c *echo.Context) error {
 	return h.fileByID(c,
 		func(r core.NativeFileRoutableProvider, provider, id string) (any, error) {
 			return r.DeleteFile(c.Request().Context(), provider, id)
 		},
-		func(c echo.Context, result any) error {
+		func(c *echo.Context, result any) error {
 			return c.JSON(http.StatusOK, result)
 		},
 	)
@@ -636,12 +636,12 @@ func (h *Handler) DeleteFile(c echo.Context) error {
 // @Failure      404       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
 // @Router       /v1/files/{id}/content [get]
-func (h *Handler) GetFileContent(c echo.Context) error {
+func (h *Handler) GetFileContent(c *echo.Context) error {
 	return h.fileByID(c,
 		func(r core.NativeFileRoutableProvider, provider, id string) (any, error) {
 			return r.GetFileContent(c.Request().Context(), provider, id)
 		},
-		func(c echo.Context, result any) error {
+		func(c *echo.Context, result any) error {
 			resp := result.(*core.FileContentResponse)
 			contentType := strings.TrimSpace(resp.ContentType)
 			if contentType == "" {
@@ -666,7 +666,7 @@ func (h *Handler) GetFileContent(c echo.Context) error {
 // @Failure      429      {object}  core.GatewayError
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/responses [post]
-func (h *Handler) Responses(c echo.Context) error {
+func (h *Handler) Responses(c *echo.Context) error {
 	var req core.ResponsesRequest
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
@@ -710,7 +710,7 @@ func (h *Handler) Responses(c echo.Context) error {
 // @Failure      429      {object}  core.GatewayError
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/embeddings [post]
-func (h *Handler) Embeddings(c echo.Context) error {
+func (h *Handler) Embeddings(c *echo.Context) error {
 	var req core.EmbeddingRequest
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
@@ -750,7 +750,7 @@ func (h *Handler) Embeddings(c echo.Context) error {
 // @Failure      401      {object}  core.GatewayError
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/batches [post]
-func (h *Handler) Batches(c echo.Context) error {
+func (h *Handler) Batches(c *echo.Context) error {
 	var req core.BatchRequest
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
@@ -918,7 +918,7 @@ func extractBatchItemModel(endpoint, method string, body json.RawMessage) (strin
 	}
 }
 
-func (h *Handler) loadBatch(c echo.Context, id string) (*core.BatchResponse, error) {
+func (h *Handler) loadBatch(c *echo.Context, id string) (*core.BatchResponse, error) {
 	resp, err := h.batchStore.Get(c.Request().Context(), id)
 	if err != nil {
 		if errors.Is(err, batchstore.ErrNotFound) {
@@ -944,7 +944,7 @@ func (h *Handler) loadBatch(c echo.Context, id string) (*core.BatchResponse, err
 // @Failure      500  {object}  core.GatewayError
 // @Failure      502  {object}  core.GatewayError
 // @Router       /v1/batches/{id} [get]
-func (h *Handler) GetBatch(c echo.Context) error {
+func (h *Handler) GetBatch(c *echo.Context) error {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		return handleError(c, core.NewInvalidRequestError("batch id is required", nil))
@@ -991,7 +991,7 @@ func (h *Handler) GetBatch(c echo.Context) error {
 // @Failure      404    {object}  core.GatewayError
 // @Failure      500    {object}  core.GatewayError
 // @Router       /v1/batches [get]
-func (h *Handler) ListBatches(c echo.Context) error {
+func (h *Handler) ListBatches(c *echo.Context) error {
 	limit := 20
 	if v := strings.TrimSpace(c.QueryParam("limit")); v != "" {
 		parsed, err := strconv.Atoi(v)
@@ -1060,7 +1060,7 @@ func (h *Handler) ListBatches(c echo.Context) error {
 // @Failure      500  {object}  core.GatewayError
 // @Failure      502  {object}  core.GatewayError
 // @Router       /v1/batches/{id}/cancel [post]
-func (h *Handler) CancelBatch(c echo.Context) error {
+func (h *Handler) CancelBatch(c *echo.Context) error {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		return handleError(c, core.NewInvalidRequestError("batch id is required", nil))
@@ -1109,7 +1109,7 @@ func (h *Handler) CancelBatch(c echo.Context) error {
 // @Failure      500  {object}  core.GatewayError
 // @Failure      502  {object}  core.GatewayError
 // @Router       /v1/batches/{id}/results [get]
-func (h *Handler) BatchResults(c echo.Context) error {
+func (h *Handler) BatchResults(c *echo.Context) error {
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
 		return handleError(c, core.NewInvalidRequestError("batch id is required", nil))
@@ -1586,7 +1586,7 @@ func isNativeBatchResultsPending(err error) bool {
 }
 
 // handleError converts gateway errors to appropriate HTTP responses
-func handleError(c echo.Context, err error) error {
+func handleError(c *echo.Context, err error) error {
 	var gatewayErr *core.GatewayError
 	if errors.As(err, &gatewayErr) {
 		auditlog.EnrichEntryWithError(c, string(gatewayErr.Type), gatewayErr.Message)

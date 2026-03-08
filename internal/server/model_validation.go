@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
@@ -21,7 +21,7 @@ const providerTypeKey contextKey = "providerType"
 // and propagates request-scoped values needed by downstream handlers.
 func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			path := c.Request().URL.Path
 			if !auditlog.IsModelInteractionPath(path) {
 				return next(c)
@@ -77,7 +77,7 @@ func isBatchOrFileRootOrSubresource(path string) bool {
 }
 
 // GetProviderType returns the provider type set by ModelValidation for this request.
-func GetProviderType(c echo.Context) string {
+func GetProviderType(c *echo.Context) string {
 	if v, ok := c.Get(string(providerTypeKey)).(string); ok {
 		return v
 	}
@@ -85,6 +85,6 @@ func GetProviderType(c echo.Context) string {
 }
 
 // ModelCtx returns the request context and resolved provider type.
-func ModelCtx(c echo.Context) (context.Context, string) {
+func ModelCtx(c *echo.Context) (context.Context, string) {
 	return c.Request().Context(), GetProviderType(c)
 }

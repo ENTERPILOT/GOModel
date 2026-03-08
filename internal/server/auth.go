@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // AuthMiddleware creates an Echo middleware that validates the master key
@@ -13,7 +13,7 @@ import (
 // skipPaths is a list of paths that should bypass authentication.
 func AuthMiddleware(masterKey string, skipPaths []string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			// If no master key is configured, allow all requests
 			if masterKey == "" {
 				return next(c)

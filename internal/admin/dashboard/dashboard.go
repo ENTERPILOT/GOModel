@@ -8,7 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 //go:embed templates/*.html static/css/*.css static/js/*.js static/js/modules/*.js static/*.svg
@@ -39,19 +39,19 @@ func New() (*Handler, error) {
 }
 
 // Index serves GET /admin/dashboard — the main dashboard page.
-func (h *Handler) Index(c echo.Context) error {
+func (h *Handler) Index(c *echo.Context) error {
 	var buf bytes.Buffer
 	if err := h.indexTmpl.ExecuteTemplate(&buf, "layout", nil); err != nil {
 		return err
 	}
 	c.Response().Header().Set("Content-Type", "text/html; charset=utf-8")
 	c.Response().WriteHeader(http.StatusOK)
-	_, err := buf.WriteTo(c.Response().Writer)
+	_, err := buf.WriteTo(c.Response())
 	return err
 }
 
 // Static serves GET /admin/static/* — embedded CSS/JS assets.
-func (h *Handler) Static(c echo.Context) error {
-	h.staticFS.ServeHTTP(c.Response().Writer, c.Request())
+func (h *Handler) Static(c *echo.Context) error {
+	h.staticFS.ServeHTTP(c.Response(), c.Request())
 	return nil
 }

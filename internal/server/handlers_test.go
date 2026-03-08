@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
@@ -118,6 +118,10 @@ func (r *erroringReadCloser) Read(p []byte) (int, error) {
 
 func (r *erroringReadCloser) Close() error {
 	return nil
+}
+
+func setPathParam(c *echo.Context, name, value string) {
+	c.SetPathValues(echo.PathValues{{Name: name, Value: value}})
 }
 
 type capturingAuditLogger struct {
@@ -1516,8 +1520,7 @@ func TestBatches_LifecycleEndpoints(t *testing.T) {
 	getRec := httptest.NewRecorder()
 	getCtx := e.NewContext(getReq, getRec)
 	getCtx.SetPath("/v1/batches/:id")
-	getCtx.SetParamNames("id")
-	getCtx.SetParamValues(created.ID)
+	setPathParam(getCtx, "id", created.ID)
 	if err := handler.GetBatch(getCtx); err != nil {
 		t.Fatalf("get handler returned error: %v", err)
 	}
@@ -1548,8 +1551,7 @@ func TestBatches_LifecycleEndpoints(t *testing.T) {
 	resRec := httptest.NewRecorder()
 	resCtx := e.NewContext(resReq, resRec)
 	resCtx.SetPath("/v1/batches/:id/results")
-	resCtx.SetParamNames("id")
-	resCtx.SetParamValues(created.ID)
+	setPathParam(resCtx, "id", created.ID)
 	if err := handler.BatchResults(resCtx); err != nil {
 		t.Fatalf("results handler returned error: %v", err)
 	}
@@ -1572,8 +1574,7 @@ func TestBatches_LifecycleEndpoints(t *testing.T) {
 	cancelRec := httptest.NewRecorder()
 	cancelCtx := e.NewContext(cancelReq, cancelRec)
 	cancelCtx.SetPath("/v1/batches/:id/cancel")
-	cancelCtx.SetParamNames("id")
-	cancelCtx.SetParamValues(created.ID)
+	setPathParam(cancelCtx, "id", created.ID)
 	if err := handler.CancelBatch(cancelCtx); err != nil {
 		t.Fatalf("cancel handler returned error: %v", err)
 	}
@@ -1632,8 +1633,7 @@ func TestBatchResults_PendingReturnsConflict(t *testing.T) {
 	resRec := httptest.NewRecorder()
 	resCtx := e.NewContext(resReq, resRec)
 	resCtx.SetPath("/v1/batches/:id/results")
-	resCtx.SetParamNames("id")
-	resCtx.SetParamValues(created.ID)
+	setPathParam(resCtx, "id", created.ID)
 	if err := handler.BatchResults(resCtx); err != nil {
 		t.Fatalf("results handler returned error: %v", err)
 	}
@@ -1729,8 +1729,7 @@ func TestBatchResults_LogsUsageOnce(t *testing.T) {
 	resRec1 := httptest.NewRecorder()
 	resCtx1 := e.NewContext(resReq1, resRec1)
 	resCtx1.SetPath("/v1/batches/:id/results")
-	resCtx1.SetParamNames("id")
-	resCtx1.SetParamValues(created.ID)
+	setPathParam(resCtx1, "id", created.ID)
 	if err := handler.BatchResults(resCtx1); err != nil {
 		t.Fatalf("results handler returned error: %v", err)
 	}
@@ -1743,8 +1742,7 @@ func TestBatchResults_LogsUsageOnce(t *testing.T) {
 	resRec2 := httptest.NewRecorder()
 	resCtx2 := e.NewContext(resReq2, resRec2)
 	resCtx2.SetPath("/v1/batches/:id/results")
-	resCtx2.SetParamNames("id")
-	resCtx2.SetParamValues(created.ID)
+	setPathParam(resCtx2, "id", created.ID)
 	if err := handler.BatchResults(resCtx2); err != nil {
 		t.Fatalf("second results handler returned error: %v", err)
 	}
@@ -1797,8 +1795,7 @@ func TestGetBatch_NotFound(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.SetPath("/v1/batches/:id")
-	c.SetParamNames("id")
-	c.SetParamValues("missing")
+	setPathParam(c, "id", "missing")
 
 	if err := handler.GetBatch(c); err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -2032,8 +2029,7 @@ func TestGetDeleteAndContentFile(t *testing.T) {
 	getRec := httptest.NewRecorder()
 	getCtx := e.NewContext(getReq, getRec)
 	getCtx.SetPath("/v1/files/:id")
-	getCtx.SetParamNames("id")
-	getCtx.SetParamValues("file_1")
+	setPathParam(getCtx, "id", "file_1")
 	if err := handler.GetFile(getCtx); err != nil {
 		t.Fatalf("get handler returned error: %v", err)
 	}
@@ -2046,8 +2042,7 @@ func TestGetDeleteAndContentFile(t *testing.T) {
 	delRec := httptest.NewRecorder()
 	delCtx := e.NewContext(delReq, delRec)
 	delCtx.SetPath("/v1/files/:id")
-	delCtx.SetParamNames("id")
-	delCtx.SetParamValues("file_1")
+	setPathParam(delCtx, "id", "file_1")
 	if err := handler.DeleteFile(delCtx); err != nil {
 		t.Fatalf("delete handler returned error: %v", err)
 	}
@@ -2060,8 +2055,7 @@ func TestGetDeleteAndContentFile(t *testing.T) {
 	contentRec := httptest.NewRecorder()
 	contentCtx := e.NewContext(contentReq, contentRec)
 	contentCtx.SetPath("/v1/files/:id/content")
-	contentCtx.SetParamNames("id")
-	contentCtx.SetParamValues("file_1")
+	setPathParam(contentCtx, "id", "file_1")
 	if err := handler.GetFileContent(contentCtx); err != nil {
 		t.Fatalf("content handler returned error: %v", err)
 	}
@@ -2220,8 +2214,7 @@ func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.SetPath("/v1/files/:id")
-	c.SetParamNames("id")
-	c.SetParamValues("file_ok_1")
+	setPathParam(c, "id", "file_ok_1")
 
 	if err := handler.GetFile(c); err != nil {
 		t.Fatalf("handler returned error: %v", err)

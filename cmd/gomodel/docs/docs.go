@@ -17,11 +17,6 @@ const docTemplate = `{
     "paths": {
         "/admin/api/v1/audit/conversation": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -63,16 +58,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/audit/log": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/audit/log": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -179,16 +174,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/models": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/models": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -212,16 +207,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/models/categories": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/models/categories": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -245,16 +240,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/usage/daily": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/usage/daily": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -310,16 +305,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/usage/log": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/usage/log": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -396,16 +391,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/usage/models": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/usage/models": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -455,16 +450,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/admin/api/v1/usage/summary": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/admin/api/v1/usage/summary": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -511,7 +506,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         },
         "/health": {
@@ -538,11 +538,6 @@ const docTemplate = `{
         },
         "/v1/batches": {
             "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -595,14 +590,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -649,16 +644,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/batches/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/batches/{id}": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -712,16 +707,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/batches/{id}/cancel": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/batches/{id}/cancel": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -778,16 +773,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/batches/{id}/results": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/batches/{id}/results": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -847,16 +842,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/chat/completions": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/chat/completions": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -910,16 +905,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/embeddings": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/embeddings": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -972,16 +967,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/files": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/files": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -1046,14 +1041,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            },
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "post": {
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1111,16 +1106,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/files/{id}": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/files/{id}": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -1174,14 +1169,14 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            },
-            "delete": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            },
+            "delete": {
                 "produces": [
                     "application/json"
                 ],
@@ -1235,16 +1230,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/files/{id}/content": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/files/{id}/content": {
+            "get": {
                 "produces": [
                     "application/octet-stream"
                 ],
@@ -1298,16 +1293,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/models": {
-            "get": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/models": {
+            "get": {
                 "produces": [
                     "application/json"
                 ],
@@ -1334,16 +1329,16 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
-            }
-        },
-        "/v1/responses": {
-            "post": {
+                },
                 "security": [
                     {
                         "BearerAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/v1/responses": {
+            "post": {
                 "consumes": [
                     "application/json"
                 ],
@@ -1396,7 +1391,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/core.GatewayError"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
             }
         }
     },
@@ -2376,9 +2376,16 @@ const docTemplate = `{
                 }
             }
         },
-        "core.ResponsesInputItem": {
+        "core.ResponsesInputElement": {
             "type": "object",
             "properties": {
+                "arguments": {
+                    "type": "string"
+                },
+                "call_id": {
+                    "description": "Function call fields (type=\"function_call\")",
+                    "type": "string"
+                },
                 "content": {
                     "type": "array",
                     "items": {
@@ -2386,7 +2393,22 @@ const docTemplate = `{
                     },
                     "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"
                 },
+                "name": {
+                    "type": "string"
+                },
+                "output": {
+                    "description": "Function call output fields (type=\"function_call_output\") — CallID shared above",
+                    "type": "string"
+                },
                 "role": {
+                    "description": "Message fields (type=\"\" or \"message\")",
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "\"message\", \"function_call\", \"function_call_output\"",
                     "type": "string"
                 }
             }
@@ -2430,9 +2452,9 @@ const docTemplate = `{
                 "input": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/core.ResponsesInputItem"
+                        "$ref": "#/definitions/core.ResponsesInputElement"
                     },
-                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesInputItem\"}}]"
+                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesInputElement\"}}]"
                 },
                 "instructions": {
                     "type": "string"

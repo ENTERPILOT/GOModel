@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
@@ -59,7 +59,7 @@ var validIntervals = map[string]bool{
 
 // parseUsageParams extracts UsageQueryParams from the request query string.
 // Returns an error if date parameters are provided but malformed.
-func parseUsageParams(c echo.Context) (usage.UsageQueryParams, error) {
+func parseUsageParams(c *echo.Context) (usage.UsageQueryParams, error) {
 	params, err := parseDateRangeParams(c)
 	if err != nil {
 		return params, err
@@ -76,7 +76,7 @@ func parseUsageParams(c echo.Context) (usage.UsageQueryParams, error) {
 
 // parseDateRangeParams extracts common date range query params.
 // Returns an error if date parameters are provided but malformed.
-func parseDateRangeParams(c echo.Context) (usage.UsageQueryParams, error) {
+func parseDateRangeParams(c *echo.Context) (usage.UsageQueryParams, error) {
 	var params usage.UsageQueryParams
 
 	now := time.Now().UTC()
@@ -129,7 +129,7 @@ func parseDateRangeParams(c echo.Context) (usage.UsageQueryParams, error) {
 
 // handleError converts errors to appropriate HTTP responses, matching the
 // format used by the main API handlers in the server package.
-func handleError(c echo.Context, err error) error {
+func handleError(c *echo.Context, err error) error {
 	var gatewayErr *core.GatewayError
 	if errors.As(err, &gatewayErr) {
 		return c.JSON(gatewayErr.HTTPStatusCode(), gatewayErr.ToJSON())
@@ -156,7 +156,7 @@ func handleError(c echo.Context, err error) error {
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/summary [get]
-func (h *Handler) UsageSummary(c echo.Context) error {
+func (h *Handler) UsageSummary(c *echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, usage.UsageSummary{})
 	}
@@ -188,7 +188,7 @@ func (h *Handler) UsageSummary(c echo.Context) error {
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/daily [get]
-func (h *Handler) DailyUsage(c echo.Context) error {
+func (h *Handler) DailyUsage(c *echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, []usage.DailyUsage{})
 	}
@@ -223,7 +223,7 @@ func (h *Handler) DailyUsage(c echo.Context) error {
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/models [get]
-func (h *Handler) UsageByModel(c echo.Context) error {
+func (h *Handler) UsageByModel(c *echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, []usage.ModelUsage{})
 	}
@@ -263,7 +263,7 @@ func (h *Handler) UsageByModel(c echo.Context) error {
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/log [get]
-func (h *Handler) UsageLog(c echo.Context) error {
+func (h *Handler) UsageLog(c *echo.Context) error {
 	if h.usageReader == nil {
 		return c.JSON(http.StatusOK, usage.UsageLogResult{
 			Entries: []usage.UsageLogEntry{},
@@ -328,7 +328,7 @@ func (h *Handler) UsageLog(c echo.Context) error {
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/audit/log [get]
-func (h *Handler) AuditLog(c echo.Context) error {
+func (h *Handler) AuditLog(c *echo.Context) error {
 	if h.auditReader == nil {
 		return c.JSON(http.StatusOK, auditlog.LogListResult{
 			Entries: []auditlog.LogEntry{},
@@ -404,7 +404,7 @@ func (h *Handler) AuditLog(c echo.Context) error {
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/audit/conversation [get]
-func (h *Handler) AuditConversation(c echo.Context) error {
+func (h *Handler) AuditConversation(c *echo.Context) error {
 	if h.auditReader == nil {
 		return c.JSON(http.StatusOK, auditlog.ConversationResult{
 			AnchorID: c.QueryParam("log_id"),
@@ -456,7 +456,7 @@ func (h *Handler) AuditConversation(c echo.Context) error {
 // @Success      200  {array}  providers.ModelWithProvider
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/models [get]
-func (h *Handler) ListModels(c echo.Context) error {
+func (h *Handler) ListModels(c *echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.ModelWithProvider{})
 	}
@@ -501,7 +501,7 @@ func isValidCategory(cat core.ModelCategory) bool {
 // @Success      200  {array}   providers.CategoryCount
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/models/categories [get]
-func (h *Handler) ListCategories(c echo.Context) error {
+func (h *Handler) ListCategories(c *echo.Context) error {
 	if h.registry == nil {
 		return c.JSON(http.StatusOK, []providers.CategoryCount{})
 	}

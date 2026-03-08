@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -76,7 +76,7 @@ func TestAuthMiddleware(t *testing.T) {
 			e := echo.New()
 
 			// Create a test handler that returns OK
-			testHandler := func(c echo.Context) error {
+			testHandler := func(c *echo.Context) error {
 				return c.String(http.StatusOK, "ok")
 			}
 
@@ -114,7 +114,7 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 		e := echo.New()
 		e.Use(AuthMiddleware("my-secret-key", nil))
 
-		e.GET("/test", func(c echo.Context) error {
+		e.GET("/test", func(c *echo.Context) error {
 			return c.String(http.StatusOK, "success")
 		})
 
@@ -137,7 +137,7 @@ func TestAuthMiddleware_Integration(t *testing.T) {
 		e := echo.New()
 		e.Use(AuthMiddleware("", nil))
 
-		e.GET("/test", func(c echo.Context) error {
+		e.GET("/test", func(c *echo.Context) error {
 			return c.String(http.StatusOK, "success")
 		})
 
@@ -155,13 +155,13 @@ func TestAuthMiddleware_SkipPaths(t *testing.T) {
 		e := echo.New()
 		e.Use(AuthMiddleware("my-secret-key", []string{"/health", "/metrics"}))
 
-		e.GET("/health", func(c echo.Context) error {
+		e.GET("/health", func(c *echo.Context) error {
 			return c.String(http.StatusOK, "healthy")
 		})
-		e.GET("/metrics", func(c echo.Context) error {
+		e.GET("/metrics", func(c *echo.Context) error {
 			return c.String(http.StatusOK, "metrics")
 		})
-		e.GET("/api/protected", func(c echo.Context) error {
+		e.GET("/api/protected", func(c *echo.Context) error {
 			return c.String(http.StatusOK, "protected")
 		})
 
@@ -198,7 +198,7 @@ func TestAuthMiddleware_SkipPaths(t *testing.T) {
 		e := echo.New()
 		e.Use(AuthMiddleware("my-secret-key", []string{}))
 
-		e.GET("/health", func(c echo.Context) error {
+		e.GET("/health", func(c *echo.Context) error {
 			return c.String(http.StatusOK, "healthy")
 		})
 
@@ -255,7 +255,7 @@ func TestAuthMiddleware_WildcardSkipPaths(t *testing.T) {
 			e := echo.New()
 			e.Use(AuthMiddleware("secret-key", skipPaths))
 
-			e.GET(tt.path, func(c echo.Context) error {
+			e.GET(tt.path, func(c *echo.Context) error {
 				return c.String(http.StatusOK, "ok")
 			})
 
@@ -324,7 +324,7 @@ func TestAuthMiddleware_ConstantTimeComparison(t *testing.T) {
 				e := echo.New()
 
 				// Create a test handler
-				testHandler := func(c echo.Context) error {
+				testHandler := func(c *echo.Context) error {
 					return c.String(http.StatusOK, "ok")
 				}
 

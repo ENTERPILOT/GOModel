@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
@@ -119,7 +119,7 @@ func (m *handlerMockProvider) Embeddings(_ context.Context, _ *core.EmbeddingReq
 	return nil, core.NewInvalidRequestError("not supported", nil)
 }
 
-func newHandlerContext(path string) (echo.Context, *httptest.ResponseRecorder) {
+func newHandlerContext(path string) (*echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rec := httptest.NewRecorder()
@@ -1175,7 +1175,7 @@ func stringContains(s, substr string) bool {
 	return false
 }
 
-func newContext(query string) echo.Context {
+func newContext(query string) *echo.Context {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/test?"+query, nil)
 	rec := httptest.NewRecorder()
