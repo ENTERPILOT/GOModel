@@ -31,17 +31,9 @@ func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
 // ResponsesInputItem represents an input item when Input is an array.
 type ResponsesInputItem struct {
 	Role    string      `json:"role"`
-	Content interface{} `json:"content"` // Can be string or []ResponsesContentPart
-	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is string OR []ResponsesContentPart.
-	ContentSchema []ResponsesContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesContentPart\"}}]"`
-}
-
-// ResponsesContentPart represents a content part (text, image, etc.).
-type ResponsesContentPart struct {
-	Type       string             `json:"type"` // "input_text", "input_image", etc.
-	Text       string             `json:"text,omitempty"`
-	ImageURL   *ImageURLContent   `json:"image_url,omitempty"`
-	InputAudio *InputAudioContent `json:"input_audio,omitempty"`
+	Content interface{} `json:"content"` // Can be string or []ContentPart
+	//nolint:govet // Intentional duplicate json tag for Swagger docs: content is string OR []ContentPart.
+	ContentSchema []ContentPart `json:"content,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"`
 }
 
 // ResponsesResponse represents the response from the Responses API.

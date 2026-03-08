@@ -105,7 +105,7 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				Input: []core.ResponsesInputItem{
 					{
 						Role: " user ",
-						Content: []core.ResponsesContentPart{
+						Content: []core.ContentPart{
 							{Type: "input_text", Text: "Describe the image."},
 							{
 								Type: "input_image",

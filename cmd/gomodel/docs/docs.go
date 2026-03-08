@@ -2359,24 +2359,6 @@ const docTemplate = `{
                 }
             }
         },
-        "core.ResponsesContentPart": {
-            "type": "object",
-            "properties": {
-                "image_url": {
-                    "$ref": "#/definitions/core.ImageURLContent"
-                },
-                "input_audio": {
-                    "$ref": "#/definitions/core.InputAudioContent"
-                },
-                "text": {
-                    "type": "string"
-                },
-                "type": {
-                    "description": "\"input_text\", \"input_image\", etc.",
-                    "type": "string"
-                }
-            }
-        },
         "core.ResponsesError": {
             "type": "object",
             "properties": {
@@ -2394,9 +2376,9 @@ const docTemplate = `{
                 "content": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/core.ResponsesContentPart"
+                        "$ref": "#/definitions/core.ContentPart"
                     },
-                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesContentPart\"}}]"
+                    "x-oneof": "[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"
                 },
                 "role": {
                     "type": "string"

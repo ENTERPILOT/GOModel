@@ -260,7 +260,7 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 		return convertResponsesContentParts(items)
 	case []interface{}:
 		return convertResponsesContentParts(c)
-	case []core.ResponsesContentPart:
+	case []core.ContentPart:
 		parts := make([]core.ContentPart, 0, len(c))
 		for _, part := range c {
 			normalized, ok := normalizeTypedResponsesContentPart(part)
@@ -270,22 +270,12 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 			parts = append(parts, normalized)
 		}
 		return finalizeResponsesChatContent(parts)
-	case core.ResponsesContentPart:
+	case core.ContentPart:
 		normalized, ok := normalizeTypedResponsesContentPart(c)
 		if !ok {
 			return nil, false
 		}
 		return finalizeResponsesChatContent([]core.ContentPart{normalized})
-	case []core.ContentPart:
-		normalized, err := core.NormalizeMessageContent(c)
-		if err != nil {
-			return nil, false
-		}
-		parts, ok := normalized.([]core.ContentPart)
-		if !ok {
-			return nil, false
-		}
-		return finalizeResponsesChatContent(parts)
 	default:
 		return nil, false
 	}
@@ -361,7 +351,7 @@ func convertResponsesContentParts(parts []interface{}) (any, bool) {
 	return finalizeResponsesChatContent(typedParts)
 }
 
-func normalizeTypedResponsesContentPart(part core.ResponsesContentPart) (core.ContentPart, bool) {
+func normalizeTypedResponsesContentPart(part core.ContentPart) (core.ContentPart, bool) {
 	switch part.Type {
 	case "text", "input_text", "output_text":
 		if part.Text == "" {
@@ -481,7 +471,7 @@ func ExtractContentFromInput(content interface{}) string {
 	switch c := content.(type) {
 	case string:
 		return c
-	case []core.ResponsesContentPart:
+	case []core.ContentPart:
 		texts := make([]string, 0, len(c))
 		for _, part := range c {
 			if part.Text != "" {

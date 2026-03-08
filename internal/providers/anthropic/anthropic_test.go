@@ -3645,7 +3645,7 @@ func TestConvertResponsesRequestToAnthropic_TypedInputPromotesSystemRole(t *test
 			},
 			{
 				Role: " user ",
-				Content: []core.ResponsesContentPart{
+				Content: []core.ContentPart{
 					{Type: "input_text", Text: "hello"},
 				},
 			},
