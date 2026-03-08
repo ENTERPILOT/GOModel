@@ -8,17 +8,19 @@ import (
 // UnmarshalJSON preserves dynamic input payloads while supporting Swagger-only schema fields.
 func (r *ResponsesRequest) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Model           string            `json:"model"`
-		Provider        string            `json:"provider,omitempty"`
-		Input           json.RawMessage   `json:"input"`
-		Instructions    string            `json:"instructions,omitempty"`
-		Tools           []map[string]any  `json:"tools,omitempty"`
-		Temperature     *float64          `json:"temperature,omitempty"`
-		MaxOutputTokens *int              `json:"max_output_tokens,omitempty"`
-		Stream          bool              `json:"stream,omitempty"`
-		StreamOptions   *StreamOptions    `json:"stream_options,omitempty"`
-		Metadata        map[string]string `json:"metadata,omitempty"`
-		Reasoning       *Reasoning        `json:"reasoning,omitempty"`
+		Model             string            `json:"model"`
+		Provider          string            `json:"provider,omitempty"`
+		Input             json.RawMessage   `json:"input"`
+		Instructions      string            `json:"instructions,omitempty"`
+		Tools             []map[string]any  `json:"tools,omitempty"`
+		ToolChoice        any               `json:"tool_choice,omitempty"`
+		ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
+		Temperature       *float64          `json:"temperature,omitempty"`
+		MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
+		Stream            bool              `json:"stream,omitempty"`
+		StreamOptions     *StreamOptions    `json:"stream_options,omitempty"`
+		Metadata          map[string]string `json:"metadata,omitempty"`
+		Reasoning         *Reasoning        `json:"reasoning,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -37,6 +39,8 @@ func (r *ResponsesRequest) UnmarshalJSON(data []byte) error {
 	r.Input = input
 	r.Instructions = raw.Instructions
 	r.Tools = raw.Tools
+	r.ToolChoice = raw.ToolChoice
+	r.ParallelToolCalls = raw.ParallelToolCalls
 	r.Temperature = raw.Temperature
 	r.MaxOutputTokens = raw.MaxOutputTokens
 	r.Stream = raw.Stream
@@ -49,28 +53,32 @@ func (r *ResponsesRequest) UnmarshalJSON(data []byte) error {
 // MarshalJSON preserves dynamic input payloads while supporting Swagger-only schema fields.
 func (r ResponsesRequest) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Model           string            `json:"model"`
-		Provider        string            `json:"provider,omitempty"`
-		Input           any               `json:"input"`
-		Instructions    string            `json:"instructions,omitempty"`
-		Tools           []map[string]any  `json:"tools,omitempty"`
-		Temperature     *float64          `json:"temperature,omitempty"`
-		MaxOutputTokens *int              `json:"max_output_tokens,omitempty"`
-		Stream          bool              `json:"stream,omitempty"`
-		StreamOptions   *StreamOptions    `json:"stream_options,omitempty"`
-		Metadata        map[string]string `json:"metadata,omitempty"`
-		Reasoning       *Reasoning        `json:"reasoning,omitempty"`
+		Model             string            `json:"model"`
+		Provider          string            `json:"provider,omitempty"`
+		Input             any               `json:"input"`
+		Instructions      string            `json:"instructions,omitempty"`
+		Tools             []map[string]any  `json:"tools,omitempty"`
+		ToolChoice        any               `json:"tool_choice,omitempty"`
+		ParallelToolCalls *bool             `json:"parallel_tool_calls,omitempty"`
+		Temperature       *float64          `json:"temperature,omitempty"`
+		MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
+		Stream            bool              `json:"stream,omitempty"`
+		StreamOptions     *StreamOptions    `json:"stream_options,omitempty"`
+		Metadata          map[string]string `json:"metadata,omitempty"`
+		Reasoning         *Reasoning        `json:"reasoning,omitempty"`
 	}{
-		Model:           r.Model,
-		Provider:        r.Provider,
-		Input:           r.Input,
-		Instructions:    r.Instructions,
-		Tools:           r.Tools,
-		Temperature:     r.Temperature,
-		MaxOutputTokens: r.MaxOutputTokens,
-		Stream:          r.Stream,
-		StreamOptions:   r.StreamOptions,
-		Metadata:        r.Metadata,
-		Reasoning:       r.Reasoning,
+		Model:             r.Model,
+		Provider:          r.Provider,
+		Input:             r.Input,
+		Instructions:      r.Instructions,
+		Tools:             r.Tools,
+		ToolChoice:        r.ToolChoice,
+		ParallelToolCalls: r.ParallelToolCalls,
+		Temperature:       r.Temperature,
+		MaxOutputTokens:   r.MaxOutputTokens,
+		Stream:            r.Stream,
+		StreamOptions:     r.StreamOptions,
+		Metadata:          r.Metadata,
+		Reasoning:         r.Reasoning,
 	})
 }

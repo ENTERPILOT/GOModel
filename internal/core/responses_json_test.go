@@ -31,6 +31,29 @@ func TestResponsesRequestUnmarshalJSON_ArrayInput(t *testing.T) {
 	}
 }
 
+func TestResponsesRequestUnmarshalJSON_PreservesToolCallingControls(t *testing.T) {
+	var req ResponsesRequest
+	if err := json.Unmarshal([]byte(`{
+		"model":"gpt-4o-mini",
+		"input":"hello",
+		"tool_choice":{"type":"function","function":{"name":"lookup_weather"}},
+		"parallel_tool_calls":false
+	}`), &req); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	toolChoice, ok := req.ToolChoice.(map[string]interface{})
+	if !ok {
+		t.Fatalf("ToolChoice = %#v, want object", req.ToolChoice)
+	}
+	if typ, _ := toolChoice["type"].(string); typ != "function" {
+		t.Fatalf("ToolChoice.type = %#v, want function", toolChoice["type"])
+	}
+	if req.ParallelToolCalls == nil || *req.ParallelToolCalls {
+		t.Fatalf("ParallelToolCalls = %#v, want false", req.ParallelToolCalls)
+	}
+}
+
 func TestResponsesRequestMarshalJSON_PreservesInput(t *testing.T) {
 	body, err := json.Marshal(ResponsesRequest{
 		Model: "gpt-4o-mini",
@@ -90,5 +113,40 @@ func TestResponsesRequestMarshalJSON_PreservesInput(t *testing.T) {
 	}
 	if text, _ := firstPart["text"].(string); text != "hello" {
 		t.Fatalf("first content text = %#v, want hello", firstPart["text"])
+	}
+}
+
+func TestResponsesRequestMarshalJSON_PreservesToolCallingControls(t *testing.T) {
+	parallelToolCalls := false
+	body, err := json.Marshal(ResponsesRequest{
+		Model: "gpt-4o-mini",
+		Input: "hello",
+		ToolChoice: map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "lookup_weather",
+			},
+		},
+		ParallelToolCalls: &parallelToolCalls,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	toolChoice, ok := decoded["tool_choice"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decoded tool_choice = %#v, want object", decoded["tool_choice"])
+	}
+	if typ, _ := toolChoice["type"].(string); typ != "function" {
+		t.Fatalf("decoded tool_choice.type = %#v, want function", toolChoice["type"])
+	}
+	parallel, ok := decoded["parallel_tool_calls"].(bool)
+	if !ok || parallel {
+		t.Fatalf("decoded parallel_tool_calls = %#v, want false", decoded["parallel_tool_calls"])
 	}
 }
