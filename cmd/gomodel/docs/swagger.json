@@ -1775,6 +1775,9 @@
                 "model": {
                     "type": "string"
                 },
+                "parallel_tool_calls": {
+                    "type": "boolean"
+                },
                 "provider": {
                     "type": "string"
                 },
@@ -1789,6 +1792,16 @@
                 },
                 "temperature": {
                     "type": "number"
+                },
+                "tool_choice": {
+                    "description": "string or object"
+                },
+                "tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": {}
+                    }
                 }
             }
         },
@@ -2081,6 +2094,9 @@
                     "x-oneof": "[{\"type\":\"null\"},{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ContentPart\"}}]"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "tool_call_id": {
                     "type": "string"
                 },
                 "tool_calls": {
@@ -2386,6 +2402,12 @@
         "core.ResponsesOutputItem": {
             "type": "object",
             "properties": {
+                "arguments": {
+                    "type": "string"
+                },
+                "call_id": {
+                    "type": "string"
+                },
                 "content": {
                     "type": "array",
                     "items": {
@@ -2393,6 +2415,9 @@
                     }
                 },
                 "id": {
+                    "type": "string"
+                },
+                "name": {
                     "type": "string"
                 },
                 "role": {
@@ -2432,6 +2457,9 @@
                 "model": {
                     "type": "string"
                 },
+                "parallel_tool_calls": {
+                    "type": "boolean"
+                },
                 "provider": {
                     "type": "string"
                 },
@@ -2446,6 +2474,9 @@
                 },
                 "temperature": {
                     "type": "number"
+                },
+                "tool_choice": {
+                    "description": "string or object"
                 },
                 "tools": {
                     "type": "array",

@@ -8,9 +8,10 @@ import (
 // UnmarshalJSON validates chat request message content while preserving multimodal payloads.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		Role      string          `json:"role"`
-		Content   json.RawMessage `json:"content"`
-		ToolCalls []ToolCall      `json:"tool_calls,omitempty"`
+		Role       string          `json:"role"`
+		Content    json.RawMessage `json:"content"`
+		ToolCalls  []ToolCall      `json:"tool_calls,omitempty"`
+		ToolCallID string          `json:"tool_call_id,omitempty"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -24,24 +25,35 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	m.Role = raw.Role
 	m.Content = content
 	m.ToolCalls = raw.ToolCalls
+	m.ToolCallID = raw.ToolCallID
+	m.ContentNull = content == nil
 	return nil
 }
 
 // MarshalJSON ensures only supported chat request message content shapes are emitted.
 func (m Message) MarshalJSON() ([]byte, error) {
-	content, err := marshalMessageContent(m.Content, m.ToolCalls)
-	if err != nil {
-		return nil, err
+	content := any(nil)
+	var err error
+	switch {
+	case m.ContentNull && isNullEquivalentMessageContent(m.Content):
+		content = nil
+	default:
+		content, err = marshalMessageContent(m.Content, m.ToolCalls)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return json.Marshal(struct {
-		Role      string     `json:"role"`
-		Content   any        `json:"content"`
-		ToolCalls []ToolCall `json:"tool_calls,omitempty"`
+		Role       string     `json:"role"`
+		Content    any        `json:"content"`
+		ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+		ToolCallID string     `json:"tool_call_id,omitempty"`
 	}{
-		Role:      m.Role,
-		Content:   content,
-		ToolCalls: m.ToolCalls,
+		Role:       m.Role,
+		Content:    content,
+		ToolCalls:  m.ToolCalls,
+		ToolCallID: m.ToolCallID,
 	})
 }
 
@@ -104,6 +116,17 @@ func marshalMessageContent(raw MessageContent, toolCalls []ToolCall) (any, error
 }
 
 func isNullEquivalentToolCallContent(raw MessageContent) bool {
+	if raw == nil {
+		return true
+	}
+	text, ok := raw.(string)
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(text) == ""
+}
+
+func isNullEquivalentMessageContent(raw MessageContent) bool {
 	if raw == nil {
 		return true
 	}

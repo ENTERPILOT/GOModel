@@ -304,6 +304,251 @@ data: {"type":"message_stop"}
 	}
 }
 
+func TestStreamChatCompletion_WithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"War"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"saw\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "What's the weather?"},
+		},
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundToolStart := false
+	foundFinish := false
+	var argumentDeltas strings.Builder
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+
+		choices, ok := event.Payload["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		if finishReason, _ := choice["finish_reason"].(string); finishReason == "tool_calls" {
+			foundFinish = true
+		}
+
+		delta, ok := choice["delta"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		toolCalls, ok := delta["tool_calls"].([]interface{})
+		if !ok || len(toolCalls) == 0 {
+			continue
+		}
+		toolCall, ok := toolCalls[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		function, _ := toolCall["function"].(map[string]interface{})
+
+		if toolCall["id"] == "toolu_123" && function["name"] == "lookup_weather" {
+			foundToolStart = true
+		}
+		if arguments, _ := function["arguments"].(string); arguments != "" {
+			argumentDeltas.WriteString(arguments)
+		}
+	}
+
+	if !foundToolStart {
+		t.Fatal("expected a streaming tool call header chunk")
+	}
+	if argumentDeltas.String() != `{"city":"Warsaw"}` {
+		t.Fatalf("streamed tool call arguments = %q, want %q", argumentDeltas.String(), `{"city":"Warsaw"}`)
+	}
+	if !foundFinish {
+		t.Fatal("expected a final tool_calls finish_reason chunk")
+	}
+}
+
+func TestStreamChatCompletion_WithEmptyToolArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "What's the weather?"},
+		},
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundToolCall := false
+	foundFinish := false
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+		choices, ok := event.Payload["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if finishReason, _ := choice["finish_reason"].(string); finishReason == "tool_calls" {
+			foundFinish = true
+		}
+		delta, _ := choice["delta"].(map[string]interface{})
+		toolCalls, _ := delta["tool_calls"].([]interface{})
+		if len(toolCalls) == 0 {
+			continue
+		}
+		toolCall, _ := toolCalls[0].(map[string]interface{})
+		function, _ := toolCall["function"].(map[string]interface{})
+		if toolCall["id"] == "toolu_123" && function["name"] == "lookup_weather" && function["arguments"] == "{}" {
+			foundToolCall = true
+		}
+	}
+
+	if !foundToolCall {
+		t.Fatal("expected streamed tool call with {} arguments for zero-arg tool")
+	}
+	if !foundFinish {
+		t.Fatal("expected a final tool_calls finish_reason chunk")
+	}
+}
+
+type testSSEEvent struct {
+	Name    string
+	Payload map[string]interface{}
+	Done    bool
+}
+
+func parseTestSSEEvents(t *testing.T, raw string) []testSSEEvent {
+	t.Helper()
+
+	lines := strings.Split(raw, "\n")
+	events := make([]testSSEEvent, 0)
+	currentEventName := ""
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "event:") {
+			currentEventName = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "[DONE]" {
+			events = append(events, testSSEEvent{Name: currentEventName, Done: true})
+			currentEventName = ""
+			continue
+		}
+
+		var payload map[string]interface{}
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			t.Fatalf("failed to unmarshal SSE payload %q: %v", data, err)
+		}
+
+		events = append(events, testSSEEvent{
+			Name:    currentEventName,
+			Payload: payload,
+		})
+		currentEventName = ""
+	}
+
+	return events
+}
+
 func TestListModels(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify request path and method
@@ -555,6 +800,122 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "request with function tools",
+			input: &core.ChatRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Tools: []map[string]any{
+					{
+						"type": "function",
+						"function": map[string]any{
+							"name":        "lookup_weather",
+							"description": "Get the weather for a city.",
+							"parameters": map[string]any{
+								"type": "object",
+							},
+						},
+					},
+				},
+				ToolChoice: map[string]any{
+					"type": "function",
+					"function": map[string]any{
+						"name": "lookup_weather",
+					},
+				},
+				Messages: []core.Message{
+					{Role: "user", Content: "What's the weather?"},
+				},
+			},
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Tools) != 1 {
+					t.Fatalf("len(Tools) = %d, want 1", len(req.Tools))
+				}
+				if req.Tools[0].Name != "lookup_weather" {
+					t.Fatalf("tool name = %q, want lookup_weather", req.Tools[0].Name)
+				}
+				if req.ToolChoice == nil || req.ToolChoice.Type != "tool" || req.ToolChoice.Name != "lookup_weather" {
+					t.Fatalf("tool choice = %+v, want named tool choice", req.ToolChoice)
+				}
+			},
+		},
+		{
+			name: "request disables parallel tool use",
+			input: func() *core.ChatRequest {
+				parallelToolCalls := false
+				return &core.ChatRequest{
+					Model: "claude-sonnet-4-5-20250929",
+					Tools: []map[string]any{
+						{
+							"type": "function",
+							"function": map[string]any{
+								"name": "lookup_weather",
+							},
+						},
+					},
+					ParallelToolCalls: &parallelToolCalls,
+					Messages: []core.Message{
+						{Role: "user", Content: "What's the weather?"},
+					},
+				}
+			}(),
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if req.ToolChoice == nil {
+					t.Fatal("ToolChoice should not be nil when parallel_tool_calls=false")
+				}
+				if req.ToolChoice.Type != "auto" {
+					t.Fatalf("tool choice type = %q, want auto", req.ToolChoice.Type)
+				}
+				if req.ToolChoice.DisableParallelToolUse == nil || !*req.ToolChoice.DisableParallelToolUse {
+					t.Fatalf("disable_parallel_tool_use = %#v, want true", req.ToolChoice.DisableParallelToolUse)
+				}
+			},
+		},
+		{
+			name: "request with tool result messages",
+			input: &core.ChatRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Messages: []core.Message{
+					{
+						Role: "assistant",
+						ToolCalls: []core.ToolCall{
+							{
+								ID:   "call_123",
+								Type: "function",
+								Function: core.FunctionCall{
+									Name:      "lookup_weather",
+									Arguments: `{"city":"Warsaw"}`,
+								},
+							},
+						},
+					},
+					{Role: "tool", ToolCallID: "call_123", Content: `{"temperature_c":21}`},
+				},
+			},
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+
+				assistantBlocks, ok := req.Messages[0].Content.([]anthropicMessageContentBlock)
+				if !ok || len(assistantBlocks) != 1 {
+					t.Fatalf("assistant content = %#v, want one tool_use block", req.Messages[0].Content)
+				}
+				if assistantBlocks[0].Type != "tool_use" || assistantBlocks[0].Name != "lookup_weather" || assistantBlocks[0].ID != "call_123" {
+					t.Fatalf("assistant tool block = %+v, want lookup_weather/call_123", assistantBlocks[0])
+				}
+
+				toolBlocks, ok := req.Messages[1].Content.([]anthropicMessageContentBlock)
+				if !ok || len(toolBlocks) != 1 {
+					t.Fatalf("tool content = %#v, want one tool_result block", req.Messages[1].Content)
+				}
+				if req.Messages[1].Role != "user" {
+					t.Fatalf("tool role = %q, want user", req.Messages[1].Role)
+				}
+				if toolBlocks[0].Type != "tool_result" || toolBlocks[0].ToolUseID != "call_123" || toolBlocks[0].Content != `{"temperature_c":21}` {
+					t.Fatalf("tool result block = %+v, want call_123 payload", toolBlocks[0])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -565,6 +926,456 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 			}
 			tt.checkFn(t, result)
 		})
+	}
+}
+
+func TestConvertToAnthropicRequest_InvalidToolArguments(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `{"city":"Warsaw"`,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertToAnthropicRequest_RejectsTrailingToolArgumentContent(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `{"city":"Warsaw"} garbage`,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+	if !strings.Contains(gatewayErr.Message, "invalid character") && !strings.Contains(gatewayErr.Message, "exactly one JSON object") {
+		t.Fatalf("error message = %q, want trailing content validation", gatewayErr.Message)
+	}
+}
+
+func TestConvertToAnthropicRequest_InvalidToolDefinition(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "Hello"},
+		},
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name":       "lookup_weather",
+					"parameters": []any{"invalid"},
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertOpenAIToolsToAnthropic(t *testing.T) {
+	tests := []struct {
+		name      string
+		tools     []map[string]any
+		wantNil   bool
+		wantLen   int
+		checkFn   func(t *testing.T, tools []anthropicTool)
+		wantError bool
+	}{
+		{
+			name:    "nil tools returns nil",
+			tools:   nil,
+			wantNil: true,
+		},
+		{
+			name:    "empty tools returns nil",
+			tools:   []map[string]any{},
+			wantNil: true,
+		},
+		{
+			name: "valid function tool",
+			tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name":        "lookup_weather",
+						"description": "Get weather for a city",
+						"parameters": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"city": map[string]any{"type": "string"},
+							},
+						},
+					},
+				},
+			},
+			wantLen: 1,
+			checkFn: func(t *testing.T, tools []anthropicTool) {
+				if tools[0].Name != "lookup_weather" {
+					t.Fatalf("Name = %q, want lookup_weather", tools[0].Name)
+				}
+				if tools[0].Description != "Get weather for a city" {
+					t.Fatalf("Description = %q, want tool description", tools[0].Description)
+				}
+				if schemaType, _ := tools[0].InputSchema["type"].(string); schemaType != "object" {
+					t.Fatalf("InputSchema.type = %q, want object", schemaType)
+				}
+			},
+		},
+		{
+			name: "missing parameters uses default object schema",
+			tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name": "lookup_weather",
+					},
+				},
+			},
+			wantLen: 1,
+			checkFn: func(t *testing.T, tools []anthropicTool) {
+				if schemaType, _ := tools[0].InputSchema["type"].(string); schemaType != "object" {
+					t.Fatalf("InputSchema.type = %q, want object", schemaType)
+				}
+				if _, ok := tools[0].InputSchema["properties"].(map[string]any); !ok {
+					t.Fatalf("InputSchema.properties = %#v, want object map", tools[0].InputSchema["properties"])
+				}
+			},
+		},
+		{
+			name: "unsupported tool type returns error",
+			tools: []map[string]any{
+				{
+					"type": "web_search",
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "missing function object returns error",
+			tools: []map[string]any{
+				{
+					"type": "function",
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "empty function name returns error",
+			tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name": "   ",
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "non object parameters returns error",
+			tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name":       "lookup_weather",
+						"parameters": []any{"invalid"},
+					},
+				},
+			},
+			wantError: true,
+		},
+		{
+			name: "non object schema type returns error",
+			tools: []map[string]any{
+				{
+					"type": "function",
+					"function": map[string]any{
+						"name": "lookup_weather",
+						"parameters": map[string]any{
+							"type": "array",
+						},
+					},
+				},
+			},
+			wantError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := convertOpenAIToolsToAnthropic(tt.tools)
+			if tt.wantError {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				var gatewayErr *core.GatewayError
+				if !errors.As(err, &gatewayErr) {
+					t.Fatalf("error = %T, want *core.GatewayError", err)
+				}
+				if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+					t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+				}
+				if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+					t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("convertOpenAIToolsToAnthropic() error = %v, want nil", err)
+			}
+			if tt.wantNil {
+				if result != nil {
+					t.Fatalf("result = %#v, want nil", result)
+				}
+				return
+			}
+			if len(result) != tt.wantLen {
+				t.Fatalf("len(result) = %d, want %d", len(result), tt.wantLen)
+			}
+			if tt.checkFn != nil {
+				tt.checkFn(t, result)
+			}
+		})
+	}
+}
+
+func TestConvertToAnthropicRequest_InvalidToolChoice(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "Hello"},
+		},
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+		ToolChoice: map[string]any{
+			"type":     "function",
+			"function": map[string]any{},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertToAnthropicRequest_ToolMessageRequiresToolCallID(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "tool", Content: `{"temperature_c":21}`},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertToAnthropicRequest_ToolChoiceRequiresTools(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "Hello"},
+		},
+		ToolChoice: "auto",
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertToAnthropicRequest_ToolArgumentsMustBeJSONObject(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `["Warsaw"]`,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	if !strings.Contains(err.Error(), "tool arguments must be a JSON object") {
+		t.Fatalf("error = %v, want JSON object validation", err)
+	}
+}
+
+func TestConvertToAnthropicRequest_NormalizesToolCallIDAndName(t *testing.T) {
+	result, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "  ",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "  lookup_weather  ",
+							Arguments: `{"city":"Warsaw"}`,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v, want nil", err)
+	}
+
+	blocks, ok := result.Messages[0].Content.([]anthropicMessageContentBlock)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("content = %#v, want one tool_use block", result.Messages[0].Content)
+	}
+	if blocks[0].Name != "lookup_weather" {
+		t.Fatalf("tool name = %q, want lookup_weather", blocks[0].Name)
+	}
+	if blocks[0].ID == "" {
+		t.Fatal("tool id should not be empty")
+	}
+}
+
+func TestConvertToAnthropicRequest_NormalizesToolResultID(t *testing.T) {
+	result, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "tool", ToolCallID: "  call_123  ", Content: `{"temperature_c":21}`},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v, want nil", err)
+	}
+
+	blocks, ok := result.Messages[0].Content.([]anthropicMessageContentBlock)
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("content = %#v, want one tool_result block", result.Messages[0].Content)
+	}
+	if blocks[0].ToolUseID != "call_123" {
+		t.Fatalf("ToolUseID = %q, want call_123", blocks[0].ToolUseID)
+	}
+}
+
+func TestParseToolCallArguments_UsesJSONNumber(t *testing.T) {
+	parsed, err := parseToolCallArguments(`{"value":9007199254740993}`)
+	if err != nil {
+		t.Fatalf("parseToolCallArguments() error = %v, want nil", err)
+	}
+
+	obj, ok := parsed.(map[string]any)
+	if !ok {
+		t.Fatalf("parsed = %T, want map[string]any", parsed)
+	}
+	num, ok := obj["value"].(json.Number)
+	if !ok {
+		t.Fatalf("value = %T, want json.Number", obj["value"])
+	}
+	if string(num) != "9007199254740993" {
+		t.Fatalf("value = %q, want exact integer string", string(num))
 	}
 }
 
@@ -604,8 +1415,8 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	if result.Choices[0].Message.Role != "assistant" {
 		t.Errorf("Message role = %q, want %q", result.Choices[0].Message.Role, "assistant")
 	}
-	if result.Choices[0].FinishReason != "end_turn" {
-		t.Errorf("FinishReason = %q, want %q", result.Choices[0].FinishReason, "end_turn")
+	if result.Choices[0].FinishReason != "stop" {
+		t.Errorf("FinishReason = %q, want %q", result.Choices[0].FinishReason, "stop")
 	}
 	if result.Usage.PromptTokens != 10 {
 		t.Errorf("PromptTokens = %d, want 10", result.Usage.PromptTokens)
@@ -615,6 +1426,71 @@ func TestConvertFromAnthropicResponse(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 30 {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
+	}
+}
+
+func TestConvertFromAnthropicResponse_WithToolUseStopReason(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_tool_use",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{
+				Type:  "tool_use",
+				ID:    "toolu_123",
+				Name:  "lookup_weather",
+				Input: json.RawMessage(`{"city":"Warsaw"}`),
+			},
+		},
+		StopReason: "tool_use",
+		Usage: anthropicUsage{
+			InputTokens:  12,
+			OutputTokens: 7,
+		},
+	}
+
+	result := convertFromAnthropicResponse(resp)
+
+	if len(result.Choices) != 1 {
+		t.Fatalf("len(Choices) = %d, want 1", len(result.Choices))
+	}
+	if result.Choices[0].FinishReason != "tool_calls" {
+		t.Fatalf("FinishReason = %q, want tool_calls", result.Choices[0].FinishReason)
+	}
+	if len(result.Choices[0].Message.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls) = %d, want 1", len(result.Choices[0].Message.ToolCalls))
+	}
+	if result.Choices[0].Message.ToolCalls[0].ID != "toolu_123" {
+		t.Fatalf("ToolCalls[0].ID = %q, want toolu_123", result.Choices[0].Message.ToolCalls[0].ID)
+	}
+	if result.Choices[0].Message.ToolCalls[0].Function.Name != "lookup_weather" {
+		t.Fatalf("ToolCalls[0].Function.Name = %q, want lookup_weather", result.Choices[0].Message.ToolCalls[0].Function.Name)
+	}
+	if result.Choices[0].Message.ToolCalls[0].Function.Arguments != `{"city":"Warsaw"}` {
+		t.Fatalf("ToolCalls[0].Function.Arguments = %q, want canonical JSON", result.Choices[0].Message.ToolCalls[0].Function.Arguments)
+	}
+}
+
+func TestNormalizeAnthropicStopReason(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "tool use", in: "tool_use", want: "tool_calls"},
+		{name: "end turn", in: "end_turn", want: "stop"},
+		{name: "stop sequence", in: "stop_sequence", want: "stop"},
+		{name: "max tokens", in: "max_tokens", want: "length"},
+		{name: "unknown", in: "pause_turn", want: "pause_turn"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := normalizeAnthropicStopReason(tt.in); got != tt.want {
+				t.Fatalf("normalizeAnthropicStopReason(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -1235,6 +2111,210 @@ data: {"type":"message_stop"}
 	}
 }
 
+func TestStreamResponses_WithToolCalls(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"I'll check that for you."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"city\":\"War"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"saw\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: "What's the weather?",
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundAdded := false
+	foundAssistantAdded := false
+	foundAssistantDone := false
+	foundTextDelta := false
+	foundArgumentsDone := false
+	foundItemDone := false
+	var argumentsDelta strings.Builder
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+		switch event.Name {
+		case "response.output_item.added":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "message" && item["role"] == "assistant" && event.Payload["output_index"] == float64(0) {
+				foundAssistantAdded = true
+			}
+			if item["type"] == "function_call" && item["call_id"] == "toolu_123" && item["name"] == "lookup_weather" && item["arguments"] == "{}" && event.Payload["output_index"] == float64(1) {
+				foundAdded = true
+			}
+		case "response.output_item.done":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "message" && item["role"] == "assistant" && event.Payload["output_index"] == float64(0) {
+				foundAssistantDone = true
+			}
+			if item["type"] == "function_call" && item["arguments"] == `{"city":"Warsaw"}` {
+				foundItemDone = true
+			}
+		case "response.output_text.delta":
+			if event.Payload["delta"] == "I'll check that for you." {
+				foundTextDelta = true
+			}
+		case "response.function_call_arguments.delta":
+			if delta, _ := event.Payload["delta"].(string); delta != "" {
+				argumentsDelta.WriteString(delta)
+			}
+		case "response.function_call_arguments.done":
+			if event.Payload["arguments"] == `{"city":"Warsaw"}` {
+				foundArgumentsDone = true
+			}
+		}
+	}
+
+	if !foundAdded {
+		t.Fatal("expected response.output_item.added for function_call")
+	}
+	if !foundAssistantAdded {
+		t.Fatal("expected assistant message response.output_item.added at output_index 0")
+	}
+	if !foundAssistantDone {
+		t.Fatal("expected assistant message response.output_item.done at output_index 0")
+	}
+	if !foundTextDelta {
+		t.Fatal("expected response.output_text.delta for assistant preamble")
+	}
+	if argumentsDelta.String() != `{"city":"Warsaw"}` {
+		t.Fatalf("streamed response.function_call_arguments.delta = %q, want %q", argumentsDelta.String(), `{"city":"Warsaw"}`)
+	}
+	if !foundArgumentsDone {
+		t.Fatal("expected response.function_call_arguments.done for function_call")
+	}
+	if !foundItemDone {
+		t.Fatal("expected response.output_item.done for function_call")
+	}
+}
+
+func TestStreamResponses_WithEmptyToolArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: "What's the weather?",
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundAdded := false
+	foundDone := false
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+		switch event.Name {
+		case "response.output_item.added":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "function_call" && item["arguments"] == "{}" {
+				foundAdded = true
+			}
+		case "response.function_call_arguments.done":
+			if event.Payload["arguments"] == "{}" {
+				foundDone = true
+			}
+		}
+	}
+
+	if !foundAdded {
+		t.Fatal("expected response.output_item.added with {} arguments")
+	}
+	if !foundDone {
+		t.Fatal("expected response.function_call_arguments.done with {} arguments")
+	}
+}
+
 func TestResponsesWithContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Simulate a slow response
@@ -1349,6 +2429,80 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "with tools and parallel tool calls disabled",
+			input: func() *core.ResponsesRequest {
+				parallelToolCalls := false
+				return &core.ResponsesRequest{
+					Model: "claude-sonnet-4-5-20250929",
+					Input: "Hello",
+					Tools: []map[string]any{
+						{
+							"type": "function",
+							"function": map[string]any{
+								"name": "lookup_weather",
+							},
+						},
+					},
+					ToolChoice:        "auto",
+					ParallelToolCalls: &parallelToolCalls,
+				}
+			}(),
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Tools) != 1 {
+					t.Fatalf("len(Tools) = %d, want 1", len(req.Tools))
+				}
+				if req.ToolChoice == nil {
+					t.Fatal("ToolChoice should not be nil")
+				}
+				if req.ToolChoice.DisableParallelToolUse == nil || !*req.ToolChoice.DisableParallelToolUse {
+					t.Fatalf("disable_parallel_tool_use = %#v, want true", req.ToolChoice.DisableParallelToolUse)
+				}
+			},
+		},
+		{
+			name: "with function call loop input items",
+			input: &core.ResponsesRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Input: []interface{}{
+					map[string]interface{}{
+						"type":      "function_call",
+						"call_id":   "call_123",
+						"name":      "lookup_weather",
+						"arguments": `{"city":"Warsaw"}`,
+					},
+					map[string]interface{}{
+						"type":    "function_call_output",
+						"call_id": "call_123",
+						"output":  map[string]interface{}{"temperature_c": 21},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *anthropicRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+
+				assistantBlocks, ok := req.Messages[0].Content.([]anthropicMessageContentBlock)
+				if !ok || len(assistantBlocks) != 1 {
+					t.Fatalf("assistant content = %#v, want one tool_use block", req.Messages[0].Content)
+				}
+				if assistantBlocks[0].Type != "tool_use" || assistantBlocks[0].ID != "call_123" || assistantBlocks[0].Name != "lookup_weather" {
+					t.Fatalf("assistant tool block = %+v, want lookup_weather/call_123", assistantBlocks[0])
+				}
+
+				toolBlocks, ok := req.Messages[1].Content.([]anthropicMessageContentBlock)
+				if !ok || len(toolBlocks) != 1 {
+					t.Fatalf("tool content = %#v, want one tool_result block", req.Messages[1].Content)
+				}
+				if req.Messages[1].Role != "user" {
+					t.Fatalf("tool role = %q, want user", req.Messages[1].Role)
+				}
+				if toolBlocks[0].Type != "tool_result" || toolBlocks[0].ToolUseID != "call_123" || toolBlocks[0].Content != `{"temperature_c":21}` {
+					t.Fatalf("tool result block = %+v, want call_123 payload", toolBlocks[0])
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -1359,6 +2513,150 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 			}
 			tt.checkFn(t, result)
 		})
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_InvalidToolArguments(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_123",
+				"name":      "lookup_weather",
+				"arguments": `{"city":"Warsaw"`,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_RejectsTrailingToolArgumentContent(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_123",
+				"name":      "lookup_weather",
+				"arguments": `{"city":"Warsaw"} garbage`,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestConvertResponsesRequestToAnthropic_ToolChoiceRequiresTools(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model:      "claude-sonnet-4-5-20250929",
+		Input:      "Hello",
+		ToolChoice: "auto",
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
+func TestBuildAnthropicBatchCreateRequest_PreservesGatewayErrorDetails(t *testing.T) {
+	req := &core.BatchRequest{
+		Requests: []core.BatchRequestItem{
+			{
+				URL: "/v1/chat/completions",
+				Body: json.RawMessage(`{
+					"model":"claude-sonnet-4-5-20250929",
+					"messages":[{"role":"user","content":"Hello"}],
+					"tool_choice":"auto"
+				}`),
+			},
+		},
+	}
+
+	_, _, err := buildAnthropicBatchCreateRequest(req)
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.Message != "batch item 0: tool_choice requires at least one tool" {
+		t.Fatalf("error message = %q", gatewayErr.Message)
+	}
+}
+
+func TestBuildAnthropicBatchCreateRequest_PrefixesToolArgumentErrors(t *testing.T) {
+	req := &core.BatchRequest{
+		Requests: []core.BatchRequestItem{
+			{
+				URL: "/v1/chat/completions",
+				Body: json.RawMessage(`{
+					"model":"claude-sonnet-4-5-20250929",
+					"messages":[{
+						"role":"assistant",
+						"tool_calls":[{
+							"id":"call_123",
+							"type":"function",
+							"function":{
+								"name":"lookup_weather",
+								"arguments":"{\"city\":\"Warsaw\"} garbage"
+							}
+						}]
+					}]
+				}`),
+			},
+		},
+	}
+
+	_, _, err := buildAnthropicBatchCreateRequest(req)
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if !strings.HasPrefix(gatewayErr.Message, "batch item 0: ") {
+		t.Fatalf("error message = %q, want batch item prefix", gatewayErr.Message)
 	}
 }
 
@@ -1418,6 +2716,53 @@ func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	}
 	if result.Usage.TotalTokens != 30 {
 		t.Errorf("TotalTokens = %d, want 30", result.Usage.TotalTokens)
+	}
+}
+
+func TestConvertAnthropicResponseToResponses_WithToolUse(t *testing.T) {
+	resp := &anthropicResponse{
+		ID:    "msg_123",
+		Type:  "message",
+		Role:  "assistant",
+		Model: "claude-sonnet-4-5-20250929",
+		Content: []anthropicContent{
+			{Type: "text", Text: "I'll check that for you."},
+			{
+				Type:  "tool_use",
+				ID:    "toolu_123",
+				Name:  "lookup_weather",
+				Input: json.RawMessage(`{"city":"Warsaw"}`),
+			},
+		},
+		StopReason: "tool_use",
+		Usage: anthropicUsage{
+			InputTokens:  10,
+			OutputTokens: 20,
+		},
+	}
+
+	result := convertAnthropicResponseToResponses(resp, "claude-sonnet-4-5-20250929")
+
+	if len(result.Output) != 2 {
+		t.Fatalf("len(Output) = %d, want 2", len(result.Output))
+	}
+	if result.Output[0].Type != "message" {
+		t.Fatalf("Output[0].Type = %q, want message", result.Output[0].Type)
+	}
+	if result.Output[0].Content[0].Text != "I'll check that for you." {
+		t.Fatalf("Output[0].Content[0].Text = %q, want tool preamble", result.Output[0].Content[0].Text)
+	}
+	if result.Output[1].Type != "function_call" {
+		t.Fatalf("Output[1].Type = %q, want function_call", result.Output[1].Type)
+	}
+	if result.Output[1].CallID != "toolu_123" {
+		t.Fatalf("Output[1].CallID = %q, want toolu_123", result.Output[1].CallID)
+	}
+	if result.Output[1].Name != "lookup_weather" {
+		t.Fatalf("Output[1].Name = %q, want lookup_weather", result.Output[1].Name)
+	}
+	if result.Output[1].Arguments != `{"city":"Warsaw"}` {
+		t.Fatalf("Output[1].Arguments = %q, want canonical JSON", result.Output[1].Arguments)
 	}
 }
 
@@ -2323,7 +3668,7 @@ func TestConvertResponsesRequestToAnthropic_TypedInputPromotesSystemRole(t *test
 	}
 }
 
-func TestConvertResponsesRequestToAnthropic_RejectsUnsupportedRole(t *testing.T) {
+func TestConvertResponsesRequestToAnthropic_ToolRoleRequiresToolCallID(t *testing.T) {
 	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
 		Model: "claude-sonnet-4-5-20250929",
 		Input: []core.ResponsesInputItem{
@@ -2336,7 +3681,7 @@ func TestConvertResponsesRequestToAnthropic_RejectsUnsupportedRole(t *testing.T)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "anthropic responses input role must be user, assistant, or system") {
+	if !strings.Contains(err.Error(), "tool message is missing tool_call_id") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

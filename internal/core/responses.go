@@ -7,33 +7,25 @@ type ResponsesRequest struct {
 	Provider string      `json:"provider,omitempty"`
 	Input    interface{} `json:"input"` // string or []ResponsesInputItem — see docs for array form
 	//nolint:govet // Intentional duplicate json tag for Swagger docs: input is string OR []ResponsesInputItem.
-	InputSchema     []ResponsesInputItem `json:"input,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesInputItem\"}}]"`
-	Instructions    string               `json:"instructions,omitempty"`
-	Tools           []map[string]any     `json:"tools,omitempty"`
-	Temperature     *float64             `json:"temperature,omitempty"`
-	MaxOutputTokens *int                 `json:"max_output_tokens,omitempty"`
-	Stream          bool                 `json:"stream,omitempty"`
-	StreamOptions   *StreamOptions       `json:"stream_options,omitempty"`
-	Metadata        map[string]string    `json:"metadata,omitempty"`
-	Reasoning       *Reasoning           `json:"reasoning,omitempty"`
+	InputSchema       []ResponsesInputItem `json:"input,omitempty" extensions:"x-oneOf=[{\"type\":\"string\"},{\"type\":\"array\",\"items\":{\"$ref\":\"#/definitions/core.ResponsesInputItem\"}}]"`
+	Instructions      string               `json:"instructions,omitempty"`
+	Tools             []map[string]any     `json:"tools,omitempty"`
+	ToolChoice        any                  `json:"tool_choice,omitempty"` // string or object
+	ParallelToolCalls *bool                `json:"parallel_tool_calls,omitempty"`
+	Temperature       *float64             `json:"temperature,omitempty"`
+	MaxOutputTokens   *int                 `json:"max_output_tokens,omitempty"`
+	Stream            bool                 `json:"stream,omitempty"`
+	StreamOptions     *StreamOptions       `json:"stream_options,omitempty"`
+	Metadata          map[string]string    `json:"metadata,omitempty"`
+	Reasoning         *Reasoning           `json:"reasoning,omitempty"`
 }
 
 // WithStreaming returns a shallow copy of the request with Stream set to true.
 // This avoids mutating the caller's request object.
 func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
-	return &ResponsesRequest{
-		Model:           r.Model,
-		Provider:        r.Provider,
-		Input:           r.Input,
-		Instructions:    r.Instructions,
-		Tools:           r.Tools,
-		Temperature:     r.Temperature,
-		MaxOutputTokens: r.MaxOutputTokens,
-		Stream:          true,
-		StreamOptions:   r.StreamOptions,
-		Metadata:        r.Metadata,
-		Reasoning:       r.Reasoning,
-	}
+	cp := *r
+	cp.Stream = true
+	return &cp
 }
 
 // ResponsesInputItem represents an input item when Input is an array.
@@ -67,11 +59,14 @@ type ResponsesResponse struct {
 
 // ResponsesOutputItem represents an item in the output array.
 type ResponsesOutputItem struct {
-	ID      string                 `json:"id"`
-	Type    string                 `json:"type"` // "message", "function_call", etc.
-	Role    string                 `json:"role,omitempty"`
-	Status  string                 `json:"status,omitempty"`
-	Content []ResponsesContentItem `json:"content,omitempty"`
+	ID        string                 `json:"id"`
+	Type      string                 `json:"type"` // "message", "function_call", etc.
+	Role      string                 `json:"role,omitempty"`
+	Status    string                 `json:"status,omitempty"`
+	CallID    string                 `json:"call_id,omitempty"`
+	Name      string                 `json:"name,omitempty"`
+	Arguments string                 `json:"arguments,omitempty"`
+	Content   []ResponsesContentItem `json:"content,omitempty"`
 }
 
 // ResponsesContentItem represents a content item in the output.

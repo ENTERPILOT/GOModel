@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -23,21 +24,27 @@ type ChatProvider interface {
 // It also validates the supported Responses input shapes and returns an error
 // when the request cannot be converted safely.
 func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatRequest, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("responses request is required", nil)
+	}
+
 	chatReq := &core.ChatRequest{
-		Model:         req.Model,
-		Provider:      req.Provider,
-		Messages:      make([]core.Message, 0),
-		Temperature:   req.Temperature,
-		Stream:        req.Stream,
-		StreamOptions: req.StreamOptions,
-		Reasoning:     req.Reasoning,
+		Model:             req.Model,
+		Provider:          req.Provider,
+		Messages:          make([]core.Message, 0),
+		Tools:             req.Tools,
+		ToolChoice:        req.ToolChoice,
+		ParallelToolCalls: req.ParallelToolCalls,
+		Temperature:       req.Temperature,
+		Stream:            req.Stream,
+		StreamOptions:     req.StreamOptions,
+		Reasoning:         req.Reasoning,
 	}
 
 	if req.MaxOutputTokens != nil {
 		chatReq.MaxTokens = req.MaxOutputTokens
 	}
 
-	// Add system instruction if provided
 	if req.Instructions != "" {
 		chatReq.Messages = append(chatReq.Messages, core.Message{
 			Role:    "system",
@@ -45,71 +52,183 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatReques
 		})
 	}
 
-	// Convert input to messages
-	switch input := req.Input.(type) {
+	messages, err := ConvertResponsesInputToMessages(req.Input)
+	if err != nil {
+		return nil, err
+	}
+	chatReq.Messages = append(chatReq.Messages, messages...)
+
+	return chatReq, nil
+}
+
+// ConvertResponsesInputToMessages converts a Responses API input payload into Chat API messages.
+func ConvertResponsesInputToMessages(input interface{}) ([]core.Message, error) {
+	switch in := input.(type) {
 	case string:
-		chatReq.Messages = append(chatReq.Messages, core.Message{
-			Role:    "user",
-			Content: input,
-		})
+		return []core.Message{{Role: "user", Content: in}}, nil
+	case []map[string]any:
+		items := make([]interface{}, 0, len(in))
+		for _, item := range in {
+			items = append(items, item)
+		}
+		return convertResponsesInputItems(items)
 	case []interface{}:
-		for i, item := range input {
-			msg, err := convertResponsesInputItemToChatMessage(item, i)
-			if err != nil {
-				return nil, err
-			}
-			chatReq.Messages = append(chatReq.Messages, msg)
-		}
+		return convertResponsesInputItems(in)
 	case []core.ResponsesInputItem:
-		for i, item := range input {
-			msg, err := convertResponsesInputItemToChatMessage(item, i)
-			if err != nil {
-				return nil, err
-			}
-			chatReq.Messages = append(chatReq.Messages, msg)
+		items := make([]interface{}, 0, len(in))
+		for _, item := range in {
+			items = append(items, item)
 		}
+		return convertResponsesInputItems(items)
 	case core.ResponsesInputItem:
-		msg, err := convertResponsesInputItemToChatMessage(input, 0)
-		if err != nil {
-			return nil, err
-		}
-		chatReq.Messages = append(chatReq.Messages, msg)
+		return convertResponsesInputItems([]interface{}{in})
 	case nil:
 		return nil, core.NewInvalidRequestError("invalid responses input: unsupported type", nil)
 	default:
 		return nil, core.NewInvalidRequestError("invalid responses input: unsupported type", nil)
 	}
-
-	return chatReq, nil
 }
 
-func convertResponsesInputItemToChatMessage(item any, index int) (core.Message, error) {
-	switch v := item.(type) {
-	case map[string]interface{}:
-		role, _ := v["role"].(string)
-		role = strings.TrimSpace(role)
-		if role == "" {
-			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
+func convertResponsesInputItems(items []interface{}) ([]core.Message, error) {
+	messages := make([]core.Message, 0, len(items))
+	var pendingAssistant *core.Message
+
+	flushPendingAssistant := func() {
+		if pendingAssistant == nil {
+			return
+		}
+		messages = append(messages, *pendingAssistant)
+		pendingAssistant = nil
+	}
+
+	for i, item := range items {
+		msg, itemType, err := convertResponsesInputItem(item, i)
+		if err != nil {
+			return nil, err
 		}
 
-		content, ok := ConvertResponsesContentToChatContent(v["content"])
-		if !ok {
-			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", index), nil)
+		if msg.Role == "assistant" {
+			if itemType == "message" {
+				flushPendingAssistant()
+			}
+			if pendingAssistant == nil {
+				assistant := cloneResponsesMessage(msg)
+				pendingAssistant = &assistant
+			} else if canMergeAssistantMessages(*pendingAssistant, msg) {
+				mergeAssistantMessage(pendingAssistant, msg)
+			} else {
+				flushPendingAssistant()
+				assistant := cloneResponsesMessage(msg)
+				pendingAssistant = &assistant
+			}
+			continue
 		}
-		return core.Message{Role: role, Content: content}, nil
+
+		flushPendingAssistant()
+		messages = append(messages, msg)
+	}
+
+	flushPendingAssistant()
+	return messages, nil
+}
+
+func convertResponsesInputItem(item interface{}, index int) (core.Message, string, error) {
+	switch typed := item.(type) {
 	case core.ResponsesInputItem:
-		role := strings.TrimSpace(v.Role)
+		role := strings.TrimSpace(typed.Role)
 		if role == "" {
-			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
+			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
 		}
-
-		content, ok := ConvertResponsesContentToChatContent(v.Content)
+		content, ok := ConvertResponsesContentToChatContent(typed.Content)
 		if !ok {
-			return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", index), nil)
+			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", index), nil)
 		}
-		return core.Message{Role: role, Content: content}, nil
+		return core.Message{Role: role, Content: content}, "message", nil
+	case map[string]interface{}:
+		return convertResponsesInputMap(typed, index)
 	default:
-		return core.Message{}, core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: expected object", index), nil)
+		return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: expected object", index), nil)
+	}
+}
+
+func convertResponsesInputMap(item map[string]interface{}, index int) (core.Message, string, error) {
+	itemType, _ := item["type"].(string)
+	switch itemType {
+	case "function_call":
+		name, _ := item["name"].(string)
+		callID := firstNonEmptyString(item, "call_id", "id")
+		if strings.TrimSpace(name) == "" {
+			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: function_call name is required", index), nil)
+		}
+		callID = ResponsesFunctionCallCallID(callID)
+		return core.Message{
+			Role:        "assistant",
+			Content:     "",
+			ContentNull: true,
+			ToolCalls: []core.ToolCall{
+				{
+					ID:   callID,
+					Type: "function",
+					Function: core.FunctionCall{
+						Name:      name,
+						Arguments: stringifyResponsesInputValue(item["arguments"]),
+					},
+				},
+			},
+		}, "function_call", nil
+	case "function_call_output":
+		callID := firstNonEmptyString(item, "call_id")
+		if callID == "" {
+			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: function_call_output call_id is required", index), nil)
+		}
+		return core.Message{
+			Role:       "tool",
+			ToolCallID: callID,
+			Content:    stringifyResponsesInputValue(item["output"]),
+		}, "function_call_output", nil
+	}
+
+	role, _ := item["role"].(string)
+	role = strings.TrimSpace(role)
+	if role == "" {
+		return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
+	}
+
+	content, ok := ConvertResponsesContentToChatContent(item["content"])
+	if !ok {
+		return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: unsupported content", index), nil)
+	}
+	return core.Message{Role: role, Content: content}, "message", nil
+}
+
+func cloneResponsesMessage(msg core.Message) core.Message {
+	cloned := msg
+	if len(msg.ToolCalls) > 0 {
+		cloned.ToolCalls = append([]core.ToolCall(nil), msg.ToolCalls...)
+	}
+	if parts, ok := msg.Content.([]core.ContentPart); ok {
+		clonedParts := make([]core.ContentPart, len(parts))
+		copy(clonedParts, parts)
+		cloned.Content = clonedParts
+	}
+	return cloned
+}
+
+func canMergeAssistantMessages(current, next core.Message) bool {
+	return !core.HasStructuredContent(current.Content) && !core.HasStructuredContent(next.Content)
+}
+
+func mergeAssistantMessage(dst *core.Message, src core.Message) {
+	if text := core.ExtractTextContent(src.Content); text != "" {
+		existing := core.ExtractTextContent(dst.Content)
+		dst.Content = existing + text
+		dst.ContentNull = false
+	}
+	if len(src.ToolCalls) > 0 {
+		dst.ToolCalls = append(dst.ToolCalls, src.ToolCalls...)
+		if core.ExtractTextContent(dst.Content) == "" {
+			dst.ContentNull = dst.ContentNull || src.ContentNull
+		}
 	}
 }
 
@@ -120,55 +239,14 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 	switch c := content.(type) {
 	case string:
 		return c, true
-	case []interface{}:
-		parts := make([]core.ContentPart, 0, len(c))
-		for _, part := range c {
-			partMap, ok := part.(map[string]interface{})
-			if !ok {
-				return nil, false
-			}
-
-			partType, _ := partMap["type"].(string)
-			switch partType {
-			case "text", "input_text":
-				text, ok := partMap["text"].(string)
-				if !ok || text == "" {
-					return nil, false
-				}
-				parts = append(parts, core.ContentPart{
-					Type: "text",
-					Text: text,
-				})
-			case "image_url", "input_image":
-				imageURL, detail, mediaType, ok := extractResponsesImageURL(partMap["image_url"])
-				if !ok {
-					return nil, false
-				}
-				parts = append(parts, core.ContentPart{
-					Type: "image_url",
-					ImageURL: &core.ImageURLContent{
-						URL:       imageURL,
-						Detail:    detail,
-						MediaType: mediaType,
-					},
-				})
-			case "input_audio":
-				data, format, ok := extractResponsesInputAudio(partMap["input_audio"])
-				if !ok {
-					return nil, false
-				}
-				parts = append(parts, core.ContentPart{
-					Type: "input_audio",
-					InputAudio: &core.InputAudioContent{
-						Data:   data,
-						Format: format,
-					},
-				})
-			default:
-				return nil, false
-			}
+	case []map[string]any:
+		items := make([]interface{}, 0, len(c))
+		for _, item := range c {
+			items = append(items, item)
 		}
-		return finalizeResponsesChatContent(parts)
+		return convertResponsesContentParts(items)
+	case []interface{}:
+		return convertResponsesContentParts(c)
 	case []core.ResponsesContentPart:
 		parts := make([]core.ContentPart, 0, len(c))
 		for _, part := range c {
@@ -195,13 +273,84 @@ func ConvertResponsesContentToChatContent(content interface{}) (any, bool) {
 			return nil, false
 		}
 		return finalizeResponsesChatContent(parts)
+	default:
+		return nil, false
 	}
-	return nil, false
+}
+
+func convertResponsesContentParts(parts []interface{}) (any, bool) {
+	typedParts := make([]core.ContentPart, 0, len(parts))
+	texts := make([]string, 0, len(parts))
+	allOutputText := true
+
+	for _, part := range parts {
+		partMap, ok := part.(map[string]interface{})
+		if !ok {
+			return nil, false
+		}
+
+		partType, _ := partMap["type"].(string)
+		switch partType {
+		case "text", "input_text", "output_text":
+			text, ok := partMap["text"].(string)
+			if !ok || text == "" {
+				return nil, false
+			}
+			typedParts = append(typedParts, core.ContentPart{Type: "text", Text: text})
+			texts = append(texts, text)
+		case "image_url", "input_image":
+			imageURL, detail, mediaType, ok := extractResponsesImageURL(partMap["image_url"])
+			if !ok {
+				return nil, false
+			}
+			allOutputText = false
+			typedParts = append(typedParts, core.ContentPart{
+				Type: "image_url",
+				ImageURL: &core.ImageURLContent{
+					URL:       imageURL,
+					Detail:    detail,
+					MediaType: mediaType,
+				},
+			})
+		case "input_audio":
+			data, format, ok := extractResponsesInputAudio(partMap["input_audio"])
+			if !ok {
+				return nil, false
+			}
+			allOutputText = false
+			typedParts = append(typedParts, core.ContentPart{
+				Type: "input_audio",
+				InputAudio: &core.InputAudioContent{
+					Data:   data,
+					Format: format,
+				},
+			})
+		default:
+			if nested, ok := partMap["content"]; ok {
+				text := ExtractContentFromInput(nested)
+				if text == "" {
+					return nil, false
+				}
+				typedParts = append(typedParts, core.ContentPart{Type: "text", Text: text})
+				texts = append(texts, text)
+				continue
+			}
+			return nil, false
+		}
+	}
+
+	if len(typedParts) == 0 {
+		return nil, false
+	}
+	if allOutputText {
+		return strings.Join(texts, " "), true
+	}
+	return finalizeResponsesChatContent(typedParts)
 }
 
 func normalizeTypedResponsesContentPart(part core.ResponsesContentPart) (core.ContentPart, bool) {
 	switch part.Type {
-	case "text", "input_text":
+	case "text", "input_text", "output_text":
 		if part.Text == "" {
 			return core.ContentPart{}, false
 		}
@@ -289,11 +438,153 @@ func extractResponsesInputAudio(value interface{}) (data string, format string, 
 	}
 }
 
+func firstNonEmptyString(item map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		value, _ := item[key].(string)
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringifyResponsesInputValue(value interface{}) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	default:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return ""
+		}
+		return string(encoded)
+	}
+}
+
+// ExtractContentFromInput extracts text content from responses input.
+func ExtractContentFromInput(content interface{}) string {
+	switch c := content.(type) {
+	case string:
+		return c
+	case []core.ResponsesContentPart:
+		texts := make([]string, 0, len(c))
+		for _, part := range c {
+			if part.Text != "" {
+				texts = append(texts, part.Text)
+			}
+		}
+		return strings.Join(texts, " ")
+	case []map[string]any:
+		return extractTextFromMapSlice(c)
+	case []interface{}:
+		texts := make([]string, 0, len(c))
+		for _, part := range c {
+			if partMap, ok := part.(map[string]interface{}); ok {
+				if text := extractTextFromInputMap(partMap); text != "" {
+					texts = append(texts, text)
+				}
+			}
+		}
+		return strings.Join(texts, " ")
+	default:
+		return ""
+	}
+}
+
+func extractTextFromMapSlice(parts []map[string]any) string {
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if text := extractTextFromInputMap(part); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, " ")
+}
+
+func extractTextFromInputMap(part map[string]any) string {
+	texts := make([]string, 0, 2)
+	if text, ok := part["text"].(string); ok && text != "" {
+		texts = append(texts, text)
+	}
+	if nested, ok := part["content"]; ok {
+		if text := ExtractContentFromInput(nested); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, " ")
+}
+
+// ResponsesFunctionCallCallID returns the call id if present or generates one.
+func ResponsesFunctionCallCallID(callID string) string {
+	if strings.TrimSpace(callID) != "" {
+		return callID
+	}
+	return "call_" + uuid.New().String()
+}
+
+// ResponsesFunctionCallItemID returns a stable function-call item id.
+func ResponsesFunctionCallItemID(callID string) string {
+	normalizedCallID := strings.TrimSpace(callID)
+	if normalizedCallID == "" {
+		normalizedCallID = "call_" + uuid.New().String()
+	}
+	return "fc_" + normalizedCallID
+}
+
+// BuildResponsesOutputItems converts a response message into Responses API output items.
+func BuildResponsesOutputItems(msg core.ResponseMessage) []core.ResponsesOutputItem {
+	output := make([]core.ResponsesOutputItem, 0, len(msg.ToolCalls)+1)
+	text := core.ExtractTextContent(msg.Content)
+	if text != "" || len(msg.ToolCalls) == 0 {
+		output = append(output, core.ResponsesOutputItem{
+			ID:     "msg_" + uuid.New().String(),
+			Type:   "message",
+			Role:   "assistant",
+			Status: "completed",
+			Content: []core.ResponsesContentItem{
+				{
+					Type:        "output_text",
+					Text:        text,
+					Annotations: []string{},
+				},
+			},
+		})
+	}
+	for _, toolCall := range msg.ToolCalls {
+		callID := ResponsesFunctionCallCallID(toolCall.ID)
+		output = append(output, core.ResponsesOutputItem{
+			ID:        ResponsesFunctionCallItemID(callID),
+			Type:      "function_call",
+			Status:    "completed",
+			CallID:    callID,
+			Name:      toolCall.Function.Name,
+			Arguments: toolCall.Function.Arguments,
+		})
+	}
+	return output
+}
+
 // ConvertChatResponseToResponses converts a ChatResponse to a ResponsesResponse.
 func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResponse {
-	content := ""
+	output := []core.ResponsesOutputItem{
+		{
+			ID:     "msg_" + uuid.New().String(),
+			Type:   "message",
+			Role:   "assistant",
+			Status: "completed",
+			Content: []core.ResponsesContentItem{
+				{
+					Type:        "output_text",
+					Text:        "",
+					Annotations: []string{},
+				},
+			},
+		},
+	}
 	if len(resp.Choices) > 0 {
-		content = core.ExtractTextContent(resp.Choices[0].Message.Content)
+		output = BuildResponsesOutputItems(resp.Choices[0].Message)
 	}
 
 	return &core.ResponsesResponse{
@@ -303,21 +594,7 @@ func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 		Model:     resp.Model,
 		Provider:  resp.Provider,
 		Status:    "completed",
-		Output: []core.ResponsesOutputItem{
-			{
-				ID:     "msg_" + uuid.New().String(),
-				Type:   "message",
-				Role:   "assistant",
-				Status: "completed",
-				Content: []core.ResponsesContentItem{
-					{
-						Type:        "output_text",
-						Text:        content,
-						Annotations: []string{},
-					},
-				},
-			},
-		},
+		Output:    output,
 		Usage: &core.ResponsesUsage{
 			InputTokens:             resp.Usage.PromptTokens,
 			OutputTokens:            resp.Usage.CompletionTokens,

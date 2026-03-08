@@ -20,29 +20,25 @@ type Reasoning struct {
 
 // ChatRequest represents the incoming chat completion request
 type ChatRequest struct {
-	Temperature   *float64       `json:"temperature,omitempty"`
-	MaxTokens     *int           `json:"max_tokens,omitempty"`
-	Model         string         `json:"model"`
-	Provider      string         `json:"provider,omitempty"`
-	Messages      []Message      `json:"messages"`
-	Stream        bool           `json:"stream,omitempty"`
-	StreamOptions *StreamOptions `json:"stream_options,omitempty"`
-	Reasoning     *Reasoning     `json:"reasoning,omitempty"`
+	Temperature       *float64         `json:"temperature,omitempty"`
+	MaxTokens         *int             `json:"max_tokens,omitempty"`
+	Model             string           `json:"model"`
+	Provider          string           `json:"provider,omitempty"`
+	Messages          []Message        `json:"messages"`
+	Tools             []map[string]any `json:"tools,omitempty"`
+	ToolChoice        any              `json:"tool_choice,omitempty"` // string or object
+	ParallelToolCalls *bool            `json:"parallel_tool_calls,omitempty"`
+	Stream            bool             `json:"stream,omitempty"`
+	StreamOptions     *StreamOptions   `json:"stream_options,omitempty"`
+	Reasoning         *Reasoning       `json:"reasoning,omitempty"`
 }
 
 // WithStreaming returns a shallow copy of the request with Stream set to true.
 // This avoids mutating the caller's request object.
 func (r *ChatRequest) WithStreaming() *ChatRequest {
-	return &ChatRequest{
-		Temperature:   r.Temperature,
-		MaxTokens:     r.MaxTokens,
-		Model:         r.Model,
-		Provider:      r.Provider,
-		Messages:      r.Messages,
-		Stream:        true,
-		StreamOptions: r.StreamOptions,
-		Reasoning:     r.Reasoning,
-	}
+	cp := *r
+	cp.Stream = true
+	return &cp
 }
 
 // MessageContent stores message content as either text or structured parts.
@@ -50,7 +46,9 @@ type MessageContent any
 
 // Message represents a single message in the chat.
 type Message struct {
-	Role string `json:"role"`
+	Role        string `json:"role"`
+	ToolCallID  string `json:"tool_call_id,omitempty"`
+	ContentNull bool   `json:"-"`
 	// Content accepts either a plain string or an array of ContentPart values.
 	// This preserves OpenAI-compatible multimodal chat payloads.
 	Content MessageContent `json:"content"`
