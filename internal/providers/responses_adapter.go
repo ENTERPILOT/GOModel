@@ -89,12 +89,17 @@ func convertResponsesInputItems(items []interface{}) []core.Message {
 
 	for _, item := range items {
 		if msg, ok := convertResponsesInputItem(item); ok {
+			itemType := responsesInputItemType(item)
 			if msg.Role == "assistant" {
+				if itemType == "message" {
+					flushPendingAssistant()
+				}
 				if pendingAssistant == nil {
 					assistant := core.Message{
-						Role:       "assistant",
-						Content:    msg.Content,
-						ToolCallID: msg.ToolCallID,
+						Role:        "assistant",
+						Content:     msg.Content,
+						ToolCallID:  msg.ToolCallID,
+						ContentNull: msg.ContentNull,
 					}
 					if len(msg.ToolCalls) > 0 {
 						assistant.ToolCalls = append([]core.ToolCall(nil), msg.ToolCalls...)
@@ -103,9 +108,13 @@ func convertResponsesInputItems(items []interface{}) []core.Message {
 				} else {
 					if msg.Content != "" {
 						pendingAssistant.Content += msg.Content
+						pendingAssistant.ContentNull = false
 					}
 					if len(msg.ToolCalls) > 0 {
 						pendingAssistant.ToolCalls = append(pendingAssistant.ToolCalls, msg.ToolCalls...)
+						if pendingAssistant.Content == "" {
+							pendingAssistant.ContentNull = pendingAssistant.ContentNull || msg.ContentNull
+						}
 					}
 				}
 				continue
@@ -117,6 +126,15 @@ func convertResponsesInputItems(items []interface{}) []core.Message {
 	}
 	flushPendingAssistant()
 	return messages
+}
+
+func responsesInputItemType(item interface{}) string {
+	if typed, ok := item.(map[string]interface{}); ok {
+		if itemType, _ := typed["type"].(string); itemType != "" {
+			return itemType
+		}
+	}
+	return ""
 }
 
 func convertResponsesInputItem(item interface{}) (core.Message, bool) {
@@ -145,7 +163,8 @@ func convertResponsesInputMap(item map[string]interface{}) (core.Message, bool) 
 		}
 		callID = ResponsesFunctionCallCallID(callID)
 		return core.Message{
-			Role: "assistant",
+			Role:        "assistant",
+			ContentNull: true,
 			ToolCalls: []core.ToolCall{
 				{
 					ID:   callID,

@@ -216,6 +216,9 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				if req.Messages[0].ToolCalls[0].Function.Name != "lookup_weather" {
 					t.Fatalf("ToolCall name = %q, want lookup_weather", req.Messages[0].ToolCalls[0].Function.Name)
 				}
+				if !req.Messages[0].ContentNull {
+					t.Fatal("Messages[0].ContentNull = false, want true for function_call history")
+				}
 				if req.Messages[1].Role != "tool" {
 					t.Fatalf("Messages[1].Role = %q, want tool", req.Messages[1].Role)
 				}
@@ -266,6 +269,9 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				if req.Messages[0].Content != "I'll check that for you." {
 					t.Fatalf("Messages[0].Content = %q, want assistant preamble", req.Messages[0].Content)
 				}
+				if req.Messages[0].ContentNull {
+					t.Fatal("Messages[0].ContentNull = true, want false after assistant text merge")
+				}
 				if len(req.Messages[0].ToolCalls) != 1 {
 					t.Fatalf("len(Messages[0].ToolCalls) = %d, want 1", len(req.Messages[0].ToolCalls))
 				}
@@ -274,6 +280,54 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if req.Messages[1].Role != "tool" || req.Messages[1].ToolCallID != "call_123" {
 					t.Fatalf("Messages[1] = %+v, want tool result for call_123", req.Messages[1])
+				}
+			},
+		},
+		{
+			name: "array input preserves consecutive assistant message boundaries",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []interface{}{
+					map[string]interface{}{
+						"type":   "message",
+						"role":   "assistant",
+						"status": "completed",
+						"content": []map[string]interface{}{
+							{
+								"type": "output_text",
+								"text": "First",
+							},
+						},
+					},
+					map[string]interface{}{
+						"type":   "message",
+						"role":   "assistant",
+						"status": "completed",
+						"content": []map[string]interface{}{
+							{
+								"type": "output_text",
+								"text": "Second",
+							},
+						},
+					},
+					map[string]interface{}{
+						"role":    "user",
+						"content": "Third",
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 3 {
+					t.Fatalf("len(Messages) = %d, want 3", len(req.Messages))
+				}
+				if req.Messages[0].Role != "assistant" || req.Messages[0].Content != "First" {
+					t.Fatalf("Messages[0] = %+v, want assistant/First", req.Messages[0])
+				}
+				if req.Messages[1].Role != "assistant" || req.Messages[1].Content != "Second" {
+					t.Fatalf("Messages[1] = %+v, want assistant/Second", req.Messages[1])
+				}
+				if req.Messages[2].Role != "user" || req.Messages[2].Content != "Third" {
+					t.Fatalf("Messages[2] = %+v, want user/Third", req.Messages[2])
 				}
 			},
 		},
@@ -295,6 +349,9 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if len(req.Messages[0].ToolCalls) != 1 {
 					t.Fatalf("len(Messages[0].ToolCalls) = %d, want 1", len(req.Messages[0].ToolCalls))
+				}
+				if !req.Messages[0].ContentNull {
+					t.Fatal("Messages[0].ContentNull = false, want true for function_call input")
 				}
 				if req.Messages[0].ToolCalls[0].ID == "" {
 					t.Fatal("Messages[0].ToolCalls[0].ID should not be empty")

@@ -395,10 +395,10 @@ data: {"type":"message_stop"}
 		}
 		function, _ := toolCall["function"].(map[string]interface{})
 
-		if toolCall["id"] == "toolu_123" && function["name"] == "lookup_weather" && function["arguments"] == "{}" {
+		if toolCall["id"] == "toolu_123" && function["name"] == "lookup_weather" {
 			foundToolStart = true
 		}
-		if arguments, _ := function["arguments"].(string); arguments != "" && arguments != "{}" {
+		if arguments, _ := function["arguments"].(string); arguments != "" {
 			argumentDeltas.WriteString(arguments)
 		}
 	}
@@ -408,6 +408,93 @@ data: {"type":"message_stop"}
 	}
 	if argumentDeltas.String() != `{"city":"Warsaw"}` {
 		t.Fatalf("streamed tool call arguments = %q, want %q", argumentDeltas.String(), `{"city":"Warsaw"}`)
+	}
+	if !foundFinish {
+		t.Fatal("expected a final tool_calls finish_reason chunk")
+	}
+}
+
+func TestStreamChatCompletion_WithEmptyToolArguments(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_123","name":"lookup_weather","input":{}}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"input_tokens":10,"output_tokens":4}}
+
+event: message_stop
+data: {"type":"message_stop"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "What's the weather?"},
+		},
+		Tools: []map[string]any{
+			{
+				"type": "function",
+				"function": map[string]any{
+					"name": "lookup_weather",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+
+	events := parseTestSSEEvents(t, string(raw))
+	foundToolCall := false
+	foundFinish := false
+
+	for _, event := range events {
+		if event.Done {
+			continue
+		}
+		choices, ok := event.Payload["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			continue
+		}
+		choice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if finishReason, _ := choice["finish_reason"].(string); finishReason == "tool_calls" {
+			foundFinish = true
+		}
+		delta, _ := choice["delta"].(map[string]interface{})
+		toolCalls, _ := delta["tool_calls"].([]interface{})
+		if len(toolCalls) == 0 {
+			continue
+		}
+		toolCall, _ := toolCalls[0].(map[string]interface{})
+		function, _ := toolCall["function"].(map[string]interface{})
+		if toolCall["id"] == "toolu_123" && function["name"] == "lookup_weather" && function["arguments"] == "{}" {
+			foundToolCall = true
+		}
+	}
+
+	if !foundToolCall {
+		t.Fatal("expected streamed tool call with {} arguments for zero-arg tool")
 	}
 	if !foundFinish {
 		t.Fatal("expected a final tool_calls finish_reason chunk")
@@ -2050,6 +2137,8 @@ data: {"type":"message_stop"}
 
 	events := parseTestSSEEvents(t, string(raw))
 	foundAdded := false
+	foundAssistantAdded := false
+	foundAssistantDone := false
 	foundTextDelta := false
 	foundArgumentsDone := false
 	foundItemDone := false
@@ -2060,14 +2149,25 @@ data: {"type":"message_stop"}
 			continue
 		}
 		switch event.Name {
+		case "response.output_item.added":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "message" && item["role"] == "assistant" && event.Payload["output_index"] == float64(0) {
+				foundAssistantAdded = true
+			}
+			if item["type"] == "function_call" && item["call_id"] == "toolu_123" && item["name"] == "lookup_weather" && item["arguments"] == "{}" && event.Payload["output_index"] == float64(1) {
+				foundAdded = true
+			}
+		case "response.output_item.done":
+			item, _ := event.Payload["item"].(map[string]interface{})
+			if item["type"] == "message" && item["role"] == "assistant" && event.Payload["output_index"] == float64(0) {
+				foundAssistantDone = true
+			}
+			if item["type"] == "function_call" && item["arguments"] == `{"city":"Warsaw"}` {
+				foundItemDone = true
+			}
 		case "response.output_text.delta":
 			if event.Payload["delta"] == "I'll check that for you." {
 				foundTextDelta = true
-			}
-		case "response.output_item.added":
-			item, _ := event.Payload["item"].(map[string]interface{})
-			if item["type"] == "function_call" && item["call_id"] == "toolu_123" && item["name"] == "lookup_weather" && item["arguments"] == "{}" && event.Payload["output_index"] == float64(1) {
-				foundAdded = true
 			}
 		case "response.function_call_arguments.delta":
 			if delta, _ := event.Payload["delta"].(string); delta != "" {
@@ -2077,16 +2177,17 @@ data: {"type":"message_stop"}
 			if event.Payload["arguments"] == `{"city":"Warsaw"}` {
 				foundArgumentsDone = true
 			}
-		case "response.output_item.done":
-			item, _ := event.Payload["item"].(map[string]interface{})
-			if item["type"] == "function_call" && item["arguments"] == `{"city":"Warsaw"}` {
-				foundItemDone = true
-			}
 		}
 	}
 
 	if !foundAdded {
 		t.Fatal("expected response.output_item.added for function_call")
+	}
+	if !foundAssistantAdded {
+		t.Fatal("expected assistant message response.output_item.added at output_index 0")
+	}
+	if !foundAssistantDone {
+		t.Fatal("expected assistant message response.output_item.done at output_index 0")
 	}
 	if !foundTextDelta {
 		t.Fatal("expected response.output_text.delta for assistant preamble")

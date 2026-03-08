@@ -708,6 +708,7 @@ type streamToolCallState struct {
 	Name              string
 	Arguments         strings.Builder
 	Index             int
+	Started           bool
 	PlaceholderObject bool
 }
 
@@ -878,12 +879,14 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 
 			initialArguments := extractInitialToolArguments(event.ContentBlock.Input)
 			state.PlaceholderObject = initialArguments == "{}"
-			emittedArguments := initialArguments
 			if state.PlaceholderObject {
-				emittedArguments = "{}"
-			} else if initialArguments != "" {
+				sc.toolCalls[event.Index] = state
+				return ""
+			}
+			if initialArguments != "" {
 				_, _ = state.Arguments.WriteString(initialArguments)
 			}
+			state.Started = true
 			sc.toolCalls[event.Index] = state
 
 			return sc.formatChatChunk(map[string]any{
@@ -894,7 +897,7 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 						"type":  "function",
 						"function": map[string]any{
 							"name":      state.Name,
-							"arguments": emittedArguments,
+							"arguments": initialArguments,
 						},
 					},
 				},
@@ -927,6 +930,22 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 				state.PlaceholderObject = false
 			}
 			_, _ = state.Arguments.WriteString(event.Delta.PartialJSON)
+			if !state.Started {
+				state.Started = true
+				return sc.formatChatChunk(map[string]any{
+					"tool_calls": []map[string]any{
+						{
+							"index": state.Index,
+							"id":    state.ID,
+							"type":  "function",
+							"function": map[string]any{
+								"name":      state.Name,
+								"arguments": event.Delta.PartialJSON,
+							},
+						},
+					},
+				}, nil, nil)
+			}
 			return sc.formatChatChunk(map[string]any{
 				"tool_calls": []map[string]any{
 					{
@@ -940,6 +959,23 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		}
 
 	case "content_block_stop":
+		state := sc.toolCalls[event.Index]
+		if state != nil && !state.Started && state.PlaceholderObject {
+			state.Started = true
+			return sc.formatChatChunk(map[string]any{
+				"tool_calls": []map[string]any{
+					{
+						"index": state.Index,
+						"id":    state.ID,
+						"type":  "function",
+						"function": map[string]any{
+							"name":      state.Name,
+							"arguments": "{}",
+						},
+					},
+				},
+			}, nil, nil)
+		}
 		return ""
 
 	case "message_delta":
@@ -1603,6 +1639,10 @@ type responsesStreamConverter struct {
 	responseID      string
 	nextOutputIndex int
 	messageReserved bool
+	messageStarted  bool
+	messageDone     bool
+	messageItemID   string
+	messageText     strings.Builder
 	toolCalls       map[int]*responsesToolCallState
 	buffer          []byte
 	closed          bool
@@ -1651,6 +1691,7 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 				// Send final done event and [DONE] message
 				if !sc.sentDone {
 					sc.sentDone = true
+					prefix := sc.completeAssistantMessageOutput()
 					responseData := map[string]interface{}{
 						"id":         sc.responseID,
 						"object":     "response",
@@ -1678,7 +1719,7 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 						_ = sc.body.Close() //nolint:errcheck
 						return 0, io.EOF
 					}
-					doneMsg := fmt.Sprintf("event: response.completed\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
+					doneMsg := prefix + fmt.Sprintf("event: response.completed\ndata: %s\n\ndata: [DONE]\n\n", jsonData)
 					n = copy(p, doneMsg)
 					if n < len(doneMsg) {
 						sc.buffer = append(sc.buffer, []byte(doneMsg)[n:]...)
@@ -1749,6 +1790,55 @@ func (sc *responsesStreamConverter) reserveAssistantMessageOutput() {
 	sc.nextOutputIndex++
 }
 
+func (sc *responsesStreamConverter) assistantMessageItem(status string, includeContent bool) map[string]any {
+	item := map[string]any{
+		"id":      sc.messageItemID,
+		"type":    "message",
+		"status":  status,
+		"role":    "assistant",
+		"content": []map[string]any{},
+	}
+	if includeContent {
+		item["content"] = []map[string]any{
+			{
+				"type":        "output_text",
+				"text":        sc.messageText.String(),
+				"annotations": []string{},
+			},
+		}
+	}
+	return item
+}
+
+func (sc *responsesStreamConverter) startAssistantMessageOutput() string {
+	sc.reserveAssistantMessageOutput()
+	if sc.messageStarted {
+		return ""
+	}
+	sc.messageStarted = true
+	if sc.messageItemID == "" {
+		sc.messageItemID = "msg_" + uuid.New().String()
+	}
+	return sc.writeResponsesEvent("response.output_item.added", map[string]any{
+		"type":         "response.output_item.added",
+		"item":         sc.assistantMessageItem("in_progress", false),
+		"output_index": 0,
+	})
+}
+
+func (sc *responsesStreamConverter) completeAssistantMessageOutput() string {
+	if !sc.messageReserved || sc.messageDone {
+		return ""
+	}
+	out := sc.startAssistantMessageOutput()
+	sc.messageDone = true
+	return out + sc.writeResponsesEvent("response.output_item.done", map[string]any{
+		"type":         "response.output_item.done",
+		"item":         sc.assistantMessageItem("completed", true),
+		"output_index": 0,
+	})
+}
+
 func (sc *responsesStreamConverter) newResponsesToolCallState(contentBlock *anthropicContent) *responsesToolCallState {
 	callID := providers.ResponsesFunctionCallCallID(contentBlock.ID)
 	state := &responsesToolCallState{
@@ -1815,6 +1905,16 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 
 	case "content_block_start":
 		if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
+			if sc.messageStarted && !sc.messageDone {
+				prefix := sc.completeAssistantMessageOutput()
+				state := sc.newResponsesToolCallState(event.ContentBlock)
+				sc.toolCalls[event.Index] = state
+				return prefix + sc.writeResponsesEvent("response.output_item.added", map[string]any{
+					"type":         "response.output_item.added",
+					"item":         sc.renderResponsesToolCallItem(state, "in_progress", true),
+					"output_index": state.OutputIndex,
+				})
+			}
 			state := sc.newResponsesToolCallState(event.ContentBlock)
 			sc.toolCalls[event.Index] = state
 			return sc.writeResponsesEvent("response.output_item.added", map[string]any{
@@ -1833,7 +1933,8 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		switch event.Delta.Type {
 		case "text_delta":
 			if event.Delta.Text != "" {
-				sc.reserveAssistantMessageOutput()
+				prefix := sc.startAssistantMessageOutput()
+				_, _ = sc.messageText.WriteString(event.Delta.Text)
 				deltaEvent := map[string]interface{}{
 					"type":  "response.output_text.delta",
 					"delta": event.Delta.Text,
@@ -1843,7 +1944,7 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 					slog.Error("failed to marshal content delta event", "error", err, "response_id", sc.responseID)
 					return ""
 				}
-				return fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
+				return prefix + fmt.Sprintf("event: response.output_text.delta\ndata: %s\n\n", jsonData)
 			}
 		case "input_json_delta":
 			if event.Delta.PartialJSON == "" {

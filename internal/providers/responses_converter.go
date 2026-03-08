@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -27,6 +28,10 @@ type OpenAIResponsesStreamConverter struct {
 	sentCreate              bool
 	sentDone                bool
 	assistantOutputReserved bool
+	assistantOutputStarted  bool
+	assistantOutputDone     bool
+	assistantItemID         string
+	assistantText           bytes.Buffer
 	cachedUsage             map[string]interface{} // Stores usage from final chunk for inclusion in response.completed
 }
 
@@ -110,9 +115,80 @@ func (sc *OpenAIResponsesStreamConverter) reserveAssistantOutput() {
 	}
 }
 
+func (sc *OpenAIResponsesStreamConverter) assistantMessageItem(status string, includeContent bool) map[string]interface{} {
+	item := map[string]interface{}{
+		"id":      sc.assistantItemID,
+		"type":    "message",
+		"status":  status,
+		"role":    "assistant",
+		"content": []map[string]interface{}{},
+	}
+	if includeContent {
+		item["content"] = []map[string]interface{}{
+			{
+				"type":        "output_text",
+				"text":        sc.assistantText.String(),
+				"annotations": []string{},
+			},
+		}
+	}
+	return item
+}
+
+func (sc *OpenAIResponsesStreamConverter) startAssistantOutput() string {
+	sc.reserveAssistantOutput()
+	if sc.assistantOutputStarted {
+		return ""
+	}
+	sc.assistantOutputStarted = true
+	if sc.assistantItemID == "" {
+		sc.assistantItemID = "msg_" + uuid.New().String()
+	}
+	return sc.writeEvent("response.output_item.added", map[string]interface{}{
+		"type":         "response.output_item.added",
+		"item":         sc.assistantMessageItem("in_progress", false),
+		"output_index": 0,
+	})
+}
+
+func (sc *OpenAIResponsesStreamConverter) completeAssistantOutput() string {
+	if !sc.assistantOutputReserved || sc.assistantOutputDone {
+		return ""
+	}
+	var out bytes.Buffer
+	out.WriteString(sc.startAssistantOutput())
+	sc.assistantOutputDone = true
+	out.WriteString(sc.writeEvent("response.output_item.done", map[string]interface{}{
+		"type":         "response.output_item.done",
+		"item":         sc.assistantMessageItem("completed", true),
+		"output_index": 0,
+	}))
+	return out.String()
+}
+
 func (sc *OpenAIResponsesStreamConverter) startToolCall(state *openAIResponsesToolCallState) string {
 	if state.Started {
 		return ""
+	}
+	if strings.TrimSpace(state.CallID) == "" || strings.TrimSpace(state.Name) == "" {
+		return ""
+	}
+	state.CallID = ResponsesFunctionCallCallID(state.CallID)
+	state.ItemID = ResponsesFunctionCallItemID(state.CallID)
+	state.Started = true
+	return sc.writeEvent("response.output_item.added", map[string]interface{}{
+		"type":         "response.output_item.added",
+		"item":         sc.renderToolCallItem(state, "in_progress"),
+		"output_index": state.OutputIndex,
+	})
+}
+
+func (sc *OpenAIResponsesStreamConverter) forceStartToolCall(state *openAIResponsesToolCallState) string {
+	if state.Started {
+		return ""
+	}
+	if strings.TrimSpace(state.Name) == "" {
+		state.Name = "unknown"
 	}
 	state.CallID = ResponsesFunctionCallCallID(state.CallID)
 	state.ItemID = ResponsesFunctionCallItemID(state.CallID)
@@ -134,7 +210,11 @@ func (sc *OpenAIResponsesStreamConverter) completePendingToolCalls() string {
 	var out bytes.Buffer
 	for _, index := range indices {
 		state := sc.toolCalls[index]
-		if state == nil || !state.Started || state.Completed {
+		if state == nil || state.Completed {
+			continue
+		}
+		out.WriteString(sc.forceStartToolCall(state))
+		if !state.Started {
 			continue
 		}
 		state.Completed = true
@@ -157,6 +237,10 @@ func (sc *OpenAIResponsesStreamConverter) completePendingToolCalls() string {
 func (sc *OpenAIResponsesStreamConverter) handleToolCallDeltas(toolCalls []interface{}) string {
 	var out bytes.Buffer
 
+	if sc.assistantOutputStarted && !sc.assistantOutputDone {
+		out.WriteString(sc.completeAssistantOutput())
+	}
+
 	for _, item := range toolCalls {
 		toolCall, ok := item.(map[string]interface{})
 		if !ok {
@@ -177,16 +261,28 @@ func (sc *OpenAIResponsesStreamConverter) handleToolCallDeltas(toolCalls []inter
 			state.Name = name
 		}
 
+		arguments, _ := function["arguments"].(string)
+		hadStarted := state.Started
+		if arguments != "" {
+			_, _ = state.Arguments.WriteString(arguments)
+		}
 		out.WriteString(sc.startToolCall(state))
 
-		if arguments, _ := function["arguments"].(string); arguments != "" {
-			_, _ = state.Arguments.WriteString(arguments)
-			out.WriteString(sc.writeEvent("response.function_call_arguments.delta", map[string]interface{}{
-				"type":         "response.function_call_arguments.delta",
-				"item_id":      state.ItemID,
-				"output_index": state.OutputIndex,
-				"delta":        arguments,
-			}))
+		if state.Started {
+			delta := ""
+			if !hadStarted && state.Arguments.Len() > 0 {
+				delta = state.Arguments.String()
+			} else if arguments != "" {
+				delta = arguments
+			}
+			if delta != "" {
+				out.WriteString(sc.writeEvent("response.function_call_arguments.delta", map[string]interface{}{
+					"type":         "response.function_call_arguments.delta",
+					"item_id":      state.ItemID,
+					"output_index": state.OutputIndex,
+					"delta":        delta,
+				}))
+			}
 		}
 	}
 
@@ -258,6 +354,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 					// Send done event
 					if !sc.sentDone {
 						sc.sentDone = true
+						sc.buffer = append(sc.buffer, []byte(sc.completeAssistantOutput())...)
 						sc.buffer = append(sc.buffer, []byte(sc.completePendingToolCalls())...)
 						responseData := map[string]interface{}{
 							"id":         sc.responseID,
@@ -302,7 +399,8 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 					if choice, ok := choices[0].(map[string]interface{}); ok {
 						if delta, ok := choice["delta"].(map[string]interface{}); ok {
 							if content, ok := delta["content"].(string); ok && content != "" {
-								sc.reserveAssistantOutput()
+								sc.buffer = append(sc.buffer, []byte(sc.startAssistantOutput())...)
+								_, _ = sc.assistantText.WriteString(content)
 								deltaEvent := map[string]interface{}{
 									"type":  "response.output_text.delta",
 									"delta": content,
@@ -332,6 +430,7 @@ func (sc *OpenAIResponsesStreamConverter) Read(p []byte) (n int, err error) {
 			// Send final done event if we haven't already
 			if !sc.sentDone {
 				sc.sentDone = true
+				sc.buffer = append(sc.buffer, []byte(sc.completeAssistantOutput())...)
 				sc.buffer = append(sc.buffer, []byte(sc.completePendingToolCalls())...)
 				responseData := map[string]interface{}{
 					"id":         sc.responseID,
