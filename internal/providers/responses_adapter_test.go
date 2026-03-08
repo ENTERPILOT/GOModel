@@ -332,6 +332,84 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 			},
 		},
 		{
+			name: "typed input preserves assistant boundaries before tool calls",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []core.ResponsesInputItem{
+					{
+						Role:    "assistant",
+						Content: "First",
+					},
+					{
+						Role:    "assistant",
+						Content: "Second",
+					},
+					{
+						Role: "assistant",
+						Content: []core.ResponsesContentPart{
+							{
+								Type: "input_text",
+								Text: "Third",
+							},
+						},
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 3 {
+					t.Fatalf("len(Messages) = %d, want 3", len(req.Messages))
+				}
+				if req.Messages[0].Role != "assistant" || req.Messages[0].Content != "First" {
+					t.Fatalf("Messages[0] = %+v, want assistant/First", req.Messages[0])
+				}
+				if req.Messages[1].Role != "assistant" || req.Messages[1].Content != "Second" {
+					t.Fatalf("Messages[1] = %+v, want assistant/Second", req.Messages[1])
+				}
+				if req.Messages[2].Role != "assistant" || req.Messages[2].Content != "Third" {
+					t.Fatalf("Messages[2] = %+v, want assistant/Third", req.Messages[2])
+				}
+			},
+		},
+		{
+			name: "raw assistant role content items keep tool calls on the later turn",
+			input: &core.ResponsesRequest{
+				Model: "test-model",
+				Input: []map[string]any{
+					{
+						"role":    "assistant",
+						"content": "First",
+					},
+					{
+						"role":    "assistant",
+						"content": "Second",
+					},
+					{
+						"type":      "function_call",
+						"call_id":   "call_123",
+						"name":      "lookup_weather",
+						"arguments": `{"city":"Warsaw"}`,
+					},
+				},
+			},
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 2 {
+					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
+				}
+				if req.Messages[0].Role != "assistant" || req.Messages[0].Content != "First" {
+					t.Fatalf("Messages[0] = %+v, want assistant/First", req.Messages[0])
+				}
+				if req.Messages[1].Role != "assistant" || req.Messages[1].Content != "Second" {
+					t.Fatalf("Messages[1] = %+v, want assistant/Second with tool call", req.Messages[1])
+				}
+				if len(req.Messages[1].ToolCalls) != 1 {
+					t.Fatalf("len(Messages[1].ToolCalls) = %d, want 1", len(req.Messages[1].ToolCalls))
+				}
+				if req.Messages[1].ToolCalls[0].ID != "call_123" {
+					t.Fatalf("Messages[1].ToolCalls[0].ID = %q, want call_123", req.Messages[1].ToolCalls[0].ID)
+				}
+			},
+		},
+		{
 			name: "function call input generates missing call id",
 			input: &core.ResponsesRequest{
 				Model: "test-model",

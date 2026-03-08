@@ -129,9 +129,15 @@ func convertResponsesInputItems(items []interface{}) []core.Message {
 }
 
 func responsesInputItemType(item interface{}) string {
+	if _, ok := item.(core.ResponsesInputItem); ok {
+		return "message"
+	}
 	if typed, ok := item.(map[string]interface{}); ok {
 		if itemType, _ := typed["type"].(string); itemType != "" {
 			return itemType
+		}
+		if role, _ := typed["role"].(string); strings.TrimSpace(role) != "" && typed["content"] != nil {
+			return "message"
 		}
 	}
 	return ""

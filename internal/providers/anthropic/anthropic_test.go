@@ -963,6 +963,43 @@ func TestConvertToAnthropicRequest_InvalidToolArguments(t *testing.T) {
 	}
 }
 
+func TestConvertToAnthropicRequest_RejectsTrailingToolArgumentContent(t *testing.T) {
+	_, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_123",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup_weather",
+							Arguments: `{"city":"Warsaw"} garbage`,
+						},
+					},
+				},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+	if !strings.Contains(gatewayErr.Message, "invalid character") && !strings.Contains(gatewayErr.Message, "exactly one JSON object") {
+		t.Fatalf("error message = %q, want trailing content validation", gatewayErr.Message)
+	}
+}
+
 func TestConvertToAnthropicRequest_InvalidToolDefinition(t *testing.T) {
 	_, err := convertToAnthropicRequest(&core.ChatRequest{
 		Model: "claude-sonnet-4-5-20250929",
@@ -2506,6 +2543,33 @@ func TestConvertResponsesRequestToAnthropic_InvalidToolArguments(t *testing.T) {
 	}
 }
 
+func TestConvertResponsesRequestToAnthropic_RejectsTrailingToolArgumentContent(t *testing.T) {
+	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_123",
+				"name":      "lookup_weather",
+				"arguments": `{"city":"Warsaw"} garbage`,
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if gatewayErr.HTTPStatusCode() != http.StatusBadRequest {
+		t.Fatalf("HTTPStatusCode() = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusBadRequest)
+	}
+}
+
 func TestConvertResponsesRequestToAnthropic_ToolChoiceRequiresTools(t *testing.T) {
 	_, err := convertResponsesRequestToAnthropic(&core.ResponsesRequest{
 		Model:      "claude-sonnet-4-5-20250929",
@@ -2554,6 +2618,45 @@ func TestBuildAnthropicBatchCreateRequest_PreservesGatewayErrorDetails(t *testin
 	}
 	if gatewayErr.Message != "batch item 0: tool_choice requires at least one tool" {
 		t.Fatalf("error message = %q", gatewayErr.Message)
+	}
+}
+
+func TestBuildAnthropicBatchCreateRequest_PrefixesToolArgumentErrors(t *testing.T) {
+	req := &core.BatchRequest{
+		Requests: []core.BatchRequestItem{
+			{
+				URL: "/v1/chat/completions",
+				Body: json.RawMessage(`{
+					"model":"claude-sonnet-4-5-20250929",
+					"messages":[{
+						"role":"assistant",
+						"tool_calls":[{
+							"id":"call_123",
+							"type":"function",
+							"function":{
+								"name":"lookup_weather",
+								"arguments":"{\"city\":\"Warsaw\"} garbage"
+							}
+						}]
+					}]
+				}`),
+			},
+		},
+	}
+
+	_, _, err := buildAnthropicBatchCreateRequest(req)
+	if err == nil {
+		t.Fatal("expected invalid request error, got nil")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if !strings.HasPrefix(gatewayErr.Message, "batch item 0: ") {
+		t.Fatalf("error message = %q, want batch item prefix", gatewayErr.Message)
 	}
 }
 
