@@ -33,7 +33,7 @@ data: [DONE]
 		t.Fatalf("failed to read from converter: %v", err)
 	}
 
-	events := parseResponsesConverterTestEvents(t, string(raw))
+	events := parseTestSSEEvents(t, string(raw))
 	foundAdded := false
 	foundArgumentsDone := false
 	foundItemDone := false
@@ -97,7 +97,7 @@ data: [DONE]
 		t.Fatalf("failed to read from converter: %v", err)
 	}
 
-	events := parseResponsesConverterTestEvents(t, string(raw))
+	events := parseTestSSEEvents(t, string(raw))
 	foundTextDelta := false
 	foundAssistantAdded := false
 	foundAssistantDone := false
@@ -160,7 +160,7 @@ data: [DONE]
 		t.Fatalf("failed to read from converter: %v", err)
 	}
 
-	events := parseResponsesConverterTestEvents(t, string(raw))
+	events := parseTestSSEEvents(t, string(raw))
 	addedCount := 0
 	var argumentDeltas []string
 
@@ -195,7 +195,7 @@ data: [DONE]
 	}
 }
 
-func parseResponsesConverterTestEvents(t *testing.T, raw string) []testSSEEvent {
+func parseTestSSEEvents(t *testing.T, raw string) []testSSEEvent {
 	t.Helper()
 
 	lines := strings.Split(raw, "\n")

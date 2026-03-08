@@ -97,7 +97,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}
 
 	content := any(m.Content)
-	if m.ContentNull {
+	if m.ContentNull && m.Content == "" {
 		content = nil
 	}
 

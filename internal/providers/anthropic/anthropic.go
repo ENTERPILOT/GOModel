@@ -589,13 +589,12 @@ func convertToAnthropicRequest(req *core.ChatRequest) (*anthropicRequest, error)
 			if err != nil {
 				return nil, normalizeAnthropicRequestError(err)
 			}
+			role := msg.Role
+			if role == "tool" {
+				role = "user"
+			}
 			anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-				Role: func() string {
-					if msg.Role == "tool" {
-						return "user"
-					}
-					return msg.Role
-				}(),
+				Role:    role,
 				Content: content,
 			})
 		}
@@ -1081,13 +1080,12 @@ func convertResponsesRequestToAnthropic(req *core.ResponsesRequest) (*anthropicR
 		if err != nil {
 			return nil, normalizeAnthropicRequestError(err)
 		}
+		role := msg.Role
+		if role == "tool" {
+			role = "user"
+		}
 		anthropicReq.Messages = append(anthropicReq.Messages, anthropicMessage{
-			Role: func() string {
-				if msg.Role == "tool" {
-					return "user"
-				}
-				return msg.Role
-			}(),
+			Role:    role,
 			Content: content,
 		})
 	}
@@ -1179,33 +1177,11 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 	content := extractTextContent(resp.Content)
 	toolCalls := extractToolCalls(resp.Content)
 
-	output := make([]core.ResponsesOutputItem, 0, len(toolCalls)+1)
-	if content != "" || len(toolCalls) == 0 {
-		output = append(output, core.ResponsesOutputItem{
-			ID:     "msg_" + uuid.New().String(),
-			Type:   "message",
-			Role:   "assistant",
-			Status: "completed",
-			Content: []core.ResponsesContentItem{
-				{
-					Type:        "output_text",
-					Text:        content,
-					Annotations: []string{},
-				},
-			},
-		})
+	msg := core.Message{
+		Content:   content,
+		ToolCalls: toolCalls,
 	}
-	for _, toolCall := range toolCalls {
-		callID := providers.ResponsesFunctionCallCallID(toolCall.ID)
-		output = append(output, core.ResponsesOutputItem{
-			ID:        providers.ResponsesFunctionCallItemID(callID),
-			Type:      "function_call",
-			Status:    "completed",
-			CallID:    callID,
-			Name:      toolCall.Function.Name,
-			Arguments: toolCall.Function.Arguments,
-		})
-	}
+	output := providers.BuildResponsesOutputItems(msg)
 
 	return &core.ResponsesResponse{
 		ID:        resp.ID,

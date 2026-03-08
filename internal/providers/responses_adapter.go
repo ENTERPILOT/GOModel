@@ -294,7 +294,10 @@ func ResponsesFunctionCallItemID(callID string) string {
 	return "fc_" + normalizedCallID
 }
 
-func buildResponsesOutputItems(msg core.Message) []core.ResponsesOutputItem {
+// BuildResponsesOutputItems converts a Message into Responses API output items.
+// It produces a message output item when text content is present (or when there are
+// no tool calls), plus one function_call output item per tool call.
+func BuildResponsesOutputItems(msg core.Message) []core.ResponsesOutputItem {
 	output := make([]core.ResponsesOutputItem, 0, len(msg.ToolCalls)+1)
 	if msg.Content != "" || len(msg.ToolCalls) == 0 {
 		output = append(output, core.ResponsesOutputItem{
@@ -343,7 +346,7 @@ func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 		},
 	}
 	if len(resp.Choices) > 0 {
-		output = buildResponsesOutputItems(resp.Choices[0].Message)
+		output = BuildResponsesOutputItems(resp.Choices[0].Message)
 	}
 
 	return &core.ResponsesResponse{

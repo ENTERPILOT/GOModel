@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -205,7 +205,7 @@ func (sc *OpenAIResponsesStreamConverter) completePendingToolCalls() string {
 	for index := range sc.toolCalls {
 		indices = append(indices, index)
 	}
-	sort.Ints(indices)
+	slices.Sort(indices)
 
 	var out bytes.Buffer
 	for _, index := range indices {

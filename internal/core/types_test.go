@@ -77,6 +77,25 @@ func TestMessageMarshalJSON_PreservesNullContent(t *testing.T) {
 	}
 }
 
+func TestMessageMarshalJSON_ContentWinsOverContentNull(t *testing.T) {
+	payload, err := json.Marshal(Message{
+		Role:        "assistant",
+		Content:     "hello",
+		ContentNull: true,
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v, want nil", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if raw["content"] != "hello" {
+		t.Fatalf("content = %v, want \"hello\"", raw["content"])
+	}
+}
+
 func TestChatRequestWithStreaming_PreservesToolFields(t *testing.T) {
 	parallelToolCalls := false
 	req := &ChatRequest{
