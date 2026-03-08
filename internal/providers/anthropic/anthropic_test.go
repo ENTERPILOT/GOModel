@@ -896,7 +896,7 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
 				}
 
-				assistantBlocks, ok := req.Messages[0].Content.([]anthropicMessageContentBlock)
+				assistantBlocks, ok := req.Messages[0].Content.([]anthropicContentBlock)
 				if !ok || len(assistantBlocks) != 1 {
 					t.Fatalf("assistant content = %#v, want one tool_use block", req.Messages[0].Content)
 				}
@@ -904,7 +904,7 @@ func TestConvertToAnthropicRequest(t *testing.T) {
 					t.Fatalf("assistant tool block = %+v, want lookup_weather/call_123", assistantBlocks[0])
 				}
 
-				toolBlocks, ok := req.Messages[1].Content.([]anthropicMessageContentBlock)
+				toolBlocks, ok := req.Messages[1].Content.([]anthropicContentBlock)
 				if !ok || len(toolBlocks) != 1 {
 					t.Fatalf("tool content = %#v, want one tool_result block", req.Messages[1].Content)
 				}
@@ -1328,7 +1328,7 @@ func TestConvertToAnthropicRequest_NormalizesToolCallIDAndName(t *testing.T) {
 		t.Fatalf("convertToAnthropicRequest() error = %v, want nil", err)
 	}
 
-	blocks, ok := result.Messages[0].Content.([]anthropicMessageContentBlock)
+	blocks, ok := result.Messages[0].Content.([]anthropicContentBlock)
 	if !ok || len(blocks) != 1 {
 		t.Fatalf("content = %#v, want one tool_use block", result.Messages[0].Content)
 	}
@@ -1351,7 +1351,7 @@ func TestConvertToAnthropicRequest_NormalizesToolResultID(t *testing.T) {
 		t.Fatalf("convertToAnthropicRequest() error = %v, want nil", err)
 	}
 
-	blocks, ok := result.Messages[0].Content.([]anthropicMessageContentBlock)
+	blocks, ok := result.Messages[0].Content.([]anthropicContentBlock)
 	if !ok || len(blocks) != 1 {
 		t.Fatalf("content = %#v, want one tool_result block", result.Messages[0].Content)
 	}
@@ -2483,7 +2483,7 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 					t.Fatalf("len(Messages) = %d, want 2", len(req.Messages))
 				}
 
-				assistantBlocks, ok := req.Messages[0].Content.([]anthropicMessageContentBlock)
+				assistantBlocks, ok := req.Messages[0].Content.([]anthropicContentBlock)
 				if !ok || len(assistantBlocks) != 1 {
 					t.Fatalf("assistant content = %#v, want one tool_use block", req.Messages[0].Content)
 				}
@@ -2491,7 +2491,7 @@ func TestConvertResponsesRequestToAnthropic(t *testing.T) {
 					t.Fatalf("assistant tool block = %+v, want lookup_weather/call_123", assistantBlocks[0])
 				}
 
-				toolBlocks, ok := req.Messages[1].Content.([]anthropicMessageContentBlock)
+				toolBlocks, ok := req.Messages[1].Content.([]anthropicContentBlock)
 				if !ok || len(toolBlocks) != 1 {
 					t.Fatalf("tool content = %#v, want one tool_result block", req.Messages[1].Content)
 				}
@@ -3705,6 +3705,48 @@ func TestEmbeddings_ReturnsUnsupportedError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "anthropic does not support embeddings") {
 		t.Errorf("expected message about anthropic not supporting embeddings, got: %s", err.Error())
+	}
+}
+
+func TestConvertToAnthropicRequest_NormalizesInputTextType(t *testing.T) {
+	req := &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{Type: "input_text", Text: "First part."},
+					{Type: "input_text", Text: "Second part."},
+				},
+			},
+		},
+	}
+
+	result, err := convertToAnthropicRequest(req)
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+
+	blocks, ok := result.Messages[0].Content.([]anthropicContentBlock)
+	if !ok {
+		t.Fatalf("message content type = %T, want []anthropicContentBlock", result.Messages[0].Content)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("len(blocks) = %d, want 2", len(blocks))
+	}
+	for i, block := range blocks {
+		if block.Type != "text" {
+			t.Errorf("blocks[%d].Type = %q, want \"text\"", i, block.Type)
+		}
+	}
+	if blocks[0].Text != "First part." {
+		t.Errorf("blocks[0].Text = %q, want \"First part.\"", blocks[0].Text)
+	}
+	if blocks[1].Text != "Second part." {
+		t.Errorf("blocks[1].Text = %q, want \"Second part.\"", blocks[1].Text)
 	}
 }
 

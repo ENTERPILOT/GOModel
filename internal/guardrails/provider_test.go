@@ -1196,6 +1196,23 @@ func TestApplyMessagesToResponses_SystemToInstructions(t *testing.T) {
 	}
 }
 
+func TestMergeMultimodalContentWithTextRewrite_RejectsExcessiveContentParts(t *testing.T) {
+	parts := make([]core.ContentPart, 1_000_000)
+	for i := range parts {
+		parts[i] = core.ContentPart{
+			Type:     "image_url",
+			ImageURL: &core.ImageURLContent{URL: "https://example.com/img.png"},
+		}
+	}
+	_, err := mergeMultimodalContentWithTextRewrite(parts, "rewritten")
+	if err == nil {
+		t.Fatal("expected error for excessive content parts, got nil")
+	}
+	if !strings.Contains(err.Error(), "too many content parts") {
+		t.Fatalf("expected 'too many content parts' error, got: %v", err)
+	}
+}
+
 func TestApplyMessagesToResponses_NoSystem_ClearsInstructions(t *testing.T) {
 	req := &core.ResponsesRequest{
 		Model:        "gpt-4",

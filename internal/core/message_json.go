@@ -35,7 +35,7 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	content := any(nil)
 	var err error
 	switch {
-	case m.ContentNull && isNullEquivalentMessageContent(m.Content):
+	case m.ContentNull && isNullEquivalentContent(m.Content):
 		content = nil
 	default:
 		content, err = marshalMessageContent(m.Content, m.ToolCalls)
@@ -104,7 +104,7 @@ func marshalMessageContent(raw MessageContent, toolCalls []ToolCall) (any, error
 	)
 
 	// OpenAI-compatible tool-call assistant messages use `content: null`.
-	if len(toolCalls) > 0 && isNullEquivalentToolCallContent(raw) {
+	if len(toolCalls) > 0 && isNullEquivalentContent(raw) {
 		content = nil
 	} else {
 		content, err = NormalizeMessageContent(raw)
@@ -115,18 +115,7 @@ func marshalMessageContent(raw MessageContent, toolCalls []ToolCall) (any, error
 	return content, nil
 }
 
-func isNullEquivalentToolCallContent(raw MessageContent) bool {
-	if raw == nil {
-		return true
-	}
-	text, ok := raw.(string)
-	if !ok {
-		return false
-	}
-	return strings.TrimSpace(text) == ""
-}
-
-func isNullEquivalentMessageContent(raw MessageContent) bool {
+func isNullEquivalentContent(raw MessageContent) bool {
 	if raw == nil {
 		return true
 	}

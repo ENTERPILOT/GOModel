@@ -223,8 +223,6 @@ type anthropicContentSource struct {
 	URL       string `json:"url,omitempty"`
 }
 
-type anthropicMessageContentBlock = anthropicContentBlock
-
 // anthropicResponse represents the Anthropic API response format
 type anthropicResponse struct {
 	ID         string             `json:"id"`
@@ -1462,9 +1460,7 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: url is required", i), nil)
 		}
 
-		var (
-			params *anthropicRequest
-		)
+		var params *anthropicRequest
 		switch endpoint {
 		case "/v1/chat/completions":
 			var chatReq core.ChatRequest

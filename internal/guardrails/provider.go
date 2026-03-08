@@ -401,15 +401,6 @@ func applySystemMessagesToMultimodalChat(req *core.ChatRequest, msgs []Message) 
 		return nil, core.NewInvalidRequestError("guardrails cannot add or remove non-system multimodal or tool-call messages", nil)
 	}
 
-	// Preserve untouched trailing originals only when the guardrail kept at least
-	// as many non-system turns as the original request.
-	if modifiedNonSystemCount >= len(nonSystemOriginal) {
-		for nextNonSystem < len(nonSystemOriginal) {
-			coreMessages = append(coreMessages, nonSystemOriginal[nextNonSystem])
-			nextNonSystem++
-		}
-	}
-
 	result := *req
 	result.Messages = coreMessages
 	return &result, nil
