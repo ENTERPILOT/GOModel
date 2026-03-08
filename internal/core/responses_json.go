@@ -82,3 +82,37 @@ func (r ResponsesRequest) MarshalJSON() ([]byte, error) {
 		Reasoning:         r.Reasoning,
 	})
 }
+
+// UnmarshalJSON preserves dynamic content payloads while ignoring Swagger-only schema fields.
+func (i *ResponsesInputItem) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Role    string          `json:"role"`
+		Content json.RawMessage `json:"content"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	var content any
+	trimmed := bytes.TrimSpace(raw.Content)
+	if len(trimmed) != 0 && !bytes.Equal(trimmed, []byte("null")) {
+		if err := json.Unmarshal(trimmed, &content); err != nil {
+			return err
+		}
+	}
+
+	i.Role = raw.Role
+	i.Content = content
+	return nil
+}
+
+// MarshalJSON preserves dynamic content payloads while ignoring Swagger-only schema fields.
+func (i ResponsesInputItem) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Role    string `json:"role"`
+		Content any    `json:"content"`
+	}{
+		Role:    i.Role,
+		Content: i.Content,
+	})
+}

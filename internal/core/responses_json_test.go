@@ -150,3 +150,39 @@ func TestResponsesRequestMarshalJSON_PreservesToolCallingControls(t *testing.T) 
 		t.Fatalf("decoded parallel_tool_calls = %#v, want false", decoded["parallel_tool_calls"])
 	}
 }
+
+func TestResponsesRequestMarshalJSON_PreservesTypedInputItemContent(t *testing.T) {
+	body, err := json.Marshal(ResponsesRequest{
+		Model: "gpt-4o-mini",
+		Input: []ResponsesInputItem{
+			{
+				Role:    "user",
+				Content: "hello",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	input, ok := decoded["input"].([]interface{})
+	if !ok || len(input) != 1 {
+		t.Fatalf("decoded input = %#v, want []interface{} len=1", decoded["input"])
+	}
+
+	first, ok := input[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decoded first input item = %#v, want object", input[0])
+	}
+	if role, _ := first["role"].(string); role != "user" {
+		t.Fatalf("decoded role = %#v, want user", first["role"])
+	}
+	if content, _ := first["content"].(string); content != "hello" {
+		t.Fatalf("decoded content = %#v, want hello", first["content"])
+	}
+}

@@ -523,6 +523,8 @@ func parseToolCallArguments(arguments string) (any, error) {
 }
 
 func buildAnthropicMessageContent(msg core.Message) (any, error) {
+	const maxToolCallsPerMessage = 1024
+
 	if msg.Role == "tool" {
 		toolUseID := strings.TrimSpace(msg.ToolCallID)
 		if toolUseID == "" {
@@ -543,6 +545,9 @@ func buildAnthropicMessageContent(msg core.Message) (any, error) {
 	}
 	if len(msg.ToolCalls) == 0 {
 		return content, nil
+	}
+	if len(msg.ToolCalls) > maxToolCallsPerMessage {
+		return nil, core.NewInvalidRequestError("too many tool calls in message", nil)
 	}
 
 	blocks := make([]anthropicContentBlock, 0, len(msg.ToolCalls)+1)
@@ -1422,11 +1427,16 @@ func mapAnthropicBatchResponse(resp *anthropicBatchResponse) *core.BatchResponse
 }
 
 func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCreateRequest, map[string]string, error) {
+	const maxAnthropicBatchRequests = 10000
+
 	if req == nil {
 		return nil, nil, core.NewInvalidRequestError("request is required for anthropic batch processing", nil)
 	}
 	if len(req.Requests) == 0 {
 		return nil, nil, core.NewInvalidRequestError("requests is required for anthropic batch processing", nil)
+	}
+	if len(req.Requests) > maxAnthropicBatchRequests {
+		return nil, nil, core.NewInvalidRequestError("too many requests for anthropic batch processing", nil)
 	}
 
 	out := &anthropicBatchCreateRequest{
