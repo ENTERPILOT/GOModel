@@ -696,6 +696,7 @@ func TestLoad_EnvOnlyRedisResponseCache(t *testing.T) {
 			t.Errorf("expected REDIS_TTL_RESPONSES=1800, got %d", cfg.Cache.Response.Simple.Redis.TTL)
 		}
 	})
+}
 
 func TestParseBodySizeLimitBytes(t *testing.T) {
 	tests := []struct {

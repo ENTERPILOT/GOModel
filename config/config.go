@@ -271,6 +271,12 @@ type LocalCacheConfig struct {
 	CacheDir string `yaml:"cache_dir" env:"GOMODEL_CACHE_DIR"`
 }
 
+// ModelListConfig holds configuration for fetching the external model metadata registry.
+type ModelListConfig struct {
+	// URL is the HTTP(S) URL to fetch models.json from (empty = disabled)
+	URL string `yaml:"url" env:"MODEL_LIST_URL"`
+}
+
 // RedisModelConfig holds Redis connection configuration for the model registry cache.
 type RedisModelConfig struct {
 	URL string `yaml:"url" env:"REDIS_URL"`
@@ -321,7 +327,6 @@ func ValidateCacheConfig(c *CacheConfig) error {
 		return fmt.Errorf("cache.model.redis: URL is required when using redis")
 	}
 	return nil
-}
 }
 
 // ServerConfig holds HTTP server configuration
