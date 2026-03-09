@@ -15,10 +15,21 @@ const (
 	DefaultRedisKey = "gomodel:models"
 )
 
-// RedisModelCacheConfig holds Redis config for model cache. Caller uses cache.RedisStore.
+// RedisModelCacheConfig is the configuration passed to NewRedisModelCache when
+// creating a Redis-backed model registry cache. All fields are optional and fall
+// back to sensible defaults when zero.
 type RedisModelCacheConfig struct {
+	// URL is the Redis connection URL (e.g. "redis://localhost:6379").
+	// Required; NewRedisModelCache returns an error if the URL is invalid or
+	// the server is unreachable.
 	URL string
+
+	// Key is the Redis key under which the serialised ModelCache is stored.
+	// Defaults to DefaultRedisKey ("gomodel:models") when empty.
 	Key string
+
+	// TTL is how long a cached entry lives in Redis before expiring.
+	// Defaults to cache.DefaultRedisTTL (24 h) when zero.
 	TTL time.Duration
 }
 
