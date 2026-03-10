@@ -41,6 +41,7 @@ Completed in this slice:
 - move model selector normalization into the semantic/core layer so cached canonical requests and `SemanticEnvelope.SelectorHints` stay aligned after handler normalization
 - move Anthropic translated request construction behind one shared canonical translation seam reused by chat, responses, and native batch subrequests instead of keeping separate provider-local operation switches
 - collapse the per-operation `SemanticEnvelope` cache fields into an operation-keyed core cache with typed accessors so semantic caching remains authoritative without growing one field per route
+- collapse the repeated server-side JSON semantic request helpers into one generic ingress-backed decode path and trim the remaining batch-item semantic union behind typed accessors over a single canonical request payload
 
 ## Broader endpoint migration scope
 

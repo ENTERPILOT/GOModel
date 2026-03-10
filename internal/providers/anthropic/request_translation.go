@@ -339,26 +339,28 @@ func convertDecodedBatchItemToAnthropic(decoded *core.DecodedBatchItemRequest) (
 
 	switch decoded.Operation {
 	case "chat_completions":
-		if decoded.ChatRequest == nil {
+		req := decoded.ChatRequest()
+		if req == nil {
 			return nil, core.NewInvalidRequestError("anthropic chat request is required", nil)
 		}
-		if decoded.ChatRequest.Stream {
+		if req.Stream {
 			return nil, core.NewInvalidRequestError("streaming is not supported for native batch", nil)
 		}
-		params, err := convertToAnthropicRequest(decoded.ChatRequest)
+		params, err := convertToAnthropicRequest(req)
 		if err != nil {
 			return nil, err
 		}
 		params.Stream = false
 		return params, nil
 	case "responses":
-		if decoded.ResponsesRequest == nil {
+		req := decoded.ResponsesRequest()
+		if req == nil {
 			return nil, core.NewInvalidRequestError("anthropic responses request is required", nil)
 		}
-		if decoded.ResponsesRequest.Stream {
+		if req.Stream {
 			return nil, core.NewInvalidRequestError("streaming is not supported for native batch", nil)
 		}
-		params, err := convertResponsesRequestToAnthropic(decoded.ResponsesRequest)
+		params, err := convertResponsesRequestToAnthropic(req)
 		if err != nil {
 			return nil, err
 		}

@@ -151,11 +151,11 @@ func (g *GuardedProvider) processBatchRequest(ctx context.Context, req *core.Bat
 			if err != nil {
 				return nil, core.NewInvalidRequestError("invalid chat request in batch item", err)
 			}
-			modified, err := g.processChat(ctx, decoded.ChatRequest)
+			modified, err := g.processChat(ctx, decoded.ChatRequest())
 			if err != nil {
 				return nil, err
 			}
-			body, err := rewriteGuardedChatBatchBody(item.Body, decoded.ChatRequest, modified)
+			body, err := rewriteGuardedChatBatchBody(item.Body, decoded.ChatRequest(), modified)
 			if err != nil {
 				return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
 			}
@@ -165,7 +165,7 @@ func (g *GuardedProvider) processBatchRequest(ctx context.Context, req *core.Bat
 			if err != nil {
 				return nil, core.NewInvalidRequestError("invalid responses request in batch item", err)
 			}
-			modified, err := g.processResponses(ctx, decoded.ResponsesRequest)
+			modified, err := g.processResponses(ctx, decoded.ResponsesRequest())
 			if err != nil {
 				return nil, err
 			}

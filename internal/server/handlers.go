@@ -398,7 +398,7 @@ func (h *Handler) ProviderPassthrough(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/chat/completions [post]
 func (h *Handler) ChatCompletion(c *echo.Context) error {
-	req, err := chatRequestFromSemanticEnvelope(c)
+	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.ChatRequest](c, core.DecodeChatRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -876,7 +876,7 @@ func (h *Handler) GetFileContent(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/responses [post]
 func (h *Handler) Responses(c *echo.Context) error {
-	req, err := responsesRequestFromSemanticEnvelope(c)
+	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -920,7 +920,7 @@ func (h *Handler) Responses(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/embeddings [post]
 func (h *Handler) Embeddings(c *echo.Context) error {
-	req, err := embeddingRequestFromSemanticEnvelope(c)
+	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.EmbeddingRequest](c, core.DecodeEmbeddingRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -960,7 +960,7 @@ func (h *Handler) Embeddings(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/batches [post]
 func (h *Handler) Batches(c *echo.Context) error {
-	req, err := batchRequestFromSemanticEnvelope(c)
+	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.BatchRequest](c, core.DecodeBatchRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}

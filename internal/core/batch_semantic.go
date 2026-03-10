@@ -1,7 +1,6 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	neturl "net/url"
@@ -10,12 +9,63 @@ import (
 
 // DecodedBatchItemRequest is the canonical decode result for known JSON batch subrequests.
 type DecodedBatchItemRequest struct {
-	Endpoint         string
-	Method           string
-	Operation        string
-	ChatRequest      *ChatRequest
-	ResponsesRequest *ResponsesRequest
-	EmbeddingRequest *EmbeddingRequest
+	Endpoint  string
+	Method    string
+	Operation string
+	Request   any
+}
+
+func (decoded *DecodedBatchItemRequest) ChatRequest() *ChatRequest {
+	if decoded == nil {
+		return nil
+	}
+	req, _ := decoded.Request.(*ChatRequest)
+	return req
+}
+
+func (decoded *DecodedBatchItemRequest) ResponsesRequest() *ResponsesRequest {
+	if decoded == nil {
+		return nil
+	}
+	req, _ := decoded.Request.(*ResponsesRequest)
+	return req
+}
+
+func (decoded *DecodedBatchItemRequest) EmbeddingRequest() *EmbeddingRequest {
+	if decoded == nil {
+		return nil
+	}
+	req, _ := decoded.Request.(*EmbeddingRequest)
+	return req
+}
+
+func (decoded *DecodedBatchItemRequest) ModelSelector() (ModelSelector, error) {
+	if decoded == nil {
+		return ModelSelector{}, fmt.Errorf("decoded batch request is required")
+	}
+
+	switch decoded.Operation {
+	case "chat_completions":
+		req := decoded.ChatRequest()
+		if req == nil {
+			return ModelSelector{}, fmt.Errorf("missing chat request")
+		}
+		return ParseModelSelector(req.Model, req.Provider)
+	case "responses":
+		req := decoded.ResponsesRequest()
+		if req == nil {
+			return ModelSelector{}, fmt.Errorf("missing responses request")
+		}
+		return ParseModelSelector(req.Model, req.Provider)
+	case "embeddings":
+		req := decoded.EmbeddingRequest()
+		if req == nil {
+			return ModelSelector{}, fmt.Errorf("missing embeddings request")
+		}
+		return ParseModelSelector(req.Model, req.Provider)
+	default:
+		return ModelSelector{}, fmt.Errorf("unsupported batch item url: %s", decoded.Endpoint)
+	}
 }
 
 // NormalizeOperationPath returns a stable path-only form for model-facing endpoints.
@@ -72,23 +122,23 @@ func DecodeKnownBatchItemRequest(defaultEndpoint string, item BatchRequestItem) 
 
 	switch decoded.Operation {
 	case "chat_completions":
-		var req ChatRequest
-		if err := json.Unmarshal(item.Body, &req); err != nil {
+		req, err := unmarshalCanonicalJSON(item.Body, func() *ChatRequest { return &ChatRequest{} })
+		if err != nil {
 			return nil, fmt.Errorf("invalid chat request body: %w", err)
 		}
-		decoded.ChatRequest = &req
+		decoded.Request = req
 	case "responses":
-		var req ResponsesRequest
-		if err := json.Unmarshal(item.Body, &req); err != nil {
+		req, err := unmarshalCanonicalJSON(item.Body, func() *ResponsesRequest { return &ResponsesRequest{} })
+		if err != nil {
 			return nil, fmt.Errorf("invalid responses request body: %w", err)
 		}
-		decoded.ResponsesRequest = &req
+		decoded.Request = req
 	case "embeddings":
-		var req EmbeddingRequest
-		if err := json.Unmarshal(item.Body, &req); err != nil {
+		req, err := unmarshalCanonicalJSON(item.Body, func() *EmbeddingRequest { return &EmbeddingRequest{} })
+		if err != nil {
 			return nil, fmt.Errorf("invalid embeddings request body: %w", err)
 		}
-		decoded.EmbeddingRequest = &req
+		decoded.Request = req
 	default:
 		return nil, fmt.Errorf("unsupported batch item url: %s", endpoint)
 	}
@@ -101,15 +151,5 @@ func BatchItemModelSelector(defaultEndpoint string, item BatchRequestItem) (Mode
 	if err != nil {
 		return ModelSelector{}, err
 	}
-
-	switch decoded.Operation {
-	case "chat_completions":
-		return ParseModelSelector(decoded.ChatRequest.Model, decoded.ChatRequest.Provider)
-	case "responses":
-		return ParseModelSelector(decoded.ResponsesRequest.Model, decoded.ResponsesRequest.Provider)
-	case "embeddings":
-		return ParseModelSelector(decoded.EmbeddingRequest.Model, decoded.EmbeddingRequest.Provider)
-	default:
-		return ModelSelector{}, fmt.Errorf("unsupported batch item url: %s", decoded.Endpoint)
-	}
+	return decoded.ModelSelector()
 }

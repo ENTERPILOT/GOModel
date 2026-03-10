@@ -15,7 +15,7 @@ import (
 	"gomodel/internal/core"
 )
 
-func TestChatRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
+func TestCanonicalJSONRequestFromSemanticEnvelope_CachesChatRequest(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -38,10 +38,10 @@ func TestChatRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := chatRequestFromSemanticEnvelope(c)
+	first, err := canonicalJSONRequestFromSemanticEnvelope[*core.ChatRequest](c, core.DecodeChatRequest)
 	require.NoError(t, err)
 
-	second, err := chatRequestFromSemanticEnvelope(c)
+	second, err := canonicalJSONRequestFromSemanticEnvelope[*core.ChatRequest](c, core.DecodeChatRequest)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
@@ -54,7 +54,7 @@ func TestChatRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
 	assert.Equal(t, "openai", env.SelectorHints.Provider)
 }
 
-func TestResponsesRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
+func TestCanonicalJSONRequestFromSemanticEnvelope_CachesResponsesRequest(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -75,10 +75,10 @@ func TestResponsesRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := responsesRequestFromSemanticEnvelope(c)
+	first, err := canonicalJSONRequestFromSemanticEnvelope[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
 	require.NoError(t, err)
 
-	second, err := responsesRequestFromSemanticEnvelope(c)
+	second, err := canonicalJSONRequestFromSemanticEnvelope[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
@@ -94,7 +94,7 @@ func TestResponsesRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.
 	assert.Equal(t, "gpt-5-mini", env.SelectorHints.Model)
 }
 
-func TestEmbeddingRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBodyMissing(t *testing.T) {
+func TestCanonicalJSONRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBodyMissing(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/v1/embeddings", strings.NewReader(`{
 		"model":"text-embedding-3-large",
@@ -116,7 +116,7 @@ func TestEmbeddingRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBody
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	embeddingReq, err := embeddingRequestFromSemanticEnvelope(c)
+	embeddingReq, err := canonicalJSONRequestFromSemanticEnvelope[*core.EmbeddingRequest](c, core.DecodeEmbeddingRequest)
 	require.NoError(t, err)
 	require.Equal(t, "text-embedding-3-large", embeddingReq.Model)
 	require.Equal(t, "openai", embeddingReq.Provider)
@@ -129,7 +129,7 @@ func TestEmbeddingRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBody
 	assert.Equal(t, "text-embedding-3-large", env.SelectorHints.Model)
 }
 
-func TestBatchRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
+func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
 	req.Header.Set("Content-Type", "application/json")
@@ -156,10 +156,10 @@ func TestBatchRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := batchRequestFromSemanticEnvelope(c)
+	first, err := canonicalJSONRequestFromSemanticEnvelope[*core.BatchRequest](c, core.DecodeBatchRequest)
 	require.NoError(t, err)
 
-	second, err := batchRequestFromSemanticEnvelope(c)
+	second, err := canonicalJSONRequestFromSemanticEnvelope[*core.BatchRequest](c, core.DecodeBatchRequest)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)

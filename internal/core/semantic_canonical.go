@@ -12,6 +12,15 @@ type canonicalJSONSpec[T any] struct {
 	afterDecode func(*SemanticEnvelope, T)
 }
 
+func unmarshalCanonicalJSON[T any](body []byte, newValue func() T) (T, error) {
+	req := newValue()
+	if err := json.Unmarshal(body, req); err != nil {
+		var zero T
+		return zero, err
+	}
+	return req, nil
+}
+
 // DecodeChatRequest decodes and caches the canonical chat request for a semantic envelope.
 func DecodeChatRequest(body []byte, env *SemanticEnvelope) (*ChatRequest, error) {
 	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*ChatRequest]{
@@ -133,8 +142,8 @@ func decodeCanonicalJSON[T any](body []byte, env *SemanticEnvelope, spec canonic
 		return req, nil
 	}
 
-	req := spec.newValue()
-	if err := json.Unmarshal(body, req); err != nil {
+	req, err := unmarshalCanonicalJSON(body, spec.newValue)
+	if err != nil {
 		var zero T
 		return zero, err
 	}

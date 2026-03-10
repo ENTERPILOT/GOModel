@@ -37,36 +37,13 @@ func semanticJSONBody(c *echo.Context) ([]byte, *core.SemanticEnvelope, error) {
 	return bodyBytes, env, nil
 }
 
-func chatRequestFromSemanticEnvelope(c *echo.Context) (*core.ChatRequest, error) {
+func canonicalJSONRequestFromSemanticEnvelope[T any](c *echo.Context, decode func([]byte, *core.SemanticEnvelope) (T, error)) (T, error) {
 	bodyBytes, env, err := semanticJSONBody(c)
 	if err != nil {
-		return nil, err
+		var zero T
+		return zero, err
 	}
-	return core.DecodeChatRequest(bodyBytes, env)
-}
-
-func responsesRequestFromSemanticEnvelope(c *echo.Context) (*core.ResponsesRequest, error) {
-	bodyBytes, env, err := semanticJSONBody(c)
-	if err != nil {
-		return nil, err
-	}
-	return core.DecodeResponsesRequest(bodyBytes, env)
-}
-
-func embeddingRequestFromSemanticEnvelope(c *echo.Context) (*core.EmbeddingRequest, error) {
-	bodyBytes, env, err := semanticJSONBody(c)
-	if err != nil {
-		return nil, err
-	}
-	return core.DecodeEmbeddingRequest(bodyBytes, env)
-}
-
-func batchRequestFromSemanticEnvelope(c *echo.Context) (*core.BatchRequest, error) {
-	bodyBytes, env, err := semanticJSONBody(c)
-	if err != nil {
-		return nil, err
-	}
-	return core.DecodeBatchRequest(bodyBytes, env)
+	return decode(bodyBytes, env)
 }
 
 func batchRequestMetadataFromSemanticEnvelope(c *echo.Context) (*core.BatchRequestSemantic, error) {

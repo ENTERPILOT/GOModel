@@ -2764,7 +2764,7 @@ func TestConvertDecodedBatchItemToAnthropic_ResponsesUsesSharedSemanticTranslato
 	decoded := &core.DecodedBatchItemRequest{
 		Endpoint:  "/v1/responses",
 		Operation: "responses",
-		ResponsesRequest: &core.ResponsesRequest{
+		Request: &core.ResponsesRequest{
 			Model:        "claude-sonnet-4-5-20250929",
 			Instructions: "Be helpful",
 			Input: []core.ResponsesInputElement{
@@ -2801,7 +2801,7 @@ func TestConvertDecodedBatchItemToAnthropic_RejectsStreaming(t *testing.T) {
 	decoded := &core.DecodedBatchItemRequest{
 		Endpoint:  "/v1/chat/completions",
 		Operation: "chat_completions",
-		ChatRequest: &core.ChatRequest{
+		Request: &core.ChatRequest{
 			Model:  "claude-sonnet-4-5-20250929",
 			Stream: true,
 			Messages: []core.Message{
