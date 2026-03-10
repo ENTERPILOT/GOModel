@@ -27,7 +27,9 @@ GOModel needs a model that preserves the original request faithfully while still
 
 ## Decision
 
-Use `IngressFrame` and `SemanticEnvelope` for all model and provider interaction endpoints.
+Use `IngressFrame` and `SemanticEnvelope` for transport-bearing model and provider request routes such as `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/batches*`, `/v1/files*`, and `/p/{provider}/{endpoint}`.
+
+Discovery routes such as `GET /v1/models` are out of scope.
 
 `IngressFrame` is always present.
 
@@ -70,7 +72,7 @@ It may contain:
 - operation kind, such as `chat_completions`, `responses`, `embeddings`, or provider-native operations
 - selector hints, such as requested model, provider, and endpoint
 - canonical request content for operations the gateway understands
-- preserved opaque extras when the body is JSON and only partial extraction is possible
+- opaque request data preserved when extraction is partial
 
 Examples of canonical fields include:
 
@@ -82,6 +84,8 @@ For JSON endpoints, the gateway may use a raw-plus-canonical extraction pattern 
 - preserve the original JSON
 - extract the subset the gateway understands
 - keep unknown JSON fields instead of discarding them
+
+Opaque preservation is behavioral, not structural: the gateway may satisfy it with raw ingress JSON and/or route-specific canonical request types. A generic envelope-level extras bag is optional.
 
 Not every endpoint needs a rich semantic envelope.
 
