@@ -16,19 +16,130 @@ type SelectorHints struct {
 	Endpoint string
 }
 
+type semanticCacheKey string
+
+const (
+	semanticChatRequestKey      semanticCacheKey = "chat_request"
+	semanticResponsesRequestKey semanticCacheKey = "responses_request"
+	semanticEmbeddingRequestKey semanticCacheKey = "embedding_request"
+	semanticBatchRequestKey     semanticCacheKey = "batch_request"
+	semanticBatchMetadataKey    semanticCacheKey = "batch_metadata"
+	semanticFileRequestKey      semanticCacheKey = "file_request"
+)
+
 // SemanticEnvelope is the gateway's best-effort semantic extraction from ingress.
 // It may be partial and should not be treated as authoritative transport state.
 type SemanticEnvelope struct {
-	Dialect          string
-	Operation        string
-	SelectorHints    SelectorHints
-	JSONBodyParsed   bool
-	ChatRequest      *ChatRequest
-	ResponsesRequest *ResponsesRequest
-	EmbeddingRequest *EmbeddingRequest
-	BatchRequest     *BatchRequest
-	BatchMetadata    *BatchRequestSemantic
-	FileRequest      *FileRequestSemantic
+	Dialect        string
+	Operation      string
+	SelectorHints  SelectorHints
+	JSONBodyParsed bool
+
+	cachedValues map[semanticCacheKey]any
+}
+
+// CachedChatRequest returns the cached canonical chat request, if present.
+func (env *SemanticEnvelope) CachedChatRequest() *ChatRequest {
+	req, _ := cachedSemanticValue[*ChatRequest](env, semanticChatRequestKey)
+	return req
+}
+
+// CachedResponsesRequest returns the cached canonical responses request, if present.
+func (env *SemanticEnvelope) CachedResponsesRequest() *ResponsesRequest {
+	req, _ := cachedSemanticValue[*ResponsesRequest](env, semanticResponsesRequestKey)
+	return req
+}
+
+// CachedEmbeddingRequest returns the cached canonical embeddings request, if present.
+func (env *SemanticEnvelope) CachedEmbeddingRequest() *EmbeddingRequest {
+	req, _ := cachedSemanticValue[*EmbeddingRequest](env, semanticEmbeddingRequestKey)
+	return req
+}
+
+// CachedBatchRequest returns the cached canonical batch create request, if present.
+func (env *SemanticEnvelope) CachedBatchRequest() *BatchRequest {
+	req, _ := cachedSemanticValue[*BatchRequest](env, semanticBatchRequestKey)
+	return req
+}
+
+// CachedBatchMetadata returns the cached sparse batch route metadata, if present.
+func (env *SemanticEnvelope) CachedBatchMetadata() *BatchRequestSemantic {
+	req, _ := cachedSemanticValue[*BatchRequestSemantic](env, semanticBatchMetadataKey)
+	return req
+}
+
+// CachedFileRequest returns the cached sparse file route metadata, if present.
+func (env *SemanticEnvelope) CachedFileRequest() *FileRequestSemantic {
+	req, _ := cachedSemanticValue[*FileRequestSemantic](env, semanticFileRequestKey)
+	return req
+}
+
+// CachedCanonicalSelector returns model/provider selector hints from any cached
+// canonical JSON request for the current operation.
+func (env *SemanticEnvelope) CachedCanonicalSelector() (model, provider string, ok bool) {
+	if env == nil {
+		return "", "", false
+	}
+
+	switch env.Operation {
+	case "chat_completions":
+		if req := env.CachedChatRequest(); req != nil {
+			return req.Model, req.Provider, true
+		}
+	case "responses":
+		if req := env.CachedResponsesRequest(); req != nil {
+			return req.Model, req.Provider, true
+		}
+	case "embeddings":
+		if req := env.CachedEmbeddingRequest(); req != nil {
+			return req.Model, req.Provider, true
+		}
+	}
+	return "", "", false
+}
+
+func (env *SemanticEnvelope) cacheValue(key semanticCacheKey, value any) {
+	if env == nil || value == nil {
+		return
+	}
+	if env.cachedValues == nil {
+		env.cachedValues = make(map[semanticCacheKey]any, 4)
+	}
+	env.cachedValues[key] = value
+}
+
+func cachedSemanticValue[T any](env *SemanticEnvelope, key semanticCacheKey) (T, bool) {
+	var zero T
+	if env == nil || env.cachedValues == nil {
+		return zero, false
+	}
+	value, ok := env.cachedValues[key]
+	if !ok {
+		return zero, false
+	}
+	typed, ok := value.(T)
+	if !ok {
+		return zero, false
+	}
+	return typed, true
+}
+
+func cacheBatchRouteMetadata(env *SemanticEnvelope, req *BatchRequestSemantic) {
+	if env == nil || req == nil {
+		return
+	}
+	env.cacheValue(semanticBatchMetadataKey, req)
+}
+
+// CacheFileRequestSemantic stores sparse file route metadata on the semantic envelope.
+func CacheFileRequestSemantic(env *SemanticEnvelope, req *FileRequestSemantic) {
+	if env == nil || req == nil {
+		return
+	}
+	env.cacheValue(semanticFileRequestKey, req)
+	if req.Provider != "" && env.SelectorHints.Provider == "" {
+		env.SelectorHints.Provider = req.Provider
+	}
 }
 
 // BuildSemanticEnvelope derives a best-effort semantic envelope from ingress.
@@ -52,13 +163,10 @@ func BuildSemanticEnvelope(frame *IngressFrame) *SemanticEnvelope {
 	env.Operation = desc.Operation
 
 	if env.Operation == "files" {
-		env.FileRequest = BuildFileRequestSemanticFromTransport(frame.Method, frame.Path, frame.RouteParams, frame.QueryParams)
-		if env.FileRequest != nil && env.SelectorHints.Provider == "" {
-			env.SelectorHints.Provider = env.FileRequest.Provider
-		}
+		CacheFileRequestSemantic(env, BuildFileRequestSemanticFromTransport(frame.Method, frame.Path, frame.RouteParams, frame.QueryParams))
 	}
 	if env.Operation == "batches" {
-		env.BatchMetadata = BuildBatchRequestSemanticFromTransport(frame.Method, frame.Path, frame.RouteParams, frame.QueryParams)
+		cacheBatchRouteMetadata(env, BuildBatchRequestSemanticFromTransport(frame.Method, frame.Path, frame.RouteParams, frame.QueryParams))
 	}
 
 	if env.Dialect == "provider_passthrough" {

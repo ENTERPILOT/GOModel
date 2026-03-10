@@ -108,12 +108,7 @@ func fileRequestFromSemanticEnvelope(c *echo.Context) (*core.FileRequestSemantic
 		}
 	}
 
-	if env != nil {
-		env.FileRequest = req
-		if req.Provider != "" && env.SelectorHints.Provider == "" {
-			env.SelectorHints.Provider = req.Provider
-		}
-	}
+	core.CacheFileRequestSemantic(env, req)
 	return req, nil
 }
 

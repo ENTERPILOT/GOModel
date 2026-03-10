@@ -102,18 +102,7 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 }
 
 func cachedCanonicalSelectorHints(env *core.SemanticEnvelope) (model, provider string, ok bool) {
-	switch {
-	case env == nil:
-		return "", "", false
-	case env.ChatRequest != nil:
-		return env.ChatRequest.Model, env.ChatRequest.Provider, true
-	case env.ResponsesRequest != nil:
-		return env.ResponsesRequest.Model, env.ResponsesRequest.Provider, true
-	case env.EmbeddingRequest != nil:
-		return env.EmbeddingRequest.Model, env.EmbeddingRequest.Provider, true
-	default:
-		return "", "", false
-	}
+	return env.CachedCanonicalSelector()
 }
 
 func decodeCanonicalSelectorHintsForValidation(ctx context.Context, env *core.SemanticEnvelope) (model, provider string, ok bool) {

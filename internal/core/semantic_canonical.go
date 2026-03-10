@@ -6,64 +6,63 @@ import (
 	"strings"
 )
 
+type canonicalJSONSpec[T any] struct {
+	key         semanticCacheKey
+	newValue    func() T
+	afterDecode func(*SemanticEnvelope, T)
+}
+
 // DecodeChatRequest decodes and caches the canonical chat request for a semantic envelope.
 func DecodeChatRequest(body []byte, env *SemanticEnvelope) (*ChatRequest, error) {
-	return decodeCanonicalJSON(body, env,
-		func(env *SemanticEnvelope) *ChatRequest {
-			return env.ChatRequest
-		},
-		func(env *SemanticEnvelope, req *ChatRequest) {
-			env.ChatRequest = req
+	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*ChatRequest]{
+		key:      semanticChatRequestKey,
+		newValue: func() *ChatRequest { return &ChatRequest{} },
+		afterDecode: func(env *SemanticEnvelope, req *ChatRequest) {
 			cacheSemanticSelectorHints(env, req.Model, req.Provider)
 		},
-	)
+	})
 }
 
 // DecodeResponsesRequest decodes and caches the canonical responses request for a semantic envelope.
 func DecodeResponsesRequest(body []byte, env *SemanticEnvelope) (*ResponsesRequest, error) {
-	return decodeCanonicalJSON(body, env,
-		func(env *SemanticEnvelope) *ResponsesRequest {
-			return env.ResponsesRequest
-		},
-		func(env *SemanticEnvelope, req *ResponsesRequest) {
-			env.ResponsesRequest = req
+	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*ResponsesRequest]{
+		key:      semanticResponsesRequestKey,
+		newValue: func() *ResponsesRequest { return &ResponsesRequest{} },
+		afterDecode: func(env *SemanticEnvelope, req *ResponsesRequest) {
 			cacheSemanticSelectorHints(env, req.Model, req.Provider)
 		},
-	)
+	})
 }
 
 // DecodeEmbeddingRequest decodes and caches the canonical embeddings request for a semantic envelope.
 func DecodeEmbeddingRequest(body []byte, env *SemanticEnvelope) (*EmbeddingRequest, error) {
-	return decodeCanonicalJSON(body, env,
-		func(env *SemanticEnvelope) *EmbeddingRequest {
-			return env.EmbeddingRequest
-		},
-		func(env *SemanticEnvelope, req *EmbeddingRequest) {
-			env.EmbeddingRequest = req
+	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*EmbeddingRequest]{
+		key:      semanticEmbeddingRequestKey,
+		newValue: func() *EmbeddingRequest { return &EmbeddingRequest{} },
+		afterDecode: func(env *SemanticEnvelope, req *EmbeddingRequest) {
 			cacheSemanticSelectorHints(env, req.Model, req.Provider)
 		},
-	)
+	})
 }
 
 // DecodeBatchRequest decodes and caches the canonical batch request for a semantic envelope.
 func DecodeBatchRequest(body []byte, env *SemanticEnvelope) (*BatchRequest, error) {
-	return decodeCanonicalJSON(body, env,
-		func(env *SemanticEnvelope) *BatchRequest {
-			return env.BatchRequest
-		},
-		func(env *SemanticEnvelope, req *BatchRequest) {
-			env.BatchRequest = req
+	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*BatchRequest]{
+		key:      semanticBatchRequestKey,
+		newValue: func() *BatchRequest { return &BatchRequest{} },
+		afterDecode: func(env *SemanticEnvelope, req *BatchRequest) {
 			env.JSONBodyParsed = true
 		},
-	)
+	})
 }
 
 // BatchRouteMetadata returns sparse batch route semantics, caching them on the envelope when present.
 func BatchRouteMetadata(env *SemanticEnvelope, method, path string, routeParams map[string]string, queryParams map[string][]string) (*BatchRequestSemantic, error) {
-	var req *BatchRequestSemantic
-	if env != nil && env.BatchMetadata != nil {
-		req = env.BatchMetadata
-	} else {
+	req := (*BatchRequestSemantic)(nil)
+	if env != nil {
+		req = env.CachedBatchMetadata()
+	}
+	if req == nil {
 		req = BuildBatchRequestSemanticFromTransport(method, path, routeParams, queryParams)
 		if req == nil {
 			req = &BatchRequestSemantic{}
@@ -78,18 +77,17 @@ func BatchRouteMetadata(env *SemanticEnvelope, method, path string, routeParams 
 		req.Limit = parsed
 		req.HasLimit = true
 	}
-	if env != nil {
-		env.BatchMetadata = req
-	}
+	cacheBatchRouteMetadata(env, req)
 	return req, nil
 }
 
 // FileRouteMetadata returns sparse file route semantics, caching them on the envelope when present.
 func FileRouteMetadata(env *SemanticEnvelope, method, path string, routeParams map[string]string, queryParams map[string][]string) (*FileRequestSemantic, error) {
-	var req *FileRequestSemantic
-	if env != nil && env.FileRequest != nil {
-		req = env.FileRequest
-	} else {
+	req := (*FileRequestSemantic)(nil)
+	if env != nil {
+		req = env.CachedFileRequest()
+	}
+	if req == nil {
 		req = BuildFileRequestSemanticFromTransport(method, path, routeParams, queryParams)
 		if req == nil {
 			req = &FileRequestSemantic{}
@@ -104,12 +102,7 @@ func FileRouteMetadata(env *SemanticEnvelope, method, path string, routeParams m
 		req.Limit = parsed
 		req.HasLimit = true
 	}
-	if env != nil {
-		env.FileRequest = req
-		if req.Provider != "" && env.SelectorHints.Provider == "" {
-			env.SelectorHints.Provider = req.Provider
-		}
-	}
+	CacheFileRequestSemantic(env, req)
 	return req, nil
 }
 
@@ -135,24 +128,21 @@ func NormalizeModelSelector(env *SemanticEnvelope, model, provider *string) erro
 	return nil
 }
 
-func decodeCanonicalJSON[T any](
-	body []byte,
-	env *SemanticEnvelope,
-	current func(*SemanticEnvelope) *T,
-	cache func(*SemanticEnvelope, *T),
-) (*T, error) {
-	if env != nil {
-		if req := current(env); req != nil {
-			return req, nil
-		}
+func decodeCanonicalJSON[T any](body []byte, env *SemanticEnvelope, spec canonicalJSONSpec[T]) (T, error) {
+	if req, ok := cachedSemanticValue[T](env, spec.key); ok {
+		return req, nil
 	}
 
-	req := new(T)
+	req := spec.newValue()
 	if err := json.Unmarshal(body, req); err != nil {
-		return nil, err
+		var zero T
+		return zero, err
 	}
 	if env != nil {
-		cache(env, req)
+		env.cacheValue(spec.key, req)
+		if spec.afterDecode != nil {
+			spec.afterDecode(env, req)
+		}
 	}
 	return req, nil
 }

@@ -2760,6 +2760,68 @@ func TestBuildAnthropicBatchCreateRequest_NormalizesFullURLResponsesEndpoint(t *
 	}
 }
 
+func TestConvertDecodedBatchItemToAnthropic_ResponsesUsesSharedSemanticTranslator(t *testing.T) {
+	decoded := &core.DecodedBatchItemRequest{
+		Endpoint:  "/v1/responses",
+		Operation: "responses",
+		ResponsesRequest: &core.ResponsesRequest{
+			Model:        "claude-sonnet-4-5-20250929",
+			Instructions: "Be helpful",
+			Input: []core.ResponsesInputElement{
+				{
+					Role:    "user",
+					Content: "Hello",
+				},
+			},
+		},
+	}
+
+	result, err := convertDecodedBatchItemToAnthropic(decoded)
+	if err != nil {
+		t.Fatalf("convertDecodedBatchItemToAnthropic() error = %v", err)
+	}
+	if result.System != "Be helpful" {
+		t.Fatalf("System = %q, want Be helpful", result.System)
+	}
+	if result.Stream {
+		t.Fatal("Stream = true, want false")
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+	if result.Messages[0].Role != "user" {
+		t.Fatalf("Messages[0].Role = %q, want user", result.Messages[0].Role)
+	}
+	if result.Messages[0].Content != "Hello" {
+		t.Fatalf("Messages[0].Content = %#v, want Hello", result.Messages[0].Content)
+	}
+}
+
+func TestConvertDecodedBatchItemToAnthropic_RejectsStreaming(t *testing.T) {
+	decoded := &core.DecodedBatchItemRequest{
+		Endpoint:  "/v1/chat/completions",
+		Operation: "chat_completions",
+		ChatRequest: &core.ChatRequest{
+			Model:  "claude-sonnet-4-5-20250929",
+			Stream: true,
+			Messages: []core.Message{
+				{
+					Role:    "user",
+					Content: "Hello",
+				},
+			},
+		},
+	}
+
+	_, err := convertDecodedBatchItemToAnthropic(decoded)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "streaming is not supported for native batch") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	resp := &anthropicResponse{
 		ID:    "msg_123",

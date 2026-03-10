@@ -39,6 +39,8 @@ Completed in this slice:
 - preserve opaque top-level and nested request extras through the shared `Responses -> Chat` provider adapter so providers that implement `/v1/responses` via chat translation do not re-drop fields after ingress has preserved them
 - make model validation hydrate canonical chat/responses/embeddings requests from ingress-backed semantic decoding when raw JSON is already captured, instead of doing a separate selector-only parse and leaving full decoding to handlers
 - move model selector normalization into the semantic/core layer so cached canonical requests and `SemanticEnvelope.SelectorHints` stay aligned after handler normalization
+- move Anthropic translated request construction behind one shared canonical translation seam reused by chat, responses, and native batch subrequests instead of keeping separate provider-local operation switches
+- collapse the per-operation `SemanticEnvelope` cache fields into an operation-keyed core cache with typed accessors so semantic caching remains authoritative without growing one field per route
 
 ## Broader endpoint migration scope
 
@@ -160,5 +162,5 @@ Exit criteria:
 2. Add a thin `/p/{provider}/{endpoint}` opaque passthrough route on the shared ingress pipeline, with OpenAI and Anthropic as the required first providers.
 3. Extend the same `/p/*` route to other providers only when they fit the same low-friction opaque forwarding model without meaningful extra branching.
 4. Keep collapsing duplicate semantic decode boilerplate so `SemanticEnvelope` stays authoritative without growing one-off route helpers forever.
-5. Migrate non-batch guardrail and provider rewrite paths toward semantic canonical data plus raw-plus-canonical patching where partial understanding is unavoidable.
+5. Continue migrating the remaining provider rewrite paths toward shared semantic-first translators and raw-plus-canonical patching where partial understanding is unavoidable.
 6. Decide whether any additional provider-native routes under `/p/*` merit richer semantics or should remain intentionally sparse.

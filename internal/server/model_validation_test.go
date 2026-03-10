@@ -365,10 +365,11 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 	err := handler(c)
 	require.NoError(t, err)
 	require.NotNil(t, capturedEnv)
-	require.NotNil(t, capturedEnv.ChatRequest)
-	assert.Equal(t, "gpt-4o-mini", capturedEnv.ChatRequest.Model)
-	assert.Equal(t, "openai", capturedEnv.ChatRequest.Provider)
-	assert.NotNil(t, capturedEnv.ChatRequest.ExtraFields["response_format"])
+	canonicalReq := capturedEnv.CachedChatRequest()
+	require.NotNil(t, canonicalReq)
+	assert.Equal(t, "gpt-4o-mini", canonicalReq.Model)
+	assert.Equal(t, "openai", canonicalReq.Provider)
+	assert.NotNil(t, canonicalReq.ExtraFields["response_format"])
 }
 
 func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testing.T) {
@@ -406,9 +407,10 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	err := handler(c)
 	require.NoError(t, err)
 	require.NotNil(t, capturedEnv)
-	require.NotNil(t, capturedEnv.ResponsesRequest)
+	canonicalReq := capturedEnv.CachedResponsesRequest()
+	require.NotNil(t, canonicalReq)
 
-	input, ok := capturedEnv.ResponsesRequest.Input.([]core.ResponsesInputElement)
+	input, ok := canonicalReq.Input.([]core.ResponsesInputElement)
 	require.True(t, ok)
 	require.Len(t, input, 1)
 	assert.NotNil(t, input[0].ExtraFields["x_trace"])

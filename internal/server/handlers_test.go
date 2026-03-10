@@ -756,10 +756,10 @@ func TestChatCompletion_UsesIngressFrameForDecoding(t *testing.T) {
 	}
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.ChatRequest == nil {
+	if env == nil || env.CachedChatRequest() == nil {
 		t.Fatalf("expected semantic envelope to cache ChatRequest, got %+v", env)
 	}
-	if env.ChatRequest != provider.capturedChatReq {
+	if env.CachedChatRequest() != provider.capturedChatReq {
 		t.Fatal("cached ChatRequest does not match provider request")
 	}
 }
@@ -827,7 +827,7 @@ func TestChatCompletion_NormalizesSemanticSelectorHints(t *testing.T) {
 	}
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.ChatRequest == nil {
+	if env == nil || env.CachedChatRequest() == nil {
 		t.Fatalf("expected semantic envelope to cache ChatRequest, got %+v", env)
 	}
 	if env.SelectorHints.Model != "gpt-5-mini" {
@@ -893,10 +893,10 @@ func TestResponses_UsesIngressFrameForDecoding(t *testing.T) {
 	}
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.ResponsesRequest == nil {
+	if env == nil || env.CachedResponsesRequest() == nil {
 		t.Fatalf("expected semantic envelope to cache ResponsesRequest, got %+v", env)
 	}
-	if env.ResponsesRequest != provider.capturedResponsesReq {
+	if env.CachedResponsesRequest() != provider.capturedResponsesReq {
 		t.Fatal("cached ResponsesRequest does not match provider request")
 	}
 }
@@ -953,10 +953,10 @@ func TestEmbeddings_UsesIngressFrameForDecoding(t *testing.T) {
 	}
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.EmbeddingRequest == nil {
+	if env == nil || env.CachedEmbeddingRequest() == nil {
 		t.Fatalf("expected semantic envelope to cache EmbeddingRequest, got %+v", env)
 	}
-	if env.EmbeddingRequest != provider.capturedEmbeddingReq {
+	if env.CachedEmbeddingRequest() != provider.capturedEmbeddingReq {
 		t.Fatal("cached EmbeddingRequest does not match provider request")
 	}
 }
@@ -1027,10 +1027,10 @@ func TestBatches_UsesIngressFrameForDecoding(t *testing.T) {
 	}
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.BatchRequest == nil {
+	if env == nil || env.CachedBatchRequest() == nil {
 		t.Fatalf("expected semantic envelope to cache BatchRequest, got %+v", env)
 	}
-	if env.BatchRequest != mock.capturedBatchReq {
+	if env.CachedBatchRequest() != mock.capturedBatchReq {
 		t.Fatal("cached BatchRequest does not match provider request")
 	}
 }
@@ -2742,14 +2742,14 @@ func TestCreateFile(t *testing.T) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.FileRequest == nil {
+	if env == nil || env.CachedFileRequest() == nil {
 		t.Fatal("expected file semantic envelope to be populated")
 	}
-	if env.FileRequest.Purpose != "batch" {
-		t.Fatalf("purpose = %q, want batch", env.FileRequest.Purpose)
+	if env.CachedFileRequest().Purpose != "batch" {
+		t.Fatalf("purpose = %q, want batch", env.CachedFileRequest().Purpose)
 	}
-	if env.FileRequest.Filename != "requests.jsonl" {
-		t.Fatalf("filename = %q, want requests.jsonl", env.FileRequest.Filename)
+	if env.CachedFileRequest().Filename != "requests.jsonl" {
+		t.Fatalf("filename = %q, want requests.jsonl", env.CachedFileRequest().Filename)
 	}
 }
 
@@ -2881,11 +2881,11 @@ func TestListFiles(t *testing.T) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 	env := core.GetSemanticEnvelope(c.Request().Context())
-	if env == nil || env.FileRequest == nil {
+	if env == nil || env.CachedFileRequest() == nil {
 		t.Fatal("expected file semantic envelope to be populated")
 	}
-	if !env.FileRequest.HasLimit || env.FileRequest.Limit != 5 {
-		t.Fatalf("limit = %d/%v, want 5/true", env.FileRequest.Limit, env.FileRequest.HasLimit)
+	if !env.CachedFileRequest().HasLimit || env.CachedFileRequest().Limit != 5 {
+		t.Fatalf("limit = %d/%v, want 5/true", env.CachedFileRequest().Limit, env.CachedFileRequest().HasLimit)
 	}
 }
 

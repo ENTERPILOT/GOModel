@@ -49,7 +49,7 @@ func TestChatRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.ChatRequest)
+	require.Same(t, first, env.CachedChatRequest())
 	assert.Equal(t, "gpt-5-mini", env.SelectorHints.Model)
 	assert.Equal(t, "openai", env.SelectorHints.Provider)
 }
@@ -90,7 +90,7 @@ func TestResponsesRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.ResponsesRequest)
+	require.Same(t, first, env.CachedResponsesRequest())
 	assert.Equal(t, "gpt-5-mini", env.SelectorHints.Model)
 }
 
@@ -124,7 +124,7 @@ func TestEmbeddingRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBody
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, embeddingReq, env.EmbeddingRequest)
+	require.Same(t, embeddingReq, env.CachedEmbeddingRequest())
 	assert.True(t, env.JSONBodyParsed)
 	assert.Equal(t, "text-embedding-3-large", env.SelectorHints.Model)
 }
@@ -169,7 +169,7 @@ func TestBatchRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.BatchRequest)
+	require.Same(t, first, env.CachedBatchRequest())
 	assert.True(t, env.JSONBodyParsed)
 }
 
@@ -204,7 +204,7 @@ func TestBatchRequestMetadataFromSemanticEnvelope_CachesListMetadata(t *testing.
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.BatchMetadata)
+	require.Same(t, first, env.CachedBatchMetadata())
 }
 
 func TestFileRequestFromSemanticEnvelope_InvalidLimitFromIngressReturnsError(t *testing.T) {
@@ -269,7 +269,7 @@ func TestFileRequestFromSemanticEnvelope_EnrichesCreateMetadata(t *testing.T) {
 
 	env := core.GetSemanticEnvelope(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.FileRequest)
+	require.Same(t, first, env.CachedFileRequest())
 	assert.Equal(t, "openai", env.SelectorHints.Provider)
 }
 

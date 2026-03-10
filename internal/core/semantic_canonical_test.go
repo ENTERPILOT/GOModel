@@ -17,8 +17,8 @@ func TestDecodeChatRequest_CachesOnSemanticEnvelope(t *testing.T) {
 	if first != second {
 		t.Fatal("DecodeChatRequest() did not reuse cached request")
 	}
-	if env.ChatRequest != first {
-		t.Fatal("SemanticEnvelope.ChatRequest was not cached")
+	if env.CachedChatRequest() != first {
+		t.Fatal("SemanticEnvelope cached chat request was not reused")
 	}
 	if !env.JSONBodyParsed {
 		t.Fatal("JSONBodyParsed = false, want true")
@@ -49,7 +49,7 @@ func TestBatchRouteMetadata_ValidatesAndCachesLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BatchRouteMetadata() valid error = %v", err)
 	}
-	if req != env.BatchMetadata {
+	if req != env.CachedBatchMetadata() {
 		t.Fatal("BatchRouteMetadata() did not cache metadata on envelope")
 	}
 	if req.Action != BatchActionList {
@@ -70,7 +70,7 @@ func TestFileRouteMetadata_CachesProviderHint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FileRouteMetadata() error = %v", err)
 	}
-	if req != env.FileRequest {
+	if req != env.CachedFileRequest() {
 		t.Fatal("FileRouteMetadata() did not cache metadata on envelope")
 	}
 	if env.SelectorHints.Provider != "openai" {

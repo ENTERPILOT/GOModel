@@ -37,7 +37,7 @@ func TestBuildSemanticEnvelope_OpenAICompat(t *testing.T) {
 	if env.SelectorHints.Provider != "openai" {
 		t.Fatalf("SelectorHints.Provider = %q, want openai", env.SelectorHints.Provider)
 	}
-	if env.ChatRequest != nil || env.ResponsesRequest != nil || env.EmbeddingRequest != nil || env.BatchRequest != nil || env.BatchMetadata != nil || env.FileRequest != nil {
+	if env.CachedChatRequest() != nil || env.CachedResponsesRequest() != nil || env.CachedEmbeddingRequest() != nil || env.CachedBatchRequest() != nil || env.CachedBatchMetadata() != nil || env.CachedFileRequest() != nil {
 		t.Fatalf("canonical request payloads should be nil, got %+v", env)
 	}
 }
@@ -95,7 +95,7 @@ func TestBuildSemanticEnvelope_PassthroughRouteParams(t *testing.T) {
 	if env.SelectorHints.Model != "gpt-5-mini" {
 		t.Fatalf("SelectorHints.Model = %q, want gpt-5-mini", env.SelectorHints.Model)
 	}
-	if env.ChatRequest != nil || env.ResponsesRequest != nil || env.EmbeddingRequest != nil || env.BatchRequest != nil || env.BatchMetadata != nil || env.FileRequest != nil {
+	if env.CachedChatRequest() != nil || env.CachedResponsesRequest() != nil || env.CachedEmbeddingRequest() != nil || env.CachedBatchRequest() != nil || env.CachedBatchMetadata() != nil || env.CachedFileRequest() != nil {
 		t.Fatalf("canonical request payloads should be nil, got %+v", env)
 	}
 }
@@ -156,17 +156,18 @@ func TestBuildSemanticEnvelope_FilesMetadata(t *testing.T) {
 	if env.Operation != "files" {
 		t.Fatalf("Operation = %q, want files", env.Operation)
 	}
-	if env.FileRequest == nil {
+	req := env.CachedFileRequest()
+	if req == nil {
 		t.Fatal("FileRequest = nil")
 	}
-	if env.FileRequest.Action != FileActionContent {
-		t.Fatalf("FileRequest.Action = %q, want %q", env.FileRequest.Action, FileActionContent)
+	if req.Action != FileActionContent {
+		t.Fatalf("FileRequest.Action = %q, want %q", req.Action, FileActionContent)
 	}
-	if env.FileRequest.FileID != "file_123" {
-		t.Fatalf("FileRequest.FileID = %q, want file_123", env.FileRequest.FileID)
+	if req.FileID != "file_123" {
+		t.Fatalf("FileRequest.FileID = %q, want file_123", req.FileID)
 	}
-	if env.FileRequest.Provider != "openai" {
-		t.Fatalf("FileRequest.Provider = %q, want openai", env.FileRequest.Provider)
+	if req.Provider != "openai" {
+		t.Fatalf("FileRequest.Provider = %q, want openai", req.Provider)
 	}
 	if env.SelectorHints.Provider != "openai" {
 		t.Fatalf("SelectorHints.Provider = %q, want openai", env.SelectorHints.Provider)
@@ -190,17 +191,18 @@ func TestBuildSemanticEnvelope_BatchesListMetadata(t *testing.T) {
 	if env.Operation != "batches" {
 		t.Fatalf("Operation = %q, want batches", env.Operation)
 	}
-	if env.BatchMetadata == nil {
+	req := env.CachedBatchMetadata()
+	if req == nil {
 		t.Fatal("BatchMetadata = nil")
 	}
-	if env.BatchMetadata.Action != BatchActionList {
-		t.Fatalf("BatchMetadata.Action = %q, want %q", env.BatchMetadata.Action, BatchActionList)
+	if req.Action != BatchActionList {
+		t.Fatalf("BatchMetadata.Action = %q, want %q", req.Action, BatchActionList)
 	}
-	if env.BatchMetadata.After != "batch_prev" {
-		t.Fatalf("BatchMetadata.After = %q, want batch_prev", env.BatchMetadata.After)
+	if req.After != "batch_prev" {
+		t.Fatalf("BatchMetadata.After = %q, want batch_prev", req.After)
 	}
-	if !env.BatchMetadata.HasLimit || env.BatchMetadata.Limit != 5 {
-		t.Fatalf("BatchMetadata limit = %d/%v, want 5/true", env.BatchMetadata.Limit, env.BatchMetadata.HasLimit)
+	if !req.HasLimit || req.Limit != 5 {
+		t.Fatalf("BatchMetadata limit = %d/%v, want 5/true", req.Limit, req.HasLimit)
 	}
 }
 
@@ -218,13 +220,14 @@ func TestBuildSemanticEnvelope_BatchResultsMetadata(t *testing.T) {
 	if env.Operation != "batches" {
 		t.Fatalf("Operation = %q, want batches", env.Operation)
 	}
-	if env.BatchMetadata == nil {
+	req := env.CachedBatchMetadata()
+	if req == nil {
 		t.Fatal("BatchMetadata = nil")
 	}
-	if env.BatchMetadata.Action != BatchActionResults {
-		t.Fatalf("BatchMetadata.Action = %q, want %q", env.BatchMetadata.Action, BatchActionResults)
+	if req.Action != BatchActionResults {
+		t.Fatalf("BatchMetadata.Action = %q, want %q", req.Action, BatchActionResults)
 	}
-	if env.BatchMetadata.BatchID != "batch_123" {
-		t.Fatalf("BatchMetadata.BatchID = %q, want batch_123", env.BatchMetadata.BatchID)
+	if req.BatchID != "batch_123" {
+		t.Fatalf("BatchMetadata.BatchID = %q, want batch_123", req.BatchID)
 	}
 }
