@@ -37,6 +37,34 @@ Local validation confirmed:
   `ANTHROPIC_API_KEY` to reach Anthropic upstream.
 </Note>
 
+## How to get `ANTHROPIC_API_KEY`
+
+1. Open the Claude Console and sign in to your API account.
+2. Go to account settings in Console, then create an API key.
+3. Copy the key once and set it for GoModel as `ANTHROPIC_API_KEY`.
+
+Anthropic's API docs state that API keys are created in Console account
+settings.
+
+<Warning>
+  Claude paid plans (Pro, Max, Team, Enterprise) and Claude API Console billing
+  are separate. API key usage is billed as API usage.
+</Warning>
+
+## How to avoid API charges from your subscription workflow
+
+If you want Claude Code to use included subscription usage and avoid API key
+billing, keep `ANTHROPIC_API_KEY` unset in your Claude Code shell environment.
+
+Check active auth method in Claude Code with:
+
+```text
+/status
+```
+
+For this GoModel passthrough integration specifically, GoModel still needs an
+upstream `ANTHROPIC_API_KEY`, so Anthropic API billing applies to gateway calls.
+
 ## 1. Run GoModel
 
 Start GoModel with a master key and an Anthropic provider key:
@@ -88,6 +116,11 @@ export ANTHROPIC_AUTH_TOKEN=change-me
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 ```
 
+Short Claude Code doc summary: for gateway mode, set `ANTHROPIC_BASE_URL` to
+your gateway URL and `ANTHROPIC_AUTH_TOKEN` to your gateway token, then run
+Claude Code normally. See the official guide:
+[Claude Code LLM gateway docs](https://code.claude.com/docs/en/llm-gateway).
+
 If GoModel is not running on your local machine, replace `localhost:8080` with
 the correct host and port.
 
@@ -114,14 +147,10 @@ This is the easiest place to confirm that Claude Code is reaching GoModel and
 to inspect the full request and response trail. From the same dashboard, you
 can keep following your GoModel traffic and usage.
 
-## Current status
-
-- Claude Code works today through `http://localhost:8080/p/anthropic`
-- the validated Claude Code flow used Anthropic-native `/v1/messages`
-- GoModel still needs its own Anthropic upstream key even if you already use a
-  Claude Code subscription
-
 ## References
 
 - Anthropic Claude Code gateway docs: [LLM gateway](https://code.claude.com/docs/en/llm-gateway)
 - Anthropic Claude Code settings: [Settings](https://code.claude.com/docs/en/settings)
+- Claude Help: [Managing API key environment variables in Claude Code](https://support.claude.com/en/articles/12304248-managing-api-key-environment-variables-in-claude-code)
+- Claude Help: [Paid Claude plans vs API Console billing](https://support.claude.com/en/articles/9876003-i-have-a-paid-claude-subscription-pro-max-team-or-enterprise-plans-why-do-i-have-to-pay-separately-to-use-the-claude-api-and-console)
+- Claude API docs: [API overview (keys from Console account settings)](https://docs.anthropic.com/en/api/getting-started)
