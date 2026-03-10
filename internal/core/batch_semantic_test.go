@@ -103,3 +103,46 @@ func TestDecodeKnownBatchItemRequest_NormalizesFullURLAndDecodesCanonicalRequest
 		t.Fatalf("ResponsesRequest.Model = %q, want gpt-4o-mini", decoded.ResponsesRequest().Model)
 	}
 }
+
+func TestMaybeDecodeKnownBatchItemRequest_SkipsUnmatchedOperation(t *testing.T) {
+	t.Parallel()
+
+	decoded, handled, err := MaybeDecodeKnownBatchItemRequest("/v1/chat/completions", BatchRequestItem{
+		Method: "POST",
+		URL:    "/v1/embeddings",
+		Body:   json.RawMessage(`{"model":"text-embedding-3-small","input":"hi"}`),
+	}, "chat_completions", "responses")
+	if err != nil {
+		t.Fatalf("MaybeDecodeKnownBatchItemRequest() error = %v, want nil", err)
+	}
+	if handled {
+		t.Fatal("MaybeDecodeKnownBatchItemRequest() handled = true, want false")
+	}
+	if decoded != nil {
+		t.Fatalf("MaybeDecodeKnownBatchItemRequest() decoded = %#v, want nil", decoded)
+	}
+}
+
+func TestDispatchDecodedBatchItem_RoutesTypedRequest(t *testing.T) {
+	t.Parallel()
+
+	decoded, err := DecodeKnownBatchItemRequest("/v1/chat/completions", BatchRequestItem{
+		URL:  "/v1/responses",
+		Body: json.RawMessage(`{"model":"gpt-4o-mini","input":"hi"}`),
+	})
+	if err != nil {
+		t.Fatalf("DecodeKnownBatchItemRequest() error = %v", err)
+	}
+
+	got, err := DispatchDecodedBatchItem(decoded, DecodedBatchItemHandlers[string]{
+		Responses: func(req *ResponsesRequest) (string, error) {
+			return req.Model, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("DispatchDecodedBatchItem() error = %v", err)
+	}
+	if got != "gpt-4o-mini" {
+		t.Fatalf("DispatchDecodedBatchItem() = %q, want gpt-4o-mini", got)
+	}
+}

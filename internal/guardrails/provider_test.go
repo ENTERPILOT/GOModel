@@ -953,6 +953,36 @@ func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled(t *testing.T) {
 	}
 }
 
+func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_SkipsEmbeddingsItems(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptInject, "guardrail system")
+	pipeline.Add(g, 0)
+	guarded := NewGuardedProviderWithOptions(inner, pipeline, Options{EnableForBatchProcessing: true})
+
+	req := &core.BatchRequest{
+		Endpoint: "/v1/embeddings",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "/v1/embeddings",
+				Body:   json.RawMessage(`{"model":"text-embedding-3-small","input":"hello"}`),
+			},
+		},
+	}
+
+	_, err := guarded.CreateBatch(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.batchReq == nil || len(inner.batchReq.Requests) != 1 {
+		t.Fatalf("expected delegated batch request")
+	}
+	if string(inner.batchReq.Requests[0].Body) != `{"model":"text-embedding-3-small","input":"hello"}` {
+		t.Fatalf("expected embeddings batch item to remain unchanged, got %s", inner.batchReq.Requests[0].Body)
+	}
+}
+
 func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_TextOnlyContentArray(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()

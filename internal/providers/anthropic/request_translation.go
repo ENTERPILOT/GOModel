@@ -337,40 +337,42 @@ func convertDecodedBatchItemToAnthropic(decoded *core.DecodedBatchItemRequest) (
 		return nil, core.NewInvalidRequestError("decoded anthropic batch request is required", nil)
 	}
 
-	switch decoded.Operation {
-	case "chat_completions":
-		req := decoded.ChatRequest()
-		if req == nil {
-			return nil, core.NewInvalidRequestError("anthropic chat request is required", nil)
-		}
-		if req.Stream {
-			return nil, core.NewInvalidRequestError("streaming is not supported for native batch", nil)
-		}
-		params, err := convertToAnthropicRequest(req)
-		if err != nil {
-			return nil, err
-		}
-		params.Stream = false
-		return params, nil
-	case "responses":
-		req := decoded.ResponsesRequest()
-		if req == nil {
-			return nil, core.NewInvalidRequestError("anthropic responses request is required", nil)
-		}
-		if req.Stream {
-			return nil, core.NewInvalidRequestError("streaming is not supported for native batch", nil)
-		}
-		params, err := convertResponsesRequestToAnthropic(req)
-		if err != nil {
-			return nil, err
-		}
-		params.Stream = false
-		return params, nil
-	case "embeddings":
-		return nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
-	default:
-		return nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", decoded.Endpoint), nil)
-	}
+	return core.DispatchDecodedBatchItem(decoded, core.DecodedBatchItemHandlers[*anthropicRequest]{
+		Chat: func(req *core.ChatRequest) (*anthropicRequest, error) {
+			if req == nil {
+				return nil, core.NewInvalidRequestError("anthropic chat request is required", nil)
+			}
+			if req.Stream {
+				return nil, core.NewInvalidRequestError("streaming is not supported for native batch", nil)
+			}
+			params, err := convertToAnthropicRequest(req)
+			if err != nil {
+				return nil, err
+			}
+			params.Stream = false
+			return params, nil
+		},
+		Responses: func(req *core.ResponsesRequest) (*anthropicRequest, error) {
+			if req == nil {
+				return nil, core.NewInvalidRequestError("anthropic responses request is required", nil)
+			}
+			if req.Stream {
+				return nil, core.NewInvalidRequestError("streaming is not supported for native batch", nil)
+			}
+			params, err := convertResponsesRequestToAnthropic(req)
+			if err != nil {
+				return nil, err
+			}
+			params.Stream = false
+			return params, nil
+		},
+		Embeddings: func(*core.EmbeddingRequest) (*anthropicRequest, error) {
+			return nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
+		},
+		Default: func(decoded *core.DecodedBatchItemRequest) (*anthropicRequest, error) {
+			return nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", decoded.Endpoint), nil)
+		},
+	})
 }
 
 func appendAnthropicSystemText(existing, next string) string {

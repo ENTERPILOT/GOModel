@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"net/http"
 	"strings"
 
 	"gomodel/internal/core"
@@ -132,49 +131,47 @@ func (g *GuardedProvider) processBatchRequest(ctx context.Context, req *core.Bat
 
 	for i := range out.Requests {
 		item := out.Requests[i]
-		if len(item.Body) == 0 {
+		decoded, handled, err := core.MaybeDecodeKnownBatchItemRequest(req.Endpoint, item, "chat_completions", "responses")
+		if err != nil {
+			operation := core.DescribeEndpointPath(core.NormalizeOperationPath(core.ResolveBatchItemEndpoint(req.Endpoint, item.URL))).Operation
+			label := strings.TrimSpace(strings.ReplaceAll(operation, "_", " "))
+			if label == "" {
+				return nil, core.NewInvalidRequestError("invalid batch item request", err)
+			}
+			return nil, core.NewInvalidRequestError("invalid "+label+" request in batch item", err)
+		}
+		if !handled {
 			continue
 		}
 
-		normalizedMethod := strings.ToUpper(strings.TrimSpace(item.Method))
-		if normalizedMethod == "" {
-			normalizedMethod = http.MethodPost
+		body, err := core.DispatchDecodedBatchItem(decoded, core.DecodedBatchItemHandlers[json.RawMessage]{
+			Chat: func(original *core.ChatRequest) (json.RawMessage, error) {
+				modified, err := g.processChat(ctx, original)
+				if err != nil {
+					return nil, err
+				}
+				body, err := rewriteGuardedChatBatchBody(item.Body, original, modified)
+				if err != nil {
+					return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
+				}
+				return body, nil
+			},
+			Responses: func(original *core.ResponsesRequest) (json.RawMessage, error) {
+				modified, err := g.processResponses(ctx, original)
+				if err != nil {
+					return nil, err
+				}
+				body, err := rewriteGuardedResponsesBatchBody(item.Body, modified)
+				if err != nil {
+					return nil, core.NewInvalidRequestError("failed to encode guarded responses batch item", err)
+				}
+				return body, nil
+			},
+		})
+		if err != nil {
+			return nil, err
 		}
-		if normalizedMethod != http.MethodPost {
-			continue
-		}
-
-		endpoint := core.NormalizeOperationPath(core.ResolveBatchItemEndpoint(req.Endpoint, item.URL))
-		switch core.DescribeEndpointPath(endpoint).Operation {
-		case "chat_completions":
-			decoded, err := core.DecodeKnownBatchItemRequest(req.Endpoint, item)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("invalid chat request in batch item", err)
-			}
-			modified, err := g.processChat(ctx, decoded.ChatRequest())
-			if err != nil {
-				return nil, err
-			}
-			body, err := rewriteGuardedChatBatchBody(item.Body, decoded.ChatRequest(), modified)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
-			}
-			out.Requests[i].Body = body
-		case "responses":
-			decoded, err := core.DecodeKnownBatchItemRequest(req.Endpoint, item)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("invalid responses request in batch item", err)
-			}
-			modified, err := g.processResponses(ctx, decoded.ResponsesRequest())
-			if err != nil {
-				return nil, err
-			}
-			body, err := rewriteGuardedResponsesBatchBody(item.Body, modified)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("failed to encode guarded responses batch item", err)
-			}
-			out.Requests[i].Body = body
-		}
+		out.Requests[i].Body = body
 	}
 
 	return &out, nil

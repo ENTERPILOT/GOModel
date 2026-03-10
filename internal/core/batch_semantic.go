@@ -27,6 +27,16 @@ type DecodedBatchItemRequest struct {
 	Request   any
 }
 
+// DecodedBatchItemHandlers contains operation-specific handlers for a decoded
+// batch item request. Downstream consumers can use this instead of switching on
+// operation names directly.
+type DecodedBatchItemHandlers[T any] struct {
+	Chat       func(*ChatRequest) (T, error)
+	Responses  func(*ResponsesRequest) (T, error)
+	Embeddings func(*EmbeddingRequest) (T, error)
+	Default    func(*DecodedBatchItemRequest) (T, error)
+}
+
 func (decoded *DecodedBatchItemRequest) ChatRequest() *ChatRequest {
 	if decoded == nil {
 		return nil
@@ -62,6 +72,37 @@ func (decoded *DecodedBatchItemRequest) ModelSelector() (ModelSelector, error) {
 	return ParseModelSelector(model, provider)
 }
 
+// DispatchDecodedBatchItem routes a decoded batch item to the matching typed
+// handler based on its canonical request payload.
+func DispatchDecodedBatchItem[T any](decoded *DecodedBatchItemRequest, handlers DecodedBatchItemHandlers[T]) (T, error) {
+	if decoded == nil {
+		var zero T
+		return zero, fmt.Errorf("decoded batch request is required")
+	}
+
+	switch req := decoded.Request.(type) {
+	case *ChatRequest:
+		if handlers.Chat != nil {
+			return handlers.Chat(req)
+		}
+	case *ResponsesRequest:
+		if handlers.Responses != nil {
+			return handlers.Responses(req)
+		}
+	case *EmbeddingRequest:
+		if handlers.Embeddings != nil {
+			return handlers.Embeddings(req)
+		}
+	}
+
+	if handlers.Default != nil {
+		return handlers.Default(decoded)
+	}
+
+	var zero T
+	return zero, fmt.Errorf("unsupported batch item url: %s", decoded.Endpoint)
+}
+
 // NormalizeOperationPath returns a stable path-only form for model-facing endpoints.
 func NormalizeOperationPath(raw string) string {
 	trimmed := strings.TrimSpace(raw)
@@ -88,6 +129,47 @@ func ResolveBatchItemEndpoint(defaultEndpoint, itemURL string) string {
 		return itemURL
 	}
 	return defaultEndpoint
+}
+
+// MaybeDecodeKnownBatchItemRequest selectively decodes a known JSON batch
+// subrequest only when it targets one of the requested operations. Non-POST,
+// body-less, or unmatched items are reported as not handled.
+func MaybeDecodeKnownBatchItemRequest(defaultEndpoint string, item BatchRequestItem, operations ...string) (*DecodedBatchItemRequest, bool, error) {
+	if len(item.Body) == 0 {
+		return nil, false, nil
+	}
+
+	method := strings.ToUpper(strings.TrimSpace(item.Method))
+	if method == "" {
+		method = http.MethodPost
+	}
+	if method != http.MethodPost {
+		return nil, false, nil
+	}
+
+	endpoint := NormalizeOperationPath(ResolveBatchItemEndpoint(defaultEndpoint, item.URL))
+	if endpoint == "" {
+		return nil, false, nil
+	}
+	operation := DescribeEndpointPath(endpoint).Operation
+	if len(operations) > 0 {
+		matched := false
+		for _, candidate := range operations {
+			if operation == candidate {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return nil, false, nil
+		}
+	}
+
+	decoded, err := DecodeKnownBatchItemRequest(defaultEndpoint, item)
+	if err != nil {
+		return nil, true, err
+	}
+	return decoded, true, nil
 }
 
 // DecodeKnownBatchItemRequest normalizes and decodes a known JSON batch subrequest.

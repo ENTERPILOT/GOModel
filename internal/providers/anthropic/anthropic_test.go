@@ -2822,6 +2822,25 @@ func TestConvertDecodedBatchItemToAnthropic_RejectsStreaming(t *testing.T) {
 	}
 }
 
+func TestConvertDecodedBatchItemToAnthropic_RejectsEmbeddings(t *testing.T) {
+	decoded := &core.DecodedBatchItemRequest{
+		Endpoint:  "/v1/embeddings",
+		Operation: "embeddings",
+		Request: &core.EmbeddingRequest{
+			Model: "text-embedding-3-small",
+			Input: "Hello",
+		},
+	}
+
+	_, err := convertDecodedBatchItemToAnthropic(decoded)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "anthropic does not support native embedding batches") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	resp := &anthropicResponse{
 		ID:    "msg_123",
