@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -329,6 +330,101 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 			}
 			tt.checkFn(t, result)
 		})
+	}
+}
+
+func TestConvertResponsesRequestToChat_PreservesOpaqueExtras(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []core.ResponsesInputElement{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{
+						Type: "input_text",
+						Text: "Describe this",
+						ExtraFields: map[string]json.RawMessage{
+							"cache_control": json.RawMessage(`{"type":"ephemeral"}`),
+						},
+					},
+				},
+				ExtraFields: map[string]json.RawMessage{
+					"x_message_hint": json.RawMessage(`true`),
+				},
+			},
+		},
+		ExtraFields: map[string]json.RawMessage{
+			"response_format": json.RawMessage(`{"type":"json_schema"}`),
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+
+	if chatReq.ExtraFields["response_format"] == nil {
+		t.Fatalf("response_format missing from chat request extras: %+v", chatReq.ExtraFields)
+	}
+	if len(chatReq.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(chatReq.Messages))
+	}
+	if chatReq.Messages[0].ExtraFields["x_message_hint"] == nil {
+		t.Fatalf("message extra missing after conversion: %+v", chatReq.Messages[0].ExtraFields)
+	}
+
+	parts, ok := chatReq.Messages[0].Content.([]core.ContentPart)
+	if !ok {
+		t.Fatalf("Messages[0].Content type = %T, want []core.ContentPart to preserve part extras", chatReq.Messages[0].Content)
+	}
+	if parts[0].ExtraFields["cache_control"] == nil {
+		t.Fatalf("content part extra missing after conversion: %+v", parts[0].ExtraFields)
+	}
+}
+
+func TestConvertResponsesRequestToChat_PreservesUnknownMapFields(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []interface{}{
+			map[string]interface{}{
+				"type":      "function_call",
+				"call_id":   "call_123",
+				"name":      "lookup_weather",
+				"arguments": `{"city":"Warsaw"}`,
+				"x_trace":   map[string]interface{}{"attempt": 2},
+			},
+			map[string]interface{}{
+				"type":    "message",
+				"role":    "user",
+				"content": []map[string]interface{}{{"type": "output_text", "text": "hello", "cache_control": map[string]interface{}{"type": "ephemeral"}}},
+				"x_meta":  "keep-me",
+			},
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 2 {
+		t.Fatalf("len(Messages) = %d, want 2", len(chatReq.Messages))
+	}
+	if len(chatReq.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("len(Messages[0].ToolCalls) = %d, want 1", len(chatReq.Messages[0].ToolCalls))
+	}
+	if chatReq.Messages[0].ToolCalls[0].ExtraFields["x_trace"] == nil {
+		t.Fatalf("tool_call extra missing after conversion: %+v", chatReq.Messages[0].ToolCalls[0].ExtraFields)
+	}
+	if chatReq.Messages[1].ExtraFields["x_meta"] == nil {
+		t.Fatalf("message extra missing after map conversion: %+v", chatReq.Messages[1].ExtraFields)
+	}
+
+	parts, ok := chatReq.Messages[1].Content.([]core.ContentPart)
+	if !ok {
+		t.Fatalf("Messages[1].Content type = %T, want []core.ContentPart to preserve mapped text-part extras", chatReq.Messages[1].Content)
+	}
+	if parts[0].ExtraFields["cache_control"] == nil {
+		t.Fatalf("mapped content part extra missing after conversion: %+v", parts[0].ExtraFields)
 	}
 }
 

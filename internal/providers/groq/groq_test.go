@@ -530,6 +530,93 @@ func TestResponsesWithArrayInput(t *testing.T) {
 	}
 }
 
+func TestResponses_PreservesOpaqueFieldsThroughChatAdapter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Errorf("Path = %q, want %q", r.URL.Path, "/chat/completions")
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var req core.ChatRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Fatalf("failed to unmarshal chat request: %v", err)
+		}
+		if req.ExtraFields["response_format"] == nil {
+			t.Fatalf("response_format missing after responses-to-chat conversion: %+v", req.ExtraFields)
+		}
+		if len(req.Messages) != 1 {
+			t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+		}
+		if req.Messages[0].ExtraFields["x_message_hint"] == nil {
+			t.Fatalf("message extras missing after conversion: %+v", req.Messages[0].ExtraFields)
+		}
+		parts, ok := req.Messages[0].Content.([]core.ContentPart)
+		if !ok {
+			t.Fatalf("Messages[0].Content type = %T, want []core.ContentPart", req.Messages[0].Content)
+		}
+		if parts[0].ExtraFields["cache_control"] == nil {
+			t.Fatalf("content part extras missing after conversion: %+v", parts[0].ExtraFields)
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-opaque",
+			"object": "chat.completion",
+			"created": 1677652288,
+			"model": "llama-3.3-70b-versatile",
+			"choices": [{
+				"index": 0,
+				"message": {
+					"role": "assistant",
+					"content": "ok"
+				},
+				"finish_reason": "stop"
+			}],
+			"usage": {
+				"prompt_tokens": 1,
+				"completion_tokens": 1,
+				"total_tokens": 2
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	req := &core.ResponsesRequest{
+		Model: "llama-3.3-70b-versatile",
+		Input: []core.ResponsesInputElement{
+			{
+				Role: "user",
+				Content: []core.ContentPart{
+					{
+						Type: "input_text",
+						Text: "Hello",
+						ExtraFields: map[string]json.RawMessage{
+							"cache_control": json.RawMessage(`{"type":"ephemeral"}`),
+						},
+					},
+				},
+				ExtraFields: map[string]json.RawMessage{
+					"x_message_hint": json.RawMessage(`true`),
+				},
+			},
+		},
+		ExtraFields: map[string]json.RawMessage{
+			"response_format": json.RawMessage(`{"type":"json_schema"}`),
+		},
+	}
+
+	if _, err := provider.Responses(context.Background(), req); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestStreamResponses(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Verify stream is set in request body
@@ -613,7 +700,6 @@ func TestResponsesWithContext(t *testing.T) {
 		t.Error("expected error when context is cancelled, got nil")
 	}
 }
-
 
 func TestGroqResponsesStreamConverter(t *testing.T) {
 	// Test the stream converter with mock chat completion stream

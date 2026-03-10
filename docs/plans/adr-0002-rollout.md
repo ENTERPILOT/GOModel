@@ -35,6 +35,8 @@ Completed in this slice:
 - make `/v1/files*` ingress-managed with bounded multipart handling so file routes also receive `IngressFrame` without eagerly buffering upload bodies
 - add sparse file semantics for `/v1/files*` so handlers consume shared provider, purpose, filename, file ID, and pagination metadata without trying to canonicalize uploaded bytes
 - collapse the repeated JSON semantic decode/cache pattern behind one shared helper so the semantic layer gets slimmer as more endpoints move onto it
+- move canonical JSON decode/cache and sparse batch/file route-metadata caching into `internal/core` so `internal/server/semantic_requests.go` becomes an Echo-facing adapter instead of owning semantic state transitions
+- preserve opaque top-level and nested request extras through the shared `Responses -> Chat` provider adapter so providers that implement `/v1/responses` via chat translation do not re-drop fields after ingress has preserved them
 
 ## Broader endpoint migration scope
 
