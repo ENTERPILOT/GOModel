@@ -132,40 +132,40 @@ func (g *GuardedProvider) processBatchRequest(ctx context.Context, req *core.Bat
 
 	for i := range out.Requests {
 		item := out.Requests[i]
-		method := strings.ToUpper(strings.TrimSpace(item.Method))
-		if method == "" {
-			method = http.MethodPost
-		}
-		if method != http.MethodPost || len(item.Body) == 0 {
+		if len(item.Body) == 0 {
 			continue
 		}
 
-		endpoint := strings.TrimSpace(item.URL)
-		if endpoint == "" {
-			endpoint = strings.TrimSpace(req.Endpoint)
+		normalizedMethod := strings.ToUpper(strings.TrimSpace(item.Method))
+		if normalizedMethod == "" {
+			normalizedMethod = http.MethodPost
+		}
+		if normalizedMethod != http.MethodPost {
+			continue
 		}
 
-		switch core.NormalizeOperationPath(endpoint) {
-		case "/v1/chat/completions":
-			var chatReq core.ChatRequest
-			if err := json.Unmarshal(item.Body, &chatReq); err != nil {
+		endpoint := core.NormalizeOperationPath(core.ResolveBatchItemEndpoint(req.Endpoint, item.URL))
+		switch core.DescribeEndpointPath(endpoint).Operation {
+		case "chat_completions":
+			decoded, err := core.DecodeKnownBatchItemRequest(req.Endpoint, item)
+			if err != nil {
 				return nil, core.NewInvalidRequestError("invalid chat request in batch item", err)
 			}
-			modified, err := g.processChat(ctx, &chatReq)
+			modified, err := g.processChat(ctx, decoded.ChatRequest)
 			if err != nil {
 				return nil, err
 			}
-			body, err := rewriteGuardedChatBatchBody(item.Body, &chatReq, modified)
+			body, err := rewriteGuardedChatBatchBody(item.Body, decoded.ChatRequest, modified)
 			if err != nil {
 				return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
 			}
 			out.Requests[i].Body = body
-		case "/v1/responses":
-			var responsesReq core.ResponsesRequest
-			if err := json.Unmarshal(item.Body, &responsesReq); err != nil {
+		case "responses":
+			decoded, err := core.DecodeKnownBatchItemRequest(req.Endpoint, item)
+			if err != nil {
 				return nil, core.NewInvalidRequestError("invalid responses request in batch item", err)
 			}
-			modified, err := g.processResponses(ctx, &responsesReq)
+			modified, err := g.processResponses(ctx, decoded.ResponsesRequest)
 			if err != nil {
 				return nil, err
 			}

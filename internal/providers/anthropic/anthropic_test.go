@@ -2727,6 +2727,39 @@ func TestBuildAnthropicBatchCreateRequest_PrefixesToolArgumentErrors(t *testing.
 	}
 }
 
+func TestBuildAnthropicBatchCreateRequest_NormalizesFullURLResponsesEndpoint(t *testing.T) {
+	req := &core.BatchRequest{
+		Requests: []core.BatchRequestItem{
+			{
+				CustomID: "resp-1",
+				Method:   http.MethodPost,
+				URL:      "https://provider.example/v1/responses/?trace=1",
+				Body: json.RawMessage(`{
+					"model":"claude-sonnet-4-5-20250929",
+					"input":"Hello"
+				}`),
+			},
+		},
+	}
+
+	anthropicReq, endpointByCustomID, err := buildAnthropicBatchCreateRequest(req)
+	if err != nil {
+		t.Fatalf("buildAnthropicBatchCreateRequest() error = %v", err)
+	}
+	if anthropicReq == nil {
+		t.Fatal("anthropicReq = nil")
+	}
+	if len(anthropicReq.Requests) != 1 {
+		t.Fatalf("len(Requests) = %d, want 1", len(anthropicReq.Requests))
+	}
+	if anthropicReq.Requests[0].Params.Stream {
+		t.Fatal("Params.Stream = true, want false")
+	}
+	if got := endpointByCustomID["resp-1"]; got != "/v1/responses" {
+		t.Fatalf("endpointByCustomID[resp-1] = %q, want /v1/responses", got)
+	}
+}
+
 func TestConvertAnthropicResponseToResponses(t *testing.T) {
 	resp := &anthropicResponse{
 		ID:    "msg_123",

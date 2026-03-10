@@ -28,6 +28,7 @@ Completed in this slice:
 - make `/v1/batches` consume ingress-backed semantic decoding instead of `Bind()`
 - add sparse batch route semantics for `/v1/batches*` so get/list/cancel/results handlers consume ingress-derived batch IDs and pagination metadata instead of ad hoc path/query parsing
 - move inline batch item endpoint normalization and selector extraction into shared core semantic helpers so batch creation no longer hardcodes chat/responses/embeddings subrequest parsing in the HTTP handler
+- move Anthropic native batch item endpoint normalization and known subrequest decoding onto the same shared core batch semantic helpers instead of maintaining a provider-local batch parsing switch
 - make guarded chat rewrites preserve original message envelopes and structured content shapes in both normal and batch flows, including opaque message and content-part JSON fields
 - harden `/p/{provider}/{endpoint}` so passthrough still works when guardrails wrap the router
 - make passthrough use the same retry and circuit-breaker policy as the translated provider clients while still proxying raw upstream responses

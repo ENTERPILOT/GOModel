@@ -79,3 +79,27 @@ func TestBatchItemModelSelectorRejectsUnsupportedEndpoint(t *testing.T) {
 		t.Fatal("BatchItemModelSelector() error = nil, want unsupported endpoint error")
 	}
 }
+
+func TestDecodeKnownBatchItemRequest_NormalizesFullURLAndDecodesCanonicalRequest(t *testing.T) {
+	t.Parallel()
+
+	decoded, err := DecodeKnownBatchItemRequest("/v1/chat/completions", BatchRequestItem{
+		URL:  "https://provider.example/v1/responses/?foo=bar",
+		Body: json.RawMessage(`{"model":"gpt-4o-mini","provider":"openai","input":"hi"}`),
+	})
+	if err != nil {
+		t.Fatalf("DecodeKnownBatchItemRequest() error = %v", err)
+	}
+	if decoded.Endpoint != "/v1/responses" {
+		t.Fatalf("Endpoint = %q, want /v1/responses", decoded.Endpoint)
+	}
+	if decoded.Operation != "responses" {
+		t.Fatalf("Operation = %q, want responses", decoded.Operation)
+	}
+	if decoded.ResponsesRequest == nil {
+		t.Fatal("ResponsesRequest = nil")
+	}
+	if decoded.ResponsesRequest.Model != "gpt-4o-mini" {
+		t.Fatalf("ResponsesRequest.Model = %q, want gpt-4o-mini", decoded.ResponsesRequest.Model)
+	}
+}

@@ -1268,6 +1268,45 @@ func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_PreservesOpaqueRespo
 	}
 }
 
+func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_NormalizesFullURLResponsesEndpoint(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+	g, _ := NewSystemPromptGuardrail("test", SystemPromptOverride, "guardrail instructions")
+	pipeline.Add(g, 0)
+	guarded := NewGuardedProviderWithOptions(inner, pipeline, Options{EnableForBatchProcessing: true})
+
+	req := &core.BatchRequest{
+		Endpoint: "/v1/chat/completions",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "https://provider.example/v1/responses/?trace=1",
+				Body: json.RawMessage(`{
+					"model":"gpt-4",
+					"instructions":"original",
+					"input":"hello"
+				}`),
+			},
+		},
+	}
+
+	_, err := guarded.CreateBatch(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.batchReq == nil || len(inner.batchReq.Requests) != 1 {
+		t.Fatalf("expected delegated batch request")
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(inner.batchReq.Requests[0].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["instructions"] != "guardrail instructions" {
+		t.Fatalf("instructions = %#v, want guarded text", body["instructions"])
+	}
+}
+
 func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_PreservesSystemMessageOpaqueFields(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()

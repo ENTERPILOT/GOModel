@@ -1505,57 +1505,35 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 	endpointByCustomID := make(map[string]string, len(req.Requests))
 
 	for i, item := range req.Requests {
-		method := strings.ToUpper(strings.TrimSpace(item.Method))
-		if method == "" {
-			method = http.MethodPost
-		}
-		if method != http.MethodPost {
-			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: only POST is supported", i), nil)
-		}
-
-		endpoint := strings.TrimSpace(item.URL)
-		if endpoint == "" {
-			endpoint = strings.TrimSpace(req.Endpoint)
-		}
-		endpoint = strings.TrimRight(endpoint, "/")
-		if endpoint == "" {
-			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: url is required", i), nil)
+		decoded, err := core.DecodeKnownBatchItemRequest(req.Endpoint, item)
+		if err != nil {
+			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
 		}
 
 		var params *anthropicRequest
-		switch endpoint {
-		case "/v1/chat/completions":
-			var chatReq core.ChatRequest
-			if err := json.Unmarshal(item.Body, &chatReq); err != nil {
-				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid chat body: %v", i, err), err)
-			}
-			if chatReq.Stream {
+		switch decoded.Operation {
+		case "chat_completions":
+			if decoded.ChatRequest.Stream {
 				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
 			}
-			var err error
-			params, err = convertToAnthropicRequest(&chatReq)
+			params, err = convertToAnthropicRequest(decoded.ChatRequest)
 			if err != nil {
 				return nil, nil, prefixAnthropicBatchItemError(i, err)
 			}
 			params.Stream = false
-		case "/v1/responses":
-			var respReq core.ResponsesRequest
-			if err := json.Unmarshal(item.Body, &respReq); err != nil {
-				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: invalid responses body: %v", i, err), err)
-			}
-			if respReq.Stream {
+		case "responses":
+			if decoded.ResponsesRequest.Stream {
 				return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: streaming is not supported for native batch", i), nil)
 			}
-			var err error
-			params, err = convertResponsesRequestToAnthropic(&respReq)
+			params, err = convertResponsesRequestToAnthropic(decoded.ResponsesRequest)
 			if err != nil {
 				return nil, nil, prefixAnthropicBatchItemError(i, err)
 			}
 			params.Stream = false
-		case "/v1/embeddings":
+		case "embeddings":
 			return nil, nil, core.NewInvalidRequestError("anthropic does not support native embedding batches", nil)
 		default:
-			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", endpoint), nil)
+			return nil, nil, core.NewInvalidRequestError(fmt.Sprintf("unsupported anthropic batch url: %s", decoded.Endpoint), nil)
 		}
 
 		customID := strings.TrimSpace(item.CustomID)
@@ -1566,7 +1544,7 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 			CustomID: customID,
 			Params:   *params,
 		})
-		endpointByCustomID[customID] = endpoint
+		endpointByCustomID[customID] = decoded.Endpoint
 	}
 
 	return out, endpointByCustomID, nil
