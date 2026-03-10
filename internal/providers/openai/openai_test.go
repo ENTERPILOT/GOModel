@@ -1574,3 +1574,64 @@ func TestIsValidClientRequestID(t *testing.T) {
 		})
 	}
 }
+
+func TestPassthrough(t *testing.T) {
+	var gotPath string
+	var gotAuth string
+	var gotBeta string
+	var gotBody string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.RequestURI()
+		gotAuth = r.Header.Get("Authorization")
+		gotBeta = r.Header.Get("OpenAI-Beta")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":"rate limited"}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", server.Client(), llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	resp, err := provider.Passthrough(context.Background(), &core.PassthroughRequest{
+		Method:   http.MethodPost,
+		Endpoint: "responses?foo=bar",
+		Body:     []byte(`{"model":"gpt-5-mini"}`),
+		Headers: map[string]string{
+			"Content-Type": "application/json",
+			"OpenAI-Beta":  "responses=v1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if gotPath != "/responses?foo=bar" {
+		t.Fatalf("path = %q, want /responses?foo=bar", gotPath)
+	}
+	if gotAuth != "Bearer test-api-key" {
+		t.Fatalf("authorization = %q", gotAuth)
+	}
+	if gotBeta != "responses=v1" {
+		t.Fatalf("OpenAI-Beta = %q", gotBeta)
+	}
+	if gotBody != `{"model":"gpt-5-mini"}` {
+		t.Fatalf("body = %q", gotBody)
+	}
+	if resp.StatusCode != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	if string(body) != `{"error":"rate limited"}` {
+		t.Fatalf("response body = %q", string(body))
+	}
+}

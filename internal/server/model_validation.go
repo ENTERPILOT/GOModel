@@ -21,7 +21,15 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			path := c.Request().URL.Path
-			if !auditlog.IsModelInteractionPath(path) {
+			if !core.IsModelInteractionPath(path) {
+				return next(c)
+			}
+			if providerType, ok := providerPassthroughType(c); ok {
+				c.Set(string(providerTypeKey), providerType)
+				auditlog.EnrichEntry(c, "passthrough", providerType)
+				requestID := c.Request().Header.Get("X-Request-ID")
+				ctx := core.WithRequestID(c.Request().Context(), requestID)
+				c.SetRequest(c.Request().WithContext(ctx))
 				return next(c)
 			}
 			if isBatchOrFileRootOrSubresource(path) {
@@ -84,10 +92,25 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 }
 
 func isBatchOrFileRootOrSubresource(path string) bool {
-	return path == "/v1/batches" ||
-		strings.HasPrefix(path, "/v1/batches/") ||
-		path == "/v1/files" ||
-		strings.HasPrefix(path, "/v1/files/")
+	switch core.DescribeEndpointPath(path).Operation {
+	case "batches", "files":
+		return true
+	default:
+		return false
+	}
+}
+
+func providerPassthroughType(c *echo.Context) (string, bool) {
+	if env := core.GetSemanticEnvelope(c.Request().Context()); env != nil && env.Operation == "provider_passthrough" {
+		providerType := strings.TrimSpace(env.SelectorHints.Provider)
+		if providerType != "" {
+			return providerType, true
+		}
+	}
+	if providerType, _, ok := core.ParseProviderPassthroughPath(c.Request().URL.Path); ok {
+		return providerType, true
+	}
+	return "", false
 }
 
 // GetProviderType returns the provider type set by ModelValidation for this request.

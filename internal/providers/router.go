@@ -175,6 +175,25 @@ func (r *Router) providerByType(providerType string) core.Provider {
 	return nil
 }
 
+// Passthrough routes an opaque provider-native request by provider type.
+func (r *Router) Passthrough(ctx context.Context, providerType string, req *core.PassthroughRequest) (*core.PassthroughResponse, error) {
+	if err := r.checkReady(); err != nil {
+		return nil, err
+	}
+	if providerType == "" {
+		return nil, core.NewInvalidRequestError("provider type is required", nil)
+	}
+	provider := r.providerByType(providerType)
+	if provider == nil {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
+	}
+	pp, ok := provider.(core.PassthroughProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError(fmt.Sprintf("%s does not support provider passthrough", providerType), nil)
+	}
+	return pp.Passthrough(ctx, req)
+}
+
 // CreateBatch routes native batch creation to a provider type.
 func (r *Router) CreateBatch(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchResponse, error) {
 	if err := r.checkReady(); err != nil {

@@ -97,6 +97,25 @@ func TestBuildSemanticEnvelope_PassthroughRouteParams(t *testing.T) {
 	}
 }
 
+func TestBuildSemanticEnvelope_PassthroughPathFallback(t *testing.T) {
+	frame := &IngressFrame{
+		Method:  "POST",
+		Path:    "/p/anthropic/messages",
+		RawBody: []byte(`{"model":"claude-sonnet-4-5"}`),
+	}
+
+	env := BuildSemanticEnvelope(frame)
+	if env == nil {
+		t.Fatal("BuildSemanticEnvelope() = nil")
+	}
+	if env.SelectorHints.Provider != "anthropic" {
+		t.Fatalf("SelectorHints.Provider = %q, want anthropic", env.SelectorHints.Provider)
+	}
+	if env.SelectorHints.Endpoint != "messages" {
+		t.Fatalf("SelectorHints.Endpoint = %q, want messages", env.SelectorHints.Endpoint)
+	}
+}
+
 func TestBuildSemanticEnvelope_SkipsBodyParsingWhenIngressBodyWasNotCaptured(t *testing.T) {
 	frame := &IngressFrame{
 		Method:          "POST",

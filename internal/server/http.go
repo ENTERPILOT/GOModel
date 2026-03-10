@@ -189,6 +189,13 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	// API routes
+	e.GET("/p/:provider/*", handler.ProviderPassthrough)
+	e.POST("/p/:provider/*", handler.ProviderPassthrough)
+	e.PUT("/p/:provider/*", handler.ProviderPassthrough)
+	e.PATCH("/p/:provider/*", handler.ProviderPassthrough)
+	e.DELETE("/p/:provider/*", handler.ProviderPassthrough)
+	e.HEAD("/p/:provider/*", handler.ProviderPassthrough)
+	e.OPTIONS("/p/:provider/*", handler.ProviderPassthrough)
 	e.GET("/v1/models", handler.ListModels)
 	e.POST("/v1/chat/completions", handler.ChatCompletion)
 	e.POST("/v1/responses", handler.Responses)

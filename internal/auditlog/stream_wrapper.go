@@ -6,6 +6,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"gomodel/internal/core"
 )
 
 // Note: MaxContentCapture, SSEBufferSize, and LogEntryStreamingKey
@@ -423,23 +425,5 @@ func IsEntryMarkedAsStreaming(c interface{ Get(string) interface{} }) bool {
 // IsModelInteractionPath returns true if the path is an AI model endpoint
 // Note: /v1/models is excluded as it's just a metadata listing, not a model interaction
 func IsModelInteractionPath(path string) bool {
-	modelPaths := []string{
-		"/v1/chat/completions",
-		"/v1/responses",
-		"/v1/embeddings",
-		"/v1/files",
-		"/v1/batches",
-	}
-	for _, p := range modelPaths {
-		if path == p {
-			return true
-		}
-		if strings.HasPrefix(path, p) {
-			next := path[len(p):]
-			if strings.HasPrefix(next, "/") || strings.HasPrefix(next, "?") {
-				return true
-			}
-		}
-	}
-	return false
+	return core.IsModelInteractionPath(path)
 }

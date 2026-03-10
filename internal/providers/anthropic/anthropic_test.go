@@ -3870,3 +3870,64 @@ func intPtr(i int) *int {
 func float64Ptr(f float64) *float64 {
 	return &f
 }
+
+func TestPassthrough(t *testing.T) {
+	var gotPath string
+	var gotAPIKey string
+	var gotVersion string
+	var gotBody string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.RequestURI()
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotVersion = r.Header.Get("anthropic-version")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad request"}}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", server.Client(), llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	resp, err := provider.Passthrough(context.Background(), &core.PassthroughRequest{
+		Method:   http.MethodPost,
+		Endpoint: "messages",
+		Body:     []byte(`{"model":"claude-sonnet-4-5"}`),
+		Headers: map[string]string{
+			"Content-Type":      "application/json",
+			"anthropic-version": "2024-10-22",
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if gotPath != "/messages" {
+		t.Fatalf("path = %q, want /messages", gotPath)
+	}
+	if gotAPIKey != "test-api-key" {
+		t.Fatalf("x-api-key = %q", gotAPIKey)
+	}
+	if gotVersion != "2024-10-22" {
+		t.Fatalf("anthropic-version = %q", gotVersion)
+	}
+	if gotBody != `{"model":"claude-sonnet-4-5"}` {
+		t.Fatalf("body = %q", gotBody)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	if string(body) != `{"error":{"message":"bad request"}}` {
+		t.Fatalf("response body = %q", string(body))
+	}
+}

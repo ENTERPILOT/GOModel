@@ -3,7 +3,6 @@ package core
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 )
 
 // SelectorHints holds the minimal routing-relevant request hints derived from ingress.
@@ -37,27 +36,31 @@ func BuildSemanticEnvelope(frame *IngressFrame) *SemanticEnvelope {
 		},
 	}
 
-	switch {
-	case frame.Path == "/v1/chat/completions":
-		env.Dialect = "openai_compat"
-		env.Operation = "chat_completions"
-	case frame.Path == "/v1/responses":
-		env.Dialect = "openai_compat"
-		env.Operation = "responses"
-	case frame.Path == "/v1/embeddings":
-		env.Dialect = "openai_compat"
-		env.Operation = "embeddings"
-	case strings.HasPrefix(frame.Path, "/p/"):
-		env.Dialect = "provider_passthrough"
-		env.Operation = "provider_passthrough"
+	desc := DescribeEndpointPath(frame.Path)
+	if desc.Operation == "" {
+		return nil
+	}
+	env.Dialect = desc.Dialect
+	env.Operation = desc.Operation
+
+	if env.Dialect == "provider_passthrough" {
+		env.SelectorHints.Endpoint = ""
 		if provider := frame.RouteParams["provider"]; provider != "" {
 			env.SelectorHints.Provider = provider
 		}
 		if endpoint := frame.RouteParams["endpoint"]; endpoint != "" {
 			env.SelectorHints.Endpoint = endpoint
 		}
-	default:
-		return nil
+		if env.SelectorHints.Provider == "" || env.SelectorHints.Endpoint == "" {
+			if provider, endpoint, ok := ParseProviderPassthroughPath(frame.Path); ok {
+				if env.SelectorHints.Provider == "" {
+					env.SelectorHints.Provider = provider
+				}
+				if env.SelectorHints.Endpoint == "" {
+					env.SelectorHints.Endpoint = endpoint
+				}
+			}
+		}
 	}
 
 	if frame.RawBody == nil {

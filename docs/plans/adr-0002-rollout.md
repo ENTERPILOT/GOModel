@@ -23,6 +23,23 @@ Completed in this slice:
 - preserve unknown nested JSON fields on normal non-batch chat messages, tool calls, content parts, and responses input elements
 - preserve unknown nested JSON fields through normal handler decoding and OpenAI provider marshaling
 
+## Broader endpoint migration scope
+
+ADR-0002 is not only about the current `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings` JSON flows.
+
+The broader migration should cover four endpoint classes:
+
+- translated OpenAI-compatible JSON endpoints under `/v1/*`
+- opaque provider pass-through endpoints under `/p/{provider}/{endpoint}`
+- batch endpoints under `/v1/batches*`
+- file endpoints under `/v1/files*`
+
+Pass-through scope should be explicit:
+
+- first-class pass-through support should be added for OpenAI and Anthropic
+- other providers should only be added in this ADR-0002 rollout if they can ride the same transport-first opaque forwarding path without significant provider-specific branching or new semantic translation work
+- if a provider requires heavy request rewriting, custom streaming adaptation, or a special-case transport path, defer that provider to a later slice instead of complicating the ADR-0002 foundation
+
 ## Rollout phases
 
 ### Phase 0: Lock the invariants
@@ -58,12 +75,15 @@ Exit criteria:
 - store it in request context so downstream layers can read it without re-reading or mutating the body
 - make audit logging read from the ingress frame when available instead of reconstructing from partial state
 - add a thin `/p/{provider}/{endpoint}` opaque path early enough to validate transport-first handling before richer semantic work is complete
+- make OpenAI and Anthropic the required first pass-through providers for this phase
+- only add other providers in this phase when the same opaque forwarding path works with little or no provider-specific branching
 
 Exit criteria:
 
 - model-facing handlers consume a shared ingress representation
 - raw request bytes are available to later semantic extraction and pass-through flows
 - selector extraction no longer requires ad hoc body reads from separate middleware
+- `/p/openai/{endpoint}` and `/p/anthropic/{endpoint}` run on the shared ingress capture path
 
 ### Phase 3: Introduce `SemanticEnvelope`
 
@@ -72,12 +92,14 @@ Exit criteria:
 - allow partial semantics instead of forcing every request into a full typed schema
 - split minimal selector extraction from richer canonical extraction so routing does not depend on a fully populated semantic envelope
 - let routing use selector hints derived from ingress even when the semantic envelope is sparse
+- keep pass-through semantic extraction intentionally sparse for provider-native routes unless the gateway already has a clear canonical understanding of the operation
 
 Exit criteria:
 
 - handlers no longer own request semantics directly
 - semantic extraction can succeed partially while preserving raw ingress losslessly
 - route resolution works from ingress-derived selector hints without requiring full canonicalization
+- provider pass-through routes do not require fake canonical schemas to execute
 
 ### Phase 4: Migrate existing features onto the new split
 
@@ -86,11 +108,13 @@ Exit criteria:
 - when only partial semantics are available, patch raw-plus-canonical payloads instead of rebuilding fresh structs
 - fall back to raw ingress or preserved opaque extras when semantics are partial
 - move `/p/{provider}/{endpoint}` onto the same ingress and semantic pipeline as `/v1/*`
+- keep OpenAI and Anthropic as the reference pass-through implementations and only generalize further once that path stays simple
 
 Exit criteria:
 
 - `/v1/*` and `/p/*` share one ingress pipeline
 - pass-through and translated flows both preserve unknown fields unless the gateway intentionally rewrites them
+- the OpenAI and Anthropic pass-through routes do not depend on typed request structs for opaque forwarding
 
 ## Design rules for implementation
 
@@ -108,10 +132,13 @@ Exit criteria:
 - guardrail rewrites can still drop unknown nested fields if the gateway reconstructs nested objects instead of preserving raw ingress
 - provider-specific adapters may reintroduce field loss when they build fresh structs instead of rewriting raw-plus-canonical payloads
 - batch and file flows will need the same transport-first treatment to avoid a second request pipeline
+- trying to add too many provider-specific pass-through variants at once can turn the transport-first `/p/*` route into another adapter matrix before the shared foundation is stable
 
 ## Next implementation targets
 
-1. Add a thin `/p/{provider}/{endpoint}` opaque passthrough route on the shared ingress pipeline.
-2. Move more model-facing handlers, especially `/v1/batches` and later file flows where appropriate, onto ingress-first decoding instead of ad hoc request parsing.
-3. Extend `SemanticEnvelope` from selector hints toward canonical operation content for `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings`.
-4. Migrate non-batch guardrail and provider rewrite paths toward semantic canonical data plus raw-plus-canonical patching where partial understanding is unavoidable.
+1. Centralize model-facing endpoint classification so ingress capture, audit classification, and semantic extraction use one shared route descriptor table.
+2. Add a thin `/p/{provider}/{endpoint}` opaque passthrough route on the shared ingress pipeline, with OpenAI and Anthropic as the required first providers.
+3. Extend the same `/p/*` route to other providers only when they fit the same low-friction opaque forwarding model without meaningful extra branching.
+4. Move more model-facing handlers, especially `/v1/batches` and later `/v1/files` where appropriate, onto ingress-first decoding instead of ad hoc request parsing.
+5. Extend `SemanticEnvelope` from selector hints toward canonical operation content for `/v1/chat/completions`, `/v1/responses`, and `/v1/embeddings`, while keeping `/p/*` and file semantics intentionally partial when that is the honest representation.
+6. Migrate non-batch guardrail and provider rewrite paths toward semantic canonical data plus raw-plus-canonical patching where partial understanding is unavoidable.

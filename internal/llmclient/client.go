@@ -14,6 +14,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -455,6 +456,73 @@ func (c *Client) DoStream(ctx context.Context, req Request) (io.ReadCloser, erro
 	}
 
 	return resp.Body, nil
+}
+
+// DoPassthrough executes a request and returns the raw upstream HTTP response.
+// Unlike DoRaw, it preserves non-200 responses for the caller to proxy unchanged.
+func (c *Client) DoPassthrough(ctx context.Context, req Request) (*http.Response, error) {
+	start := time.Now()
+	modelName := extractModel(req.Body)
+	stream := strings.Contains(strings.ToLower(req.Headers["Accept"]), "text/event-stream")
+
+	reqInfo := RequestInfo{
+		Provider: c.config.ProviderName,
+		Model:    modelName,
+		Endpoint: req.Endpoint,
+		Method:   req.Method,
+		Stream:   stream,
+	}
+	if c.config.Hooks.OnRequestStart != nil {
+		ctx = c.config.Hooks.OnRequestStart(ctx, reqInfo)
+	}
+
+	callEndHook := func(statusCode int, err error) {
+		if c.config.Hooks.OnRequestEnd != nil {
+			c.config.Hooks.OnRequestEnd(ctx, ResponseInfo{
+				Provider:   c.config.ProviderName,
+				Model:      modelName,
+				Endpoint:   req.Endpoint,
+				StatusCode: statusCode,
+				Duration:   time.Since(start),
+				Stream:     stream,
+				Error:      err,
+			})
+		}
+	}
+
+	if c.circuitBreaker != nil && !c.circuitBreaker.Allow() {
+		err := core.NewProviderError(c.config.ProviderName, http.StatusServiceUnavailable,
+			"circuit breaker is open - provider temporarily unavailable", nil)
+		callEndHook(http.StatusServiceUnavailable, err)
+		return nil, err
+	}
+
+	httpReq, err := c.buildRequest(ctx, req)
+	if err != nil {
+		callEndHook(extractStatusCode(err), err)
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		if c.circuitBreaker != nil {
+			c.circuitBreaker.RecordFailure()
+		}
+		providerErr := core.NewProviderError(c.config.ProviderName, http.StatusBadGateway, "failed to send request: "+err.Error(), err)
+		callEndHook(extractStatusCode(providerErr), providerErr)
+		return nil, providerErr
+	}
+
+	if c.circuitBreaker != nil {
+		if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
+			c.circuitBreaker.RecordFailure()
+		} else {
+			c.circuitBreaker.RecordSuccess()
+		}
+	}
+
+	callEndHook(resp.StatusCode, nil)
+	return resp, nil
 }
 
 // extractModel attempts to extract the model name from a request body

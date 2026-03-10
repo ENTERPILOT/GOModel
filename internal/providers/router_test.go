@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	"gomodel/internal/core"
@@ -63,6 +64,8 @@ type mockProvider struct {
 	lastChatReq       *core.ChatRequest
 	lastResponsesReq  *core.ResponsesRequest
 	lastEmbeddingReq  *core.EmbeddingRequest
+	lastPassthrough   *core.PassthroughRequest
+	passthroughResp   *core.PassthroughResponse
 }
 
 func (m *mockProvider) ChatCompletion(_ context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
@@ -105,6 +108,21 @@ func (m *mockProvider) Embeddings(_ context.Context, req *core.EmbeddingRequest)
 		return nil, m.err
 	}
 	return m.embeddingResponse, nil
+}
+
+func (m *mockProvider) Passthrough(_ context.Context, req *core.PassthroughRequest) (*core.PassthroughResponse, error) {
+	m.lastPassthrough = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.passthroughResp != nil {
+		return m.passthroughResp, nil
+	}
+	return &core.PassthroughResponse{
+		StatusCode: http.StatusOK,
+		Headers:    map[string][]string{"Content-Type": {"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+	}, nil
 }
 
 type mockBatchProvider struct {
@@ -714,4 +732,38 @@ func TestRouterProviderError(t *testing.T) {
 			t.Errorf("expected provider error, got: %v", err)
 		}
 	})
+}
+
+func TestRouterPassthrough(t *testing.T) {
+	provider := &mockProvider{name: "openai"}
+	lookup := newMockLookup()
+	lookup.addModel("gpt-5-mini", provider, "openai")
+
+	router, _ := NewRouter(lookup)
+
+	resp, err := router.Passthrough(context.Background(), "openai", &core.PassthroughRequest{
+		Method:   http.MethodPost,
+		Endpoint: "responses",
+		Body:     []byte(`{"model":"gpt-5-mini"}`),
+		Headers:  map[string]string{"Content-Type": "application/json"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if provider.lastPassthrough == nil {
+		t.Fatal("provider did not receive passthrough request")
+	}
+	if provider.lastPassthrough.Endpoint != "responses" {
+		t.Fatalf("endpoint = %q, want responses", provider.lastPassthrough.Endpoint)
+	}
+	if provider.lastPassthrough.Headers["Content-Type"] != "application/json" {
+		t.Fatalf("content-type = %q", provider.lastPassthrough.Headers["Content-Type"])
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("failed to read body: %v", err)
+	}
+	if string(body) != `{"ok":true}` {
+		t.Fatalf("body = %q", string(body))
+	}
 }

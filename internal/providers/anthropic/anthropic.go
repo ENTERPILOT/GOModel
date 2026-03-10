@@ -145,6 +145,53 @@ func (p *Provider) setHeaders(req *http.Request) {
 	}
 }
 
+// Passthrough forwards an opaque Anthropic-native request without typed translation.
+func (p *Provider) Passthrough(ctx context.Context, req *core.PassthroughRequest) (*core.PassthroughResponse, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("passthrough request is required", nil)
+	}
+
+	resp, err := p.client.DoPassthrough(ctx, llmclient.Request{
+		Method:   req.Method,
+		Endpoint: passthroughEndpoint(req.Endpoint),
+		RawBody:  req.Body,
+		Headers:  req.Headers,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.PassthroughResponse{
+		StatusCode: resp.StatusCode,
+		Headers:    cloneHeaders(resp.Header),
+		Body:       resp.Body,
+	}, nil
+}
+
+func passthroughEndpoint(endpoint string) string {
+	endpoint = strings.TrimSpace(endpoint)
+	if endpoint == "" {
+		return "/"
+	}
+	if strings.HasPrefix(endpoint, "/") {
+		return endpoint
+	}
+	return "/" + endpoint
+}
+
+func cloneHeaders(src http.Header) map[string][]string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make(map[string][]string, len(src))
+	for key, values := range src {
+		cloned := make([]string, len(values))
+		copy(cloned, values)
+		dst[key] = cloned
+	}
+	return dst
+}
+
 // anthropicThinking represents the thinking configuration for Anthropic's extended thinking.
 // For 4.6 models: {type: "adaptive"} (budget_tokens omitted).
 // For older models: {type: "enabled", budget_tokens: N}.

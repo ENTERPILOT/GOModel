@@ -180,6 +180,195 @@ func resolveModelSelector(model, provider *string) error {
 	return nil
 }
 
+func isSupportedPassthroughProvider(providerType string) bool {
+	switch strings.TrimSpace(providerType) {
+	case "openai", "anthropic":
+		return true
+	default:
+		return false
+	}
+}
+
+func passthroughEndpoint(c *echo.Context) (string, string, error) {
+	providerType, endpoint, ok := core.ParseProviderPassthroughPath(c.Request().URL.Path)
+	if !ok {
+		return "", "", core.NewInvalidRequestError("invalid provider passthrough path", nil)
+	}
+	if endpoint == "" {
+		return "", "", core.NewInvalidRequestError("provider passthrough endpoint is required", nil)
+	}
+	if rawQuery := strings.TrimSpace(c.Request().URL.RawQuery); rawQuery != "" {
+		endpoint += "?" + rawQuery
+	}
+	return providerType, endpoint, nil
+}
+
+func buildPassthroughHeaders(src http.Header) map[string]string {
+	if len(src) == 0 {
+		return nil
+	}
+
+	dst := make(map[string]string, len(src))
+	for key, values := range src {
+		if skipPassthroughHeader(key) || len(values) == 0 {
+			continue
+		}
+		dst[key] = strings.Join(values, ", ")
+	}
+	if len(dst) == 0 {
+		return nil
+	}
+	return dst
+}
+
+func skipPassthroughHeader(key string) bool {
+	switch http.CanonicalHeaderKey(strings.TrimSpace(key)) {
+	case "Authorization", "X-Api-Key", "Host", "Content-Length", "Connection", "Keep-Alive",
+		"Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade":
+		return true
+	default:
+		return false
+	}
+}
+
+func copyPassthroughResponseHeaders(dst, src http.Header) {
+	for key, values := range src {
+		if skipPassthroughHeader(key) || len(values) == 0 {
+			continue
+		}
+		dst.Del(key)
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+func isSSEContentType(headers map[string][]string) bool {
+	for key, values := range headers {
+		if !strings.EqualFold(key, "Content-Type") {
+			continue
+		}
+		for _, value := range values {
+			if strings.Contains(strings.ToLower(value), "text/event-stream") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func passthroughStreamAuditPath(requestPath, providerType, endpoint string) string {
+	normalized := "/" + strings.TrimLeft(strings.SplitN(endpoint, "?", 2)[0], "/")
+	if providerType == "openai" {
+		switch normalized {
+		case "/chat/completions":
+			return "/v1/chat/completions"
+		case "/responses":
+			return "/v1/responses"
+		}
+	}
+	return requestPath
+}
+
+func (h *Handler) proxyPassthroughResponse(c *echo.Context, providerType, endpoint string, resp *core.PassthroughResponse) error {
+	if resp == nil || resp.Body == nil {
+		return handleError(c, core.NewProviderError(providerType, http.StatusBadGateway, "provider returned empty passthrough response", nil))
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	copyPassthroughResponseHeaders(c.Response().Header(), http.Header(resp.Headers))
+
+	if isSSEContentType(resp.Headers) {
+		auditlog.MarkEntryAsStreaming(c, true)
+		auditlog.EnrichEntryWithStream(c, true)
+
+		entry := auditlog.GetStreamEntryFromContext(c)
+		streamEntry := auditlog.CreateStreamEntry(entry)
+		if streamEntry != nil {
+			streamEntry.StatusCode = resp.StatusCode
+		}
+
+		wrappedStream := auditlog.WrapStreamForLogging(resp.Body, h.logger, streamEntry, passthroughStreamAuditPath(c.Request().URL.Path, providerType, endpoint))
+		defer func() {
+			_ = wrappedStream.Close()
+		}()
+
+		c.Response().WriteHeader(resp.StatusCode)
+		if err := flushStream(c.Response(), wrappedStream); err != nil {
+			recordStreamingError(streamEntry, "", providerType, c.Request().URL.Path, c.Request().Header.Get("X-Request-ID"), err)
+			return err
+		}
+		return nil
+	}
+
+	c.Response().WriteHeader(resp.StatusCode)
+	if _, err := io.Copy(c.Response(), resp.Body); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ProviderPassthrough handles opaque provider-native requests under /p/{provider}/{endpoint}.
+//
+// OpenAI and Anthropic are the first-class providers in this ADR-0002 slice. Other
+// providers are intentionally deferred until they fit the same low-friction opaque path.
+//
+// @Summary      Provider passthrough
+// @Tags         passthrough
+// @Accept       json
+// @Accept       mpfd
+// @Produce      json
+// @Produce      text/event-stream
+// @Security     BearerAuth
+// @Param        provider  path      string  true  "Provider type"
+// @Param        endpoint  path      string  true  "Provider-native endpoint path"
+// @Success      200       {string}  string  "Raw upstream response"
+// @Failure      400       {object}  core.GatewayError
+// @Failure      401       {object}  core.GatewayError
+// @Failure      502       {object}  core.GatewayError
+// @Router       /p/{provider}/{endpoint} [get]
+// @Router       /p/{provider}/{endpoint} [post]
+// @Router       /p/{provider}/{endpoint} [put]
+// @Router       /p/{provider}/{endpoint} [patch]
+// @Router       /p/{provider}/{endpoint} [delete]
+// @Router       /p/{provider}/{endpoint} [head]
+// @Router       /p/{provider}/{endpoint} [options]
+func (h *Handler) ProviderPassthrough(c *echo.Context) error {
+	passthroughProvider, ok := h.provider.(core.PassthroughRoutableProvider)
+	if !ok {
+		return handleError(c, core.NewInvalidRequestError("provider passthrough is not supported by the current provider router", nil))
+	}
+
+	providerType, endpoint, err := passthroughEndpoint(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if !isSupportedPassthroughProvider(providerType) {
+		return handleError(c, core.NewInvalidRequestError("provider passthrough is currently supported only for openai and anthropic", nil))
+	}
+
+	bodyBytes, err := requestBodyBytes(c)
+	if err != nil {
+		return handleError(c, core.NewInvalidRequestError("failed to read passthrough request body", err))
+	}
+
+	ctx := core.WithRequestID(c.Request().Context(), c.Request().Header.Get("X-Request-ID"))
+	resp, err := passthroughProvider.Passthrough(ctx, providerType, &core.PassthroughRequest{
+		Method:   c.Request().Method,
+		Endpoint: endpoint,
+		Body:     bodyBytes,
+		Headers:  buildPassthroughHeaders(c.Request().Header),
+	})
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	auditlog.EnrichEntry(c, "passthrough", providerType)
+	return h.proxyPassthroughResponse(c, providerType, endpoint, resp)
+}
+
 // ChatCompletion handles POST /v1/chat/completions
 //
 // @Summary      Create a chat completion

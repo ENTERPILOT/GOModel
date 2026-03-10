@@ -32,14 +32,14 @@ func IngressCapture() echo.MiddlewareFunc {
 			frame := &core.IngressFrame{
 				Method:          req.Method,
 				Path:            req.URL.Path,
-				RouteParams:     cloneRouteParams(c.PathValues()),
+				RouteParams:     ingressRouteParams(req.URL.Path, cloneRouteParams(c.PathValues())),
 				QueryParams:     cloneMultiMap(req.URL.Query()),
 				Headers:         cloneMultiMap(req.Header),
 				ContentType:     req.Header.Get("Content-Type"),
 				RawBody:         bodyBytes,
 				RawBodyTooLarge: bodyTooLarge,
 				RequestID:       req.Header.Get("X-Request-ID"),
-				TraceMetadata: extractTraceMetadata(req.Header),
+				TraceMetadata:   extractTraceMetadata(req.Header),
 			}
 
 			ctx := core.WithIngressFrame(req.Context(), frame)
@@ -54,13 +54,7 @@ func IngressCapture() echo.MiddlewareFunc {
 }
 
 func isIngressManagedPath(path string) bool {
-	if strings.HasPrefix(path, "/p/") {
-		return true
-	}
-	if strings.HasPrefix(path, "/v1/files") {
-		return false
-	}
-	return auditlog.IsModelInteractionPath(path)
+	return core.DescribeEndpointPath(path).IngressManaged
 }
 
 func cloneMultiMap(src map[string][]string) map[string][]string {
@@ -87,6 +81,21 @@ func cloneRouteParams(pathValues echo.PathValues) map[string]string {
 	params := make(map[string]string, len(pathValues))
 	for _, pv := range pathValues {
 		params[pv.Name] = pv.Value
+	}
+	return params
+}
+
+func ingressRouteParams(path string, params map[string]string) map[string]string {
+	if provider, endpoint, ok := core.ParseProviderPassthroughPath(path); ok {
+		if params == nil {
+			params = make(map[string]string, 2)
+		}
+		if params["provider"] == "" {
+			params["provider"] = provider
+		}
+		if params["endpoint"] == "" && endpoint != "" {
+			params["endpoint"] = endpoint
+		}
 	}
 	return params
 }

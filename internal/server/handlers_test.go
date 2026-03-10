@@ -178,6 +178,11 @@ type mockProvider struct {
 	fileErrByProvider   map[string]error
 	fileGetByProvider   map[string]*core.FileObject
 	fileContentByProv   map[string]*core.FileContentResponse
+
+	passthroughResponse     *core.PassthroughResponse
+	passthroughErr          error
+	lastPassthroughProvider string
+	lastPassthroughReq      *core.PassthroughRequest
 }
 
 func (m *mockProvider) Supports(model string) bool {
@@ -258,6 +263,15 @@ func (m *mockProvider) Embeddings(_ context.Context, _ *core.EmbeddingRequest) (
 		return nil, m.err
 	}
 	return m.embeddingResponse, nil
+}
+
+func (m *mockProvider) Passthrough(_ context.Context, providerType string, req *core.PassthroughRequest) (*core.PassthroughResponse, error) {
+	m.lastPassthroughProvider = providerType
+	m.lastPassthroughReq = req
+	if m.passthroughErr != nil {
+		return nil, m.passthroughErr
+	}
+	return m.passthroughResponse, nil
 }
 
 func (m *mockProvider) CreateBatch(_ context.Context, _ string, _ *core.BatchRequest) (*core.BatchResponse, error) {
@@ -2525,6 +2539,119 @@ func TestMergeStoredBatchFromUpstreamPreservesGatewayMetadata(t *testing.T) {
 	}
 	if stored.Metadata["new_key"] != "new-value" {
 		t.Fatalf("expected merged upstream key, got %q", stored.Metadata["new_key"])
+	}
+}
+
+func TestProviderPassthrough_OpenAI(t *testing.T) {
+	provider := &mockProvider{
+		passthroughResponse: &core.PassthroughResponse{
+			StatusCode: http.StatusAccepted,
+			Headers: map[string][]string{
+				"Content-Type": {"application/json"},
+				"X-Upstream":   {"openai"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"ok":true}`)),
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, nil, nil)
+	e.POST("/p/:provider/*", handler.ProviderPassthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses?api-version=2026-03-10", strings.NewReader(`{"foo":"bar"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer user-secret")
+	req.Header.Set("OpenAI-Beta", "responses=v1")
+	req.Header.Set("X-Request-ID", "req_123")
+
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusAccepted)
+	}
+	if got := rec.Body.String(); got != `{"ok":true}` {
+		t.Fatalf("body = %q", got)
+	}
+	if got := rec.Header().Get("X-Upstream"); got != "openai" {
+		t.Fatalf("X-Upstream = %q, want openai", got)
+	}
+	if provider.lastPassthroughProvider != "openai" {
+		t.Fatalf("providerType = %q, want openai", provider.lastPassthroughProvider)
+	}
+	if provider.lastPassthroughReq == nil {
+		t.Fatal("lastPassthroughReq = nil")
+	}
+	if got := provider.lastPassthroughReq.Endpoint; got != "responses?api-version=2026-03-10" {
+		t.Fatalf("endpoint = %q", got)
+	}
+	if got := string(provider.lastPassthroughReq.Body); got != `{"foo":"bar"}` {
+		t.Fatalf("body = %q", got)
+	}
+	if got := provider.lastPassthroughReq.Headers["Authorization"]; got != "" {
+		t.Fatalf("authorization header should not be forwarded, got %q", got)
+	}
+	if got := provider.lastPassthroughReq.Headers[http.CanonicalHeaderKey("OpenAI-Beta")]; got != "responses=v1" {
+		t.Fatalf("OpenAI-Beta = %q, want responses=v1", got)
+	}
+}
+
+func TestProviderPassthrough_AnthropicStream(t *testing.T) {
+	provider := &mockProvider{
+		passthroughResponse: &core.PassthroughResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string][]string{
+				"Content-Type": {"text/event-stream"},
+			},
+			Body: &chunkedReadCloser{
+				chunks: [][]byte{
+					[]byte("event: message_start\n"),
+					[]byte("data: {\"type\":\"message_start\"}\n\n"),
+				},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, nil, nil)
+	e.POST("/p/:provider/*", handler.ProviderPassthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/p/anthropic/messages", strings.NewReader(`{"model":"claude-sonnet-4-5"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := &flushCountingRecorder{ResponseRecorder: httptest.NewRecorder()}
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("content-type = %q", got)
+	}
+	if rec.flushes == 0 {
+		t.Fatal("expected streaming response to flush")
+	}
+	if got := rec.Body.String(); !strings.Contains(got, "message_start") {
+		t.Fatalf("unexpected stream body: %q", got)
+	}
+}
+
+func TestProviderPassthrough_RejectsUnsupportedProvider(t *testing.T) {
+	provider := &mockProvider{}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, nil, nil)
+	e.POST("/p/:provider/*", handler.ProviderPassthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/p/groq/chat/completions", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "currently supported only for openai and anthropic") {
+		t.Fatalf("unexpected error body: %s", rec.Body.String())
 	}
 }
 
