@@ -167,6 +167,7 @@ type mockProvider struct {
 	batchResults        *core.BatchResultsResponse
 	batchResultsErr     error
 	batchErr            error
+	capturedBatchReq    *core.BatchRequest
 
 	fileCreateResponse  *core.FileObject
 	fileGetResponse     *core.FileObject
@@ -274,7 +275,8 @@ func (m *mockProvider) Passthrough(_ context.Context, providerType string, req *
 	return m.passthroughResponse, nil
 }
 
-func (m *mockProvider) CreateBatch(_ context.Context, _ string, _ *core.BatchRequest) (*core.BatchResponse, error) {
+func (m *mockProvider) CreateBatch(_ context.Context, _ string, req *core.BatchRequest) (*core.BatchResponse, error) {
+	m.capturedBatchReq = req
 	if m.batchErr != nil {
 		return nil, m.batchErr
 	}
@@ -880,6 +882,80 @@ func TestEmbeddings_UsesIngressFrameForDecoding(t *testing.T) {
 	}
 	if env.EmbeddingRequest != provider.capturedEmbeddingReq {
 		t.Fatal("cached EmbeddingRequest does not match provider request")
+	}
+}
+
+func TestBatches_UsesIngressFrameForDecoding(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		batchCreateResponse: &core.BatchResponse{
+			ID:               "provider-batch-123",
+			Object:           "batch",
+			Status:           "in_progress",
+			Endpoint:         "/v1/chat/completions",
+			CompletionWindow: "24h",
+			CreatedAt:        1234567890,
+			RequestCounts: core.BatchRequestCounts{
+				Total: 1,
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = &explodingReadCloser{}
+
+	frame := &core.IngressFrame{
+		Method:      http.MethodPost,
+		Path:        "/v1/batches",
+		ContentType: "application/json",
+		RawBody: []byte(`{
+			"completion_window":"24h",
+			"requests":[{
+				"custom_id":"chat-1",
+				"method":"POST",
+				"url":"/v1/chat/completions",
+				"body":{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hi"}]},
+				"x_item_flag":{"enabled":true}
+			}],
+			"x_top":{"trace":"batch-1"}
+		}`),
+	}
+	ctx := core.WithIngressFrame(req.Context(), frame)
+	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := handler.Batches(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	if mock.capturedBatchReq == nil {
+		t.Fatal("expected batch request to be captured")
+	}
+	if mock.capturedBatchReq.ExtraFields["x_top"] == nil {
+		t.Fatalf("x_top missing from ExtraFields: %+v", mock.capturedBatchReq.ExtraFields)
+	}
+	if len(mock.capturedBatchReq.Requests) != 1 {
+		t.Fatalf("len(Requests) = %d, want 1", len(mock.capturedBatchReq.Requests))
+	}
+	if mock.capturedBatchReq.Requests[0].ExtraFields["x_item_flag"] == nil {
+		t.Fatalf("x_item_flag missing from item ExtraFields: %+v", mock.capturedBatchReq.Requests[0].ExtraFields)
+	}
+
+	env := core.GetSemanticEnvelope(c.Request().Context())
+	if env == nil || env.BatchRequest == nil {
+		t.Fatalf("expected semantic envelope to cache BatchRequest, got %+v", env)
+	}
+	if env.BatchRequest != mock.capturedBatchReq {
+		t.Fatal("cached BatchRequest does not match provider request")
 	}
 }
 

@@ -1,0 +1,56 @@
+package core
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestBatchRequestJSON_PreservesUnknownFields(t *testing.T) {
+	var req BatchRequest
+	body := []byte(`{
+		"input_file_id":"file-123",
+		"endpoint":"/v1/chat/completions",
+		"completion_window":"24h",
+		"metadata":{"provider":"openai"},
+		"requests":[{
+			"custom_id":"chat-1",
+			"method":"POST",
+			"url":"/v1/chat/completions",
+			"body":{"model":"gpt-5-mini","messages":[{"role":"user","content":"hi"}]},
+			"x_item_flag":{"enabled":true}
+		}],
+		"x_top":{"trace":"batch-1"}
+	}`)
+	if err := json.Unmarshal(body, &req); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if req.ExtraFields["x_top"] == nil {
+		t.Fatalf("x_top missing from ExtraFields: %+v", req.ExtraFields)
+	}
+	if len(req.Requests) != 1 {
+		t.Fatalf("len(Requests) = %d, want 1", len(req.Requests))
+	}
+	if req.Requests[0].ExtraFields["x_item_flag"] == nil {
+		t.Fatalf("x_item_flag missing from Requests[0].ExtraFields: %+v", req.Requests[0].ExtraFields)
+	}
+
+	roundTrip, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(roundTrip, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(roundTrip) error = %v", err)
+	}
+	if _, ok := decoded["x_top"].(map[string]any); !ok {
+		t.Fatalf("x_top = %#v, want object", decoded["x_top"])
+	}
+
+	requests := decoded["requests"].([]any)
+	first := requests[0].(map[string]any)
+	if _, ok := first["x_item_flag"].(map[string]any); !ok {
+		t.Fatalf("x_item_flag = %#v, want object", first["x_item_flag"])
+	}
+}

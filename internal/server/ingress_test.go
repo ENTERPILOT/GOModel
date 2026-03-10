@@ -71,6 +71,7 @@ func TestIngressCapture_SetsFrameAndSemanticEnvelope(t *testing.T) {
 	assert.Nil(t, capturedEnv.ChatRequest)
 	assert.Nil(t, capturedEnv.ResponsesRequest)
 	assert.Nil(t, capturedEnv.EmbeddingRequest)
+	assert.Nil(t, capturedEnv.BatchRequest)
 }
 
 func TestIngressCapture_PreservesPassthroughRouteParams(t *testing.T) {

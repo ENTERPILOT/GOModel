@@ -34,7 +34,7 @@ func TestBuildSemanticEnvelope_OpenAICompat(t *testing.T) {
 	if env.SelectorHints.Provider != "openai" {
 		t.Fatalf("SelectorHints.Provider = %q, want openai", env.SelectorHints.Provider)
 	}
-	if env.ChatRequest != nil || env.ResponsesRequest != nil || env.EmbeddingRequest != nil {
+	if env.ChatRequest != nil || env.ResponsesRequest != nil || env.EmbeddingRequest != nil || env.BatchRequest != nil {
 		t.Fatalf("canonical request payloads should be nil, got %+v", env)
 	}
 }
@@ -92,7 +92,7 @@ func TestBuildSemanticEnvelope_PassthroughRouteParams(t *testing.T) {
 	if env.SelectorHints.Model != "gpt-5-mini" {
 		t.Fatalf("SelectorHints.Model = %q, want gpt-5-mini", env.SelectorHints.Model)
 	}
-	if env.ChatRequest != nil || env.ResponsesRequest != nil || env.EmbeddingRequest != nil {
+	if env.ChatRequest != nil || env.ResponsesRequest != nil || env.EmbeddingRequest != nil || env.BatchRequest != nil {
 		t.Fatalf("canonical request payloads should be nil, got %+v", env)
 	}
 }

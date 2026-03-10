@@ -126,3 +126,47 @@ func TestEmbeddingRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBody
 	assert.True(t, env.JSONBodyParsed)
 	assert.Equal(t, "text-embedding-3-large", env.SelectorHints.Model)
 }
+
+func TestBatchRequestFromSemanticEnvelope_CachesCanonicalRequest(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = &explodingReadCloser{}
+
+	frame := &core.IngressFrame{
+		Method:      http.MethodPost,
+		Path:        "/v1/batches",
+		ContentType: "application/json",
+		RawBody: []byte(`{
+			"completion_window":"24h",
+			"requests":[{
+				"custom_id":"chat-1",
+				"url":"/v1/chat/completions",
+				"body":{"model":"gpt-5-mini","messages":[{"role":"user","content":"hi"}]},
+				"x_item_flag":{"enabled":true}
+			}],
+			"x_top":{"trace":"batch-1"}
+		}`),
+	}
+	ctx := core.WithIngressFrame(req.Context(), frame)
+	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	req = req.WithContext(ctx)
+
+	c := e.NewContext(req, httptest.NewRecorder())
+
+	first, err := batchRequestFromSemanticEnvelope(c)
+	require.NoError(t, err)
+
+	second, err := batchRequestFromSemanticEnvelope(c)
+	require.NoError(t, err)
+
+	require.Same(t, first, second)
+	require.NotNil(t, first.ExtraFields["x_top"])
+	require.Len(t, first.Requests, 1)
+	require.NotNil(t, first.Requests[0].ExtraFields["x_item_flag"])
+
+	env := core.GetSemanticEnvelope(c.Request().Context())
+	require.NotNil(t, env)
+	require.Same(t, first, env.BatchRequest)
+	assert.True(t, env.JSONBodyParsed)
+}

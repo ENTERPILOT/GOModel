@@ -104,3 +104,25 @@ func embeddingRequestFromSemanticEnvelope(c *echo.Context) (*core.EmbeddingReque
 	}
 	return &req, nil
 }
+
+func batchRequestFromSemanticEnvelope(c *echo.Context) (*core.BatchRequest, error) {
+	env := ensureSemanticEnvelope(c)
+	if env != nil && env.BatchRequest != nil {
+		return env.BatchRequest, nil
+	}
+
+	bodyBytes, err := requestBodyBytes(c)
+	if err != nil {
+		return nil, err
+	}
+
+	var req core.BatchRequest
+	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+		return nil, err
+	}
+	if env != nil {
+		env.BatchRequest = &req
+		env.JSONBodyParsed = true
+	}
+	return &req, nil
+}

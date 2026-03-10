@@ -23,6 +23,7 @@ type SemanticEnvelope struct {
 	ChatRequest      *ChatRequest
 	ResponsesRequest *ResponsesRequest
 	EmbeddingRequest *EmbeddingRequest
+	BatchRequest     *BatchRequest
 }
 
 // BuildSemanticEnvelope derives a best-effort semantic envelope from ingress.

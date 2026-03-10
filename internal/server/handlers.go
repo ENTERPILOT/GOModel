@@ -959,8 +959,8 @@ func (h *Handler) Embeddings(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/batches [post]
 func (h *Handler) Batches(c *echo.Context) error {
-	var req core.BatchRequest
-	if err := c.Bind(&req); err != nil {
+	req, err := batchRequestFromSemanticEnvelope(c)
+	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 
@@ -972,13 +972,13 @@ func (h *Handler) Batches(c *echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("batch routing is not supported by the current provider router", nil))
 	}
 
-	providerType, err := determineBatchProviderType(h.provider, &req)
+	providerType, err := determineBatchProviderType(h.provider, req)
 	if err != nil {
 		return handleError(c, err)
 	}
 	auditlog.EnrichEntry(c, "batch", providerType)
 
-	upstream, err := nativeRouter.CreateBatch(ctx, providerType, &req)
+	upstream, err := nativeRouter.CreateBatch(ctx, providerType, req)
 	if err != nil {
 		return handleError(c, err)
 	}

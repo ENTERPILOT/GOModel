@@ -24,6 +24,8 @@ Completed in this slice:
 - preserve unknown nested JSON fields through normal handler decoding and OpenAI provider marshaling
 - keep the base `SemanticEnvelope` sparse at ingress time and cache canonical `ChatRequest`, `ResponsesRequest`, and `EmbeddingRequest` payloads lazily for the JSON routes the gateway already understands
 - make chat, responses, and embeddings handlers consume those cached semantic request payloads instead of re-decoding the body independently
+- preserve unknown top-level and batch-item JSON fields on `BatchRequest`
+- make `/v1/batches` consume ingress-backed semantic decoding instead of `Bind()`
 
 ## Broader endpoint migration scope
 
