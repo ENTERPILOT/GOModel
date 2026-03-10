@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"strings"
 
@@ -105,4 +106,30 @@ func extractTraceMetadata(headers map[string][]string) map[string]string {
 		return nil
 	}
 	return metadata
+}
+
+func requestBodyBytes(c *echo.Context) ([]byte, error) {
+	if frame := core.GetIngressFrame(c.Request().Context()); frame != nil {
+		return append([]byte(nil), frame.RawBody...), nil
+	}
+
+	req := c.Request()
+	if req.Body == nil {
+		return nil, nil
+	}
+
+	bodyBytes, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	return bodyBytes, nil
+}
+
+func decodeJSONRequest(c *echo.Context, target any) error {
+	bodyBytes, err := requestBodyBytes(c)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bodyBytes, target)
 }

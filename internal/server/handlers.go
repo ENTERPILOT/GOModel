@@ -197,7 +197,7 @@ func resolveModelSelector(model, provider *string) error {
 // @Router       /v1/chat/completions [post]
 func (h *Handler) ChatCompletion(c *echo.Context) error {
 	var req core.ChatRequest
-	if err := c.Bind(&req); err != nil {
+	if err := decodeJSONRequest(c, &req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 	if err := resolveModelSelector(&req.Model, &req.Provider); err != nil {
@@ -668,7 +668,7 @@ func (h *Handler) GetFileContent(c *echo.Context) error {
 // @Router       /v1/responses [post]
 func (h *Handler) Responses(c *echo.Context) error {
 	var req core.ResponsesRequest
-	if err := c.Bind(&req); err != nil {
+	if err := decodeJSONRequest(c, &req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 	if err := resolveModelSelector(&req.Model, &req.Provider); err != nil {
@@ -712,7 +712,7 @@ func (h *Handler) Responses(c *echo.Context) error {
 // @Router       /v1/embeddings [post]
 func (h *Handler) Embeddings(c *echo.Context) error {
 	var req core.EmbeddingRequest
-	if err := c.Bind(&req); err != nil {
+	if err := decodeJSONRequest(c, &req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 	if err := resolveModelSelector(&req.Model, &req.Provider); err != nil {
