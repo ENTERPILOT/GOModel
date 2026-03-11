@@ -963,7 +963,10 @@ func (h *Handler) GetFileContent(c *echo.Context) error {
 			return r.GetFileContent(c.Request().Context(), provider, id)
 		},
 		func(c *echo.Context, result any) error {
-			resp := result.(*core.FileContentResponse)
+			resp, ok := result.(*core.FileContentResponse)
+			if !ok || resp == nil {
+				return handleError(c, core.NewProviderError("", http.StatusBadGateway, "provider returned empty file content response", nil))
+			}
 			contentType := strings.TrimSpace(resp.ContentType)
 			if contentType == "" {
 				contentType = "application/octet-stream"

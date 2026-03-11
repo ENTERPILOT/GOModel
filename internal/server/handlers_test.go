@@ -2883,6 +2883,41 @@ func TestGetDeleteAndContentFile(t *testing.T) {
 	}
 }
 
+func TestGetFileContent_TypedNilResponseReturnsBadGateway(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini": "openai",
+		},
+		fileContentByProv: map[string]*core.FileContentResponse{
+			"openai": nil,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files/file_1/content?provider=openai", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/v1/files/:id/content")
+	setPathParam(c, "id", "file_1")
+
+	if err := handler.GetFileContent(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("expected status 502, got %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "provider_error") {
+		t.Fatalf("expected provider_error body, got: %s", body)
+	}
+	if !strings.Contains(body, "provider returned empty file content response") {
+		t.Fatalf("expected empty file content response message, got: %s", body)
+	}
+}
+
 func TestListFiles(t *testing.T) {
 	mock := &mockProvider{
 		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku", "gemini-2.5-flash"},
