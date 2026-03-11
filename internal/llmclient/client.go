@@ -230,11 +230,18 @@ func (c *Client) recordCircuitBreakerCompletion(statusCode int, err error) {
 		c.circuitBreaker.RecordFailure()
 		return
 	}
-	if c.isRetryable(statusCode) || statusCode >= http.StatusInternalServerError {
+	if c.shouldTripCircuitBreaker(statusCode) {
 		c.circuitBreaker.RecordFailure()
 		return
 	}
 	c.circuitBreaker.RecordSuccess()
+}
+
+func (c *Client) shouldTripCircuitBreaker(statusCode int) bool {
+	if statusCode == http.StatusTooManyRequests {
+		return false
+	}
+	return c.isRetryable(statusCode) || statusCode >= http.StatusInternalServerError
 }
 
 func (c *Client) maxAttempts() int {
