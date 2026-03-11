@@ -4,7 +4,9 @@
       "finish_reason": "stop",
       "index": 0,
       "message": {
+        "annotations": [],
         "content": "Hello, World!",
+        "refusal": null,
         "role": "assistant"
       }
     }

@@ -4,7 +4,9 @@
       "finish_reason": "tool_calls",
       "index": 0,
       "message": {
+        "annotations": [],
         "content": null,
+        "refusal": null,
         "role": "assistant",
         "tool_calls": [
           {

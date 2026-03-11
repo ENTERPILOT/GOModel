@@ -4,7 +4,9 @@
       "finish_reason": "stop",
       "index": 0,
       "message": {
+        "annotations": [],
         "content": "The image includes the following colors:\n\n- Blue\n- Red\n- Yellow\n- Green\n\nThese colors are combined in the logo design.",
+        "refusal": null,
         "role": "assistant"
       }
     }
