@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -28,6 +29,24 @@ import (
 	"github.com/lmittmann/tint"
 	"golang.org/x/term"
 )
+
+type lifecycleApp interface {
+	Start(ctx context.Context, addr string) error
+	Shutdown(ctx context.Context) error
+}
+
+func startApplication(application lifecycleApp, addr string) error {
+	if err := application.Start(context.Background(), addr); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if shutdownErr := application.Shutdown(shutdownCtx); shutdownErr != nil {
+			return fmt.Errorf("server failed to start: %w", errors.Join(err, fmt.Errorf("shutdown after start failure: %w", shutdownErr)))
+		}
+		return err
+	}
+	return nil
+}
 
 // @title          GOModel API
 // @version        1.0
@@ -109,7 +128,7 @@ func main() {
 	}()
 
 	addr := ":" + result.Config.Server.Port
-	if err := application.Start(context.Background(), addr); err != nil {
+	if err := startApplication(application, addr); err != nil {
 		slog.Error("application failed", "error", err)
 		os.Exit(1)
 	}
