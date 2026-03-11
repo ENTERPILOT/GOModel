@@ -142,7 +142,10 @@ func (m *mockProvider) Passthrough(_ context.Context, req *core.PassthroughReque
 
 type mockBatchProvider struct {
 	mockProvider
-	listBatchesResp *core.BatchListResponse
+	listBatchesResp    *core.BatchListResponse
+	hintedBatchResults *core.BatchResultsResponse
+	capturedBatchHints map[string]string
+	clearedBatchHintID string
 }
 
 func (m *mockBatchProvider) CreateBatch(_ context.Context, _ *core.BatchRequest) (*core.BatchResponse, error) {
@@ -166,6 +169,23 @@ func (m *mockBatchProvider) CancelBatch(_ context.Context, _ string) (*core.Batc
 
 func (m *mockBatchProvider) GetBatchResults(_ context.Context, _ string) (*core.BatchResultsResponse, error) {
 	return &core.BatchResultsResponse{Object: "list", BatchID: "provider-batch-1"}, nil
+}
+
+func (m *mockBatchProvider) GetBatchResultsWithHints(_ context.Context, _ string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
+	if len(endpointByCustomID) > 0 {
+		m.capturedBatchHints = make(map[string]string, len(endpointByCustomID))
+		for customID, endpoint := range endpointByCustomID {
+			m.capturedBatchHints[customID] = endpoint
+		}
+	}
+	if m.hintedBatchResults != nil {
+		return m.hintedBatchResults, nil
+	}
+	return m.GetBatchResults(context.Background(), "")
+}
+
+func (m *mockBatchProvider) ClearBatchResultHints(batchID string) {
+	m.clearedBatchHintID = batchID
 }
 
 func (m *mockBatchProvider) CreateFile(_ context.Context, req *core.FileCreateRequest) (*core.FileObject, error) {
@@ -673,6 +693,39 @@ func TestRouterListBatchesSetsProviderOnItems(t *testing.T) {
 	}
 	if resp.Data[0].Provider != "openai" {
 		t.Fatalf("expected provider=openai, got %q", resp.Data[0].Provider)
+	}
+}
+
+func TestRouterGetBatchResultsWithHintsUsesHintAwareProvider(t *testing.T) {
+	provider := &mockBatchProvider{
+		hintedBatchResults: &core.BatchResultsResponse{
+			Object:  "list",
+			BatchID: "provider-batch-1",
+			Data: []core.BatchResultItem{
+				{Index: 0, URL: "/v1/responses"},
+			},
+		},
+	}
+	lookup := newMockLookup()
+	lookup.addModel("claude-sonnet", provider, "anthropic")
+
+	router, _ := NewRouter(lookup)
+	resp, err := router.GetBatchResultsWithHints(context.Background(), "anthropic", "provider-batch-1", map[string]string{
+		"resp-1": "/v1/responses",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || len(resp.Data) != 1 {
+		t.Fatalf("unexpected response: %+v", resp)
+	}
+	if got := provider.capturedBatchHints["resp-1"]; got != "/v1/responses" {
+		t.Fatalf("capturedBatchHints[resp-1] = %q, want /v1/responses", got)
+	}
+
+	router.ClearBatchResultHints("anthropic", "provider-batch-1")
+	if provider.clearedBatchHintID != "provider-batch-1" {
+		t.Fatalf("clearedBatchHintID = %q, want provider-batch-1", provider.clearedBatchHintID)
 	}
 }
 

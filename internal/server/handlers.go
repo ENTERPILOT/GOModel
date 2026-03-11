@@ -1137,8 +1137,12 @@ func (h *Handler) Batches(c *echo.Context) error {
 		if err := h.batchStore.Create(ctx, &resp); err != nil {
 			return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to persist batch", err))
 		}
+		if hintedRouter, ok := h.provider.(core.NativeBatchHintRoutableProvider); ok && len(resp.RequestEndpointByCustomID) > 0 {
+			hintedRouter.ClearBatchResultHints(providerType, providerBatchID)
+		}
 	}
 
+	sanitizeBatchResponseForAPI(&resp)
 	return c.JSON(http.StatusOK, resp)
 }
 
@@ -1237,9 +1241,11 @@ func (h *Handler) GetBatch(c *echo.Context) error {
 
 	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
 	if !ok {
+		sanitizeBatchResponseForAPI(resp)
 		return c.JSON(http.StatusOK, resp)
 	}
 	if resp.Provider == "" || resp.ProviderBatchID == "" {
+		sanitizeBatchResponseForAPI(resp)
 		return c.JSON(http.StatusOK, resp)
 	}
 
@@ -1254,6 +1260,7 @@ func (h *Handler) GetBatch(c *echo.Context) error {
 		}
 	}
 
+	sanitizeBatchResponseForAPI(resp)
 	return c.JSON(http.StatusOK, resp)
 }
 
@@ -1313,6 +1320,7 @@ func (h *Handler) ListBatches(c *echo.Context) error {
 		if item == nil {
 			continue
 		}
+		sanitizeBatchResponseForAPI(item)
 		data = append(data, *item)
 	}
 
@@ -1382,6 +1390,7 @@ func (h *Handler) CancelBatch(c *echo.Context) error {
 		return handleError(c, core.NewProviderError("batch_store", http.StatusInternalServerError, "failed to cancel batch", err))
 	}
 
+	sanitizeBatchResponseForAPI(resp)
 	return c.JSON(http.StatusOK, resp)
 }
 
@@ -1427,7 +1436,12 @@ func (h *Handler) BatchResults(c *echo.Context) error {
 		})
 	}
 
-	upstream, err := nativeRouter.GetBatchResults(c.Request().Context(), stored.Provider, stored.ProviderBatchID)
+	var upstream *core.BatchResultsResponse
+	if hintedRouter, ok := nativeRouter.(core.NativeBatchHintRoutableProvider); ok && len(stored.RequestEndpointByCustomID) > 0 {
+		upstream, err = hintedRouter.GetBatchResultsWithHints(c.Request().Context(), stored.Provider, stored.ProviderBatchID, stored.RequestEndpointByCustomID)
+	} else {
+		upstream, err = nativeRouter.GetBatchResults(c.Request().Context(), stored.Provider, stored.ProviderBatchID)
+	}
 	if err != nil {
 		if isNativeBatchResultsPending(err) {
 			if latest, getErr := nativeRouter.GetBatch(c.Request().Context(), stored.Provider, stored.ProviderBatchID); getErr == nil && latest != nil {
@@ -1841,6 +1855,13 @@ func mergeStoredBatchFromUpstream(stored, upstream *core.BatchResponse) {
 			stored.Metadata[key] = value
 		}
 	}
+}
+
+func sanitizeBatchResponseForAPI(resp *core.BatchResponse) {
+	if resp == nil {
+		return
+	}
+	resp.RequestEndpointByCustomID = nil
 }
 
 func isNativeBatchResultsPending(err error) bool {

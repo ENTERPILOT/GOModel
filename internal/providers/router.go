@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"gomodel/internal/core"
 )
@@ -437,6 +438,34 @@ func (r *Router) GetBatchResults(ctx context.Context, providerType, id string) (
 	return routeNativeBatchCall(r, ctx, providerType, func(ctx context.Context, bp core.NativeBatchProvider) (*core.BatchResultsResponse, error) {
 		return bp.GetBatchResults(ctx, id)
 	})
+}
+
+// GetBatchResultsWithHints routes native batch results lookup with persisted
+// per-item endpoint hints when the provider supports them.
+func (r *Router) GetBatchResultsWithHints(ctx context.Context, providerType, id string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
+	return routeNativeBatchCall(r, ctx, providerType, func(ctx context.Context, bp core.NativeBatchProvider) (*core.BatchResultsResponse, error) {
+		if hinted, ok := bp.(core.BatchResultHintAwareProvider); ok && len(endpointByCustomID) > 0 {
+			return hinted.GetBatchResultsWithHints(ctx, id, endpointByCustomID)
+		}
+		return bp.GetBatchResults(ctx, id)
+	})
+}
+
+// ClearBatchResultHints clears transient provider-side batch result hints once
+// they have been persisted by the gateway.
+func (r *Router) ClearBatchResultHints(providerType, batchID string) {
+	if strings.TrimSpace(batchID) == "" {
+		return
+	}
+	bp, err := r.resolveNativeBatchProvider(providerType)
+	if err != nil {
+		return
+	}
+	hinted, ok := bp.(core.BatchResultHintAwareProvider)
+	if !ok {
+		return
+	}
+	hinted.ClearBatchResultHints(batchID)
 }
 
 // CreateFile routes file upload to a provider type.

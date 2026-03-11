@@ -90,10 +90,9 @@ func (p *Provider) SetBaseURL(url string) {
 	p.client.SetBaseURL(url)
 }
 
-func (p *Provider) setBatchResultEndpoints(batchID string, endpoints map[string]string) {
-	batchID = strings.TrimSpace(batchID)
-	if batchID == "" || len(endpoints) == 0 {
-		return
+func cloneBatchResultEndpoints(endpoints map[string]string) map[string]string {
+	if len(endpoints) == 0 {
+		return nil
 	}
 	cloned := make(map[string]string, len(endpoints))
 	for customID, endpoint := range endpoints {
@@ -105,6 +104,18 @@ func (p *Provider) setBatchResultEndpoints(batchID string, endpoints map[string]
 		cloned[customID] = endpoint
 	}
 	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
+}
+
+func (p *Provider) setBatchResultEndpoints(batchID string, endpoints map[string]string) {
+	batchID = strings.TrimSpace(batchID)
+	if batchID == "" || len(endpoints) == 0 {
+		return
+	}
+	cloned := cloneBatchResultEndpoints(endpoints)
+	if len(cloned) == 0 {
 		return
 	}
 	p.batchEndpointsMu.Lock()
@@ -112,6 +123,18 @@ func (p *Provider) setBatchResultEndpoints(batchID string, endpoints map[string]
 		p.batchResultEndpoints = make(map[string]map[string]string)
 	}
 	p.batchResultEndpoints[batchID] = cloned
+	p.batchEndpointsMu.Unlock()
+}
+
+func (p *Provider) clearBatchResultEndpoints(batchID string) {
+	batchID = strings.TrimSpace(batchID)
+	if batchID == "" {
+		return
+	}
+	p.batchEndpointsMu.Lock()
+	if p.batchResultEndpoints != nil {
+		delete(p.batchResultEndpoints, batchID)
+	}
 	p.batchEndpointsMu.Unlock()
 }
 
@@ -1130,6 +1153,7 @@ func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*co
 		return nil, core.NewProviderError("anthropic", http.StatusBadGateway, "failed to map anthropic batch response", nil)
 	}
 	mapped.ProviderBatchID = mapped.ID
+	mapped.RequestEndpointByCustomID = cloneBatchResultEndpoints(endpointByCustomID)
 	p.setBatchResultEndpoints(mapped.ProviderBatchID, endpointByCustomID)
 	return mapped, nil
 }
@@ -1214,8 +1238,7 @@ func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchRespo
 	return mapped, nil
 }
 
-// GetBatchResults retrieves Anthropic native message batch results.
-func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
+func (p *Provider) getBatchResults(ctx context.Context, id string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
 	resp, err := p.client.DoPassthrough(ctx, llmclient.Request{
 		Method:   http.MethodGet,
 		Endpoint: "/messages/batches/" + url.PathEscape(id) + "/results",
@@ -1236,7 +1259,11 @@ func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchR
 	scanner := bufio.NewScanner(resp.Body)
 	// Allow larger result lines than Scanner's default 64K.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	endpointByCustomID := p.getBatchResultEndpoints(id)
+	if len(endpointByCustomID) == 0 {
+		endpointByCustomID = p.getBatchResultEndpoints(id)
+	} else {
+		endpointByCustomID = cloneBatchResultEndpoints(endpointByCustomID)
+	}
 
 	results := make([]core.BatchResultItem, 0)
 	index := 0
@@ -1320,6 +1347,23 @@ func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchR
 		BatchID: id,
 		Data:    results,
 	}, nil
+}
+
+// GetBatchResults retrieves Anthropic native message batch results.
+func (p *Provider) GetBatchResults(ctx context.Context, id string) (*core.BatchResultsResponse, error) {
+	return p.getBatchResults(ctx, id, nil)
+}
+
+// GetBatchResultsWithHints retrieves Anthropic native batch results using
+// persisted per-item endpoint hints instead of transient in-memory state.
+func (p *Provider) GetBatchResultsWithHints(ctx context.Context, id string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
+	return p.getBatchResults(ctx, id, endpointByCustomID)
+}
+
+// ClearBatchResultHints clears transient per-batch endpoint hints once they
+// have been persisted by the gateway.
+func (p *Provider) ClearBatchResultHints(batchID string) {
+	p.clearBatchResultEndpoints(batchID)
 }
 
 // Embeddings returns an error because Anthropic does not natively support embeddings.

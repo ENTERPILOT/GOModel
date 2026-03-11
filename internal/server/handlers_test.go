@@ -167,9 +167,12 @@ type mockProvider struct {
 	batchGetResponse    *core.BatchResponse
 	batchCancelResponse *core.BatchResponse
 	batchResults        *core.BatchResultsResponse
+	batchResultsHinted  *core.BatchResultsResponse
 	batchResultsErr     error
 	batchErr            error
 	capturedBatchReq    *core.BatchRequest
+	capturedBatchHints  map[string]string
+	clearedBatchHintID  string
 
 	fileCreateResponse  *core.FileObject
 	fileGetResponse     *core.FileObject
@@ -358,6 +361,23 @@ func (m *mockProvider) GetBatchResults(_ context.Context, _ string, _ string) (*
 			{Index: 0, StatusCode: 200},
 		},
 	}, nil
+}
+
+func (m *mockProvider) GetBatchResultsWithHints(_ context.Context, _ string, _ string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
+	if len(endpointByCustomID) > 0 {
+		m.capturedBatchHints = make(map[string]string, len(endpointByCustomID))
+		for customID, endpoint := range endpointByCustomID {
+			m.capturedBatchHints[customID] = endpoint
+		}
+	}
+	if m.batchResultsHinted != nil {
+		return m.batchResultsHinted, nil
+	}
+	return m.GetBatchResults(context.Background(), "", "")
+}
+
+func (m *mockProvider) ClearBatchResultHints(_ string, batchID string) {
+	m.clearedBatchHintID = batchID
 }
 
 func (m *mockProvider) CreateFile(_ context.Context, providerType string, req *core.FileCreateRequest) (*core.FileObject, error) {
@@ -2359,6 +2379,77 @@ func TestBatches_LifecycleEndpoints(t *testing.T) {
 	}
 	if cancelRec.Code != http.StatusOK {
 		t.Fatalf("cancel status = %d, want 200", cancelRec.Code)
+	}
+}
+
+func TestBatchLifecyclePersistsAndUsesInternalEndpointHints(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"claude-sonnet-4-5-20250929"},
+		providerTypes: map[string]string{
+			"claude-sonnet-4-5-20250929": "anthropic",
+		},
+		batchCreateResponse: &core.BatchResponse{
+			ID:               "provider-batch-1",
+			Object:           "batch",
+			Status:           "in_progress",
+			CreatedAt:        1000,
+			RequestCounts:    core.BatchRequestCounts{Total: 1},
+			CompletionWindow: "24h",
+			RequestEndpointByCustomID: map[string]string{
+				"resp-1": "/v1/responses",
+			},
+		},
+		batchResultsHinted: &core.BatchResultsResponse{
+			Object:  "list",
+			BatchID: "provider-batch-1",
+			Data: []core.BatchResultItem{
+				{Index: 0, CustomID: "resp-1", URL: "/v1/responses", StatusCode: http.StatusOK},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	createBody := `{
+	  "endpoint":"/v1/responses",
+	  "requests":[{"custom_id":"resp-1","method":"POST","body":{"model":"claude-sonnet-4-5-20250929","input":"hi"}}]
+	}`
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(createBody))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	createCtx := e.NewContext(createReq, createRec)
+	if err := handler.Batches(createCtx); err != nil {
+		t.Fatalf("create handler returned error: %v", err)
+	}
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200", createRec.Code)
+	}
+	if strings.Contains(createRec.Body.String(), "request_endpoint_by_custom_id") {
+		t.Fatalf("create response leaked internal hints: %s", createRec.Body.String())
+	}
+	if mock.clearedBatchHintID != "provider-batch-1" {
+		t.Fatalf("clearedBatchHintID = %q, want provider-batch-1", mock.clearedBatchHintID)
+	}
+
+	var created core.BatchResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create response: %v", err)
+	}
+
+	resReq := httptest.NewRequest(http.MethodGet, "/v1/batches/"+created.ID+"/results", nil)
+	resRec := httptest.NewRecorder()
+	resCtx := e.NewContext(resReq, resRec)
+	resCtx.SetPath("/v1/batches/:id/results")
+	setPathParam(resCtx, "id", created.ID)
+	if err := handler.BatchResults(resCtx); err != nil {
+		t.Fatalf("results handler returned error: %v", err)
+	}
+	if resRec.Code != http.StatusOK {
+		t.Fatalf("results status = %d, want 200", resRec.Code)
+	}
+	if got := mock.capturedBatchHints["resp-1"]; got != "/v1/responses" {
+		t.Fatalf("capturedBatchHints[resp-1] = %q, want /v1/responses", got)
 	}
 }
 

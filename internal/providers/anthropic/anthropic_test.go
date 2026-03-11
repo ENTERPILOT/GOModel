@@ -153,6 +153,52 @@ func TestGetBatchResults(t *testing.T) {
 	}
 }
 
+func TestGetBatchResultsWithHints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/messages/batches/batch_1/results" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(
+			`{"custom_id":"ok-1","result":{"type":"succeeded","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}}}`,
+		))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	resp, err := provider.GetBatchResultsWithHints(context.Background(), "batch_1", map[string]string{
+		"ok-1": "/v1/responses",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("len(Data) = %d, want 1", len(resp.Data))
+	}
+	if resp.Data[0].URL != "/v1/responses" {
+		t.Fatalf("URL = %q, want /v1/responses", resp.Data[0].URL)
+	}
+}
+
+func TestClearBatchResultHints(t *testing.T) {
+	provider := &Provider{
+		batchResultEndpoints: map[string]map[string]string{
+			"batch_1": {
+				"resp-1": "/v1/responses",
+			},
+		},
+	}
+
+	provider.ClearBatchResultHints("batch_1")
+	if got := provider.getBatchResultEndpoints("batch_1"); got != nil {
+		t.Fatalf("batch_1 hints should be cleared, got %#v", got)
+	}
+}
+
 func TestChatCompletion(t *testing.T) {
 	tests := []struct {
 		name          string
