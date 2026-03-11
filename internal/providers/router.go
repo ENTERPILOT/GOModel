@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"gomodel/internal/core"
 )
@@ -26,6 +27,10 @@ type providerTypeRegistry interface {
 
 type initializedLookup interface {
 	IsInitialized() bool
+}
+
+func registryUnavailableError(err error) error {
+	return core.NewProviderError("", http.StatusServiceUnavailable, err.Error(), err)
 }
 
 // NewRouter creates a new provider router with a model lookup.
@@ -52,7 +57,7 @@ func (r *Router) checkReady() error {
 // resolveProvider validates readiness, parses the model selector, and finds the target provider.
 func (r *Router) resolveProvider(model, provider string) (core.Provider, core.ModelSelector, error) {
 	if err := r.checkReady(); err != nil {
-		return nil, core.ModelSelector{}, err
+		return nil, core.ModelSelector{}, registryUnavailableError(err)
 	}
 	selector, err := core.ParseModelSelector(model, provider)
 	if err != nil {
@@ -61,7 +66,7 @@ func (r *Router) resolveProvider(model, provider string) (core.Provider, core.Mo
 	lookupModel := selector.QualifiedModel()
 	p := r.lookup.GetProvider(lookupModel)
 	if p == nil {
-		return nil, core.ModelSelector{}, fmt.Errorf("no provider found for model: %s", lookupModel)
+		return nil, core.ModelSelector{}, core.NewNotFoundError("model not found: " + lookupModel)
 	}
 	return p, selector, nil
 }
@@ -71,14 +76,14 @@ func (r *Router) resolveProviderType(providerType string) (core.Provider, error)
 		if !initialized.IsInitialized() {
 			if err := r.checkReady(); err != nil {
 				if errors.Is(err, ErrRegistryNotInitialized) {
-					return nil, core.NewProviderError("", 0, err.Error(), err)
+					return nil, registryUnavailableError(err)
 				}
 				return nil, err
 			}
 		}
 	} else if err := r.checkReady(); err != nil {
 		if errors.Is(err, ErrRegistryNotInitialized) {
-			return nil, core.NewProviderError("", 0, err.Error(), err)
+			return nil, registryUnavailableError(err)
 		}
 		return nil, err
 	}
@@ -293,7 +298,7 @@ func (r *Router) StreamChatCompletion(ctx context.Context, req *core.ChatRequest
 // Returns ErrRegistryNotInitialized if the lookup has no models loaded.
 func (r *Router) ListModels(_ context.Context) (*core.ModelsResponse, error) {
 	if err := r.checkReady(); err != nil {
-		return nil, err
+		return nil, registryUnavailableError(err)
 	}
 	models := r.lookup.ListModels()
 	return &core.ModelsResponse{

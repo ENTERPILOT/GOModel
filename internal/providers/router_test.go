@@ -238,12 +238,26 @@ func TestRouterEmptyLookup(t *testing.T) {
 		if !errors.Is(err, ErrRegistryNotInitialized) {
 			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
 		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
+		}
 	})
 
 	t.Run("StreamChatCompletion returns error", func(t *testing.T) {
 		_, err := router.StreamChatCompletion(context.Background(), &core.ChatRequest{Model: "any"})
 		if !errors.Is(err, ErrRegistryNotInitialized) {
 			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
 		}
 	})
 
@@ -252,6 +266,13 @@ func TestRouterEmptyLookup(t *testing.T) {
 		if !errors.Is(err, ErrRegistryNotInitialized) {
 			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
 		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
+		}
 	})
 
 	t.Run("Responses returns error", func(t *testing.T) {
@@ -259,12 +280,26 @@ func TestRouterEmptyLookup(t *testing.T) {
 		if !errors.Is(err, ErrRegistryNotInitialized) {
 			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
 		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
+		}
 	})
 
 	t.Run("StreamResponses returns error", func(t *testing.T) {
 		_, err := router.StreamResponses(context.Background(), &core.ResponsesRequest{Model: "any"})
 		if !errors.Is(err, ErrRegistryNotInitialized) {
 			t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
+		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
 		}
 	})
 }
@@ -330,6 +365,13 @@ func TestRouterChatCompletion(t *testing.T) {
 			if tt.wantError {
 				if err == nil {
 					t.Error("expected error, got nil")
+				}
+				var gwErr *core.GatewayError
+				if !errors.As(err, &gwErr) {
+					t.Fatalf("expected GatewayError, got %T: %v", err, err)
+				}
+				if gwErr.HTTPStatusCode() != http.StatusNotFound {
+					t.Fatalf("expected 404 status, got %d", gwErr.HTTPStatusCode())
 				}
 				return
 			}
@@ -701,6 +743,13 @@ func TestRouterEmbeddings_EmptyLookup(t *testing.T) {
 	if !errors.Is(err, ErrRegistryNotInitialized) {
 		t.Errorf("expected ErrRegistryNotInitialized, got: %v", err)
 	}
+	var gwErr *core.GatewayError
+	if !errors.As(err, &gwErr) {
+		t.Fatalf("expected GatewayError, got %T: %v", err, err)
+	}
+	if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
+	}
 }
 
 func TestRouterEmbeddings_ProviderError(t *testing.T) {
@@ -834,6 +883,9 @@ func TestRouterPassthrough_ErrorCases(t *testing.T) {
 		var gwErr *core.GatewayError
 		if !errors.As(err, &gwErr) {
 			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.HTTPStatusCode() != http.StatusServiceUnavailable {
+			t.Fatalf("expected 503 status, got %d", gwErr.HTTPStatusCode())
 		}
 	})
 }
