@@ -286,11 +286,33 @@ func TestCalculateGranularCost_XAI_PrefixedKeys(t *testing.T) {
 
 	// Input: 500k * 2.0/1M + 200k * (0.50-2.0)/1M = 1.0 - 0.30 = 0.70
 	assertCostNear(t, "InputCost", result.InputCost, 0.70)
-	// Output: 300k * 10.0/1M + 100k * (15.0-10.0)/1M = 3.0 + 0.5 = 3.5
-	assertCostNear(t, "OutputCost", result.OutputCost, 3.5)
+	// xAI reports reasoning tokens separately from completion_tokens, so they are charged in addition.
+	// Output: 300k * 10.0/1M + 100k * 15.0/1M = 3.0 + 1.5 = 4.5
+	assertCostNear(t, "OutputCost", result.OutputCost, 4.5)
 	if result.Caveat != "" {
 		t.Fatalf("expected no caveat for xAI prefixed keys, got %q", result.Caveat)
 	}
+}
+
+func TestCalculateGranularCost_XAI_ReasoningTokensAreAdditionalOutput(t *testing.T) {
+	pricing := &core.ModelPricing{
+		InputPerMtok:           ptr(0.3),
+		OutputPerMtok:          ptr(0.5),
+		CachedInputPerMtok:     ptr(0.075),
+		ReasoningOutputPerMtok: ptr(1.5),
+	}
+	rawData := map[string]any{
+		"prompt_cached_tokens":        4,
+		"completion_reasoning_tokens": 270,
+	}
+	result := CalculateGranularCost(12, 1, rawData, "xai", pricing)
+
+	// Mirrors the live xAI chat shape: reasoning tokens are separate from completion_tokens.
+	// Input: 12 * 0.3/1M + 4 * (0.075-0.3)/1M = 0.0000036 - 0.0000009 = 0.0000027
+	assertCostNear(t, "InputCost", result.InputCost, 0.0000027)
+	// Output: 1 * 0.5/1M + 270 * 1.5/1M = 0.0000005 + 0.000405 = 0.0004055
+	assertCostNear(t, "OutputCost", result.OutputCost, 0.0004055)
+	assertCostNear(t, "TotalCost", result.TotalCost, 0.0004082)
 }
 
 func TestCalculateGranularCost_InformationalFieldsNoCaveat(t *testing.T) {
