@@ -251,7 +251,7 @@ func convertResponsesInputElement(item core.ResponsesInputElement, index int) (c
 		return core.Message{
 			Role:        "tool",
 			ToolCallID:  callID,
-			Content:     item.Output,
+			Content:     stringifyResponsesInputValue(item.Output),
 			ExtraFields: core.CloneRawJSONMap(item.ExtraFields),
 		}, "function_call_output", nil
 	default: // message (type="" or "message")

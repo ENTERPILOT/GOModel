@@ -21,17 +21,23 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesChatRequest(t *testing.T
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-5-mini",
 			"provider":"openai",
 			"messages":[{"role":"user","content":"hi"}],
 			"response_format":{"type":"json_schema"}
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -60,15 +66,21 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesResponsesRequest(t *test
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/responses",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-5-mini",
 			"input":[{"type":"message","role":"user","content":"hello","x_trace":{"id":"trace-1"}}]
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -104,12 +116,7 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngress
 	}`))
 	req.Header.Set("Content-Type", "application/json")
 
-	frame := &core.IngressFrame{
-		Method:          http.MethodPost,
-		Path:            "/v1/embeddings",
-		ContentType:     "application/json",
-		RawBodyTooLarge: true,
-	}
+	frame := core.NewIngressFrame(http.MethodPost, "/v1/embeddings", nil, nil, nil, "application/json", nil, true, "", nil)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -135,11 +142,14 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/batches",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/batches",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"completion_window":"24h",
 			"requests":[{
 				"custom_id":"chat-1",
@@ -149,7 +159,10 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.
 			}],
 			"x_top":{"trace":"batch-1"}
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -177,14 +190,21 @@ func TestBatchRequestMetadataFromSemanticEnvelope_CachesListMetadata(t *testing.
 	e := echo.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/batches?after=batch_prev&limit=5", nil)
-	frame := &core.IngressFrame{
-		Method: http.MethodGet,
-		Path:   "/v1/batches",
-		QueryParams: map[string][]string{
+	frame := core.NewIngressFrame(
+		http.MethodGet,
+		"/v1/batches",
+		nil,
+		map[string][]string{
 			"after": {"batch_prev"},
 			"limit": {"5"},
 		},
-	}
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -211,13 +231,20 @@ func TestFileRequestFromSemanticEnvelope_InvalidLimitFromIngressReturnsError(t *
 	e := echo.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/files?limit=bad", nil)
-	frame := &core.IngressFrame{
-		Method: http.MethodGet,
-		Path:   "/v1/files",
-		QueryParams: map[string][]string{
+	frame := core.NewIngressFrame(
+		http.MethodGet,
+		"/v1/files",
+		nil,
+		map[string][]string{
 			"limit": {"bad"},
 		},
-	}
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -245,11 +272,7 @@ func TestFileRequestFromSemanticEnvelope_EnrichesCreateMetadata(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/files", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/files",
-		ContentType: writer.FormDataContentType(),
-	}
+	frame := core.NewIngressFrame(http.MethodPost, "/v1/files", nil, nil, nil, writer.FormDataContentType(), nil, false, "", nil)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -277,16 +300,23 @@ func TestFileRequestFromSemanticEnvelope_CachesListMetadata(t *testing.T) {
 	e := echo.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/files?provider=openai&purpose=batch&after=file_prev&limit=5", nil)
-	frame := &core.IngressFrame{
-		Method: http.MethodGet,
-		Path:   "/v1/files",
-		QueryParams: map[string][]string{
+	frame := core.NewIngressFrame(
+		http.MethodGet,
+		"/v1/files",
+		nil,
+		map[string][]string{
 			"provider": {"openai"},
 			"purpose":  {"batch"},
 			"after":    {"file_prev"},
 			"limit":    {"5"},
 		},
-	}
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)

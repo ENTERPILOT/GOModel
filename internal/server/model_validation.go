@@ -115,10 +115,14 @@ func decodeCanonicalSelectorHintsForValidation(ctx context.Context, env *core.Se
 		return "", "", false
 	}
 	frame := core.GetIngressFrame(ctx)
-	if frame == nil || frame.RawBody == nil {
+	if frame == nil {
 		return "", "", false
 	}
-	return core.DecodeCanonicalSelector(frame.RawBody, env)
+	rawBody := frame.GetRawBody()
+	if rawBody == nil {
+		return "", "", false
+	}
+	return core.DecodeCanonicalSelector(rawBody, env)
 }
 
 func isBatchOrFileRootOrSubresource(path string) bool {

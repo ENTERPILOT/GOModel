@@ -46,65 +46,18 @@ curl http://localhost:8080/v1/chat/completions \
 
 ### Supported Providers
 
-Example model identifiers are illustrative and subject to change; consult provider catalogs for current models.
+Example model identifiers are illustrative and subject to change; consult provider catalogs for current models. Feature columns reflect gateway API support, not every individual model capability exposed by an upstream provider.
 
-<table>
-  <tr>
-    <th colspan="3">Provider</th>
-    <th colspan="8">Features</th>
-  </tr>
-  <tr>
-    <th>Name</th>
-    <th>Credential</th>
-    <th>Example&nbsp;Model</th>
-    <th>Chat</th>
-    <th>Passthru</th>
-    <th>Voice</th>
-    <th>Image</th>
-    <th>Video</th>
-    <th>/responses</th>
-    <th>Embed</th>
-    <th>Cache</th>
-  </tr>
-  <tr>
-    <td>OpenAI</td>
-    <td><code>OPENAI_API_KEY</code></td>
-    <td><code>gpt&#8209;4o&#8209;mini</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>✅</td><td>🚧</td>
-  </tr>
-  <tr>
-    <td>Anthropic</td>
-    <td><code>ANTHROPIC_API_KEY</code></td>
-    <td><code>claude&#8209;sonnet&#8209;4&#8209;20250514</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>❌</td><td>🚧</td>
-  </tr>
-  <tr>
-    <td>Google&nbsp;Gemini</td>
-    <td><code>GEMINI_API_KEY</code></td>
-    <td><code>gemini&#8209;2.5&#8209;flash</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>✅</td><td>🚧</td>
-  </tr>
-  <tr>
-    <td>Groq</td>
-    <td><code>GROQ_API_KEY</code></td>
-    <td><code>llama&#8209;3.3&#8209;70b&#8209;versatile</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>✅</td><td>🚧</td>
-  </tr>
-  <tr>
-    <td>xAI&nbsp;(Grok)</td>
-    <td><code>XAI_API_KEY</code></td>
-    <td><code>grok&#8209;2</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>✅</td><td>🚧</td>
-  </tr>
-  <tr>
-    <td>Ollama</td>
-    <td><code>OLLAMA_BASE_URL</code></td>
-    <td><code>llama3.2</code></td>
-    <td>✅</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>🚧</td><td>✅</td><td>🚧</td>
-  </tr>
-</table>
+| Provider | Credential | Example Model | Chat | `/responses` | Embed | Files | Batches | Passthru |
+|----------|------------|---------------|:----:|:------------:|:-----:|:-----:|:-------:|:--------:|
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| xAI (Grok) | `XAI_API_KEY` | `grok-2` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Ollama | `OLLAMA_BASE_URL` | `llama3.2` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
-✅ Supported  🚧 Coming soon  ❌ Unsupported
+✅ Supported  ❌ Unsupported
 
 ---
 
@@ -170,19 +123,26 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 | `/v1/batches/{id}` | GET | Retrieve one stored batch |
 | `/v1/batches/{id}/cancel` | POST | Cancel a pending batch |
 | `/v1/batches/{id}/results` | GET | Retrieve native batch results when available |
+| `/p/{provider}/...` | GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS | Provider-native passthrough with opaque upstream responses |
 | `/v1/models` | GET | List available models |
 | `/health` | GET | Health check |
 | `/metrics` | GET | Prometheus metrics (when enabled) |
 | `/admin/api/v1/usage/summary` | GET | Aggregate token usage statistics |
 | `/admin/api/v1/usage/daily` | GET | Per-period token usage breakdown |
+| `/admin/api/v1/usage/models` | GET | Usage breakdown by model |
+| `/admin/api/v1/usage/log` | GET | Paginated usage log entries |
+| `/admin/api/v1/audit/log` | GET | Paginated audit log entries |
+| `/admin/api/v1/audit/conversation` | GET | Conversation thread around one audit log entry |
 | `/admin/api/v1/models` | GET | List models with provider type |
+| `/admin/api/v1/models/categories` | GET | List model categories |
 | `/admin/dashboard` | GET | Admin dashboard UI |
+| `/swagger/index.html` | GET | Swagger UI (when enabled) |
 
 ---
 
 ## Configuration
 
-GOModel is configured through environment variables. See [`.env.template`](.env.template) for all options.
+GOModel is configured through environment variables and an optional `config.yaml`. Environment variables override YAML values. See [`.env.template`](.env.template) and [`config/config.example.yaml`](config/config.example.yaml) for the available options.
 
 Key settings:
 
@@ -190,10 +150,12 @@ Key settings:
 |----------|---------|-------------|
 | `PORT` | `8080` | Server port |
 | `GOMODEL_MASTER_KEY` | (none) | API key for authentication |
+| `ENABLE_PROVIDER_PASSTHROUGH` | `true` | Enable provider-native passthrough routes under `/p/{provider}/...` |
 | `CACHE_TYPE` | `local` | Cache backend (`local` or `redis`) |
 | `STORAGE_TYPE` | `sqlite` | Storage backend (`sqlite`, `postgresql`, `mongodb`) |
 | `METRICS_ENABLED` | `false` | Enable Prometheus metrics |
 | `LOGGING_ENABLED` | `false` | Enable audit logging |
+| `GUARDRAILS_ENABLED` | `false` | Enable the configured guardrails pipeline |
 
 **Quick Start — Authentication:** By default `GOMODEL_MASTER_KEY` is unset. Without this key, API endpoints are unprotected and anyone can call them. This is insecure for production. **Strongly recommend** setting a strong secret before exposing the service. Add `GOMODEL_MASTER_KEY` to your `.env` or environment for production deployments.
 
@@ -205,28 +167,34 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 # Roadmap
 
-## Features
+## Shipped
 
-| Feature                    | Basic | Full |
-| -------------------------- |:-----:|:----:|
-| Billing Management         | 🚧   | 🚧   |
-| Full-observability         | 🚧   | 🚧   |
-| Budget management          | 🚧   | 🚧   |
-| Many keys support          | 🚧   | 🚧   |
-| Administrative endpoints   | ✅   | 🚧   |
-| Guardrails                 | ✅   | 🚧   |
-| SSO                        | 🚧   | 🚧   |
-| System Prompt (GuardRails) | ✅   | 🚧   |
+| Area | Status | Notes |
+| ---- | :----: | ----- |
+| OpenAI-compatible API surface | ✅ | `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/files*`, `/v1/batches*`, and `/v1/models` are implemented. |
+| Provider passthrough | ✅ | Provider-native passthrough routes are available under `/p/{provider}/...`. |
+| Observability | ✅ | Prometheus metrics, audit logging, usage tracking, request IDs, and trace-header capture are implemented. |
+| Administrative endpoints | ✅ | Admin API and dashboard ship with usage, audit, and model views. |
+| Guardrails | ✅ | The guardrails pipeline is implemented and can be enabled from config. |
+| System prompt guardrails | ✅ | `inject`, `override`, and `decorator` modes are supported. |
 
-## Integrations
+## In Progress
 
-| Integration   | Basic | Full |
-| ------------- |:-----:|:----:|
-| Prometheus    | ✅    | 🚧   |
-| DataDog       | 🚧   | 🚧   |
-| OpenTelemetry | 🚧   | 🚧   |
+| Area | Status | Notes |
+| ---- | :----: | ----- |
+| Billing management | 🚧 | Usage and pricing primitives exist, but billing workflows are not complete. |
+| Budget management | 🚧 | Gateway-level budget enforcement and policy controls are not implemented yet. |
+| Guardrails depth | 🚧 | The system prompt guardrail is available today; broader guardrail types are still to come. |
+| Observability integrations | 🚧 | Native Prometheus support exists; OpenTelemetry and DataDog integrations are still pending. |
 
-✅ Supported  🚧 Coming soon
+## Planned
+
+| Area | Status | Notes |
+| ---- | :----: | ----- |
+| Many keys support | 🚧 | The gateway still uses one configured credential/base URL per provider. |
+| SSO / OIDC | 🚧 | No SSO implementation is present yet. |
+
+✅ Shipped  🚧 Planned or in progress
 
 ## Star History
 

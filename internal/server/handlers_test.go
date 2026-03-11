@@ -738,17 +738,22 @@ func TestChatCompletion_UsesIngressFrameForDecoding(t *testing.T) {
 	req.Header.Set("X-Request-ID", "req-ingress-1")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-		RequestID:   "req-ingress-1",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-5-mini",
 			"messages":[{"role":"user","content":"return json"}],
 			"response_format":{"type":"json_schema"}
 		}`),
-	}
+		false,
+		"req-ingress-1",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -808,15 +813,21 @@ func TestChatCompletion_NormalizesSemanticSelectorHints(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"openai/gpt-5-mini",
 			"messages":[{"role":"user","content":"return json"}]
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -874,15 +885,21 @@ func TestResponses_UsesIngressFrameForDecoding(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/responses",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-5-mini",
 			"input":[{"type":"message","role":"user","content":"hello","x_trace":{"id":"trace-1"}}]
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -937,16 +954,22 @@ func TestEmbeddings_UsesIngressFrameForDecoding(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/embeddings",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/embeddings",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"text-embedding-3-large",
 			"input":"hello",
 			"x_meta":{"trace":"abc"}
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -999,11 +1022,14 @@ func TestBatches_UsesIngressFrameForDecoding(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/batches",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/batches",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"completion_window":"24h",
 			"requests":[{
 				"custom_id":"chat-1",
@@ -1014,7 +1040,10 @@ func TestBatches_UsesIngressFrameForDecoding(t *testing.T) {
 			}],
 			"x_top":{"trace":"batch-1"}
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -1081,11 +1110,7 @@ func TestGetBatch_UsesSemanticEnvelopeRouteMetadata(t *testing.T) {
 	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &created))
 
 	getReq := httptest.NewRequest(http.MethodGet, "/v1/batches/wrong-id", nil)
-	frame := &core.IngressFrame{
-		Method:      http.MethodGet,
-		Path:        "/v1/batches/" + created.ID,
-		RouteParams: map[string]string{"id": created.ID},
-	}
+	frame := core.NewIngressFrame(http.MethodGet, "/v1/batches/"+created.ID, map[string]string{"id": created.ID}, nil, nil, "", nil, false, "", nil)
 	ctx := core.WithIngressFrame(getReq.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	getReq = getReq.WithContext(ctx)
@@ -1128,13 +1153,20 @@ func TestListBatches_UsesSemanticEnvelopeQueryMetadata(t *testing.T) {
 	require.NoError(t, handler.Batches(createCtx))
 
 	listReq := httptest.NewRequest(http.MethodGet, "/v1/batches?limit=bad", nil)
-	frame := &core.IngressFrame{
-		Method: http.MethodGet,
-		Path:   "/v1/batches",
-		QueryParams: map[string][]string{
+	frame := core.NewIngressFrame(
+		http.MethodGet,
+		"/v1/batches",
+		nil,
+		map[string][]string{
 			"limit": {"1"},
 		},
-	}
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(listReq.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	listReq = listReq.WithContext(ctx)
@@ -2736,11 +2768,7 @@ func TestCreateFile(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/files", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/files",
-		ContentType: writer.FormDataContentType(),
-	}
+	frame := core.NewIngressFrame(http.MethodPost, "/v1/files", nil, nil, nil, writer.FormDataContentType(), nil, false, "", nil)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -2870,13 +2898,20 @@ func TestListFiles(t *testing.T) {
 	handler := NewHandler(mock, nil, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/files?limit=5", nil)
-	frame := &core.IngressFrame{
-		Method: http.MethodGet,
-		Path:   "/v1/files",
-		QueryParams: map[string][]string{
+	frame := core.NewIngressFrame(
+		http.MethodGet,
+		"/v1/files",
+		nil,
+		map[string][]string{
 			"limit": {"5"},
 		},
-	}
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -3273,7 +3308,49 @@ func TestProviderPassthrough_RejectsUnsupportedProvider(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "currently supported only for openai and anthropic") {
+	if !strings.Contains(rec.Body.String(), `provider passthrough for \"groq\" is not enabled`) {
+		t.Fatalf("unexpected error body: %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "anthropic, openai") {
+		t.Fatalf("unexpected error body: %s", rec.Body.String())
+	}
+}
+
+func TestProviderPassthrough_UsesConfiguredSupportedProviders(t *testing.T) {
+	provider := &mockProvider{
+		passthroughResponse: &core.PassthroughResponse{
+			StatusCode: http.StatusOK,
+			Headers:    http.Header{"Content-Type": []string{"application/json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true}`)),
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, nil, nil)
+	handler.setSupportedPassthroughProviders([]string{"groq"})
+	e.POST("/p/:provider/*", handler.ProviderPassthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/p/groq/chat/completions", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if provider.lastPassthroughProvider != "groq" {
+		t.Fatalf("providerType = %q, want groq", provider.lastPassthroughProvider)
+	}
+	if provider.lastPassthroughReq == nil {
+		t.Fatal("lastPassthroughReq = nil")
+	}
+	if got := provider.lastPassthroughReq.Endpoint; got != "chat/completions" {
+		t.Fatalf("endpoint = %q, want chat/completions", got)
+	}
+	if got := readPassthroughRequestBody(t, provider.lastPassthroughReq.Body); got != `{}` {
+		t.Fatalf("body = %q, want {}", got)
+	}
+	if got := rec.Body.String(); !strings.Contains(got, `"ok":true`) {
 		t.Fatalf("unexpected error body: %s", rec.Body.String())
 	}
 }

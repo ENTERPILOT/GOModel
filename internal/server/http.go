@@ -42,6 +42,7 @@ type Config struct {
 	BatchStore                             batchstore.Store                       // Optional: Batch lifecycle persistence store
 	LogOnlyModelInteractions               bool                                   // Only log AI model endpoints (default: true)
 	DisableProviderPassthrough             bool                                   // Disable /p/{provider}/{endpoint} route registration
+	SupportedPassthroughProviders          []string                               // Provider types allowed on /p/{provider}/... passthrough routes
 	EnablePassthroughV1PrefixNormalization *bool                                  // Enable /p/{provider}/v1/... normalization while keeping /p/{provider}/... as canonical; nil defaults to true
 	AdminEndpointsEnabled                  bool                                   // Whether admin API endpoints are enabled
 	AdminUIEnabled                         bool                                   // Whether admin dashboard UI is enabled
@@ -67,6 +68,9 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	handler := NewHandler(provider, auditLogger, usageLogger, pricingResolver)
+	if cfg != nil && cfg.SupportedPassthroughProviders != nil {
+		handler.setSupportedPassthroughProviders(cfg.SupportedPassthroughProviders)
+	}
 	if cfg != nil && !passthroughV1PrefixNormalizationEnabled(cfg) {
 		handler.normalizePassthroughV1Prefix = false
 	}

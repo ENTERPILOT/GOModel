@@ -33,25 +33,29 @@ var batchResultsPending404Providers = map[string]struct{}{
 	"anthropic": {},
 }
 
+var defaultSupportedPassthroughProviders = []string{"openai", "anthropic"}
+
 // Handler holds the HTTP handlers
 type Handler struct {
-	provider                     core.RoutableProvider
-	logger                       auditlog.LoggerInterface
-	usageLogger                  usage.LoggerInterface
-	pricingResolver              usage.PricingResolver
-	batchStore                   batchstore.Store
-	normalizePassthroughV1Prefix bool
+	provider                      core.RoutableProvider
+	logger                        auditlog.LoggerInterface
+	usageLogger                   usage.LoggerInterface
+	pricingResolver               usage.PricingResolver
+	batchStore                    batchstore.Store
+	normalizePassthroughV1Prefix  bool
+	supportedPassthroughProviders map[string]struct{}
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
 func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface, pricingResolver usage.PricingResolver) *Handler {
 	return &Handler{
-		provider:                     provider,
-		logger:                       logger,
-		usageLogger:                  usageLogger,
-		pricingResolver:              pricingResolver,
-		batchStore:                   batchstore.NewMemoryStore(),
-		normalizePassthroughV1Prefix: true,
+		provider:                      provider,
+		logger:                        logger,
+		usageLogger:                   usageLogger,
+		pricingResolver:               pricingResolver,
+		batchStore:                    batchstore.NewMemoryStore(),
+		normalizePassthroughV1Prefix:  true,
+		supportedPassthroughProviders: normalizeSupportedPassthroughProviders(defaultSupportedPassthroughProviders),
 	}
 }
 
@@ -62,6 +66,10 @@ func (h *Handler) SetBatchStore(store batchstore.Store) {
 		return
 	}
 	h.batchStore = store
+}
+
+func (h *Handler) setSupportedPassthroughProviders(providerTypes []string) {
+	h.supportedPassthroughProviders = normalizeSupportedPassthroughProviders(providerTypes)
 }
 
 // handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
@@ -176,13 +184,45 @@ func resolveModelSelector(ctx context.Context, model, provider *string) error {
 	return core.NormalizeModelSelector(core.GetSemanticEnvelope(ctx), model, provider)
 }
 
-func isSupportedPassthroughProvider(providerType string) bool {
-	switch strings.TrimSpace(providerType) {
-	case "openai", "anthropic":
-		return true
-	default:
+func isSupportedPassthroughProvider(providerType string, supportedPassthroughProviders map[string]struct{}) bool {
+	providerType = strings.TrimSpace(providerType)
+	if providerType == "" {
 		return false
 	}
+	_, ok := supportedPassthroughProviders[providerType]
+	return ok
+}
+
+func normalizeSupportedPassthroughProviders(providerTypes []string) map[string]struct{} {
+	supported := make(map[string]struct{}, len(providerTypes))
+	for _, providerType := range providerTypes {
+		providerType = strings.TrimSpace(providerType)
+		if providerType == "" {
+			continue
+		}
+		supported[providerType] = struct{}{}
+	}
+	return supported
+}
+
+func (h *Handler) supportedPassthroughProviderNames() []string {
+	providers := make([]string, 0, len(h.supportedPassthroughProviders))
+	for providerType := range h.supportedPassthroughProviders {
+		providers = append(providers, providerType)
+	}
+	sort.Strings(providers)
+	return providers
+}
+
+func (h *Handler) unsupportedPassthroughProviderError(providerType string) error {
+	providers := h.supportedPassthroughProviderNames()
+	if len(providers) == 0 {
+		return core.NewInvalidRequestError("provider passthrough is not enabled for any providers", nil)
+	}
+	return core.NewInvalidRequestError(
+		fmt.Sprintf("provider passthrough for %q is not enabled; currently supported providers: %s", strings.TrimSpace(providerType), strings.Join(providers, ", ")),
+		nil,
+	)
 }
 
 func normalizePassthroughEndpoint(endpoint string, enabled bool) (string, error) {
@@ -411,8 +451,8 @@ func (h *Handler) ProviderPassthrough(c *echo.Context) error {
 	if err != nil {
 		return handleError(c, err)
 	}
-	if !isSupportedPassthroughProvider(providerType) {
-		return handleError(c, core.NewInvalidRequestError("provider passthrough is currently supported only for openai and anthropic", nil))
+	if !isSupportedPassthroughProvider(providerType, h.supportedPassthroughProviders) {
+		return handleError(c, h.unsupportedPassthroughProviderError(providerType))
 	}
 
 	ctx := c.Request().Context()

@@ -59,9 +59,9 @@ func TestIngressCapture_SetsFrameAndSemanticEnvelope(t *testing.T) {
 	assert.Equal(t, "/v1/chat/completions", capturedFrame.Path)
 	assert.Equal(t, "application/json", capturedFrame.ContentType)
 	assert.Equal(t, "req-123", capturedFrame.RequestID)
-	assert.Equal(t, []string{"bar"}, capturedFrame.QueryParams["foo"])
-	assert.Equal(t, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00", capturedFrame.TraceMetadata["Traceparent"])
-	assert.JSONEq(t, reqBody, string(capturedFrame.RawBody))
+	assert.Equal(t, []string{"bar"}, capturedFrame.GetQueryParams()["foo"])
+	assert.Equal(t, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00", capturedFrame.GetTraceMetadata()["Traceparent"])
+	assert.JSONEq(t, reqBody, string(capturedFrame.GetRawBody()))
 	assert.JSONEq(t, reqBody, downstreamBody)
 
 	require.NotNil(t, capturedEnv)
@@ -100,8 +100,8 @@ func TestIngressCapture_PreservesPassthroughRouteParams(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, capturedFrame)
-	assert.Equal(t, "openai", capturedFrame.RouteParams["provider"])
-	assert.Equal(t, "responses", capturedFrame.RouteParams["endpoint"])
+	assert.Equal(t, "openai", capturedFrame.GetRouteParams()["provider"])
+	assert.Equal(t, "responses", capturedFrame.GetRouteParams()["endpoint"])
 
 	require.NotNil(t, capturedEnv)
 	assert.Equal(t, "provider_passthrough", capturedEnv.Dialect)
@@ -168,13 +168,18 @@ func TestModelValidation_UsesSemanticEnvelopeWithoutReadingBody(t *testing.T) {
 	req.Header.Set("X-Request-ID", "req-123")
 	req.Body = &explodingReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-		RawBody:     []byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`),
-		RequestID:   "req-123",
-	}
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`),
+		false,
+		"req-123",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -216,7 +221,7 @@ func TestIngressCapture_SkipsOversizedBodies(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NotNil(t, capturedFrame)
-	assert.Nil(t, capturedFrame.RawBody)
+	assert.Nil(t, capturedFrame.GetRawBody())
 	assert.True(t, capturedFrame.RawBodyTooLarge)
 	assert.Equal(t, len(reqBody), len(downstreamBody))
 	assert.True(t, strings.HasPrefix(downstreamBody, `{"model":"gpt-5-mini"`))
@@ -247,7 +252,7 @@ func TestIngressCapture_ManagesFilesWithoutReadingMultipartBody(t *testing.T) {
 	require.NotNil(t, capturedFrame)
 	assert.Equal(t, "/v1/files", capturedFrame.Path)
 	assert.Equal(t, "multipart/form-data; boundary=test", capturedFrame.ContentType)
-	assert.Nil(t, capturedFrame.RawBody)
+	assert.Nil(t, capturedFrame.GetRawBody())
 	assert.False(t, capturedFrame.RawBodyTooLarge)
 
 	require.NotNil(t, capturedEnv)

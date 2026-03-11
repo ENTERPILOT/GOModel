@@ -32,18 +32,18 @@ func IngressCapture() echo.MiddlewareFunc {
 				return handleError(c, core.NewInvalidRequestError("failed to read request body", err))
 			}
 
-			frame := &core.IngressFrame{
-				Method:          req.Method,
-				Path:            req.URL.Path,
-				RouteParams:     ingressRouteParams(req.URL.Path, routeParamsMap(c.PathValues())),
-				QueryParams:     cloneMultiMap(req.URL.Query()),
-				Headers:         cloneMultiMap(req.Header),
-				ContentType:     req.Header.Get("Content-Type"),
-				RawBody:         bodyBytes,
-				RawBodyTooLarge: bodyTooLarge,
-				RequestID:       requestID,
-				TraceMetadata:   extractTraceMetadata(req.Header),
-			}
+			frame := core.NewIngressFrame(
+				req.Method,
+				req.URL.Path,
+				ingressRouteParams(req.URL.Path, routeParamsMap(c.PathValues())),
+				req.URL.Query(),
+				req.Header,
+				req.Header.Get("Content-Type"),
+				bodyBytes,
+				bodyTooLarge,
+				requestID,
+				extractTraceMetadata(req.Header),
+			)
 
 			ctx := core.WithIngressFrame(req.Context(), frame)
 			if env := core.BuildSemanticEnvelope(frame); env != nil {
@@ -73,23 +73,6 @@ func ensureRequestID(req *http.Request) (*http.Request, string) {
 		req = req.WithContext(core.WithRequestID(req.Context(), requestID))
 	}
 	return req, requestID
-}
-
-func cloneMultiMap(src map[string][]string) map[string][]string {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := make(map[string][]string, len(src))
-	for key, values := range src {
-		if len(values) == 0 {
-			dst[key] = nil
-			continue
-		}
-		cloned := make([]string, len(values))
-		copy(cloned, values)
-		dst[key] = cloned
-	}
-	return dst
 }
 
 func ingressRouteParams(path string, params map[string]string) map[string]string {
@@ -166,8 +149,10 @@ func (c *combinedReadCloser) Close() error {
 }
 
 func requestBodyBytes(c *echo.Context) ([]byte, error) {
-	if frame := core.GetIngressFrame(c.Request().Context()); frame != nil && frame.RawBody != nil {
-		return frame.RawBody, nil
+	if frame := core.GetIngressFrame(c.Request().Context()); frame != nil {
+		if rawBody := frame.GetRawBody(); rawBody != nil {
+			return rawBody, nil
+		}
 	}
 
 	req := c.Request()

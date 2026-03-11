@@ -78,8 +78,8 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 					switch {
 					case frame.RawBodyTooLarge:
 						entry.Data.RequestBodyTooBigToHandle = true
-					case frame.RawBody != nil:
-						captureLoggedRequestBody(entry, frame.RawBody)
+					case frame.GetRawBody() != nil:
+						captureLoggedRequestBody(entry, frame.GetRawBody())
 					default:
 						captureRequestBodyForLogging(entry, req)
 					}

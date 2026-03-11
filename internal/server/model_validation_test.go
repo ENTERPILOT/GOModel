@@ -309,11 +309,7 @@ func TestModelValidation_DoesNotReadLiveBodyWhenIngressFrameExistsWithoutOversiz
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-	}
+	frame := core.NewIngressFrame(http.MethodPost, "/v1/chat/completions", nil, nil, nil, "application/json", nil, false, "", nil)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -354,12 +350,7 @@ func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "oversized-live-body")
 
-	frame := &core.IngressFrame{
-		Method:          http.MethodPost,
-		Path:            "/v1/chat/completions",
-		ContentType:     "application/json",
-		RawBodyTooLarge: true,
-	}
+	frame := core.NewIngressFrame(http.MethodPost, "/v1/chat/completions", nil, nil, nil, "application/json", nil, true, "", nil)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -394,17 +385,23 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-4o-mini",
 			"provider":"openai",
 			"messages":[{"role":"user","content":"hi"}],
 			"response_format":{"type":"json_schema"}
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)
@@ -438,15 +435,21 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := &core.IngressFrame{
-		Method:      http.MethodPost,
-		Path:        "/v1/responses",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-4o-mini",
 			"input":[{"type":"message","role":"user","content":"hi","x_trace":{"id":"trace-1"}}]
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 	ctx := core.WithIngressFrame(req.Context(), frame)
 	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
 	req = req.WithContext(ctx)

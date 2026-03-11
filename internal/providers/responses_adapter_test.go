@@ -36,6 +36,14 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 	temp := 0.7
 	maxTokens := 1024
 	includeUsage := true
+	mustResponsesRequest := func(data string) *core.ResponsesRequest {
+		t.Helper()
+		var req core.ResponsesRequest
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			t.Fatalf("unmarshal responses request: %v", err)
+		}
+		return &req
+	}
 
 	tests := []struct {
 		name      string
@@ -217,6 +225,32 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 				}
 				if req.Messages[1].Role != "tool" || req.Messages[1].ToolCallID != "call_123" {
 					t.Fatalf("unexpected tool result message: %+v", req.Messages[1])
+				}
+			},
+		},
+		{
+			name: "typed function call output stringifies structured output",
+			input: mustResponsesRequest(`{
+				"model":"test-model",
+				"input":[{
+					"type":"function_call_output",
+					"call_id":"call_456",
+					"output":{"temperature_c":21},
+					"x_meta":true
+				}]
+			}`),
+			checkFn: func(t *testing.T, req *core.ChatRequest) {
+				if len(req.Messages) != 1 {
+					t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
+				}
+				if req.Messages[0].Role != "tool" || req.Messages[0].ToolCallID != "call_456" {
+					t.Fatalf("unexpected tool result message: %+v", req.Messages[0])
+				}
+				if got := req.Messages[0].Content; got != `{"temperature_c":21}` {
+					t.Fatalf("Content = %#v, want serialized object", got)
+				}
+				if req.Messages[0].ExtraFields["x_meta"] == nil {
+					t.Fatalf("tool result extra missing: %+v", req.Messages[0].ExtraFields)
 				}
 			},
 		},

@@ -320,10 +320,18 @@ func TestMiddleware_UsesIngressFrameRequestBodyWithoutReadingStream(t *testing.T
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	trackedBody := &readCountCloser{reader: strings.NewReader(`{"model":"from-body"}`)}
 	req.Body = trackedBody
-	req = req.WithContext(core.WithIngressFrame(req.Context(), &core.IngressFrame{
-		Path:    "/v1/chat/completions",
-		RawBody: []byte(`{"model":"from-ingress"}`),
-	}))
+	req = req.WithContext(core.WithIngressFrame(req.Context(), core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"",
+		[]byte(`{"model":"from-ingress"}`),
+		false,
+		"",
+		nil,
+	)))
 
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
@@ -360,10 +368,18 @@ func TestMiddleware_UsesIngressTooLargeFlagWithoutReadingStream(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	trackedBody := &readCountCloser{reader: strings.NewReader(strings.Repeat("x", 16))}
 	req.Body = trackedBody
-	req = req.WithContext(core.WithIngressFrame(req.Context(), &core.IngressFrame{
-		Path:            "/v1/chat/completions",
-		RawBodyTooLarge: true,
-	}))
+	req = req.WithContext(core.WithIngressFrame(req.Context(), core.NewIngressFrame(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"",
+		nil,
+		true,
+		"",
+		nil,
+	)))
 
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)

@@ -342,6 +342,9 @@ type ServerConfig struct {
 	// passthrough routes while keeping /p/{provider}/... as the canonical form.
 	// Default: true
 	NormalizePassthroughV1Prefix bool `yaml:"normalize_passthrough_v1_prefix" env:"NORMALIZE_PASSTHROUGH_V1_PREFIX"`
+	// SupportedPassthroughProviders lists the provider types allowed on
+	// /p/{provider}/... passthrough routes. Default: ["openai", "anthropic"]
+	SupportedPassthroughProviders []string `yaml:"supported_passthrough_providers" env:"SUPPORTED_PASSTHROUGH_PROVIDERS"`
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
@@ -407,6 +410,10 @@ func buildDefaultConfig() *Config {
 			SwaggerEnabled:               true,
 			EnableProviderPassthrough:    true,
 			NormalizePassthroughV1Prefix: true,
+			SupportedPassthroughProviders: []string{
+				"openai",
+				"anthropic",
+			},
 		},
 		Cache: CacheConfig{
 			Model: ModelCacheConfig{
@@ -632,6 +639,20 @@ func applyEnvOverridesValue(v reflect.Value) error {
 			fieldVal.SetString(envVal)
 		case reflect.Bool:
 			fieldVal.SetBool(parseBool(envVal))
+		case reflect.Slice:
+			if field.Type.Elem().Kind() != reflect.String {
+				continue
+			}
+			items := strings.Split(envVal, ",")
+			values := make([]string, 0, len(items))
+			for _, item := range items {
+				trimmed := strings.TrimSpace(item)
+				if trimmed == "" {
+					continue
+				}
+				values = append(values, trimmed)
+			}
+			fieldVal.Set(reflect.ValueOf(values))
 		case reflect.Int:
 			n, err := strconv.Atoi(envVal)
 			if err != nil {

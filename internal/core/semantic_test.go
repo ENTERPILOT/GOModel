@@ -6,17 +6,23 @@ import (
 )
 
 func TestBuildSemanticEnvelope_OpenAICompat(t *testing.T) {
-	frame := &IngressFrame{
-		Method:      "POST",
-		Path:        "/v1/chat/completions",
-		ContentType: "application/json",
-		RawBody: []byte(`{
+	frame := NewIngressFrame(
+		"POST",
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{
 			"model":"gpt-5-mini",
 			"provider":"openai",
 			"messages":[{"role":"user","content":"hello"}],
 			"response_format":{"type":"json_schema"}
 		}`),
-	}
+		false,
+		"",
+		nil,
+	)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -43,12 +49,7 @@ func TestBuildSemanticEnvelope_OpenAICompat(t *testing.T) {
 }
 
 func TestBuildSemanticEnvelope_InvalidJSONRemainsPartial(t *testing.T) {
-	frame := &IngressFrame{
-		Method:      "POST",
-		Path:        "/v1/responses",
-		ContentType: "application/json",
-		RawBody:     []byte(`{invalid}`),
-	}
+	frame := NewIngressFrame("POST", "/v1/responses", nil, nil, nil, "application/json", []byte(`{invalid}`), false, "", nil)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -69,12 +70,18 @@ func TestBuildSemanticEnvelope_InvalidJSONRemainsPartial(t *testing.T) {
 }
 
 func TestBuildSemanticEnvelope_PassthroughRouteParams(t *testing.T) {
-	frame := &IngressFrame{
-		Method:      "POST",
-		Path:        "/p/openai/responses",
-		RouteParams: map[string]string{"provider": "openai", "endpoint": "responses"},
-		RawBody:     []byte(`{"model":"gpt-5-mini","foo":"bar"}`),
-	}
+	frame := NewIngressFrame(
+		"POST",
+		"/p/openai/responses",
+		map[string]string{"provider": "openai", "endpoint": "responses"},
+		nil,
+		nil,
+		"",
+		[]byte(`{"model":"gpt-5-mini","foo":"bar"}`),
+		false,
+		"",
+		nil,
+	)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -101,11 +108,7 @@ func TestBuildSemanticEnvelope_PassthroughRouteParams(t *testing.T) {
 }
 
 func TestBuildSemanticEnvelope_PassthroughPathFallback(t *testing.T) {
-	frame := &IngressFrame{
-		Method:  "POST",
-		Path:    "/p/anthropic/messages",
-		RawBody: []byte(`{"model":"claude-sonnet-4-5"}`),
-	}
+	frame := NewIngressFrame("POST", "/p/anthropic/messages", nil, nil, nil, "", []byte(`{"model":"claude-sonnet-4-5"}`), false, "", nil)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -120,11 +123,7 @@ func TestBuildSemanticEnvelope_PassthroughPathFallback(t *testing.T) {
 }
 
 func TestBuildSemanticEnvelope_SkipsBodyParsingWhenIngressBodyWasNotCaptured(t *testing.T) {
-	frame := &IngressFrame{
-		Method:          "POST",
-		Path:            "/v1/chat/completions",
-		RawBodyTooLarge: true,
-	}
+	frame := NewIngressFrame("POST", "/v1/chat/completions", nil, nil, nil, "", nil, true, "", nil)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -139,15 +138,20 @@ func TestBuildSemanticEnvelope_SkipsBodyParsingWhenIngressBodyWasNotCaptured(t *
 }
 
 func TestBuildSemanticEnvelope_FilesMetadata(t *testing.T) {
-	frame := &IngressFrame{
-		Method:      "GET",
-		Path:        "/v1/files/file_123/content",
-		RouteParams: map[string]string{"id": "file_123"},
-		QueryParams: map[string][]string{
+	frame := NewIngressFrame(
+		"GET",
+		"/v1/files/file_123/content",
+		map[string]string{"id": "file_123"},
+		map[string][]string{
 			"provider": {"openai"},
 		},
-		ContentType: "application/octet-stream",
-	}
+		nil,
+		"application/octet-stream",
+		nil,
+		false,
+		"",
+		nil,
+	)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -175,14 +179,21 @@ func TestBuildSemanticEnvelope_FilesMetadata(t *testing.T) {
 }
 
 func TestBuildSemanticEnvelope_BatchesListMetadata(t *testing.T) {
-	frame := &IngressFrame{
-		Method: http.MethodGet,
-		Path:   "/v1/batches",
-		QueryParams: map[string][]string{
+	frame := NewIngressFrame(
+		http.MethodGet,
+		"/v1/batches",
+		nil,
+		map[string][]string{
 			"after": {"batch_prev"},
 			"limit": {"5"},
 		},
-	}
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {
@@ -207,11 +218,7 @@ func TestBuildSemanticEnvelope_BatchesListMetadata(t *testing.T) {
 }
 
 func TestBuildSemanticEnvelope_BatchResultsMetadata(t *testing.T) {
-	frame := &IngressFrame{
-		Method:      http.MethodGet,
-		Path:        "/v1/batches/batch_123/results",
-		RouteParams: map[string]string{"id": "batch_123"},
-	}
+	frame := NewIngressFrame(http.MethodGet, "/v1/batches/batch_123/results", map[string]string{"id": "batch_123"}, nil, nil, "", nil, false, "", nil)
 
 	env := BuildSemanticEnvelope(frame)
 	if env == nil {

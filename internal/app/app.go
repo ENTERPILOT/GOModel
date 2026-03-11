@@ -169,6 +169,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		BatchStore:                             batchResult.Store,
 		LogOnlyModelInteractions:               appCfg.Logging.OnlyModelInteractions,
 		DisableProviderPassthrough:             !appCfg.Server.EnableProviderPassthrough,
+		SupportedPassthroughProviders:          appCfg.Server.SupportedPassthroughProviders,
 		EnablePassthroughV1PrefixNormalization: &enablePassthroughV1PrefixNormalization,
 		SwaggerEnabled:                         appCfg.Server.SwaggerEnabled,
 	}

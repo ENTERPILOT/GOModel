@@ -26,7 +26,7 @@ func clearProviderEnvVars(t *testing.T) {
 func clearAllConfigEnvVars(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		"PORT", "GOMODEL_MASTER_KEY", "BODY_SIZE_LIMIT", "ENABLE_PROVIDER_PASSTHROUGH", "NORMALIZE_PASSTHROUGH_V1_PREFIX",
+		"PORT", "GOMODEL_MASTER_KEY", "BODY_SIZE_LIMIT", "ENABLE_PROVIDER_PASSTHROUGH", "NORMALIZE_PASSTHROUGH_V1_PREFIX", "SUPPORTED_PASSTHROUGH_PROVIDERS",
 		"GOMODEL_CACHE_DIR", "CACHE_REFRESH_INTERVAL",
 		"REDIS_URL", "REDIS_KEY_MODELS", "REDIS_KEY_RESPONSES", "REDIS_TTL_MODELS", "REDIS_TTL_RESPONSES",
 		"STORAGE_TYPE", "SQLITE_PATH", "POSTGRES_URL", "POSTGRES_MAX_CONNS",
@@ -72,6 +72,9 @@ func TestBuildDefaultConfig(t *testing.T) {
 	}
 	if !cfg.Server.NormalizePassthroughV1Prefix {
 		t.Error("expected Server.NormalizePassthroughV1Prefix=true")
+	}
+	if got, want := cfg.Server.SupportedPassthroughProviders, []string{"openai", "anthropic"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("expected Server.SupportedPassthroughProviders=%v, got %v", want, got)
 	}
 	if cfg.Cache.Model.Local != nil {
 		t.Error("expected Cache.Model.Local to be nil in raw defaults")
@@ -321,6 +324,35 @@ server:
 		}
 		if result.Config.Server.NormalizePassthroughV1Prefix {
 			t.Fatal("expected YAML ${VAR:-default} expansion to set NormalizePassthroughV1Prefix=false")
+		}
+	})
+}
+
+func TestLoad_SupportedPassthroughProviders_EnvOverridesYAML(t *testing.T) {
+	withTempDir(t, func(dir string) {
+		clearAllConfigEnvVars(t)
+
+		yaml := `
+server:
+  supported_passthrough_providers:
+    - openai
+    - anthropic
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		t.Setenv("SUPPORTED_PASSTHROUGH_PROVIDERS", " groq , gemini ")
+
+		result, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		got := result.Config.Server.SupportedPassthroughProviders
+		want := []string{"groq", "gemini"}
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("SupportedPassthroughProviders = %v, want %v", got, want)
 		}
 	})
 }

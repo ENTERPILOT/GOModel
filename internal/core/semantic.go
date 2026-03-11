@@ -178,18 +178,18 @@ func BuildSemanticEnvelope(frame *IngressFrame) *SemanticEnvelope {
 	env.Operation = desc.Operation
 
 	if env.Operation == "files" {
-		CacheFileRequestSemantic(env, BuildFileRequestSemanticFromTransport(frame.Method, frame.Path, frame.RouteParams, frame.QueryParams))
+		CacheFileRequestSemantic(env, BuildFileRequestSemanticFromTransport(frame.Method, frame.Path, frame.routeParams, frame.queryParams))
 	}
 	if env.Operation == "batches" {
-		cacheBatchRouteMetadata(env, BuildBatchRequestSemanticFromTransport(frame.Method, frame.Path, frame.RouteParams, frame.QueryParams))
+		cacheBatchRouteMetadata(env, BuildBatchRequestSemanticFromTransport(frame.Method, frame.Path, frame.routeParams, frame.queryParams))
 	}
 
 	if env.Dialect == "provider_passthrough" {
 		env.SelectorHints.Endpoint = ""
-		if provider := frame.RouteParams["provider"]; provider != "" {
+		if provider := frame.routeParams["provider"]; provider != "" {
 			env.SelectorHints.Provider = provider
 		}
-		if endpoint := frame.RouteParams["endpoint"]; endpoint != "" {
+		if endpoint := frame.routeParams["endpoint"]; endpoint != "" {
 			env.SelectorHints.Endpoint = endpoint
 		}
 		if env.SelectorHints.Provider == "" || env.SelectorHints.Endpoint == "" {
@@ -204,11 +204,11 @@ func BuildSemanticEnvelope(frame *IngressFrame) *SemanticEnvelope {
 		}
 	}
 
-	if frame.RawBody == nil {
+	if frame.rawBody == nil {
 		return env
 	}
 
-	trimmed := bytes.TrimSpace(frame.RawBody)
+	trimmed := bytes.TrimSpace(frame.rawBody)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
 		return env
 	}
