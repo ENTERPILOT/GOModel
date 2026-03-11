@@ -567,6 +567,61 @@ data: {"type":"message_stop"}
 	t.Fatal("expected a chat completion chunk")
 }
 
+func TestStreamChatCompletion_MalformedEventReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"broken"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{Role: "user", Content: "Hello"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err == nil {
+		t.Fatal("expected malformed stream error")
+	}
+
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("expected GatewayError, got %T", err)
+	}
+	if gatewayErr.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", gatewayErr.StatusCode, http.StatusBadGateway)
+	}
+	if !strings.Contains(gatewayErr.Message, "failed to decode anthropic stream event") {
+		t.Fatalf("message = %q, want decode failure", gatewayErr.Message)
+	}
+	if !strings.Contains(string(raw), `"content":"Hello"`) {
+		t.Fatalf("expected stream to include prior converted chunk, got %q", string(raw))
+	}
+	if strings.Contains(string(raw), "[DONE]") {
+		t.Fatalf("did not expect [DONE] after malformed event, got %q", string(raw))
+	}
+}
+
 type testSSEEvent struct {
 	Name    string
 	Payload map[string]interface{}
@@ -2379,6 +2434,59 @@ data: {"type":"message_stop"}
 	}
 	if !foundDone {
 		t.Fatal("expected response.function_call_arguments.done with {} arguments")
+	}
+}
+
+func TestStreamResponses_MalformedEventReturnsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`event: message_start
+data: {"type":"message_start","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[],"stop_reason":null,"usage":{"input_tokens":10,"output_tokens":0}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"broken"}
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	body, err := provider.StreamResponses(context.Background(), &core.ResponsesRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Input: "Hello",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	raw, err := io.ReadAll(body)
+	if err == nil {
+		t.Fatal("expected malformed stream error")
+	}
+
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("expected GatewayError, got %T", err)
+	}
+	if gatewayErr.StatusCode != http.StatusBadGateway {
+		t.Fatalf("status = %d, want %d", gatewayErr.StatusCode, http.StatusBadGateway)
+	}
+	if !strings.Contains(gatewayErr.Message, "failed to decode anthropic stream event") {
+		t.Fatalf("message = %q, want decode failure", gatewayErr.Message)
+	}
+	if !strings.Contains(string(raw), "response.created") {
+		t.Fatalf("expected stream to include prior response.created event, got %q", string(raw))
+	}
+	if strings.Contains(string(raw), "[DONE]") {
+		t.Fatalf("did not expect [DONE] after malformed event, got %q", string(raw))
 	}
 }
 

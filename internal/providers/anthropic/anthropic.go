@@ -482,6 +482,10 @@ func newStreamConverter(body io.ReadCloser, model string) *streamConverter {
 	}
 }
 
+func malformedAnthropicStreamError(err error) error {
+	return core.NewProviderError("anthropic", http.StatusBadGateway, "failed to decode anthropic stream event: "+err.Error(), err)
+}
+
 func (sc *streamConverter) Read(p []byte) (n int, err error) {
 	if sc.closed {
 		return 0, io.EOF
@@ -527,7 +531,9 @@ func (sc *streamConverter) Read(p []byte) (n int, err error) {
 
 			var event anthropicStreamEvent
 			if err := json.Unmarshal(data, &event); err != nil {
-				continue
+				sc.closed = true
+				_ = sc.body.Close() //nolint:errcheck
+				return 0, malformedAnthropicStreamError(err)
 			}
 
 			// Convert Anthropic event to OpenAI format
@@ -1364,7 +1370,9 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 
 			var event anthropicStreamEvent
 			if err := json.Unmarshal(data, &event); err != nil {
-				continue
+				sc.closed = true
+				_ = sc.body.Close() //nolint:errcheck
+				return 0, malformedAnthropicStreamError(err)
 			}
 
 			// Convert Anthropic event to Responses API format
