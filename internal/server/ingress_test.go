@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -106,6 +107,50 @@ func TestIngressCapture_PreservesPassthroughRouteParams(t *testing.T) {
 	assert.Equal(t, "provider_passthrough", capturedEnv.Dialect)
 	assert.Equal(t, "openai", capturedEnv.SelectorHints.Provider)
 	assert.Equal(t, "responses", capturedEnv.SelectorHints.Endpoint)
+}
+
+func TestIngressCapture_GeneratesRequestIDWhenMissing(t *testing.T) {
+	e := echo.New()
+
+	reqBody := `{"model":"gpt-5-mini","messages":[{"role":"user","content":"hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	var capturedFrame *core.IngressFrame
+	var downstreamBody string
+
+	handler := IngressCapture()(func(c *echo.Context) error {
+		capturedFrame = core.GetIngressFrame(c.Request().Context())
+		bodyBytes, err := io.ReadAll(c.Request().Body)
+		require.NoError(t, err)
+		downstreamBody = string(bodyBytes)
+		return c.String(http.StatusOK, "ok")
+	})
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	require.NotNil(t, capturedFrame)
+	if capturedFrame.RequestID == "" {
+		t.Fatal("expected generated request id")
+	}
+	if _, parseErr := uuid.Parse(capturedFrame.RequestID); parseErr != nil {
+		t.Fatalf("generated request id is not a valid UUID: %v", parseErr)
+	}
+	assert.JSONEq(t, reqBody, downstreamBody)
+}
+
+func TestExtractTraceMetadata_JoinsMultipleHeaderValues(t *testing.T) {
+	metadata := extractTraceMetadata(http.Header{
+		"Traceparent": {"00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01"},
+		"Tracestate":  {"vendor=a", "vendor=b"},
+		"Baggage":     {"foo=1", "bar=2"},
+	})
+
+	assert.Equal(t, "vendor=a,vendor=b", metadata["Tracestate"])
+	assert.Equal(t, "foo=1,bar=2", metadata["Baggage"])
 }
 
 func TestModelValidation_UsesSemanticEnvelopeWithoutReadingBody(t *testing.T) {

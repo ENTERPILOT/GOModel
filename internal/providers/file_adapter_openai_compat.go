@@ -40,10 +40,12 @@ func doOpenAICompatibleFileIDRequest[T any](ctx context.Context, client *llmclie
 	}
 	switch typed := any(&resp).(type) {
 	case *core.FileObject:
+		typed.ID = trimmedID
 		if typed.Object == "" {
 			typed.Object = defaultObject
 		}
 	case *core.FileDeleteResponse:
+		typed.ID = trimmedID
 		if typed.Object == "" {
 			typed.Object = defaultObject
 		}

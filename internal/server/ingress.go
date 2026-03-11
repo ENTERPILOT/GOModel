@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
@@ -18,12 +19,13 @@ import (
 func IngressCapture() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
-			desc := core.DescribeEndpointPath(c.Request().URL.Path)
+			req, requestID := ensureRequestID(c.Request())
+			desc := core.DescribeEndpoint(req.Method, req.URL.Path)
 			if !desc.IngressManaged {
+				c.SetRequest(req)
 				return next(c)
 			}
 
-			req := c.Request()
 			bodyBytes, bodyTooLarge, err := captureIngressBody(req, desc.BodyMode)
 			if err != nil {
 				return handleError(c, core.NewInvalidRequestError("failed to read request body", err))
@@ -38,7 +40,7 @@ func IngressCapture() echo.MiddlewareFunc {
 				ContentType:     req.Header.Get("Content-Type"),
 				RawBody:         bodyBytes,
 				RawBodyTooLarge: bodyTooLarge,
-				RequestID:       req.Header.Get("X-Request-ID"),
+				RequestID:       requestID,
 				TraceMetadata:   extractTraceMetadata(req.Header),
 			}
 
@@ -51,6 +53,25 @@ func IngressCapture() echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func ensureRequestID(req *http.Request) (*http.Request, string) {
+	if req.Header == nil {
+		req.Header = make(http.Header)
+	}
+	requestID := strings.TrimSpace(core.GetRequestID(req.Context()))
+	if requestID == "" {
+		requestID = strings.TrimSpace(req.Header.Get("X-Request-ID"))
+	}
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+
+	req.Header.Set("X-Request-ID", requestID)
+	if current := strings.TrimSpace(core.GetRequestID(req.Context())); current != requestID {
+		req = req.WithContext(core.WithRequestID(req.Context(), requestID))
+	}
+	return req, requestID
 }
 
 func cloneMultiMap(src map[string][]string) map[string][]string {
@@ -89,8 +110,11 @@ func extractTraceMetadata(headers map[string][]string) map[string]string {
 	traceHeaders := []string{"Traceparent", "Tracestate", "Baggage"}
 	metadata := make(map[string]string, len(traceHeaders))
 	for _, key := range traceHeaders {
-		if values, ok := headers[key]; ok && len(values) > 0 && strings.TrimSpace(values[0]) != "" {
-			metadata[key] = values[0]
+		if values, ok := headers[key]; ok && len(values) > 0 {
+			joined := strings.TrimSpace(strings.Join(values, ","))
+			if joined != "" {
+				metadata[key] = joined
+			}
 		}
 	}
 	if len(metadata) == 0 {

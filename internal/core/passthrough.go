@@ -9,11 +9,13 @@ import (
 type PassthroughRequest struct {
 	Method   string
 	Endpoint string
-	Body     []byte
+	Body     io.ReadCloser
 	Headers  map[string]string
 }
 
 // PassthroughResponse is the raw upstream response for opaque forwarding.
+// Body is an io.ReadCloser returned by the upstream provider, and callers are
+// responsible for closing it when they are finished with the response body.
 type PassthroughResponse struct {
 	StatusCode int
 	Headers    map[string][]string

@@ -25,6 +25,9 @@ type DecodedBatchItemHandlers[T any] struct {
 	Default    func(*DecodedBatchItemRequest) (T, error)
 }
 
+// ChatRequest returns the decoded ChatRequest when the receiver is non-nil and
+// the underlying Request is a *ChatRequest. It returns nil for a nil receiver
+// or for non-chat batch items.
 func (decoded *DecodedBatchItemRequest) ChatRequest() *ChatRequest {
 	if decoded == nil {
 		return nil
@@ -33,6 +36,9 @@ func (decoded *DecodedBatchItemRequest) ChatRequest() *ChatRequest {
 	return req
 }
 
+// ResponsesRequest returns the decoded ResponsesRequest when the receiver is
+// non-nil and the underlying Request is a *ResponsesRequest. It returns nil for
+// a nil receiver or for non-responses batch items.
 func (decoded *DecodedBatchItemRequest) ResponsesRequest() *ResponsesRequest {
 	if decoded == nil {
 		return nil
@@ -41,6 +47,9 @@ func (decoded *DecodedBatchItemRequest) ResponsesRequest() *ResponsesRequest {
 	return req
 }
 
+// EmbeddingRequest returns the decoded EmbeddingRequest when the receiver is
+// non-nil and the underlying Request is an *EmbeddingRequest. It returns nil
+// for a nil receiver or for non-embedding batch items.
 func (decoded *DecodedBatchItemRequest) EmbeddingRequest() *EmbeddingRequest {
 	if decoded == nil {
 		return nil
@@ -49,6 +58,9 @@ func (decoded *DecodedBatchItemRequest) EmbeddingRequest() *EmbeddingRequest {
 	return req
 }
 
+// ModelSelector returns the selected model/provider pair for the decoded batch
+// item. It returns an error when the receiver is nil, when the decoded request
+// type is unsupported, or when the canonical selector cannot be parsed.
 func (decoded *DecodedBatchItemRequest) ModelSelector() (ModelSelector, error) {
 	if decoded == nil {
 		return ModelSelector{}, fmt.Errorf("decoded batch request is required")

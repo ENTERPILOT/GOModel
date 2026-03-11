@@ -27,8 +27,8 @@ type ModelInfo struct {
 // Supports loading from a cache (local file or Redis) for instant startup.
 type ModelRegistry struct {
 	mu               sync.RWMutex
-	models           map[string]*ModelInfo             // model ID -> model info (first provider wins)
-	modelsByProvider map[string]map[string]*ModelInfo  // provider instance name -> model ID -> model info
+	models           map[string]*ModelInfo            // model ID -> model info (first provider wins)
+	modelsByProvider map[string]map[string]*ModelInfo // provider instance name -> model ID -> model info
 	providers        []core.Provider
 	providerTypes    map[core.Provider]string // provider -> type string
 	providerNames    map[core.Provider]string // provider -> configured provider instance name
@@ -540,6 +540,25 @@ func (r *ModelRegistry) GetProviderType(model string) string {
 		return r.providerTypes[info.Provider]
 	}
 	return ""
+}
+
+// ProviderByType returns the first registered provider for the given provider type.
+// This lookup is independent of discovered models so provider-typed routes keep
+// working even when a provider currently exposes zero models.
+func (r *ModelRegistry) ProviderByType(providerType string) core.Provider {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	providerType = strings.TrimSpace(providerType)
+	if providerType == "" {
+		return nil
+	}
+	for _, provider := range r.providers {
+		if r.providerTypes[provider] == providerType {
+			return provider
+		}
+	}
+	return nil
 }
 
 func splitModelSelector(model string) (providerName, modelID string) {

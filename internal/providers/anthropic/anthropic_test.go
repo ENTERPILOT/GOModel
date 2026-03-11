@@ -4009,7 +4009,7 @@ func TestPassthrough(t *testing.T) {
 	resp, err := provider.Passthrough(context.Background(), &core.PassthroughRequest{
 		Method:   http.MethodPost,
 		Endpoint: "messages",
-		Body:     []byte(`{"model":"claude-sonnet-4-5"}`),
+		Body:     io.NopCloser(strings.NewReader(`{"model":"claude-sonnet-4-5"}`)),
 		Headers: map[string]string{
 			"Content-Type":      "application/json",
 			"anthropic-version": "2024-10-22",

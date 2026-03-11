@@ -57,6 +57,10 @@ type FileMultipartMetadataReader interface {
 	Filename(name string) (string, bool)
 }
 
+// EnrichFileCreateRequestSemantic enriches req with provider, purpose, and
+// filename metadata extracted from a multipart reader for file-create requests.
+// It returns req unchanged when req is nil, req.Action is not FileActionCreate,
+// or reader is nil.
 func EnrichFileCreateRequestSemantic(req *FileRequestSemantic, reader FileMultipartMetadataReader) *FileRequestSemantic {
 	if req == nil || req.Action != FileActionCreate || reader == nil {
 		return req

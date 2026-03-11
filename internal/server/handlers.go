@@ -228,10 +228,11 @@ func buildPassthroughHeaders(src http.Header) map[string]string {
 
 	dst := make(map[string]string, len(src))
 	for key, values := range src {
-		if skipPassthroughHeader(key) || len(values) == 0 {
+		canonicalKey := http.CanonicalHeaderKey(strings.TrimSpace(key))
+		if skipPassthroughRequestHeader(canonicalKey) || len(values) == 0 {
 			continue
 		}
-		dst[key] = strings.Join(values, ", ")
+		dst[canonicalKey] = strings.Join(values, ", ")
 	}
 	if len(dst) == 0 {
 		return nil
@@ -240,23 +241,56 @@ func buildPassthroughHeaders(src http.Header) map[string]string {
 }
 
 func skipPassthroughHeader(key string) bool {
-	switch http.CanonicalHeaderKey(strings.TrimSpace(key)) {
+	canonicalKey := http.CanonicalHeaderKey(strings.TrimSpace(key))
+	switch canonicalKey {
 	case "Authorization", "X-Api-Key", "Host", "Content-Length", "Connection", "Keep-Alive",
-		"Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade":
+		"Proxy-Authenticate", "Proxy-Authorization", "Te", "Trailer", "Transfer-Encoding", "Upgrade",
+		"Cookie", "Forwarded", "Set-Cookie":
 		return true
 	default:
-		return false
+		return strings.HasPrefix(canonicalKey, "X-Forwarded-")
 	}
 }
 
-func copyPassthroughResponseHeaders(dst, src http.Header) {
-	for key, values := range src {
-		if skipPassthroughHeader(key) || len(values) == 0 {
+func skipPassthroughRequestHeader(key string) bool {
+	return skipPassthroughHeader(key)
+}
+
+func passthroughConnectionHeaders(headers http.Header) map[string]struct{} {
+	var tokens map[string]struct{}
+	for key, values := range headers {
+		if http.CanonicalHeaderKey(strings.TrimSpace(key)) != "Connection" {
 			continue
 		}
-		dst.Del(key)
 		for _, value := range values {
-			dst.Add(key, value)
+			for _, token := range strings.Split(value, ",") {
+				canonicalKey := http.CanonicalHeaderKey(strings.TrimSpace(token))
+				if canonicalKey == "" {
+					continue
+				}
+				if tokens == nil {
+					tokens = make(map[string]struct{})
+				}
+				tokens[canonicalKey] = struct{}{}
+			}
+		}
+	}
+	return tokens
+}
+
+func copyPassthroughResponseHeaders(dst, src http.Header) {
+	connectionHeaders := passthroughConnectionHeaders(src)
+	for key, values := range src {
+		canonicalKey := http.CanonicalHeaderKey(strings.TrimSpace(key))
+		if skipPassthroughHeader(canonicalKey) || len(values) == 0 {
+			continue
+		}
+		if _, hopByHop := connectionHeaders[canonicalKey]; hopByHop {
+			continue
+		}
+		dst.Del(canonicalKey)
+		for _, value := range values {
+			dst.Add(canonicalKey, value)
 		}
 	}
 }
@@ -334,16 +368,17 @@ func (h *Handler) proxyPassthroughResponse(c *echo.Context, providerType, endpoi
 // providers are intentionally deferred until they fit the same low-friction opaque path.
 //
 // @Summary      Provider passthrough
-// @Description  Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_provider_passthrough. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.
+// @Description  Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_provider_passthrough. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.
 // @Tags         passthrough
 // @Accept       json
 // @Accept       mpfd
 // @Produce      json
+// @Produce      application/octet-stream
 // @Produce      text/event-stream
 // @Security     BearerAuth
 // @Param        provider  path      string  true  "Provider type"
-// @Param        endpoint  path      string  true  "Provider-native endpoint path"
-// @Success      200       {string}  string  "Raw upstream response"
+// @Param        endpoint  path      string  true  "Provider-native endpoint path relative to the provider base URL. URL-encode embedded / characters when using generated clients."
+// @Success      200       {file}    file    "Opaque upstream response body"
 // @Failure      400       {object}  core.GatewayError
 // @Failure      401       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
@@ -368,16 +403,11 @@ func (h *Handler) ProviderPassthrough(c *echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("provider passthrough is currently supported only for openai and anthropic", nil))
 	}
 
-	bodyBytes, err := requestBodyBytes(c)
-	if err != nil {
-		return handleError(c, core.NewInvalidRequestError("failed to read passthrough request body", err))
-	}
-
-	ctx := core.WithRequestID(c.Request().Context(), c.Request().Header.Get("X-Request-ID"))
+	ctx := c.Request().Context()
 	resp, err := passthroughProvider.Passthrough(ctx, providerType, &core.PassthroughRequest{
 		Method:   c.Request().Method,
 		Endpoint: endpoint,
-		Body:     bodyBytes,
+		Body:     c.Request().Body,
 		Headers:  buildPassthroughHeaders(c.Request().Header),
 	})
 	if err != nil {

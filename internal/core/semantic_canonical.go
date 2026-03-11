@@ -195,6 +195,10 @@ func NormalizeModelSelector(env *SemanticEnvelope, model, provider *string) erro
 	return nil
 }
 
+// DecodeCanonicalSelector decodes a canonical request body using the codec
+// resolved by canonicalOperationCodecFor for env, then extracts the model and
+// provider via semanticSelectorFromCanonicalRequest. It returns ok=false for a
+// nil env, missing codec, or decode failure.
 func DecodeCanonicalSelector(body []byte, env *SemanticEnvelope) (model, provider string, ok bool) {
 	if env == nil {
 		return "", "", false

@@ -116,6 +116,8 @@ func (m ResponseMessage) MarshalJSON() ([]byte, error) {
 	}, m.ExtraFields)
 }
 
+// ToolCall.UnmarshalJSON unmarshals a ToolCall from JSON and preserves unknown
+// members in ExtraFields.
 func (t *ToolCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		ID       string       `json:"id"`
@@ -141,6 +143,7 @@ func (t *ToolCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// ToolCall.MarshalJSON marshals a ToolCall to JSON, including ExtraFields.
 func (t ToolCall) MarshalJSON() ([]byte, error) {
 	return marshalWithUnknownJSONFields(struct {
 		ID       string       `json:"id"`
@@ -153,6 +156,8 @@ func (t ToolCall) MarshalJSON() ([]byte, error) {
 	}, t.ExtraFields)
 }
 
+// FunctionCall.UnmarshalJSON unmarshals a FunctionCall from JSON and preserves
+// unknown members in ExtraFields.
 func (f *FunctionCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Name      string `json:"name"`
@@ -175,6 +180,8 @@ func (f *FunctionCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// FunctionCall.MarshalJSON marshals a FunctionCall to JSON, including
+// ExtraFields.
 func (f FunctionCall) MarshalJSON() ([]byte, error) {
 	return marshalWithUnknownJSONFields(struct {
 		Name      string `json:"name"`

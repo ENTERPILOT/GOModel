@@ -157,19 +157,20 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 
 	// Create server
+	enablePassthroughV1PrefixNormalization := appCfg.Server.NormalizePassthroughV1Prefix
 	serverCfg := &server.Config{
-		MasterKey:                               appCfg.Server.MasterKey,
-		MetricsEnabled:                          appCfg.Metrics.Enabled,
-		MetricsEndpoint:                         appCfg.Metrics.Endpoint,
-		BodySizeLimit:                           appCfg.Server.BodySizeLimit,
-		AuditLogger:                             auditResult.Logger,
-		UsageLogger:                             usageResult.Logger,
-		PricingResolver:                         providerResult.Registry,
-		BatchStore:                              batchResult.Store,
-		LogOnlyModelInteractions:                appCfg.Logging.OnlyModelInteractions,
-		DisableProviderPassthrough:              !appCfg.Server.EnableProviderPassthrough,
-		DisablePassthroughV1PrefixNormalization: !appCfg.Server.NormalizePassthroughV1Prefix,
-		SwaggerEnabled:                          appCfg.Server.SwaggerEnabled,
+		MasterKey:                              appCfg.Server.MasterKey,
+		MetricsEnabled:                         appCfg.Metrics.Enabled,
+		MetricsEndpoint:                        appCfg.Metrics.Endpoint,
+		BodySizeLimit:                          appCfg.Server.BodySizeLimit,
+		AuditLogger:                            auditResult.Logger,
+		UsageLogger:                            usageResult.Logger,
+		PricingResolver:                        providerResult.Registry,
+		BatchStore:                             batchResult.Store,
+		LogOnlyModelInteractions:               appCfg.Logging.OnlyModelInteractions,
+		DisableProviderPassthrough:             !appCfg.Server.EnableProviderPassthrough,
+		EnablePassthroughV1PrefixNormalization: &enablePassthroughV1PrefixNormalization,
+		SwaggerEnabled:                         appCfg.Server.SwaggerEnabled,
 	}
 
 	// Initialize admin API and dashboard (behind separate feature flags)

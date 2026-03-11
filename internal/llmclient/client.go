@@ -156,8 +156,11 @@ type Request struct {
 	Method   string
 	Endpoint string
 	Body     interface{} // Will be JSON marshaled if not nil
-	RawBody  []byte      // Used as-is (e.g., multipart form bodies). Mutually exclusive with Body.
-	Headers  map[string]string
+	RawBody  []byte      // Used as-is (e.g., multipart form bodies). Mutually exclusive with Body and RawBodyReader.
+	// RawBodyReader streams the request body without buffering it in memory.
+	// It is intended for one-shot passthrough requests and is not replayable for retries.
+	RawBodyReader io.Reader
+	Headers       map[string]string
 }
 
 // Response represents an HTTP response
@@ -217,6 +220,21 @@ func (c *Client) finishRequest(scope requestScope, statusCode int, err error) {
 		Stream:     scope.requestInfo.Stream,
 		Error:      err,
 	})
+}
+
+func (c *Client) recordCircuitBreakerCompletion(statusCode int, err error) {
+	if c.circuitBreaker == nil {
+		return
+	}
+	if err != nil {
+		c.circuitBreaker.RecordFailure()
+		return
+	}
+	if c.isRetryable(statusCode) || statusCode >= http.StatusInternalServerError {
+		c.circuitBreaker.RecordFailure()
+		return
+	}
+	c.circuitBreaker.RecordSuccess()
 }
 
 func (c *Client) maxAttempts() int {
@@ -300,9 +318,7 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 			lastErr = err
 			lastStatusCode = extractStatusCode(err)
 			// Only retry on network errors
-			if c.circuitBreaker != nil {
-				c.circuitBreaker.RecordFailure()
-			}
+			c.recordCircuitBreakerCompletion(lastStatusCode, lastErr)
 			if scope.halfOpenProbe {
 				c.finishRequest(scope, lastStatusCode, lastErr)
 				return nil, lastErr
@@ -312,11 +328,9 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 
 		// Check for retryable status codes
 		if c.isRetryable(resp.StatusCode) {
-			if c.circuitBreaker != nil {
-				c.circuitBreaker.RecordFailure()
-			}
 			lastErr = core.ParseProviderError(c.config.ProviderName, resp.StatusCode, resp.Body, nil)
 			lastStatusCode = resp.StatusCode
+			c.recordCircuitBreakerCompletion(lastStatusCode, nil)
 			if scope.halfOpenProbe {
 				c.finishRequest(scope, lastStatusCode, lastErr)
 				return nil, lastErr
@@ -326,21 +340,14 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 
 		// Non-retryable error
 		if resp.StatusCode != http.StatusOK {
-			if c.circuitBreaker != nil {
-				// Only record failure for server errors
-				if resp.StatusCode >= 500 {
-					c.circuitBreaker.RecordFailure()
-				}
-			}
+			c.recordCircuitBreakerCompletion(resp.StatusCode, nil)
 			err := core.ParseProviderError(c.config.ProviderName, resp.StatusCode, resp.Body, nil)
 			c.finishRequest(scope, resp.StatusCode, err)
 			return nil, err
 		}
 
 		// Success
-		if c.circuitBreaker != nil {
-			c.circuitBreaker.RecordSuccess()
-		}
+		c.recordCircuitBreakerCompletion(resp.StatusCode, nil)
 		c.finishRequest(scope, resp.StatusCode, nil)
 		return resp, nil
 	}
@@ -366,9 +373,7 @@ func (c *Client) DoStream(ctx context.Context, req Request) (io.ReadCloser, erro
 
 	resp, err := c.doHTTPRequest(scope.ctx, req)
 	if err != nil {
-		if c.circuitBreaker != nil {
-			c.circuitBreaker.RecordFailure()
-		}
+		c.recordCircuitBreakerCompletion(extractStatusCode(err), err)
 		c.finishRequest(scope, extractStatusCode(err), err)
 		return nil, err
 	}
@@ -380,22 +385,39 @@ func (c *Client) DoStream(ctx context.Context, req Request) (io.ReadCloser, erro
 		}
 		_ = resp.Body.Close()
 
-		if c.circuitBreaker != nil {
-			if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
-				c.circuitBreaker.RecordFailure()
-			}
-		}
+		c.recordCircuitBreakerCompletion(resp.StatusCode, nil)
 		providerErr := core.ParseProviderError(c.config.ProviderName, resp.StatusCode, respBody, nil)
 		c.finishRequest(scope, resp.StatusCode, providerErr)
 		return nil, providerErr
 	}
 
-	if c.circuitBreaker != nil {
-		c.circuitBreaker.RecordSuccess()
-	}
-
+	c.recordCircuitBreakerCompletion(resp.StatusCode, nil)
 	c.finishRequest(scope, resp.StatusCode, nil)
 	return resp.Body, nil
+}
+
+func canRetryPassthrough(req Request) bool {
+	if req.RawBodyReader != nil {
+		return false
+	}
+	if hasIdempotencyKey(req.Headers) {
+		return true
+	}
+	switch strings.ToUpper(strings.TrimSpace(req.Method)) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodPut:
+		return true
+	default:
+		return false
+	}
+}
+
+func hasIdempotencyKey(headers map[string]string) bool {
+	for key, value := range headers {
+		if http.CanonicalHeaderKey(strings.TrimSpace(key)) == "Idempotency-Key" && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // DoPassthrough executes a request and returns the raw upstream HTTP response.
@@ -408,7 +430,10 @@ func (c *Client) DoPassthrough(ctx context.Context, req Request) (*http.Response
 	}
 	ctx = scope.ctx
 
-	maxAttempts := c.maxAttempts()
+	maxAttempts := 1
+	if canRetryPassthrough(req) {
+		maxAttempts = c.maxAttempts()
+	}
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err := c.waitForRetry(ctx, attempt); err != nil {
@@ -418,9 +443,7 @@ func (c *Client) DoPassthrough(ctx context.Context, req Request) (*http.Response
 
 		resp, err := c.doHTTPRequest(ctx, req)
 		if err != nil {
-			if c.circuitBreaker != nil {
-				c.circuitBreaker.RecordFailure()
-			}
+			c.recordCircuitBreakerCompletion(extractStatusCode(err), err)
 			if scope.halfOpenProbe || attempt == maxAttempts-1 {
 				c.finishRequest(scope, extractStatusCode(err), err)
 				return nil, err
@@ -429,24 +452,14 @@ func (c *Client) DoPassthrough(ctx context.Context, req Request) (*http.Response
 		}
 
 		retryable := c.isRetryable(resp.StatusCode)
+		c.recordCircuitBreakerCompletion(resp.StatusCode, nil)
 		if retryable {
-			if c.circuitBreaker != nil {
-				c.circuitBreaker.RecordFailure()
-			}
 			if scope.halfOpenProbe || attempt == maxAttempts-1 {
 				c.finishRequest(scope, resp.StatusCode, nil)
 				return resp, nil
 			}
 			_ = resp.Body.Close()
 			continue
-		}
-
-		if c.circuitBreaker != nil {
-			if resp.StatusCode >= 500 {
-				c.circuitBreaker.RecordFailure()
-			} else {
-				c.circuitBreaker.RecordSuccess()
-			}
 		}
 
 		c.finishRequest(scope, resp.StatusCode, nil)
@@ -553,10 +566,22 @@ func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, 
 	url := c.getBaseURL() + req.Endpoint
 
 	var bodyReader io.Reader
-	if req.Body != nil && req.RawBody != nil {
-		return nil, core.NewInvalidRequestError("Body and RawBody cannot both be set", nil)
+	bodySources := 0
+	if req.Body != nil {
+		bodySources++
 	}
 	if req.RawBody != nil {
+		bodySources++
+	}
+	if req.RawBodyReader != nil {
+		bodySources++
+	}
+	if bodySources > 1 {
+		return nil, core.NewInvalidRequestError("Body, RawBody, and RawBodyReader are mutually exclusive", nil)
+	}
+	if req.RawBodyReader != nil {
+		bodyReader = req.RawBodyReader
+	} else if req.RawBody != nil {
 		bodyReader = bytes.NewReader(req.RawBody)
 	} else if req.Body != nil {
 		bodyBytes, err := json.Marshal(req.Body)

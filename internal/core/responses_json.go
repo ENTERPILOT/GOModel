@@ -168,17 +168,17 @@ func (e *ResponsesInputElement) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	extraFields, err := extractUnknownJSONFields(data,
-		"type",
-		"role",
-		"status",
-		"content",
-		"call_id",
-		"id",
-		"name",
-		"arguments",
-		"output",
-	)
+	knownFields := []string{"type"}
+	switch e.Type {
+	case "function_call":
+		knownFields = append(knownFields, "call_id", "id", "name", "arguments", "status")
+	case "function_call_output":
+		knownFields = append(knownFields, "call_id", "status", "output")
+	default:
+		knownFields = append(knownFields, "role", "status", "content")
+	}
+
+	extraFields, err := extractUnknownJSONFields(data, knownFields...)
 	if err != nil {
 		return err
 	}

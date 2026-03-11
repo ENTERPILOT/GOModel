@@ -225,25 +225,31 @@ func patchChatMessagesJSON(originalRaw json.RawMessage, original, modified []cor
 	}
 
 	patched := make([]json.RawMessage, 0, len(modified))
+	modifiedSystemCount := 0
+	for _, msg := range modified {
+		if msg.Role == "system" {
+			modifiedSystemCount++
+		}
+	}
+	systemMatchStart, originalSystemStart := tailMatchedSystemOffsets(len(systemOriginals), modifiedSystemCount)
 	nextSystem := 0
 	nextNonSystem := 0
 	for _, msg := range modified {
 		if msg.Role == "system" {
-			if nextSystem < len(systemOriginals) {
-				item, err := patchRawChatMessage(systemOriginals[nextSystem], msg)
+			if nextSystem >= systemMatchStart {
+				item, err := patchRawChatMessage(systemOriginals[originalSystemStart+(nextSystem-systemMatchStart)], msg)
 				if err != nil {
 					return nil, err
 				}
 				patched = append(patched, item)
-				nextSystem++
-				continue
+			} else {
+				item, err := json.Marshal(msg)
+				if err != nil {
+					return nil, err
+				}
+				patched = append(patched, item)
 			}
-
-			item, err := json.Marshal(msg)
-			if err != nil {
-				return nil, err
-			}
-			patched = append(patched, item)
+			nextSystem++
 			continue
 		}
 
@@ -516,21 +522,27 @@ func applyMessagesToChatPreservingEnvelope(req *core.ChatRequest, msgs []Message
 	}
 
 	coreMessages := make([]core.Message, 0, len(msgs))
+	modifiedSystemCount := 0
+	for _, modified := range msgs {
+		if modified.Role == "system" {
+			modifiedSystemCount++
+		}
+	}
+	systemMatchStart, originalSystemStart := tailMatchedSystemOffsets(len(systemOriginal), modifiedSystemCount)
 	nextSystem := 0
 	nextNonSystem := 0
 	for _, modified := range msgs {
 		if modified.Role == "system" {
-			if nextSystem < len(systemOriginal) {
-				preserved, err := applyGuardedMessageToOriginal(systemOriginal[nextSystem], modified)
+			if nextSystem >= systemMatchStart {
+				preserved, err := applyGuardedMessageToOriginal(systemOriginal[originalSystemStart+(nextSystem-systemMatchStart)], modified)
 				if err != nil {
 					return nil, err
 				}
 				coreMessages = append(coreMessages, preserved)
-				nextSystem++
-				continue
+			} else {
+				coreMessages = append(coreMessages, newChatMessageFromGuardrail(modified))
 			}
-
-			coreMessages = append(coreMessages, newChatMessageFromGuardrail(modified))
+			nextSystem++
 			continue
 		}
 
@@ -556,6 +568,14 @@ func applyMessagesToChatPreservingEnvelope(req *core.ChatRequest, msgs []Message
 	result := *req
 	result.Messages = coreMessages
 	return &result, nil
+}
+
+func tailMatchedSystemOffsets(originalSystemCount, modifiedSystemCount int) (matchStart, originalStart int) {
+	matched := originalSystemCount
+	if modifiedSystemCount < matched {
+		matched = modifiedSystemCount
+	}
+	return modifiedSystemCount - matched, originalSystemCount - matched
 }
 
 func applyGuardedMessageToOriginal(original core.Message, modified Message) (core.Message, error) {

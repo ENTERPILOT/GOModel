@@ -557,9 +557,10 @@ func normalizeResponsesImageURLForChat(value interface{}) (*core.ImageURLContent
 			return nil, false
 		}
 		return &core.ImageURLContent{
-			URL:       url,
-			Detail:    v["detail"],
-			MediaType: v["media_type"],
+			URL:         url,
+			Detail:      v["detail"],
+			MediaType:   v["media_type"],
+			ExtraFields: rawJSONMapFromUnknownStringKeys(v, "url", "detail", "media_type"),
 		}, true
 	case map[string]interface{}:
 		url, _ := v["url"].(string)
@@ -587,7 +588,11 @@ func normalizeResponsesInputAudioForChat(value interface{}) (*core.InputAudioCon
 		if data == "" || format == "" {
 			return nil, false
 		}
-		return &core.InputAudioContent{Data: data, Format: format}, true
+		return &core.InputAudioContent{
+			Data:        data,
+			Format:      format,
+			ExtraFields: rawJSONMapFromUnknownStringKeys(v, "data", "format"),
+		}, true
 	case map[string]interface{}:
 		data, _ := v["data"].(string)
 		format, _ := v["format"].(string)
@@ -651,6 +656,18 @@ func rawJSONMapFromUnknownKeys(src map[string]interface{}, knownKeys ...string) 
 		extras[key] = raw
 	}
 	return extras
+}
+
+func rawJSONMapFromUnknownStringKeys(src map[string]string, knownKeys ...string) map[string]json.RawMessage {
+	if len(src) == 0 {
+		return nil
+	}
+
+	converted := make(map[string]interface{}, len(src))
+	for key, value := range src {
+		converted[key] = value
+	}
+	return rawJSONMapFromUnknownKeys(converted, knownKeys...)
 }
 
 func firstNonEmptyString(item map[string]interface{}, keys ...string) string {

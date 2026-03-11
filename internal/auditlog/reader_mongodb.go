@@ -233,7 +233,7 @@ func mongoDateRangeFilter(params QueryParams) bson.D {
 }
 
 func (r *MongoDBReader) findByResponseID(ctx context.Context, responseID string) (*LogEntry, error) {
-	return r.findFirstByField(ctx, "data.response_body.id", responseID, "response id")
+	return r.findFirstByField(ctx, "data.response_body.id", responseID, "response_id")
 }
 
 func (r *MongoDBReader) findByPreviousResponseID(ctx context.Context, previousResponseID string) (*LogEntry, error) {

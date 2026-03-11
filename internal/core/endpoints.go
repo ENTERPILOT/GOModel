@@ -1,6 +1,9 @@
 package core
 
-import "strings"
+import (
+	"net/http"
+	"strings"
+)
 
 // BodyMode describes the transport shape expected for an endpoint.
 type BodyMode string
@@ -21,9 +24,22 @@ type EndpointDescriptor struct {
 	BodyMode         BodyMode
 }
 
+// DescribeEndpoint classifies a request path and method for ADR-0002 ingress handling.
+func DescribeEndpoint(method, path string) EndpointDescriptor {
+	desc := describeEndpointPath(path)
+	desc.BodyMode = bodyModeForEndpoint(method, path, desc.Operation)
+	return desc
+}
+
 // DescribeEndpointPath classifies a request path for ADR-0002 ingress handling.
 func DescribeEndpointPath(path string) EndpointDescriptor {
-	path, _, _ = strings.Cut(strings.TrimSpace(path), "?")
+	desc := describeEndpointPath(path)
+	desc.BodyMode = bodyModeForEndpoint("", path, desc.Operation)
+	return desc
+}
+
+func describeEndpointPath(path string) EndpointDescriptor {
+	path = normalizeEndpointPath(path)
 
 	switch {
 	case path == "/v1/chat/completions":
@@ -32,7 +48,6 @@ func DescribeEndpointPath(path string) EndpointDescriptor {
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
 			Operation:        "chat_completions",
-			BodyMode:         BodyModeJSON,
 		}
 	case matchesEndpointPath(path, "/v1/responses"):
 		return EndpointDescriptor{
@@ -40,7 +55,6 @@ func DescribeEndpointPath(path string) EndpointDescriptor {
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
 			Operation:        "responses",
-			BodyMode:         BodyModeJSON,
 		}
 	case path == "/v1/embeddings":
 		return EndpointDescriptor{
@@ -48,7 +62,6 @@ func DescribeEndpointPath(path string) EndpointDescriptor {
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
 			Operation:        "embeddings",
-			BodyMode:         BodyModeJSON,
 		}
 	case path == "/v1/batches" || strings.HasPrefix(path, "/v1/batches/"):
 		return EndpointDescriptor{
@@ -56,7 +69,6 @@ func DescribeEndpointPath(path string) EndpointDescriptor {
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
 			Operation:        "batches",
-			BodyMode:         BodyModeJSON,
 		}
 	case path == "/v1/files" || strings.HasPrefix(path, "/v1/files/"):
 		return EndpointDescriptor{
@@ -64,7 +76,6 @@ func DescribeEndpointPath(path string) EndpointDescriptor {
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
 			Operation:        "files",
-			BodyMode:         BodyModeMultipart,
 		}
 	case strings.HasPrefix(path, "/p/"):
 		return EndpointDescriptor{
@@ -72,10 +83,38 @@ func DescribeEndpointPath(path string) EndpointDescriptor {
 			IngressManaged:   true,
 			Dialect:          "provider_passthrough",
 			Operation:        "provider_passthrough",
-			BodyMode:         BodyModeOpaque,
 		}
 	default:
 		return EndpointDescriptor{}
+	}
+}
+
+func bodyModeForEndpoint(method, path, operation string) BodyMode {
+	method = strings.ToUpper(strings.TrimSpace(method))
+	path = normalizeEndpointPath(path)
+
+	switch operation {
+	case "chat_completions", "responses", "embeddings":
+		return BodyModeJSON
+	case "batches":
+		switch method {
+		case http.MethodPost:
+			if strings.HasSuffix(path, "/cancel") {
+				return BodyModeNone
+			}
+			return BodyModeJSON
+		default:
+			return BodyModeNone
+		}
+	case "files":
+		if method == http.MethodPost && path == "/v1/files" {
+			return BodyModeMultipart
+		}
+		return BodyModeNone
+	case "provider_passthrough":
+		return BodyModeOpaque
+	default:
+		return BodyModeNone
 	}
 }
 
@@ -88,6 +127,14 @@ func matchesEndpointPath(path, prefix string) bool {
 	}
 	next := path[len(prefix):]
 	return strings.HasPrefix(next, "/")
+}
+
+func normalizeEndpointPath(path string) string {
+	path, _, _ = strings.Cut(strings.TrimSpace(path), "?")
+	if len(path) > 1 && strings.HasSuffix(path, "/") {
+		path = strings.TrimSuffix(path, "/")
+	}
+	return path
 }
 
 // IsModelInteractionPath reports whether a path is a model/provider interaction route.

@@ -68,6 +68,21 @@ type mockProvider struct {
 	passthroughResp   *core.PassthroughResponse
 }
 
+func readAndCloseBody(t *testing.T, body io.ReadCloser) string {
+	t.Helper()
+	if body == nil {
+		return ""
+	}
+	defer func() {
+		_ = body.Close()
+	}()
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read body: %v", err)
+	}
+	return string(data)
+}
+
 func (m *mockProvider) ChatCompletion(_ context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	m.lastChatReq = req
 	if m.err != nil {
@@ -744,7 +759,7 @@ func TestRouterPassthrough(t *testing.T) {
 	resp, err := router.Passthrough(context.Background(), "openai", &core.PassthroughRequest{
 		Method:   http.MethodPost,
 		Endpoint: "responses",
-		Body:     []byte(`{"model":"gpt-5-mini"}`),
+		Body:     io.NopCloser(strings.NewReader(`{"model":"gpt-5-mini"}`)),
 		Headers:  map[string]string{"Content-Type": "application/json"},
 	})
 	if err != nil {
@@ -756,6 +771,9 @@ func TestRouterPassthrough(t *testing.T) {
 	if provider.lastPassthrough.Endpoint != "responses" {
 		t.Fatalf("endpoint = %q, want responses", provider.lastPassthrough.Endpoint)
 	}
+	if got := readAndCloseBody(t, provider.lastPassthrough.Body); got != `{"model":"gpt-5-mini"}` {
+		t.Fatalf("body = %q", got)
+	}
 	if provider.lastPassthrough.Headers["Content-Type"] != "application/json" {
 		t.Fatalf("content-type = %q", provider.lastPassthrough.Headers["Content-Type"])
 	}
@@ -765,5 +783,78 @@ func TestRouterPassthrough(t *testing.T) {
 	}
 	if string(body) != `{"ok":true}` {
 		t.Fatalf("body = %q", string(body))
+	}
+}
+
+func TestRouterPassthrough_ErrorCases(t *testing.T) {
+	t.Run("unknown provider returns gateway error", func(t *testing.T) {
+		lookup := newMockLookup()
+		lookup.addModel("gpt-5-mini", &mockProvider{name: "openai"}, "openai")
+		router, _ := NewRouter(lookup)
+
+		_, err := router.Passthrough(context.Background(), "does-not-exist", &core.PassthroughRequest{
+			Method:   http.MethodGet,
+			Endpoint: "responses",
+		})
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+	})
+
+	t.Run("provider error is propagated", func(t *testing.T) {
+		providerErr := errors.New("provider passthrough error")
+		provider := &mockProvider{name: "openai", err: providerErr}
+		lookup := newMockLookup()
+		lookup.addModel("gpt-5-mini", provider, "openai")
+		router, _ := NewRouter(lookup)
+
+		_, err := router.Passthrough(context.Background(), "openai", &core.PassthroughRequest{
+			Method:   http.MethodGet,
+			Endpoint: "responses",
+		})
+		if !errors.Is(err, providerErr) {
+			t.Fatalf("expected provider error, got %v", err)
+		}
+	})
+
+	t.Run("empty registry returns not initialized", func(t *testing.T) {
+		router, _ := NewRouter(newMockLookup())
+
+		_, err := router.Passthrough(context.Background(), "openai", &core.PassthroughRequest{
+			Method:   http.MethodGet,
+			Endpoint: "responses",
+		})
+		if !errors.Is(err, ErrRegistryNotInitialized) {
+			t.Fatalf("expected ErrRegistryNotInitialized, got %v", err)
+		}
+	})
+}
+
+func TestRouterPassthrough_UsesProviderRegistryWithoutModels(t *testing.T) {
+	provider := &mockProvider{name: "openai"}
+	registry := NewModelRegistry()
+	registry.RegisterProviderWithType(provider, "openai")
+	registry.initialized = true
+
+	router, err := NewRouter(registry)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	resp, err := router.Passthrough(context.Background(), "openai", &core.PassthroughRequest{
+		Method:   http.MethodGet,
+		Endpoint: "models",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if provider.lastPassthrough == nil {
+		t.Fatal("provider did not receive passthrough request")
 	}
 }

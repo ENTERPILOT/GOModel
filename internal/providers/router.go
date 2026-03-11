@@ -19,6 +19,14 @@ type Router struct {
 	lookup core.ModelLookup
 }
 
+type providerTypeRegistry interface {
+	ProviderByType(providerType string) core.Provider
+}
+
+type initializedLookup interface {
+	IsInitialized() bool
+}
+
 // NewRouter creates a new provider router with a model lookup.
 // The lookup must be initialized (via Initialize() or LoadFromCache()) before using the router.
 // Returns an error if the lookup is nil.
@@ -58,13 +66,19 @@ func (r *Router) resolveProvider(model, provider string) (core.Provider, core.Mo
 }
 
 func (r *Router) resolveProviderType(providerType string) (core.Provider, error) {
-	if err := r.checkReady(); err != nil {
+	if initialized, ok := r.lookup.(initializedLookup); ok {
+		if !initialized.IsInitialized() {
+			if err := r.checkReady(); err != nil {
+				return nil, err
+			}
+		}
+	} else if err := r.checkReady(); err != nil {
 		return nil, err
 	}
 	if providerType == "" {
 		return nil, core.NewInvalidRequestError("provider type is required", nil)
 	}
-	provider := r.providerByType(providerType)
+	provider := r.providerByTypeRegistry(providerType)
 	if provider == nil {
 		return nil, core.NewInvalidRequestError(fmt.Sprintf("no provider found for provider type: %s", providerType), nil)
 	}
@@ -338,6 +352,15 @@ func (r *Router) providerByType(providerType string) core.Provider {
 		}
 	}
 	return nil
+}
+
+func (r *Router) providerByTypeRegistry(providerType string) core.Provider {
+	if registry, ok := r.lookup.(providerTypeRegistry); ok {
+		if provider := registry.ProviderByType(providerType); provider != nil {
+			return provider
+		}
+	}
+	return r.providerByType(providerType)
 }
 
 // Passthrough routes an opaque provider-native request by provider type.

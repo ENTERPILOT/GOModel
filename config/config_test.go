@@ -236,6 +236,105 @@ logging:
 	})
 }
 
+func TestLoad_PassthroughFlags_EnvOverridesYAML(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	tests := []struct {
+		name          string
+		yamlEnabled   string
+		yamlNormalize string
+		envEnabled    string
+		envNormalize  string
+		wantEnabled   bool
+		wantNormalize bool
+	}{
+		{
+			name:          "env true overrides yaml false",
+			yamlEnabled:   "false",
+			yamlNormalize: "false",
+			envEnabled:    "true",
+			envNormalize:  "true",
+			wantEnabled:   true,
+			wantNormalize: true,
+		},
+		{
+			name:          "env false overrides yaml true",
+			yamlEnabled:   "true",
+			yamlNormalize: "true",
+			envEnabled:    "false",
+			envNormalize:  "false",
+			wantEnabled:   false,
+			wantNormalize: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withTempDir(t, func(dir string) {
+				yaml := `
+server:
+  enable_provider_passthrough: ` + tt.yamlEnabled + `
+  normalize_passthrough_v1_prefix: ` + tt.yamlNormalize + `
+`
+				if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+					t.Fatalf("Failed to write config.yaml: %v", err)
+				}
+
+				if err := os.Setenv("ENABLE_PROVIDER_PASSTHROUGH", tt.envEnabled); err != nil {
+					t.Fatalf("failed to set ENABLE_PROVIDER_PASSTHROUGH: %v", err)
+				}
+				t.Cleanup(func() { _ = os.Unsetenv("ENABLE_PROVIDER_PASSTHROUGH") })
+				if err := os.Setenv("NORMALIZE_PASSTHROUGH_V1_PREFIX", tt.envNormalize); err != nil {
+					t.Fatalf("failed to set NORMALIZE_PASSTHROUGH_V1_PREFIX: %v", err)
+				}
+				t.Cleanup(func() { _ = os.Unsetenv("NORMALIZE_PASSTHROUGH_V1_PREFIX") })
+
+				result, err := Load()
+				if err != nil {
+					t.Fatalf("Load() failed: %v", err)
+				}
+				if result.Config.Server.EnableProviderPassthrough != tt.wantEnabled {
+					t.Fatalf("EnableProviderPassthrough = %v, want %v", result.Config.Server.EnableProviderPassthrough, tt.wantEnabled)
+				}
+				if result.Config.Server.NormalizePassthroughV1Prefix != tt.wantNormalize {
+					t.Fatalf("NormalizePassthroughV1Prefix = %v, want %v", result.Config.Server.NormalizePassthroughV1Prefix, tt.wantNormalize)
+				}
+			})
+		})
+	}
+}
+
+func TestLoad_PassthroughFlags_YAMLExpansion(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		if err := os.Setenv("PASSTHROUGH_ENABLED_FROM_YAML", "false"); err != nil {
+			t.Fatalf("failed to set PASSTHROUGH_ENABLED_FROM_YAML: %v", err)
+		}
+		t.Cleanup(func() { _ = os.Unsetenv("PASSTHROUGH_ENABLED_FROM_YAML") })
+
+		yaml := `
+server:
+  enable_provider_passthrough: ${PASSTHROUGH_ENABLED_FROM_YAML}
+  normalize_passthrough_v1_prefix: ${PASSTHROUGH_NORMALIZE_FROM_YAML:-false}
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		result, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+		if result.Config.Server.EnableProviderPassthrough {
+			t.Fatal("expected YAML ${VAR} expansion to set EnableProviderPassthrough=false")
+		}
+		if result.Config.Server.NormalizePassthroughV1Prefix {
+			t.Fatal("expected YAML ${VAR:-default} expansion to set NormalizePassthroughV1Prefix=false")
+		}
+	})
+}
+
 func TestLoad_EnvOverridesYAML(t *testing.T) {
 	clearAllConfigEnvVars(t)
 

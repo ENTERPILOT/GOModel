@@ -399,6 +399,29 @@ func TestConvertResponsesRequestToChat_PreservesUnknownMapFields(t *testing.T) {
 				"content": []map[string]interface{}{{"type": "output_text", "text": "hello", "cache_control": map[string]interface{}{"type": "ephemeral"}}},
 				"x_meta":  "keep-me",
 			},
+			map[string]interface{}{
+				"type": "message",
+				"role": "user",
+				"content": []interface{}{
+					map[string]interface{}{
+						"type": "input_image",
+						"image_url": map[string]string{
+							"url":        "https://example.com/image.png",
+							"detail":     "high",
+							"media_type": "image/png",
+							"x_nested":   "keep-image",
+						},
+					},
+					map[string]interface{}{
+						"type": "input_audio",
+						"input_audio": map[string]string{
+							"data":     "aGVsbG8=",
+							"format":   "wav",
+							"x_nested": "keep-audio",
+						},
+					},
+				},
+			},
 		},
 	}
 
@@ -406,8 +429,8 @@ func TestConvertResponsesRequestToChat_PreservesUnknownMapFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
 	}
-	if len(chatReq.Messages) != 2 {
-		t.Fatalf("len(Messages) = %d, want 2", len(chatReq.Messages))
+	if len(chatReq.Messages) != 3 {
+		t.Fatalf("len(Messages) = %d, want 3", len(chatReq.Messages))
 	}
 	if len(chatReq.Messages[0].ToolCalls) != 1 {
 		t.Fatalf("len(Messages[0].ToolCalls) = %d, want 1", len(chatReq.Messages[0].ToolCalls))
@@ -425,6 +448,17 @@ func TestConvertResponsesRequestToChat_PreservesUnknownMapFields(t *testing.T) {
 	}
 	if parts[0].ExtraFields["cache_control"] == nil {
 		t.Fatalf("mapped content part extra missing after conversion: %+v", parts[0].ExtraFields)
+	}
+
+	multimodalParts, ok := chatReq.Messages[2].Content.([]core.ContentPart)
+	if !ok || len(multimodalParts) != 2 {
+		t.Fatalf("Messages[2].Content = %#v, want []core.ContentPart len=2", chatReq.Messages[2].Content)
+	}
+	if multimodalParts[0].ImageURL == nil || multimodalParts[0].ImageURL.ExtraFields["x_nested"] == nil {
+		t.Fatalf("image_url extra missing after map[string]string conversion: %+v", multimodalParts[0].ImageURL)
+	}
+	if multimodalParts[1].InputAudio == nil || multimodalParts[1].InputAudio.ExtraFields["x_nested"] == nil {
+		t.Fatalf("input_audio extra missing after map[string]string conversion: %+v", multimodalParts[1].InputAudio)
 	}
 }
 

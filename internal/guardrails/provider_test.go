@@ -735,6 +735,80 @@ func TestApplyMessagesToChatPreservingEnvelope_RejectsDroppedMessages(t *testing
 	}
 }
 
+func TestApplyMessagesToChatPreservingEnvelope_TailMatchesExistingSystemMessages(t *testing.T) {
+	req := &core.ChatRequest{
+		Messages: []core.Message{
+			{
+				Role:        "system",
+				Content:     "original system",
+				ExtraFields: map[string]json.RawMessage{"x_system": json.RawMessage(`true`)},
+			},
+			{Role: "user", Content: "hello"},
+		},
+	}
+
+	result, err := applyMessagesToChatPreservingEnvelope(req, []Message{
+		{Role: "system", Content: "prepended system"},
+		{Role: "system", Content: "rewritten original system"},
+		{Role: "user", Content: "hello"},
+	})
+	if err != nil {
+		t.Fatalf("applyMessagesToChatPreservingEnvelope() error = %v", err)
+	}
+	if len(result.Messages) != 3 {
+		t.Fatalf("len(Messages) = %d, want 3", len(result.Messages))
+	}
+	if result.Messages[0].ExtraFields["x_system"] != nil {
+		t.Fatalf("prepended system message should not inherit original extras: %+v", result.Messages[0].ExtraFields)
+	}
+	if result.Messages[1].ExtraFields["x_system"] == nil {
+		t.Fatalf("tail-matched system message lost original extras: %+v", result.Messages[1].ExtraFields)
+	}
+}
+
+func TestPatchChatMessagesJSON_TailMatchesExistingSystemMessages(t *testing.T) {
+	originalRaw := json.RawMessage(`[
+		{"role":"system","content":"original system","x_system":true},
+		{"role":"user","content":"hello"}
+	]`)
+	original := []core.Message{
+		{
+			Role:        "system",
+			Content:     "original system",
+			ExtraFields: map[string]json.RawMessage{"x_system": json.RawMessage(`true`)},
+		},
+		{Role: "user", Content: "hello"},
+	}
+	modified := []core.Message{
+		{Role: "system", Content: "prepended system"},
+		{
+			Role:        "system",
+			Content:     "rewritten original system",
+			ExtraFields: map[string]json.RawMessage{"x_system": json.RawMessage(`true`)},
+		},
+		{Role: "user", Content: "hello"},
+	}
+
+	patched, err := patchChatMessagesJSON(originalRaw, original, modified)
+	if err != nil {
+		t.Fatalf("patchChatMessagesJSON() error = %v", err)
+	}
+
+	var decoded []map[string]any
+	if err := json.Unmarshal(patched, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal patched payload: %v", err)
+	}
+	if len(decoded) != 3 {
+		t.Fatalf("len(decoded) = %d, want 3", len(decoded))
+	}
+	if decoded[0]["x_system"] != nil {
+		t.Fatalf("prepended system message should not inherit original extras: %#v", decoded[0])
+	}
+	if decoded[1]["x_system"] != true {
+		t.Fatalf("tail-matched system message lost original extras: %#v", decoded[1])
+	}
+}
+
 func TestApplyMessagesToChatPreservingEnvelope_RejectsShiftedNonSystemTurns(t *testing.T) {
 	req := &core.ChatRequest{
 		Messages: []core.Message{
@@ -1547,7 +1621,7 @@ func TestGuardedProvider_Passthrough_Delegates(t *testing.T) {
 	resp, err := guarded.Passthrough(context.Background(), "openai", &core.PassthroughRequest{
 		Method:   http.MethodPost,
 		Endpoint: "responses",
-		Body:     []byte(`{"foo":"bar"}`),
+		Body:     io.NopCloser(strings.NewReader(`{"foo":"bar"}`)),
 		Headers: map[string]string{
 			"Content-Type": "application/json",
 		},
@@ -1566,8 +1640,12 @@ func TestGuardedProvider_Passthrough_Delegates(t *testing.T) {
 	if inner.passthroughReq.Endpoint != "responses" {
 		t.Fatalf("Endpoint = %q, want responses", inner.passthroughReq.Endpoint)
 	}
-	if string(inner.passthroughReq.Body) != `{"foo":"bar"}` {
-		t.Fatalf("Body = %q, want request body", string(inner.passthroughReq.Body))
+	body, readErr := io.ReadAll(inner.passthroughReq.Body)
+	if readErr != nil {
+		t.Fatalf("failed to read passthrough body: %v", readErr)
+	}
+	if got := string(body); got != `{"foo":"bar"}` {
+		t.Fatalf("Body = %q, want request body", got)
 	}
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("StatusCode = %d, want %d", resp.StatusCode, http.StatusAccepted)

@@ -1,26 +1,33 @@
 package core
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+)
 
 func TestDescribeEndpointPath(t *testing.T) {
 	tests := []struct {
-		path      string
-		managed   bool
-		dialect   string
-		operation string
-		bodyMode  BodyMode
+		path        string
+		managed     bool
+		dialect     string
+		operation   string
+		bodyMode    BodyMode
+		interaction bool
 	}{
-		{path: "/v1/chat/completions", managed: true, dialect: "openai_compat", operation: "chat_completions", bodyMode: BodyModeJSON},
-		{path: "/v1/batches", managed: true, dialect: "openai_compat", operation: "batches", bodyMode: BodyModeJSON},
-		{path: "/v1/files/file_1", managed: true, dialect: "openai_compat", operation: "files", bodyMode: BodyModeMultipart},
-		{path: "/p/openai/responses", managed: true, dialect: "provider_passthrough", operation: "provider_passthrough", bodyMode: BodyModeOpaque},
+		{path: "/v1/chat/completions", managed: true, dialect: "openai_compat", operation: "chat_completions", bodyMode: BodyModeJSON, interaction: true},
+		{path: "/v1/chat/completions/", managed: true, dialect: "openai_compat", operation: "chat_completions", bodyMode: BodyModeJSON, interaction: true},
+		{path: "/v1/batches", managed: true, dialect: "openai_compat", operation: "batches", bodyMode: BodyModeNone, interaction: true},
+		{path: "/v1/embeddings/", managed: true, dialect: "openai_compat", operation: "embeddings", bodyMode: BodyModeJSON, interaction: true},
+		{path: "/v1/files/file_1", managed: true, dialect: "openai_compat", operation: "files", bodyMode: BodyModeNone, interaction: true},
+		{path: "/p/openai/responses", managed: true, dialect: "provider_passthrough", operation: "provider_passthrough", bodyMode: BodyModeOpaque, interaction: true},
+		{path: "/v1/models", managed: false, dialect: "", operation: "", bodyMode: BodyModeNone, interaction: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			got := DescribeEndpointPath(tt.path)
-			if !got.ModelInteraction {
-				t.Fatal("ModelInteraction = false, want true")
+			if got.ModelInteraction != tt.interaction {
+				t.Fatalf("ModelInteraction = %v, want %v", got.ModelInteraction, tt.interaction)
 			}
 			if got.IngressManaged != tt.managed {
 				t.Fatalf("IngressManaged = %v, want %v", got.IngressManaged, tt.managed)
@@ -31,6 +38,31 @@ func TestDescribeEndpointPath(t *testing.T) {
 			if got.Operation != tt.operation {
 				t.Fatalf("Operation = %q, want %q", got.Operation, tt.operation)
 			}
+			if got.BodyMode != tt.bodyMode {
+				t.Fatalf("BodyMode = %q, want %q", got.BodyMode, tt.bodyMode)
+			}
+		})
+	}
+}
+
+func TestDescribeEndpoint_UsesMethodForBodyMode(t *testing.T) {
+	tests := []struct {
+		method   string
+		path     string
+		bodyMode BodyMode
+	}{
+		{method: http.MethodPost, path: "/v1/batches", bodyMode: BodyModeJSON},
+		{method: http.MethodGet, path: "/v1/batches", bodyMode: BodyModeNone},
+		{method: http.MethodPost, path: "/v1/chat/completions/", bodyMode: BodyModeJSON},
+		{method: http.MethodPost, path: "/v1/files", bodyMode: BodyModeMultipart},
+		{method: http.MethodPost, path: "/v1/files/", bodyMode: BodyModeMultipart},
+		{method: http.MethodGet, path: "/v1/files/file_1", bodyMode: BodyModeNone},
+		{method: http.MethodPost, path: "/v1/batches/batch_1/cancel", bodyMode: BodyModeNone},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			got := DescribeEndpoint(tt.method, tt.path)
 			if got.BodyMode != tt.bodyMode {
 				t.Fatalf("BodyMode = %q, want %q", got.BodyMode, tt.bodyMode)
 			}

@@ -101,50 +101,44 @@ func isOSeriesModel(model string) bool {
 // adaptForOSeries rewrites a ChatRequest body for OpenAI o-series models,
 // mapping max_tokens -> max_completion_tokens and dropping temperature while
 // preserving all unknown top-level JSON fields.
-func adaptForOSeries(req *core.ChatRequest) any {
+func adaptForOSeries(req *core.ChatRequest) (any, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return map[string]any{
-			"model":                 req.Model,
-			"messages":              req.Messages,
-			"tools":                 req.Tools,
-			"tool_choice":           req.ToolChoice,
-			"parallel_tool_calls":   req.ParallelToolCalls,
-			"stream":                req.Stream,
-			"stream_options":        req.StreamOptions,
-			"reasoning":             req.Reasoning,
-			"max_completion_tokens": req.MaxTokens,
-		}
+		return nil, core.NewInvalidRequestError("failed to marshal o-series request: "+err.Error(), err)
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return req
+		return nil, core.NewInvalidRequestError("failed to decode o-series request payload: "+err.Error(), err)
 	}
 	if maxTokens, ok := raw["max_tokens"]; ok {
 		raw["max_completion_tokens"] = maxTokens
 		delete(raw, "max_tokens")
 	}
 	delete(raw, "temperature")
-	return raw
+	return raw, nil
 }
 
 // chatRequestBody returns the appropriate request body for the model.
 // Reasoning models get parameter adaptation; others pass through as-is.
-func chatRequestBody(req *core.ChatRequest) any {
+func chatRequestBody(req *core.ChatRequest) (any, error) {
 	if isOSeriesModel(req.Model) {
 		return adaptForOSeries(req)
 	}
-	return req
+	return req, nil
 }
 
 // ChatCompletion sends a chat completion request to OpenAI
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	var resp core.ChatResponse
-	err := p.client.Do(ctx, llmclient.Request{
+	body, err := chatRequestBody(req)
+	if err != nil {
+		return nil, err
+	}
+	err = p.client.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     chatRequestBody(req),
+		Body:     body,
 	}, &resp)
 	if err != nil {
 		return nil, err
@@ -162,10 +156,14 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 // this provider forwards the upstream SSE stream unchanged for API parity.
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
 	streamReq := req.WithStreaming()
+	body, err := chatRequestBody(streamReq)
+	if err != nil {
+		return nil, err
+	}
 	return p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     chatRequestBody(streamReq),
+		Body:     body,
 	})
 }
 
@@ -241,10 +239,10 @@ func (p *Provider) Passthrough(ctx context.Context, req *core.PassthroughRequest
 	}
 
 	resp, err := p.client.DoPassthrough(ctx, llmclient.Request{
-		Method:   req.Method,
-		Endpoint: providers.PassthroughEndpoint(req.Endpoint),
-		RawBody:  req.Body,
-		Headers:  req.Headers,
+		Method:        req.Method,
+		Endpoint:      providers.PassthroughEndpoint(req.Endpoint),
+		RawBodyReader: req.Body,
+		Headers:       req.Headers,
 	})
 	if err != nil {
 		return nil, err

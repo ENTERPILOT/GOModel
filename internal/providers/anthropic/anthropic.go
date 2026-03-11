@@ -151,10 +151,10 @@ func (p *Provider) Passthrough(ctx context.Context, req *core.PassthroughRequest
 	}
 
 	resp, err := p.client.DoPassthrough(ctx, llmclient.Request{
-		Method:   req.Method,
-		Endpoint: providers.PassthroughEndpoint(req.Endpoint),
-		RawBody:  req.Body,
-		Headers:  req.Headers,
+		Method:        req.Method,
+		Endpoint:      providers.PassthroughEndpoint(req.Endpoint),
+		RawBodyReader: req.Body,
+		Headers:       req.Headers,
 	})
 	if err != nil {
 		return nil, err

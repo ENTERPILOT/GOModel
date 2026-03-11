@@ -294,6 +294,59 @@ func TestResponsesRequestJSON_PreservesUnknownNestedFields(t *testing.T) {
 	}
 }
 
+func TestResponsesRequestJSON_PreservesVariantSpecificUnknownFields(t *testing.T) {
+	var req ResponsesRequest
+	if err := json.Unmarshal([]byte(`{
+		"model":"gpt-4o-mini",
+		"input":[
+			{
+				"type":"message",
+				"id":"msg_123",
+				"role":"user",
+				"content":"hello"
+			},
+			{
+				"type":"function_call_output",
+				"call_id":"call_123",
+				"name":"still-extra",
+				"output":"{}"
+			}
+		]
+	}`), &req); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	input, ok := req.Input.([]ResponsesInputElement)
+	if !ok || len(input) != 2 {
+		t.Fatalf("Input = %#v, want []ResponsesInputElement len=2", req.Input)
+	}
+	if input[0].ExtraFields["id"] == nil {
+		t.Fatalf("message id missing from ExtraFields: %+v", input[0].ExtraFields)
+	}
+	if input[1].ExtraFields["name"] == nil {
+		t.Fatalf("function_call_output name missing from ExtraFields: %+v", input[1].ExtraFields)
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(roundTrip) error = %v", err)
+	}
+	items := decoded["input"].([]any)
+	message := items[0].(map[string]any)
+	if message["id"] != "msg_123" {
+		t.Fatalf("message.id = %#v, want msg_123", message["id"])
+	}
+	callOutput := items[1].(map[string]any)
+	if callOutput["name"] != "still-extra" {
+		t.Fatalf("function_call_output.name = %#v, want still-extra", callOutput["name"])
+	}
+}
+
 func TestResponsesRequestJSON_PreservesUnknownFields(t *testing.T) {
 	var req ResponsesRequest
 	if err := json.Unmarshal([]byte(`{

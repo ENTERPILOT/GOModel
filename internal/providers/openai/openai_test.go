@@ -482,6 +482,30 @@ func TestChatCompletion_PreservesUnknownTopLevelFieldsForOSeries(t *testing.T) {
 	}
 }
 
+func TestChatCompletion_OSeriesMarshalErrorReturnsInvalidRequest(t *testing.T) {
+	provider := NewWithHTTPClient("test-api-key", http.DefaultClient, llmclient.Hooks{})
+
+	_, err := provider.ChatCompletion(context.Background(), &core.ChatRequest{
+		Model: "o3-mini",
+		Messages: []core.Message{
+			{Role: "user", Content: "hello"},
+		},
+		ExtraFields: map[string]json.RawMessage{
+			"x_invalid": json.RawMessage(`{`),
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	gwErr, ok := err.(*core.GatewayError)
+	if !ok {
+		t.Fatalf("expected GatewayError, got %T: %v", err, err)
+	}
+	if gwErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("Type = %q, want %q", gwErr.Type, core.ErrorTypeInvalidRequest)
+	}
+}
+
 func TestStreamChatCompletion(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -1599,7 +1623,7 @@ func TestPassthrough(t *testing.T) {
 	resp, err := provider.Passthrough(context.Background(), &core.PassthroughRequest{
 		Method:   http.MethodPost,
 		Endpoint: "responses?foo=bar",
-		Body:     []byte(`{"model":"gpt-5-mini"}`),
+		Body:     io.NopCloser(strings.NewReader(`{"model":"gpt-5-mini"}`)),
 		Headers: map[string]string{
 			"Content-Type": "application/json",
 			"OpenAI-Beta":  "responses=v1",

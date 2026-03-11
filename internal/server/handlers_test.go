@@ -188,6 +188,21 @@ type mockProvider struct {
 	lastPassthroughReq      *core.PassthroughRequest
 }
 
+func readPassthroughRequestBody(t *testing.T, body io.ReadCloser) string {
+	t.Helper()
+	if body == nil {
+		return ""
+	}
+	defer func() {
+		_ = body.Close()
+	}()
+	data, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read passthrough request body: %v", err)
+	}
+	return string(data)
+}
+
 func (m *mockProvider) Supports(model string) bool {
 	selector, err := core.ParseModelSelector(model, "")
 	if err == nil {
@@ -3032,8 +3047,11 @@ func TestProviderPassthrough_OpenAI(t *testing.T) {
 		passthroughResponse: &core.PassthroughResponse{
 			StatusCode: http.StatusAccepted,
 			Headers: map[string][]string{
-				"Content-Type": {"application/json"},
-				"X-Upstream":   {"openai"},
+				"Content-Type":   {"application/json"},
+				"X-Upstream":     {"openai"},
+				"Set-Cookie":     {"session=secret"},
+				"Connection":     {"X-Upstream-Hop, Keep-Alive"},
+				"X-Upstream-Hop": {"secret"},
 			},
 			Body: io.NopCloser(strings.NewReader(`{"ok":true}`)),
 		},
@@ -3046,7 +3064,10 @@ func TestProviderPassthrough_OpenAI(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses?api-version=2026-03-10", strings.NewReader(`{"foo":"bar"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer user-secret")
+	req.Header.Set("Cookie", "session=user-secret")
+	req.Header.Set("Forwarded", "for=10.0.0.1")
 	req.Header.Set("OpenAI-Beta", "responses=v1")
+	req.Header.Set("X-Forwarded-For", "10.0.0.1")
 	req.Header.Set("X-Request-ID", "req_123")
 
 	rec := httptest.NewRecorder()
@@ -3061,6 +3082,12 @@ func TestProviderPassthrough_OpenAI(t *testing.T) {
 	if got := rec.Header().Get("X-Upstream"); got != "openai" {
 		t.Fatalf("X-Upstream = %q, want openai", got)
 	}
+	if got := rec.Header().Get("Set-Cookie"); got != "" {
+		t.Fatalf("Set-Cookie should not be forwarded, got %q", got)
+	}
+	if got := rec.Header().Get("X-Upstream-Hop"); got != "" {
+		t.Fatalf("hop-by-hop header should not be forwarded, got %q", got)
+	}
 	if provider.lastPassthroughProvider != "openai" {
 		t.Fatalf("providerType = %q, want openai", provider.lastPassthroughProvider)
 	}
@@ -3070,11 +3097,20 @@ func TestProviderPassthrough_OpenAI(t *testing.T) {
 	if got := provider.lastPassthroughReq.Endpoint; got != "responses?api-version=2026-03-10" {
 		t.Fatalf("endpoint = %q", got)
 	}
-	if got := string(provider.lastPassthroughReq.Body); got != `{"foo":"bar"}` {
+	if got := readPassthroughRequestBody(t, provider.lastPassthroughReq.Body); got != `{"foo":"bar"}` {
 		t.Fatalf("body = %q", got)
 	}
 	if got := provider.lastPassthroughReq.Headers["Authorization"]; got != "" {
 		t.Fatalf("authorization header should not be forwarded, got %q", got)
+	}
+	if got := provider.lastPassthroughReq.Headers["Cookie"]; got != "" {
+		t.Fatalf("cookie header should not be forwarded, got %q", got)
+	}
+	if got := provider.lastPassthroughReq.Headers["Forwarded"]; got != "" {
+		t.Fatalf("forwarded header should not be forwarded, got %q", got)
+	}
+	if got := provider.lastPassthroughReq.Headers["X-Forwarded-For"]; got != "" {
+		t.Fatalf("x-forwarded-for header should not be forwarded, got %q", got)
 	}
 	if got := provider.lastPassthroughReq.Headers[http.CanonicalHeaderKey("OpenAI-Beta")]; got != "responses=v1" {
 		t.Fatalf("OpenAI-Beta = %q, want responses=v1", got)

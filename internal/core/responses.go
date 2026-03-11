@@ -3,7 +3,11 @@ package core
 import "encoding/json"
 
 // ResponsesRequest represents the request body for the Responses API.
-// This is the OpenAI-compatible /v1/responses endpoint.
+// This is the OpenAI-compatible /v1/responses endpoint. Unknown JSON members
+// encountered during unmarshaling are preserved in ExtraFields
+// (map[string]json.RawMessage) and emitted again during marshaling so callers
+// can round-trip extensions; Swagger ignores ExtraFields, and typed fields
+// should be preferred when available.
 type ResponsesRequest struct {
 	Model    string      `json:"model"`
 	Provider string      `json:"provider,omitempty"`
@@ -43,6 +47,11 @@ func (r *ResponsesRequest) WithStreaming() *ResponsesRequest {
 //   - "" or "message": a chat-style message with Role and Content
 //   - "function_call": a tool invocation with CallID, Name, and Arguments
 //   - "function_call_output": a tool result with CallID and Output
+//
+// Unknown JSON members encountered during unmarshaling are preserved in
+// ExtraFields (map[string]json.RawMessage) and marshaled back out unchanged so
+// extensions can round-trip; Swagger ignores ExtraFields, and typed fields
+// should be preferred when available.
 type ResponsesInputElement struct {
 	Type string `json:"type,omitempty"` // "message", "function_call", "function_call_output"
 
