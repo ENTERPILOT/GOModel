@@ -66,20 +66,35 @@ func TestChatRequestJSON_RoundTripPreservesUnknownFields(t *testing.T) {
 	if req.ExtraFields["x_trace"] == nil || string(req.ExtraFields["x_trace"]) != string(wantExtra["x_trace"]) {
 		t.Fatalf("ExtraFields[x_trace] = %s, want %s", req.ExtraFields["x_trace"], wantExtra["x_trace"])
 	}
+	var topTrace map[string]any
+	if err := json.Unmarshal(req.ExtraFields["x_trace"], &topTrace); err != nil {
+		t.Fatalf("failed to unmarshal x_trace: %v", err)
+	}
+	if topTrace["id"] != "trace-1" {
+		t.Fatalf("x_trace.id = %#v, want trace-1", topTrace["id"])
+	}
 	if len(req.Messages) != 1 {
 		t.Fatalf("len(Messages) = %d, want 1", len(req.Messages))
 	}
-	if req.Messages[0].ExtraFields["x_message_meta"] == nil {
-		t.Fatalf("message extras missing: %+v", req.Messages[0].ExtraFields)
+	var messageMeta map[string]any
+	if err := json.Unmarshal(req.Messages[0].ExtraFields["x_message_meta"], &messageMeta); err != nil {
+		t.Fatalf("failed to unmarshal x_message_meta: %v", err)
+	}
+	if messageMeta["id"] != "msg-1" {
+		t.Fatalf("x_message_meta.id = %#v, want msg-1", messageMeta["id"])
 	}
 	if len(req.Messages[0].ToolCalls) != 1 {
 		t.Fatalf("len(ToolCalls) = %d, want 1", len(req.Messages[0].ToolCalls))
 	}
-	if req.Messages[0].ToolCalls[0].ExtraFields["x_tool_call"] == nil {
-		t.Fatalf("tool call extras missing: %+v", req.Messages[0].ToolCalls[0].ExtraFields)
+	if string(req.Messages[0].ToolCalls[0].ExtraFields["x_tool_call"]) != "true" {
+		t.Fatalf("x_tool_call = %s, want true", req.Messages[0].ToolCalls[0].ExtraFields["x_tool_call"])
 	}
-	if req.Messages[0].ToolCalls[0].Function.ExtraFields["x_function_meta"] == nil {
-		t.Fatalf("function extras missing: %+v", req.Messages[0].ToolCalls[0].Function.ExtraFields)
+	var functionMeta map[string]any
+	if err := json.Unmarshal(req.Messages[0].ToolCalls[0].Function.ExtraFields["x_function_meta"], &functionMeta); err != nil {
+		t.Fatalf("failed to unmarshal x_function_meta: %v", err)
+	}
+	if functionMeta["strict"] != true {
+		t.Fatalf("x_function_meta.strict = %#v, want true", functionMeta["strict"])
 	}
 	if got := req.Tools[0]["x_tool_meta"]; got != "keep-me" {
 		t.Fatalf("tools[0][x_tool_meta] = %#v, want keep-me", got)
@@ -94,8 +109,12 @@ func TestChatRequestJSON_RoundTripPreservesUnknownFields(t *testing.T) {
 	if err := json.Unmarshal(roundTrip, &decoded); err != nil {
 		t.Fatalf("json.Unmarshal(roundTrip) error = %v", err)
 	}
-	if _, ok := decoded["x_trace"].(map[string]any); !ok {
+	traceMap, ok := decoded["x_trace"].(map[string]any)
+	if !ok {
 		t.Fatalf("x_trace = %#v, want object", decoded["x_trace"])
+	}
+	if traceMap["id"] != "trace-1" {
+		t.Fatalf("x_trace.id = %#v, want trace-1", traceMap["id"])
 	}
 
 	messages, ok := decoded["messages"].([]any)
@@ -103,8 +122,12 @@ func TestChatRequestJSON_RoundTripPreservesUnknownFields(t *testing.T) {
 		t.Fatalf("messages = %#v, want len=1", decoded["messages"])
 	}
 	message := messages[0].(map[string]any)
-	if _, ok := message["x_message_meta"].(map[string]any); !ok {
+	messageMetaMap, ok := message["x_message_meta"].(map[string]any)
+	if !ok {
 		t.Fatalf("x_message_meta = %#v, want object", message["x_message_meta"])
+	}
+	if messageMetaMap["id"] != "msg-1" {
+		t.Fatalf("x_message_meta.id = %#v, want msg-1", messageMetaMap["id"])
 	}
 	toolCalls := message["tool_calls"].([]any)
 	toolCall := toolCalls[0].(map[string]any)
@@ -112,8 +135,12 @@ func TestChatRequestJSON_RoundTripPreservesUnknownFields(t *testing.T) {
 		t.Fatalf("x_tool_call = %#v, want true", toolCall["x_tool_call"])
 	}
 	function := toolCall["function"].(map[string]any)
-	if _, ok := function["x_function_meta"].(map[string]any); !ok {
+	functionMetaMap, ok := function["x_function_meta"].(map[string]any)
+	if !ok {
 		t.Fatalf("x_function_meta = %#v, want object", function["x_function_meta"])
+	}
+	if functionMetaMap["strict"] != true {
+		t.Fatalf("x_function_meta.strict = %#v, want true", functionMetaMap["strict"])
 	}
 
 	tools := decoded["tools"].([]any)

@@ -581,12 +581,8 @@ func tailMatchedSystemOffsets(originalSystemCount, modifiedSystemCount int) (mat
 func applyGuardedMessageToOriginal(original core.Message, modified Message) (core.Message, error) {
 	preserved := cloneChatMessageEnvelope(original)
 	preserved.Role = modified.Role
-	if len(modified.ToolCalls) > 0 {
-		preserved.ToolCalls = cloneToolCalls(modified.ToolCalls)
-	}
-	if modified.ToolCallID != "" {
-		preserved.ToolCallID = modified.ToolCallID
-	}
+	preserved.ToolCalls = cloneToolCalls(modified.ToolCalls)
+	preserved.ToolCallID = modified.ToolCallID
 
 	content, contentNull, err := applyGuardedContentToOriginal(original.Content, modified.Content, modified.ContentNull)
 	if err != nil {

@@ -1,8 +1,9 @@
 package core
 
-// IngressFrame is the immutable transport-level capture of an inbound request.
-// It preserves the request as received at the HTTP boundary so later stages can
-// extract semantics without losing fidelity.
+// IngressFrame is the transport-level capture of an inbound request. It
+// preserves the request as received at the HTTP boundary so later stages can
+// extract semantics without losing fidelity. Callers should treat the captured
+// fields as read-only.
 type IngressFrame struct {
 	// Method is the inbound HTTP method.
 	Method string

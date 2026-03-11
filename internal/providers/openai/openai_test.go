@@ -1624,9 +1624,9 @@ func TestPassthrough(t *testing.T) {
 		Method:   http.MethodPost,
 		Endpoint: "responses?foo=bar",
 		Body:     io.NopCloser(strings.NewReader(`{"model":"gpt-5-mini"}`)),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-			"OpenAI-Beta":  "responses=v1",
+		Headers: http.Header{
+			"Content-Type": {"application/json"},
+			"OpenAI-Beta":  {"responses=v1"},
 		},
 	})
 	if err != nil {

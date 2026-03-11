@@ -3,6 +3,7 @@ package providers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -69,10 +70,16 @@ func (r *Router) resolveProviderType(providerType string) (core.Provider, error)
 	if initialized, ok := r.lookup.(initializedLookup); ok {
 		if !initialized.IsInitialized() {
 			if err := r.checkReady(); err != nil {
+				if errors.Is(err, ErrRegistryNotInitialized) {
+					return nil, core.NewProviderError("", 0, err.Error(), err)
+				}
 				return nil, err
 			}
 		}
 	} else if err := r.checkReady(); err != nil {
+		if errors.Is(err, ErrRegistryNotInitialized) {
+			return nil, core.NewProviderError("", 0, err.Error(), err)
+		}
 		return nil, err
 	}
 	if providerType == "" {

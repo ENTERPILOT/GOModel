@@ -347,6 +347,9 @@ func cloneResponsesMessage(msg core.Message) core.Message {
 }
 
 func canMergeAssistantMessages(current, next core.Message) bool {
+	if len(current.ExtraFields) != 0 || len(next.ExtraFields) != 0 {
+		return false
+	}
 	if !core.HasStructuredContent(current.Content) && !core.HasStructuredContent(next.Content) {
 		return true
 	}

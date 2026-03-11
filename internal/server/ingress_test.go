@@ -139,6 +139,12 @@ func TestIngressCapture_GeneratesRequestIDWhenMissing(t *testing.T) {
 	if _, parseErr := uuid.Parse(capturedFrame.RequestID); parseErr != nil {
 		t.Fatalf("generated request id is not a valid UUID: %v", parseErr)
 	}
+	if got := rec.Result().Header.Get("X-Request-ID"); got != capturedFrame.RequestID {
+		t.Fatalf("response X-Request-ID = %q, want %q", got, capturedFrame.RequestID)
+	}
+	if got := core.GetRequestID(c.Request().Context()); got != capturedFrame.RequestID {
+		t.Fatalf("context request id = %q, want %q", got, capturedFrame.RequestID)
+	}
 	assert.JSONEq(t, reqBody, downstreamBody)
 }
 

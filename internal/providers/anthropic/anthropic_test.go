@@ -4010,9 +4010,9 @@ func TestPassthrough(t *testing.T) {
 		Method:   http.MethodPost,
 		Endpoint: "messages",
 		Body:     io.NopCloser(strings.NewReader(`{"model":"claude-sonnet-4-5"}`)),
-		Headers: map[string]string{
-			"Content-Type":      "application/json",
-			"anthropic-version": "2024-10-22",
+		Headers: http.Header{
+			"Content-Type":      {"application/json"},
+			"anthropic-version": {"2024-10-22"},
 		},
 	})
 	if err != nil {

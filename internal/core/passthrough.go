@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"io"
+	"net/http"
 )
 
 // PassthroughRequest is the transport-oriented request for opaque provider-native forwarding.
@@ -10,7 +11,7 @@ type PassthroughRequest struct {
 	Method   string
 	Endpoint string
 	Body     io.ReadCloser
-	Headers  map[string]string
+	Headers  http.Header
 }
 
 // PassthroughResponse is the raw upstream response for opaque forwarding.

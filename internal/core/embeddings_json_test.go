@@ -64,8 +64,12 @@ func TestEmbeddingRequestJSON_RoundTripPreservesUnknownFields(t *testing.T) {
 	if err := json.Unmarshal(roundTrip, &decoded); err != nil {
 		t.Fatalf("json.Unmarshal(roundTrip) error = %v", err)
 	}
-	if _, ok := decoded["x_trace"].(map[string]any); !ok {
+	xTraceMap, ok := decoded["x_trace"].(map[string]any)
+	if !ok {
 		t.Fatalf("x_trace = %#v, want object", decoded["x_trace"])
+	}
+	if xTraceMap["id"] != "trace-1" {
+		t.Fatalf("x_trace.id = %#v, want trace-1", xTraceMap["id"])
 	}
 	if decoded["x_mode"] != "keep-me" {
 		t.Fatalf("x_mode = %#v, want keep-me", decoded["x_mode"])

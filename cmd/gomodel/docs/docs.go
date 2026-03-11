@@ -575,6 +575,24 @@ const docTemplate = `{
                             "type": "file"
                         }
                     },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -636,6 +654,24 @@ const docTemplate = `{
                         "description": "Opaque upstream response body",
                         "schema": {
                             "type": "file"
+                        }
+                    },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -701,6 +737,24 @@ const docTemplate = `{
                             "type": "file"
                         }
                     },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -762,6 +816,24 @@ const docTemplate = `{
                         "description": "Opaque upstream response body",
                         "schema": {
                             "type": "file"
+                        }
+                    },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -827,6 +899,24 @@ const docTemplate = `{
                             "type": "file"
                         }
                     },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -890,6 +980,24 @@ const docTemplate = `{
                             "type": "file"
                         }
                     },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -951,6 +1059,24 @@ const docTemplate = `{
                         "description": "Opaque upstream response body",
                         "schema": {
                             "type": "file"
+                        }
+                    },
+                    "201": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "202": {
+                        "description": "Opaque upstream response body",
+                        "schema": {
+                            "type": "file"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content passthrough response",
+                        "schema": {
+                            "type": "string"
                         }
                     },
                     "400": {

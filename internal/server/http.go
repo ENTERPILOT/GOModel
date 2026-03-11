@@ -85,7 +85,8 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 			metricsPath = path.Clean(cfg.MetricsEndpoint)
 		}
 		// Prevent metrics endpoint from shadowing API routes (security: auth bypass)
-		if metricsPath == "/v1" || strings.HasPrefix(metricsPath, "/v1/") {
+		if metricsPath == "/v1" || strings.HasPrefix(metricsPath, "/v1/") ||
+			metricsPath == "/p" || strings.HasPrefix(metricsPath, "/p/") {
 			slog.Warn("metrics endpoint conflicts with API routes, using /metrics instead",
 				"configured", cfg.MetricsEndpoint,
 				"normalized", metricsPath)

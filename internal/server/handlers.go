@@ -221,18 +221,27 @@ func (h *Handler) passthroughEndpoint(c *echo.Context) (string, string, error) {
 	return providerType, endpoint, nil
 }
 
-func buildPassthroughHeaders(src http.Header) map[string]string {
-	if len(src) == 0 {
-		return nil
-	}
-
-	dst := make(map[string]string, len(src))
+func buildPassthroughHeaders(ctx context.Context, src http.Header) http.Header {
+	connectionHeaders := passthroughConnectionHeaders(src)
+	dst := make(http.Header)
 	for key, values := range src {
 		canonicalKey := http.CanonicalHeaderKey(strings.TrimSpace(key))
 		if skipPassthroughRequestHeader(canonicalKey) || len(values) == 0 {
 			continue
 		}
-		dst[canonicalKey] = strings.Join(values, ", ")
+		if _, hopByHop := connectionHeaders[canonicalKey]; hopByHop {
+			continue
+		}
+		clonedValues := make([]string, len(values))
+		copy(clonedValues, values)
+		dst[canonicalKey] = clonedValues
+	}
+	requestID := strings.TrimSpace(src.Get("X-Request-ID"))
+	if requestID == "" {
+		requestID = strings.TrimSpace(core.GetRequestID(ctx))
+	}
+	if requestID != "" && strings.TrimSpace(dst.Get("X-Request-ID")) == "" {
+		dst.Set("X-Request-ID", requestID)
 	}
 	if len(dst) == 0 {
 		return nil
@@ -379,6 +388,9 @@ func (h *Handler) proxyPassthroughResponse(c *echo.Context, providerType, endpoi
 // @Param        provider  path      string  true  "Provider type"
 // @Param        endpoint  path      string  true  "Provider-native endpoint path relative to the provider base URL. URL-encode embedded / characters when using generated clients."
 // @Success      200       {file}    file    "Opaque upstream response body"
+// @Success      201       {file}    file    "Opaque upstream response body"
+// @Success      202       {file}    file    "Opaque upstream response body"
+// @Success      204       {string}  string  "No Content passthrough response"
 // @Failure      400       {object}  core.GatewayError
 // @Failure      401       {object}  core.GatewayError
 // @Failure      502       {object}  core.GatewayError
@@ -404,11 +416,18 @@ func (h *Handler) ProviderPassthrough(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	requestID := strings.TrimSpace(c.Request().Header.Get("X-Request-ID"))
+	if requestID == "" {
+		requestID = strings.TrimSpace(core.GetRequestID(ctx))
+	}
+	if requestID != "" {
+		ctx = core.WithRequestID(ctx, requestID)
+	}
 	resp, err := passthroughProvider.Passthrough(ctx, providerType, &core.PassthroughRequest{
 		Method:   c.Request().Method,
 		Endpoint: endpoint,
 		Body:     c.Request().Body,
-		Headers:  buildPassthroughHeaders(c.Request().Header),
+		Headers:  buildPassthroughHeaders(ctx, c.Request().Header),
 	})
 	if err != nil {
 		return handleError(c, err)

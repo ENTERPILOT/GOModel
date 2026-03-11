@@ -160,7 +160,7 @@ type Request struct {
 	// RawBodyReader streams the request body without buffering it in memory.
 	// It is intended for one-shot passthrough requests and is not replayable for retries.
 	RawBodyReader io.Reader
-	Headers       map[string]string
+	Headers       http.Header
 }
 
 // Response represents an HTTP response
@@ -306,6 +306,9 @@ func (c *Client) DoRaw(ctx context.Context, req Request) (*Response, error) {
 	var lastErr error
 	var lastStatusCode int
 	maxAttempts := c.maxAttempts()
+	if req.RawBodyReader != nil {
+		maxAttempts = 1
+	}
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if err := c.waitForRetry(ctx, attempt); err != nil {
@@ -411,10 +414,15 @@ func canRetryPassthrough(req Request) bool {
 	}
 }
 
-func hasIdempotencyKey(headers map[string]string) bool {
-	for key, value := range headers {
-		if http.CanonicalHeaderKey(strings.TrimSpace(key)) == "Idempotency-Key" && strings.TrimSpace(value) != "" {
-			return true
+func hasIdempotencyKey(headers http.Header) bool {
+	for key, values := range headers {
+		if http.CanonicalHeaderKey(strings.TrimSpace(key)) != "Idempotency-Key" {
+			continue
+		}
+		for _, value := range values {
+			if strings.TrimSpace(value) != "" {
+				return true
+			}
 		}
 	}
 	return false
@@ -423,7 +431,7 @@ func hasIdempotencyKey(headers map[string]string) bool {
 // DoPassthrough executes a request and returns the raw upstream HTTP response.
 // Unlike DoRaw, it preserves non-200 responses for the caller to proxy unchanged.
 func (c *Client) DoPassthrough(ctx context.Context, req Request) (*http.Response, error) {
-	stream := strings.Contains(strings.ToLower(req.Headers["Accept"]), "text/event-stream")
+	stream := strings.Contains(strings.ToLower(strings.Join(req.Headers.Values("Accept"), ",")), "text/event-stream")
 	scope, err := c.beginRequest(ctx, req, stream)
 	if err != nil {
 		return nil, err
@@ -607,8 +615,11 @@ func (c *Client) buildRequest(ctx context.Context, req Request) (*http.Request, 
 	}
 
 	// Apply request-specific headers
-	for key, value := range req.Headers {
-		httpReq.Header.Set(key, value)
+	for key, values := range req.Headers {
+		httpReq.Header.Del(key)
+		for _, value := range values {
+			httpReq.Header.Add(key, value)
+		}
 	}
 
 	return httpReq, nil

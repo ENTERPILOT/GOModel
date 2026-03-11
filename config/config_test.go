@@ -237,8 +237,6 @@ logging:
 }
 
 func TestLoad_PassthroughFlags_EnvOverridesYAML(t *testing.T) {
-	clearAllConfigEnvVars(t)
-
 	tests := []struct {
 		name          string
 		yamlEnabled   string
@@ -271,6 +269,8 @@ func TestLoad_PassthroughFlags_EnvOverridesYAML(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			withTempDir(t, func(dir string) {
+				clearAllConfigEnvVars(t)
+
 				yaml := `
 server:
   enable_provider_passthrough: ` + tt.yamlEnabled + `
@@ -280,14 +280,8 @@ server:
 					t.Fatalf("Failed to write config.yaml: %v", err)
 				}
 
-				if err := os.Setenv("ENABLE_PROVIDER_PASSTHROUGH", tt.envEnabled); err != nil {
-					t.Fatalf("failed to set ENABLE_PROVIDER_PASSTHROUGH: %v", err)
-				}
-				t.Cleanup(func() { _ = os.Unsetenv("ENABLE_PROVIDER_PASSTHROUGH") })
-				if err := os.Setenv("NORMALIZE_PASSTHROUGH_V1_PREFIX", tt.envNormalize); err != nil {
-					t.Fatalf("failed to set NORMALIZE_PASSTHROUGH_V1_PREFIX: %v", err)
-				}
-				t.Cleanup(func() { _ = os.Unsetenv("NORMALIZE_PASSTHROUGH_V1_PREFIX") })
+				t.Setenv("ENABLE_PROVIDER_PASSTHROUGH", tt.envEnabled)
+				t.Setenv("NORMALIZE_PASSTHROUGH_V1_PREFIX", tt.envNormalize)
 
 				result, err := Load()
 				if err != nil {
@@ -305,13 +299,9 @@ server:
 }
 
 func TestLoad_PassthroughFlags_YAMLExpansion(t *testing.T) {
-	clearAllConfigEnvVars(t)
-
 	withTempDir(t, func(dir string) {
-		if err := os.Setenv("PASSTHROUGH_ENABLED_FROM_YAML", "false"); err != nil {
-			t.Fatalf("failed to set PASSTHROUGH_ENABLED_FROM_YAML: %v", err)
-		}
-		t.Cleanup(func() { _ = os.Unsetenv("PASSTHROUGH_ENABLED_FROM_YAML") })
+		clearAllConfigEnvVars(t)
+		t.Setenv("PASSTHROUGH_ENABLED_FROM_YAML", "false")
 
 		yaml := `
 server:

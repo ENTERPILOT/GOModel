@@ -333,6 +333,40 @@ func TestConvertResponsesRequestToChat(t *testing.T) {
 	}
 }
 
+func TestConvertResponsesRequestToChat_DoesNotMergeAssistantMessagesWithExtraFields(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []core.ResponsesInputElement{
+			{
+				Type:        "message",
+				Role:        "assistant",
+				Content:     "first",
+				ExtraFields: map[string]json.RawMessage{"x_first": json.RawMessage(`true`)},
+			},
+			{
+				Type:        "message",
+				Role:        "assistant",
+				Content:     "second",
+				ExtraFields: map[string]json.RawMessage{"x_second": json.RawMessage(`true`)},
+			},
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 2 {
+		t.Fatalf("len(Messages) = %d, want 2", len(chatReq.Messages))
+	}
+	if chatReq.Messages[0].ExtraFields["x_first"] == nil {
+		t.Fatalf("first assistant extra missing: %+v", chatReq.Messages[0].ExtraFields)
+	}
+	if chatReq.Messages[1].ExtraFields["x_second"] == nil {
+		t.Fatalf("second assistant extra missing: %+v", chatReq.Messages[1].ExtraFields)
+	}
+}
+
 func TestConvertResponsesRequestToChat_PreservesOpaqueExtras(t *testing.T) {
 	req := &core.ResponsesRequest{
 		Model: "test-model",

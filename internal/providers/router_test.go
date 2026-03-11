@@ -760,7 +760,7 @@ func TestRouterPassthrough(t *testing.T) {
 		Method:   http.MethodPost,
 		Endpoint: "responses",
 		Body:     io.NopCloser(strings.NewReader(`{"model":"gpt-5-mini"}`)),
-		Headers:  map[string]string{"Content-Type": "application/json"},
+		Headers:  http.Header{"Content-Type": {"application/json"}},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -774,8 +774,8 @@ func TestRouterPassthrough(t *testing.T) {
 	if got := readAndCloseBody(t, provider.lastPassthrough.Body); got != `{"model":"gpt-5-mini"}` {
 		t.Fatalf("body = %q", got)
 	}
-	if provider.lastPassthrough.Headers["Content-Type"] != "application/json" {
-		t.Fatalf("content-type = %q", provider.lastPassthrough.Headers["Content-Type"])
+	if got := provider.lastPassthrough.Headers.Get("Content-Type"); got != "application/json" {
+		t.Fatalf("content-type = %q", got)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -830,6 +830,10 @@ func TestRouterPassthrough_ErrorCases(t *testing.T) {
 		})
 		if !errors.Is(err, ErrRegistryNotInitialized) {
 			t.Fatalf("expected ErrRegistryNotInitialized, got %v", err)
+		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
 		}
 	})
 }

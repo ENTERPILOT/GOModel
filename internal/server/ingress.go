@@ -20,6 +20,7 @@ func IngressCapture() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req, requestID := ensureRequestID(c.Request())
+			c.Response().Header().Set("X-Request-ID", requestID)
 			desc := core.DescribeEndpoint(req.Method, req.URL.Path)
 			if !desc.IngressManaged {
 				c.SetRequest(req)

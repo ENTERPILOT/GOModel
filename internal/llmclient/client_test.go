@@ -100,8 +100,8 @@ func TestClient_Do_Headers(t *testing.T) {
 	err := client.Do(context.Background(), Request{
 		Method:   http.MethodGet,
 		Endpoint: "/test",
-		Headers: map[string]string{
-			"X-Custom": "custom-value",
+		Headers: http.Header{
+			"X-Custom": {"custom-value"},
 		},
 	}, nil)
 
@@ -398,6 +398,41 @@ func TestClient_DoRaw_WithRetries(t *testing.T) {
 	}
 }
 
+func TestClient_DoRaw_DoesNotRetryRawBodyReader(t *testing.T) {
+	var attempts int32
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"retryable"}}`))
+	}))
+	defer server.Close()
+
+	config := DefaultConfig("test", server.URL)
+	config.Retry.MaxRetries = 3
+	config.Retry.InitialBackoff = 10 * time.Millisecond
+	config.Retry.JitterFactor = 0
+	client := New(config, nil)
+
+	resp, err := client.DoRaw(context.Background(), Request{
+		Method:        http.MethodPost,
+		Endpoint:      "/test",
+		RawBodyReader: strings.NewReader(`{"hello":"world"}`),
+		Headers: http.Header{
+			"Content-Type": {"application/json"},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if resp != nil {
+		t.Fatalf("expected nil response, got %+v", resp)
+	}
+	if got := atomic.LoadInt32(&attempts); got != 1 {
+		t.Fatalf("attempts = %d, want 1", got)
+	}
+}
+
 func TestClient_DoPassthrough_WithRetries(t *testing.T) {
 	var attempts int32
 
@@ -509,7 +544,7 @@ func TestClient_DoPassthrough_DoesNotRetryNonReplaySafeMethod(t *testing.T) {
 		Method:   http.MethodPost,
 		Endpoint: "/test",
 		RawBody:  []byte(`{"hello":"world"}`),
-		Headers:  map[string]string{"Content-Type": "application/json"},
+		Headers:  http.Header{"Content-Type": {"application/json"}},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -552,9 +587,9 @@ func TestClient_DoPassthrough_RetriesWhenIdempotencyKeyPresent(t *testing.T) {
 		Method:   http.MethodPost,
 		Endpoint: "/test",
 		RawBody:  []byte(`{"hello":"world"}`),
-		Headers: map[string]string{
-			"Content-Type":    "application/json",
-			"Idempotency-Key": "req-123",
+		Headers: http.Header{
+			"Content-Type":    {"application/json"},
+			"Idempotency-Key": {"req-123"},
 		},
 	})
 	if err != nil {

@@ -23,6 +23,20 @@ func TestValidatedOpenAICompatibleFileID(t *testing.T) {
 
 	client := newOpenAICompatibleTestClient(server)
 
+	t.Run("nil client is provider error", func(t *testing.T) {
+		_, err := validatedOpenAICompatibleFileID(nil, "file_123")
+		if err == nil {
+			t.Fatal("expected error")
+		}
+		var gwErr *core.GatewayError
+		if !errors.As(err, &gwErr) {
+			t.Fatalf("expected GatewayError, got %T: %v", err, err)
+		}
+		if gwErr.Type != core.ErrorTypeProvider {
+			t.Fatalf("error type = %s, want %s", gwErr.Type, core.ErrorTypeProvider)
+		}
+	})
+
 	tests := []struct {
 		name    string
 		id      string
@@ -140,8 +154,10 @@ func TestDoOpenAICompatibleFileIDRequest(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var gotPath string
+			var gotMethod string
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				gotPath = r.URL.Path
+				gotMethod = r.Method
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tt.statusCode)
 				_, _ = w.Write([]byte(tt.responseBody))
@@ -157,6 +173,66 @@ func TestDoOpenAICompatibleFileIDRequest(t *testing.T) {
 			default:
 				resp, err := doOpenAICompatibleFileIDRequest[core.FileObject](context.Background(), client, tt.method, tt.id, tt.defaultObject)
 				tt.check(t, gotPath, resp, nil, err)
+			}
+			if gotMethod != tt.method {
+				t.Fatalf("method = %q, want %q", gotMethod, tt.method)
+			}
+		})
+	}
+}
+
+func TestGetOpenAICompatibleFileContent(t *testing.T) {
+	tests := []struct {
+		name     string
+		id       string
+		wantPath string
+		wantErr  bool
+	}{
+		{name: "trimmed id uses normalized content endpoint", id: "  file_123  ", wantPath: "/files/file_123/content"},
+		{name: "whitespace only is rejected", id: "   \n\t", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotPath string
+			var gotMethod string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotMethod = r.Method
+				w.Header().Set("Content-Type", "application/octet-stream")
+				_, _ = w.Write([]byte("file-bytes"))
+			}))
+			defer server.Close()
+
+			client := newOpenAICompatibleTestClient(server)
+			resp, err := GetOpenAICompatibleFileContent(context.Background(), client, tt.id)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				var gwErr *core.GatewayError
+				if !errors.As(err, &gwErr) {
+					t.Fatalf("expected GatewayError, got %T: %v", err, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp == nil {
+				t.Fatal("expected response")
+			}
+			if gotMethod != http.MethodGet {
+				t.Fatalf("method = %q, want GET", gotMethod)
+			}
+			if gotPath != tt.wantPath {
+				t.Fatalf("path = %q, want %q", gotPath, tt.wantPath)
+			}
+			if resp.ID != "file_123" {
+				t.Fatalf("ID = %q, want file_123", resp.ID)
+			}
+			if string(resp.Data) != "file-bytes" {
+				t.Fatalf("body = %q, want file-bytes", string(resp.Data))
 			}
 		})
 	}

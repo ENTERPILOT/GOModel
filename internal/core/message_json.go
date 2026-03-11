@@ -5,7 +5,8 @@ import (
 	"strings"
 )
 
-// UnmarshalJSON validates chat request message content while preserving multimodal payloads.
+// Message.UnmarshalJSON validates chat request message content, preserves
+// unknown JSON members in ExtraFields, and keeps null content handling intact.
 func (m *Message) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Role       string          `json:"role"`
@@ -40,7 +41,8 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalJSON ensures only supported chat request message content shapes are emitted.
+// Message.MarshalJSON emits validated chat request message content, preserves
+// null handling, and includes unknown JSON members from ExtraFields.
 func (m Message) MarshalJSON() ([]byte, error) {
 	content := any(nil)
 	var err error
@@ -67,7 +69,9 @@ func (m Message) MarshalJSON() ([]byte, error) {
 	}, m.ExtraFields)
 }
 
-// UnmarshalJSON validates chat response message content while preserving tool-call null content.
+// ResponseMessage.UnmarshalJSON validates chat response message content,
+// preserves unknown JSON members in ExtraFields, and keeps tool-call null
+// content handling intact.
 func (m *ResponseMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Role      string          `json:"role"`
@@ -98,7 +102,9 @@ func (m *ResponseMessage) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalJSON preserves OpenAI-compatible null content for tool-call response messages.
+// ResponseMessage.MarshalJSON preserves OpenAI-compatible null content for
+// tool-call response messages and includes unknown JSON members from
+// ExtraFields.
 func (m ResponseMessage) MarshalJSON() ([]byte, error) {
 	content, err := marshalMessageContent(m.Content, m.ToolCalls)
 	if err != nil {
@@ -116,8 +122,8 @@ func (m ResponseMessage) MarshalJSON() ([]byte, error) {
 	}, m.ExtraFields)
 }
 
-// ToolCall.UnmarshalJSON unmarshals a ToolCall from JSON and preserves unknown
-// members in ExtraFields.
+// ToolCall.UnmarshalJSON unmarshals a ToolCall from JSON, preserving unknown
+// JSON members in ExtraFields.
 func (t *ToolCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		ID       string       `json:"id"`
@@ -143,7 +149,8 @@ func (t *ToolCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// ToolCall.MarshalJSON marshals a ToolCall to JSON, including ExtraFields.
+// ToolCall.MarshalJSON marshals a ToolCall to JSON, including unknown JSON
+// members from ExtraFields.
 func (t ToolCall) MarshalJSON() ([]byte, error) {
 	return marshalWithUnknownJSONFields(struct {
 		ID       string       `json:"id"`
@@ -156,8 +163,8 @@ func (t ToolCall) MarshalJSON() ([]byte, error) {
 	}, t.ExtraFields)
 }
 
-// FunctionCall.UnmarshalJSON unmarshals a FunctionCall from JSON and preserves
-// unknown members in ExtraFields.
+// FunctionCall.UnmarshalJSON unmarshals a FunctionCall from JSON, preserving
+// unknown JSON members in ExtraFields.
 func (f *FunctionCall) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Name      string `json:"name"`
@@ -180,8 +187,8 @@ func (f *FunctionCall) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// FunctionCall.MarshalJSON marshals a FunctionCall to JSON, including
-// ExtraFields.
+// FunctionCall.MarshalJSON marshals a FunctionCall to JSON, including unknown
+// JSON members from ExtraFields.
 func (f FunctionCall) MarshalJSON() ([]byte, error) {
 	return marshalWithUnknownJSONFields(struct {
 		Name      string `json:"name"`

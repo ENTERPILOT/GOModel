@@ -693,7 +693,11 @@ func TestApplyMessagesToChatPreservingEnvelope_PreservesOriginalEnvelope(t *test
 	}
 
 	result, err := applyMessagesToChatPreservingEnvelope(req, []Message{
-		{Role: "assistant", Content: "describe [rewritten]"},
+		{
+			Role:      "assistant",
+			Content:   "describe [rewritten]",
+			ToolCalls: cloneToolCalls(req.Messages[0].ToolCalls),
+		},
 	})
 	if err != nil {
 		t.Fatalf("applyMessagesToChatPreservingEnvelope() error = %v", err)
@@ -732,6 +736,46 @@ func TestApplyMessagesToChatPreservingEnvelope_RejectsDroppedMessages(t *testing
 	})
 	if err == nil {
 		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestApplyMessagesToChatPreservingEnvelope_ClearsToolMetadataWhenGuardedMessageRemovesIt(t *testing.T) {
+	req := &core.ChatRequest{
+		Messages: []core.Message{
+			{
+				Role: "assistant",
+				Content: []core.ContentPart{
+					{Type: "text", Text: "before"},
+				},
+				ToolCalls: []core.ToolCall{
+					{
+						ID:   "call_1",
+						Type: "function",
+						Function: core.FunctionCall{
+							Name:      "lookup",
+							Arguments: "{}",
+						},
+					},
+				},
+				ToolCallID: "call_1",
+			},
+		},
+	}
+
+	result, err := applyMessagesToChatPreservingEnvelope(req, []Message{
+		{Role: "assistant", Content: "after"},
+	})
+	if err != nil {
+		t.Fatalf("applyMessagesToChatPreservingEnvelope() error = %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+	if len(result.Messages[0].ToolCalls) != 0 {
+		t.Fatalf("ToolCalls = %+v, want empty", result.Messages[0].ToolCalls)
+	}
+	if result.Messages[0].ToolCallID != "" {
+		t.Fatalf("ToolCallID = %q, want empty", result.Messages[0].ToolCallID)
 	}
 }
 
@@ -1622,8 +1666,8 @@ func TestGuardedProvider_Passthrough_Delegates(t *testing.T) {
 		Method:   http.MethodPost,
 		Endpoint: "responses",
 		Body:     io.NopCloser(strings.NewReader(`{"foo":"bar"}`)),
-		Headers: map[string]string{
-			"Content-Type": "application/json",
+		Headers: http.Header{
+			"Content-Type": {"application/json"},
 		},
 	})
 	if err != nil {

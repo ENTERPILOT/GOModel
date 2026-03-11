@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	neturl "net/url"
+	"slices"
 	"strings"
 )
 
@@ -152,17 +153,8 @@ func MaybeDecodeKnownBatchItemRequest(defaultEndpoint string, item BatchRequestI
 		return nil, false, nil
 	}
 	operation := DescribeEndpointPath(endpoint).Operation
-	if len(operations) > 0 {
-		matched := false
-		for _, candidate := range operations {
-			if operation == candidate {
-				matched = true
-				break
-			}
-		}
-		if !matched {
-			return nil, false, nil
-		}
+	if len(operations) > 0 && !slices.Contains(operations, operation) {
+		return nil, false, nil
 	}
 
 	decoded, err := DecodeKnownBatchItemRequest(defaultEndpoint, item)

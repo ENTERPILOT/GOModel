@@ -127,6 +127,16 @@ func TestMetricsEndpoint(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectBody:     "go_goroutines",
 		},
+		{
+			name: "metrics endpoint conflicting with passthrough route falls back to default",
+			config: &Config{
+				MetricsEnabled:  true,
+				MetricsEndpoint: "/p/internal-metrics",
+			},
+			requestPath:    "/metrics",
+			expectedStatus: http.StatusOK,
+			expectBody:     "go_goroutines",
+		},
 	}
 
 	for _, tt := range tests {
