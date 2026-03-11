@@ -1871,6 +1871,8 @@ func handleError(c *echo.Context, err error) error {
 		"error": map[string]interface{}{
 			"type":    "internal_error",
 			"message": "an unexpected error occurred",
+			"param":   nil,
+			"code":    nil,
 		},
 	})
 }

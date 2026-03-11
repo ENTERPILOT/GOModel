@@ -1609,9 +1609,11 @@ func TestHandleError_RateLimitError(t *testing.T) {
 }
 
 func TestHandleError_InvalidRequestError(t *testing.T) {
+	param := "model"
+	code := "model_not_found"
 	mock := &mockProvider{
 		supportedModels: []string{"gpt-4o-mini"},
-		err:             core.NewInvalidRequestError("invalid parameters", nil),
+		err:             core.NewInvalidRequestError("invalid parameters", nil).WithParam(param).WithCode(code),
 	}
 
 	e := echo.New()
@@ -1632,12 +1634,27 @@ func TestHandleError_InvalidRequestError(t *testing.T) {
 		t.Errorf("expected status 400, got %d", rec.Code)
 	}
 
-	body := rec.Body.String()
-	if !strings.Contains(body, "invalid_request_error") {
-		t.Errorf("response should contain error type, got: %s", body)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
 	}
-	if !strings.Contains(body, "invalid parameters") {
-		t.Errorf("response should contain error message, got: %s", body)
+
+	errorBody, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error body = %#v, want object", body["error"])
+	}
+
+	if errorBody["type"] != "invalid_request_error" {
+		t.Errorf("error.type = %v, want invalid_request_error", errorBody["type"])
+	}
+	if errorBody["message"] != "invalid parameters" {
+		t.Errorf("error.message = %v, want invalid parameters", errorBody["message"])
+	}
+	if errorBody["param"] != param {
+		t.Errorf("error.param = %v, want %v", errorBody["param"], param)
+	}
+	if errorBody["code"] != code {
+		t.Errorf("error.code = %v, want %v", errorBody["code"], code)
 	}
 }
 
@@ -1734,6 +1751,54 @@ func TestHandleError_StreamingError(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "rate_limit_error") {
 		t.Errorf("response should contain error type, got: %s", body)
+	}
+}
+
+func TestHandleError_UnexpectedErrorUsesOpenAISchema(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		err:             errors.New("boom"),
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	reqBody := `{"model": "gpt-4o-mini", "messages": [{"role": "user", "content": "Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+
+	errorBody, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("error body = %#v, want object", body["error"])
+	}
+
+	if errorBody["type"] != "internal_error" {
+		t.Errorf("error.type = %v, want internal_error", errorBody["type"])
+	}
+	if errorBody["message"] != "an unexpected error occurred" {
+		t.Errorf("error.message = %v, want unexpected error message", errorBody["message"])
+	}
+	if value, ok := errorBody["param"]; !ok || value != nil {
+		t.Errorf("error.param = %v, want nil", value)
+	}
+	if value, ok := errorBody["code"]; !ok || value != nil {
+		t.Errorf("error.code = %v, want nil", value)
 	}
 }
 
