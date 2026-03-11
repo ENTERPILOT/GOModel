@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 )
@@ -16,16 +17,10 @@ type semanticSelectorCarrier interface {
 	semanticSelector() (string, string)
 }
 
-var canonicalSelectorDecoders = map[string]func([]byte, *SemanticEnvelope) (any, error){
-	"chat_completions": func(body []byte, env *SemanticEnvelope) (any, error) {
-		return DecodeChatRequest(body, env)
-	},
-	"responses": func(body []byte, env *SemanticEnvelope) (any, error) {
-		return DecodeResponsesRequest(body, env)
-	},
-	"embeddings": func(body []byte, env *SemanticEnvelope) (any, error) {
-		return DecodeEmbeddingRequest(body, env)
-	},
+type canonicalOperationCodec struct {
+	key            semanticCacheKey
+	decode         func([]byte, *SemanticEnvelope) (any, error)
+	decodeUncached func([]byte) (any, error)
 }
 
 func unmarshalCanonicalJSON[T any](body []byte, newValue func() T) (T, error) {
@@ -37,48 +32,79 @@ func unmarshalCanonicalJSON[T any](body []byte, newValue func() T) (T, error) {
 	return req, nil
 }
 
+func newCanonicalOperationCodec[T any](key semanticCacheKey, newValue func() T, afterDecode func(*SemanticEnvelope, T)) canonicalOperationCodec {
+	return canonicalOperationCodec{
+		key: key,
+		decode: func(body []byte, env *SemanticEnvelope) (any, error) {
+			return decodeCanonicalJSON(body, env, canonicalJSONSpec[T]{
+				key:         key,
+				newValue:    newValue,
+				afterDecode: afterDecode,
+			})
+		},
+		decodeUncached: func(body []byte) (any, error) {
+			return unmarshalCanonicalJSON(body, newValue)
+		},
+	}
+}
+
+var canonicalOperationCodecs = map[string]canonicalOperationCodec{
+	"chat_completions": newCanonicalOperationCodec(semanticChatRequestKey, func() *ChatRequest { return &ChatRequest{} }, func(env *SemanticEnvelope, req *ChatRequest) {
+		cacheSemanticSelectorHintsFromRequest(env, req)
+	}),
+	"responses": newCanonicalOperationCodec(semanticResponsesRequestKey, func() *ResponsesRequest { return &ResponsesRequest{} }, func(env *SemanticEnvelope, req *ResponsesRequest) {
+		cacheSemanticSelectorHintsFromRequest(env, req)
+	}),
+	"embeddings": newCanonicalOperationCodec(semanticEmbeddingRequestKey, func() *EmbeddingRequest { return &EmbeddingRequest{} }, func(env *SemanticEnvelope, req *EmbeddingRequest) {
+		cacheSemanticSelectorHintsFromRequest(env, req)
+	}),
+	"batches": newCanonicalOperationCodec(semanticBatchRequestKey, func() *BatchRequest { return &BatchRequest{} }, func(env *SemanticEnvelope, req *BatchRequest) {
+		env.JSONBodyParsed = true
+	}),
+}
+
+func canonicalOperationCodecFor(operation string) (canonicalOperationCodec, bool) {
+	codec, ok := canonicalOperationCodecs[operation]
+	return codec, ok
+}
+
+func decodeCanonicalOperation[T any](body []byte, env *SemanticEnvelope, operation string) (T, error) {
+	codec, ok := canonicalOperationCodecFor(operation)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("unsupported canonical operation: %s", operation)
+	}
+	decoded, err := codec.decode(body, env)
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+	typed, ok := decoded.(T)
+	if !ok {
+		var zero T
+		return zero, fmt.Errorf("unexpected canonical request type for operation: %s", operation)
+	}
+	return typed, nil
+}
+
 // DecodeChatRequest decodes and caches the canonical chat request for a semantic envelope.
 func DecodeChatRequest(body []byte, env *SemanticEnvelope) (*ChatRequest, error) {
-	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*ChatRequest]{
-		key:      semanticChatRequestKey,
-		newValue: func() *ChatRequest { return &ChatRequest{} },
-		afterDecode: func(env *SemanticEnvelope, req *ChatRequest) {
-			cacheSemanticSelectorHintsFromRequest(env, req)
-		},
-	})
+	return decodeCanonicalOperation[*ChatRequest](body, env, "chat_completions")
 }
 
 // DecodeResponsesRequest decodes and caches the canonical responses request for a semantic envelope.
 func DecodeResponsesRequest(body []byte, env *SemanticEnvelope) (*ResponsesRequest, error) {
-	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*ResponsesRequest]{
-		key:      semanticResponsesRequestKey,
-		newValue: func() *ResponsesRequest { return &ResponsesRequest{} },
-		afterDecode: func(env *SemanticEnvelope, req *ResponsesRequest) {
-			cacheSemanticSelectorHintsFromRequest(env, req)
-		},
-	})
+	return decodeCanonicalOperation[*ResponsesRequest](body, env, "responses")
 }
 
 // DecodeEmbeddingRequest decodes and caches the canonical embeddings request for a semantic envelope.
 func DecodeEmbeddingRequest(body []byte, env *SemanticEnvelope) (*EmbeddingRequest, error) {
-	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*EmbeddingRequest]{
-		key:      semanticEmbeddingRequestKey,
-		newValue: func() *EmbeddingRequest { return &EmbeddingRequest{} },
-		afterDecode: func(env *SemanticEnvelope, req *EmbeddingRequest) {
-			cacheSemanticSelectorHintsFromRequest(env, req)
-		},
-	})
+	return decodeCanonicalOperation[*EmbeddingRequest](body, env, "embeddings")
 }
 
 // DecodeBatchRequest decodes and caches the canonical batch request for a semantic envelope.
 func DecodeBatchRequest(body []byte, env *SemanticEnvelope) (*BatchRequest, error) {
-	return decodeCanonicalJSON(body, env, canonicalJSONSpec[*BatchRequest]{
-		key:      semanticBatchRequestKey,
-		newValue: func() *BatchRequest { return &BatchRequest{} },
-		afterDecode: func(env *SemanticEnvelope, req *BatchRequest) {
-			env.JSONBodyParsed = true
-		},
-	})
+	return decodeCanonicalOperation[*BatchRequest](body, env, "batches")
 }
 
 // BatchRouteMetadata returns sparse batch route semantics, caching them on the envelope when present.
@@ -157,11 +183,11 @@ func DecodeCanonicalSelector(body []byte, env *SemanticEnvelope) (model, provide
 	if env == nil {
 		return "", "", false
 	}
-	decode, ok := canonicalSelectorDecoders[env.Operation]
+	codec, ok := canonicalOperationCodecFor(env.Operation)
 	if !ok {
 		return "", "", false
 	}
-	req, err := decode(body, env)
+	req, err := codec.decode(body, env)
 	if err != nil {
 		return "", "", false
 	}

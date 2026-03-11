@@ -7,18 +7,6 @@ import (
 	"strings"
 )
 
-var knownBatchItemDecoders = map[string]func([]byte) (any, error){
-	"chat_completions": func(body []byte) (any, error) {
-		return unmarshalCanonicalJSON(body, func() *ChatRequest { return &ChatRequest{} })
-	},
-	"responses": func(body []byte) (any, error) {
-		return unmarshalCanonicalJSON(body, func() *ResponsesRequest { return &ResponsesRequest{} })
-	},
-	"embeddings": func(body []byte) (any, error) {
-		return unmarshalCanonicalJSON(body, func() *EmbeddingRequest { return &EmbeddingRequest{} })
-	},
-}
-
 // DecodedBatchItemRequest is the canonical decode result for known JSON batch subrequests.
 type DecodedBatchItemRequest struct {
 	Endpoint  string
@@ -196,11 +184,11 @@ func DecodeKnownBatchItemRequest(defaultEndpoint string, item BatchRequestItem) 
 		Operation: DescribeEndpointPath(endpoint).Operation,
 	}
 
-	decode, ok := knownBatchItemDecoders[decoded.Operation]
+	codec, ok := canonicalOperationCodecFor(decoded.Operation)
 	if !ok {
 		return nil, fmt.Errorf("unsupported batch item url: %s", endpoint)
 	}
-	req, err := decode(item.Body)
+	req, err := codec.decodeUncached(item.Body)
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s request body: %w", strings.ReplaceAll(decoded.Operation, "_", " "), err)
 	}

@@ -27,12 +27,6 @@ const (
 	semanticFileRequestKey      semanticCacheKey = "file_request"
 )
 
-var selectorSemanticCacheKeys = map[string]semanticCacheKey{
-	"chat_completions": semanticChatRequestKey,
-	"responses":        semanticResponsesRequestKey,
-	"embeddings":       semanticEmbeddingRequestKey,
-}
-
 // SemanticEnvelope is the gateway's best-effort semantic extraction from ingress.
 // It may be partial and should not be treated as authoritative transport state.
 type SemanticEnvelope struct {
@@ -86,11 +80,11 @@ func (env *SemanticEnvelope) CachedCanonicalSelector() (model, provider string, 
 	if env == nil {
 		return "", "", false
 	}
-	key, ok := selectorSemanticCacheKeys[env.Operation]
+	codec, ok := canonicalOperationCodecFor(env.Operation)
 	if !ok {
 		return "", "", false
 	}
-	req, ok := cachedSemanticAny(env, key)
+	req, ok := cachedSemanticAny(env, codec.key)
 	if !ok {
 		return "", "", false
 	}
