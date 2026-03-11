@@ -567,15 +567,15 @@ func anthropicResponsesUsagePayload(usage *anthropicUsage) map[string]any {
 }
 
 func (sc *streamConverter) Read(p []byte) (n int, err error) {
-	if sc.closed {
-		return 0, io.EOF
-	}
-
 	// If we have buffered data, return it first
 	if len(sc.buffer) > 0 {
 		n = copy(p, sc.buffer)
 		sc.buffer = sc.buffer[n:]
 		return n, nil
+	}
+
+	if sc.closed {
+		return 0, io.EOF
 	}
 
 	// Read the next SSE event from Anthropic

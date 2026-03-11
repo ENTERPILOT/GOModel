@@ -38,6 +38,31 @@ func TestNew_ReturnsProvider(t *testing.T) {
 	}
 }
 
+func TestStreamConverter_DrainsBufferedDoneMessage(t *testing.T) {
+	stream := newStreamConverter(io.NopCloser(strings.NewReader("")), "claude-sonnet-4-5-20250929")
+	defer func() { _ = stream.Close() }()
+
+	buf := make([]byte, 4)
+	var out strings.Builder
+
+	for {
+		n, err := stream.Read(buf)
+		if n > 0 {
+			out.Write(buf[:n])
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Read() error = %v", err)
+		}
+	}
+
+	if out.String() != "data: [DONE]\n\n" {
+		t.Fatalf("stream output = %q, want %q", out.String(), "data: [DONE]\\n\\n")
+	}
+}
+
 func TestSetBatchResultEndpoints_EvictsOldestBatch(t *testing.T) {
 	provider := &Provider{
 		batchResultEndpoints: make(map[string]map[string]string),
