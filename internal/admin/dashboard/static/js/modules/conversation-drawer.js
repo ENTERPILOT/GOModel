@@ -110,7 +110,7 @@
                     if (requestToken !== this.conversationRequestToken) return;
 
                     if (!this.handleFetchResponse(res, 'audit conversation')) {
-                        this.conversationError = 'Unable to load conversation.';
+                        this.conversationError = 'Unable to load interactions.';
                         this.conversationEntries = [];
                         this.conversationMessages = [];
                         return;
@@ -125,7 +125,7 @@
                 } catch (e) {
                     if (requestToken !== this.conversationRequestToken) return;
                     console.error('Failed to fetch audit conversation:', e);
-                    this.conversationError = 'Failed to load conversation.';
+                    this.conversationError = 'Failed to load interactions.';
                     this.conversationEntries = [];
                     this.conversationMessages = [];
                 } finally {
@@ -162,6 +162,19 @@
                         requestBody.messages.forEach((m) => {
                             if (!m) return;
                             const role = (m.role || 'user').toLowerCase();
+                            if (role === 'tool') {
+                                const text = extractText(m.content);
+                                if (text) messages.push(this._conversationMessage('function_result', text, ts, entry.id, isAnchor, ++idx, [], m.name || ''));
+                                return;
+                            }
+                            if (role === 'assistant') {
+                                const text = extractText(m.content);
+                                const toolCalls = this._extractToolCalls(m.tool_calls);
+                                if (text || toolCalls.length > 0) {
+                                    messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx, toolCalls));
+                                }
+                                return;
+                            }
                             const text = extractText(m.content);
                             if (text) messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx));
                         });
@@ -171,6 +184,13 @@
                         extractResponsesInputMessages(requestBody.input).forEach((m) => {
                             if (m.text) messages.push(this._conversationMessage(m.role, m.text, ts, entry.id, isAnchor, ++idx));
                         });
+                        if (Array.isArray(requestBody.input)) {
+                            requestBody.input.forEach((item) => {
+                                if (!item || typeof item !== 'object' || item.type !== 'function_call_output') return;
+                                const text = typeof item.output === 'string' ? item.output : extractText(item.output);
+                                if (text) messages.push(this._conversationMessage('function_result', text, ts, entry.id, isAnchor, ++idx, [], item.call_id || ''));
+                            });
+                        }
                     }
 
                     if (responseBody && Array.isArray(responseBody.choices)) {
@@ -178,13 +198,20 @@
                         if (first && first.message) {
                             const role = (first.message.role || 'assistant').toLowerCase();
                             const text = extractText(first.message.content);
-                            if (text) messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx));
+                            const toolCalls = this._extractToolCalls(first.message.tool_calls);
+                            if (text || toolCalls.length > 0) {
+                                messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx, toolCalls));
+                            }
                         }
                     }
 
                     if (responseBody && Array.isArray(responseBody.output)) {
                         responseBody.output.forEach((item) => {
                             if (!item) return;
+                            if (item.type === 'function_call') {
+                                messages.push(this._conversationMessage('function_call', '', ts, entry.id, isAnchor, ++idx, [{name: item.name || '', arguments: item.arguments || ''}]));
+                                return;
+                            }
                             const role = (item.role || 'assistant').toLowerCase();
                             const text = extractResponsesOutputText(item);
                             if (text) messages.push(this._conversationMessage(role, text, ts, entry.id, isAnchor, ++idx));
@@ -200,7 +227,19 @@
                 return messages;
             },
 
-            _conversationMessage(role, text, timestamp, entryID, isAnchor, idx) {
+            _extractToolCalls(toolCalls) {
+                if (!Array.isArray(toolCalls)) return [];
+                return toolCalls.map((tc) => {
+                    if (!tc) return null;
+                    const fn = tc.function || tc;
+                    return {
+                        name: fn.name || tc.name || '',
+                        arguments: fn.arguments || tc.arguments || ''
+                    };
+                }).filter(Boolean);
+            },
+
+            _conversationMessage(role, text, timestamp, entryID, isAnchor, idx, toolCalls, functionName) {
                 const normalized = this._roleMeta(role);
                 return {
                     uid: entryID + '-' + idx,
@@ -210,8 +249,21 @@
                     role: normalized.role,
                     roleLabel: normalized.label,
                     roleClass: normalized.className,
-                    isAnchor
+                    isAnchor,
+                    toolCalls: Array.isArray(toolCalls) && toolCalls.length > 0 ? toolCalls : null,
+                    functionName: functionName || ''
                 };
+            },
+
+            functionExpandedContent(msg) {
+                if (msg.role === 'function_call') {
+                    return (msg.toolCalls || []).map(function(tc) {
+                        var args = tc.arguments || '';
+                        try { args = JSON.stringify(JSON.parse(args), null, 2); } catch(e) {}
+                        return tc.name + '(' + args + ')';
+                    }).join('\n\n');
+                }
+                return msg.text || '';
             },
 
             _roleMeta(role) {
@@ -224,6 +276,12 @@
                 }
                 if (normalized === 'error') {
                     return { role: 'error', label: 'Error', className: 'role-error' };
+                }
+                if (normalized === 'function_call') {
+                    return { role: 'function_call', label: 'Function Call', className: 'role-function-call' };
+                }
+                if (normalized === 'function_result') {
+                    return { role: 'function_result', label: 'Function Result', className: 'role-function-result' };
                 }
                 return { role: 'user', label: 'User', className: 'role-user' };
             }
