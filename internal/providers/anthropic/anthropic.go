@@ -570,18 +570,11 @@ func anthropicChatUsagePayload(usage *anthropicUsage) map[string]any {
 		return nil
 	}
 
-	payload := map[string]any{
+	return map[string]any{
 		"prompt_tokens":     usage.InputTokens,
 		"completion_tokens": usage.OutputTokens,
 		"total_tokens":      usage.InputTokens + usage.OutputTokens,
 	}
-	if usage.CacheCreationInputTokens > 0 {
-		payload["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
-	}
-	if usage.CacheReadInputTokens > 0 {
-		payload["cache_read_input_tokens"] = usage.CacheReadInputTokens
-	}
-	return payload
 }
 
 func anthropicResponsesUsagePayload(usage *anthropicUsage) map[string]any {
@@ -589,18 +582,11 @@ func anthropicResponsesUsagePayload(usage *anthropicUsage) map[string]any {
 		return nil
 	}
 
-	payload := map[string]any{
+	return map[string]any{
 		"input_tokens":  usage.InputTokens,
 		"output_tokens": usage.OutputTokens,
 		"total_tokens":  usage.InputTokens + usage.OutputTokens,
 	}
-	if usage.CacheCreationInputTokens > 0 {
-		payload["cache_creation_input_tokens"] = usage.CacheCreationInputTokens
-	}
-	if usage.CacheReadInputTokens > 0 {
-		payload["cache_read_input_tokens"] = usage.CacheReadInputTokens
-	}
-	return payload
 }
 
 func (sc *streamConverter) Read(p []byte) (n int, err error) {

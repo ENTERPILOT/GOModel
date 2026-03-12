@@ -516,8 +516,8 @@ data: {"type":"message_stop"}
 	if !strings.Contains(responseStr, `"total_tokens":12`) {
 		t.Fatalf("expected total_tokens in streamed usage, got %q", responseStr)
 	}
-	if !strings.Contains(responseStr, `"cache_read_input_tokens":6`) {
-		t.Fatalf("expected cache_read_input_tokens in streamed usage, got %q", responseStr)
+	if strings.Contains(responseStr, `"cache_read_input_tokens":6`) {
+		t.Fatalf("did not expect cache_read_input_tokens in normalized streamed usage, got %q", responseStr)
 	}
 }
 
@@ -2501,8 +2501,8 @@ data: {"type":"message_stop"}
 	if !strings.Contains(responseStr, `"total_tokens":12`) {
 		t.Fatalf("expected total_tokens in response.completed usage, got %q", responseStr)
 	}
-	if !strings.Contains(responseStr, `"cache_creation_input_tokens":4`) {
-		t.Fatalf("expected cache_creation_input_tokens in response.completed usage, got %q", responseStr)
+	if strings.Contains(responseStr, `"cache_creation_input_tokens":4`) {
+		t.Fatalf("did not expect cache_creation_input_tokens in normalized response.completed usage, got %q", responseStr)
 	}
 }
 
