@@ -84,19 +84,19 @@ All the tooling used in the published benchmark is available in this repository.
 
 ### Scripts
 
-The benchmark suite lives in [`docs/about/benchmark-tools/`](./benchmark-tools/):
+The benchmark suite lives in [`docs/about/benchmark-tools/`](https://github.com/ENTERPILOT/GOModel/tree/main/docs/about/benchmark-tools):
 
 | File | Purpose |
 | --- | --- |
-| [`compare.sh`](./benchmark-tools/compare.sh) | Builds GoModel, starts both gateways, runs the full benchmark matrix, and writes a `REPORT.md` |
-| [`bench_main.go`](./benchmark-tools/bench_main.go) | Source for the `bench` CLI that sends requests and collects latency + process metrics |
-| [`plot_benchmark_charts.py`](./benchmark-tools/plot_benchmark_charts.py) | Generates per-metric charts and a combined dashboard from the JSON results |
+| [`compare.sh`](https://github.com/ENTERPILOT/GOModel/blob/main/docs/about/benchmark-tools/compare.sh) | Builds GoModel, starts both gateways, runs the full benchmark matrix, and writes a `REPORT.md` |
+| [`bench_main.go`](https://github.com/ENTERPILOT/GOModel/blob/main/docs/about/benchmark-tools/bench_main.go) | Source for the `bench` CLI that sends requests and collects latency + process metrics |
+| [`plot_benchmark_charts.py`](https://github.com/ENTERPILOT/GOModel/blob/main/docs/about/benchmark-tools/plot_benchmark_charts.py) | Generates per-metric charts and a combined dashboard from the JSON results |
 
 ### Quick start
 
 ```bash
 # 1. Clone GoModel and set up your .env with GROQ_API_KEY
-git clone https://github.com/enterpilot/gomodel.git
+git clone https://github.com/ENTERPILOT/GOModel.git
 cd gomodel
 echo "GROQ_API_KEY=gsk_..." > .env
 
