@@ -4,7 +4,7 @@
 [![Docs](https://img.shields.io/badge/docs-gomodel-blue)](https://gomodel.enterpilot.io/docs)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/gaEB9BQSPH)
 [![Docker Pulls](https://img.shields.io/docker/pulls/enterpilot/gomodel)](https://hub.docker.com/r/enterpilot/gomodel)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/ENTERPILOT/GOModel)](go.mod)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ENTERPILOT/GOModel)](https://github.com/ENTERPILOT/GOModel/blob/main/go.mod)
 
 A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
 
