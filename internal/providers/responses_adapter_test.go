@@ -1,13 +1,33 @@
 package providers
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"math"
 	"strings"
 	"testing"
 
 	"gomodel/internal/core"
 )
+
+type capturingChatProvider struct {
+	capturedReq *core.ChatRequest
+	streamData  string
+	streamErr   error
+}
+
+func (p *capturingChatProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+	return nil, nil
+}
+
+func (p *capturingChatProvider) StreamChatCompletion(_ context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	p.capturedReq = req
+	if p.streamErr != nil {
+		return nil, p.streamErr
+	}
+	return io.NopCloser(strings.NewReader(p.streamData)), nil
+}
 
 func TestResponsesFunctionCallIDs(t *testing.T) {
 	t.Run("preserve explicit call id", func(t *testing.T) {
@@ -760,6 +780,92 @@ func TestExtractContentFromInput(t *testing.T) {
 				t.Fatalf("ExtractContentFromInput(%v) = %q, want %q", tt.input, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestConvertResponsesRequestToChat_ClonesStreamOptions(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model:         "test-model",
+		Input:         "hello",
+		Stream:        true,
+		StreamOptions: &core.StreamOptions{IncludeUsage: false},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if chatReq.StreamOptions == nil {
+		t.Fatal("StreamOptions = nil, want cloned value")
+	}
+	if chatReq.StreamOptions == req.StreamOptions {
+		t.Fatal("StreamOptions pointer was reused")
+	}
+	if chatReq.StreamOptions.IncludeUsage {
+		t.Fatalf("IncludeUsage = %v, want false", chatReq.StreamOptions.IncludeUsage)
+	}
+}
+
+func TestStreamResponsesViaChat_InjectsUsageWhenPolicyEnabled(t *testing.T) {
+	provider := &capturingChatProvider{
+		streamData: "data: [DONE]\n\n",
+	}
+	req := &core.ResponsesRequest{
+		Model:         "gemini-2.0-flash",
+		Input:         "hello",
+		Stream:        true,
+		StreamOptions: &core.StreamOptions{IncludeUsage: false},
+	}
+	ctx := core.WithEnforceReturningUsageData(context.Background(), true)
+
+	stream, err := StreamResponsesViaChat(ctx, provider, req, "gemini")
+	if err != nil {
+		t.Fatalf("StreamResponsesViaChat() error = %v", err)
+	}
+	defer func() {
+		_ = stream.Close()
+	}()
+
+	if provider.capturedReq == nil {
+		t.Fatal("capturedReq = nil")
+	}
+	if provider.capturedReq.StreamOptions == nil {
+		t.Fatal("captured StreamOptions = nil")
+	}
+	if !provider.capturedReq.StreamOptions.IncludeUsage {
+		t.Fatal("captured IncludeUsage = false, want true")
+	}
+	if req.StreamOptions == nil {
+		t.Fatal("original StreamOptions unexpectedly nil")
+	}
+	if req.StreamOptions.IncludeUsage {
+		t.Fatal("original request was mutated")
+	}
+}
+
+func TestStreamResponsesViaChat_DoesNotInjectUsageWhenPolicyDisabled(t *testing.T) {
+	provider := &capturingChatProvider{
+		streamData: "data: [DONE]\n\n",
+	}
+	req := &core.ResponsesRequest{
+		Model:  "gemini-2.0-flash",
+		Input:  "hello",
+		Stream: true,
+	}
+
+	stream, err := StreamResponsesViaChat(context.Background(), provider, req, "gemini")
+	if err != nil {
+		t.Fatalf("StreamResponsesViaChat() error = %v", err)
+	}
+	defer func() {
+		_ = stream.Close()
+	}()
+
+	if provider.capturedReq == nil {
+		t.Fatal("capturedReq = nil")
+	}
+	if provider.capturedReq.StreamOptions != nil {
+		t.Fatalf("captured StreamOptions = %+v, want nil", provider.capturedReq.StreamOptions)
 	}
 }
 

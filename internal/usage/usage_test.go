@@ -170,10 +170,28 @@ func TestNoopLogger(t *testing.T) {
 	if cfg.Enabled {
 		t.Error("NoopLogger should report disabled")
 	}
+	if !cfg.EnforceReturningUsageData {
+		t.Error("NoopLogger should preserve default stream usage policy")
+	}
 
 	// Close should not error
 	if err := logger.Close(); err != nil {
 		t.Errorf("NoopLogger close error: %v", err)
+	}
+}
+
+func TestNewNoopLogger_PreservesConfiguredUsagePolicy(t *testing.T) {
+	logger := NewNoopLogger(Config{
+		Enabled:                   true,
+		EnforceReturningUsageData: false,
+	})
+
+	cfg := logger.Config()
+	if cfg.Enabled {
+		t.Error("NewNoopLogger should report disabled")
+	}
+	if cfg.EnforceReturningUsageData {
+		t.Error("NewNoopLogger should preserve false enforcement setting")
 	}
 }
 

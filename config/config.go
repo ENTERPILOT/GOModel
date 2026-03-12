@@ -196,8 +196,8 @@ type UsageConfig struct {
 	// Default: true
 	Enabled bool `yaml:"enabled" env:"USAGE_ENABLED"`
 
-	// EnforceReturningUsageData controls whether to enforce returning usage data in streaming responses.
-	// When true, stream_options: {"include_usage": true} is automatically added to streaming requests.
+	// EnforceReturningUsageData controls whether to ask streaming providers to return usage data when possible.
+	// When true, stream_options: {"include_usage": true} is added for provider paths that support it.
 	// Default: true
 	EnforceReturningUsageData bool `yaml:"enforce_returning_usage_data" env:"ENFORCE_RETURNING_USAGE_DATA"`
 

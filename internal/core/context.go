@@ -12,6 +12,9 @@ const (
 	ingressFrameKey contextKey = "ingress-frame"
 	// semanticEnvelopeKey stores the best-effort semantic extraction for the request.
 	semanticEnvelopeKey contextKey = "semantic-envelope"
+	// enforceReturningUsageDataKey stores whether streaming requests should ask providers
+	// to include usage when the provider supports it.
+	enforceReturningUsageDataKey contextKey = "enforce-returning-usage-data"
 )
 
 // WithRequestID returns a new context with the request ID attached.
@@ -58,4 +61,20 @@ func GetSemanticEnvelope(ctx context.Context) *SemanticEnvelope {
 		}
 	}
 	return nil
+}
+
+// WithEnforceReturningUsageData returns a new context with the streaming usage policy attached.
+func WithEnforceReturningUsageData(ctx context.Context, enforce bool) context.Context {
+	return context.WithValue(ctx, enforceReturningUsageDataKey, enforce)
+}
+
+// GetEnforceReturningUsageData reports whether the request should ask providers
+// to include usage in streaming responses when possible.
+func GetEnforceReturningUsageData(ctx context.Context) bool {
+	if v := ctx.Value(enforceReturningUsageDataKey); v != nil {
+		if enforce, ok := v.(bool); ok {
+			return enforce
+		}
+	}
+	return false
 }

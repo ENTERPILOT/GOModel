@@ -228,6 +228,22 @@ func (h *Handler) logUsage(model, providerType string, extractFn func(*core.Mode
 	}
 }
 
+func (h *Handler) shouldEnforceReturningUsageData() bool {
+	return h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData
+}
+
+func cloneChatRequestForStreamUsage(req *core.ChatRequest) *core.ChatRequest {
+	if req == nil {
+		return nil
+	}
+	cloned := *req
+	if req.StreamOptions != nil {
+		streamOptions := *req.StreamOptions
+		cloned.StreamOptions = &streamOptions
+	}
+	return &cloned
+}
+
 func resolveModelSelector(ctx context.Context, model, provider *string) error {
 	return core.NormalizeModelSelector(core.GetSemanticEnvelope(ctx), model, provider)
 }
@@ -560,14 +576,16 @@ func (h *Handler) ChatCompletion(c *echo.Context) error {
 	ctx = core.WithRequestID(ctx, requestID)
 
 	if req.Stream {
-		if h.usageLogger != nil && h.usageLogger.Config().EnforceReturningUsageData {
-			if req.StreamOptions == nil {
-				req.StreamOptions = &core.StreamOptions{}
+		streamReq := req
+		if h.shouldEnforceReturningUsageData() {
+			streamReq = cloneChatRequestForStreamUsage(req)
+			if streamReq.StreamOptions == nil {
+				streamReq.StreamOptions = &core.StreamOptions{}
 			}
-			req.StreamOptions.IncludeUsage = true
+			streamReq.StreamOptions.IncludeUsage = true
 		}
-		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
-			return h.provider.StreamChatCompletion(ctx, req)
+		return h.handleStreamingResponse(c, streamReq.Model, providerType, func() (io.ReadCloser, error) {
+			return h.provider.StreamChatCompletion(ctx, streamReq)
 		})
 	}
 
@@ -1040,6 +1058,9 @@ func (h *Handler) Responses(c *echo.Context) error {
 	requestID := c.Request().Header.Get("X-Request-ID")
 
 	if req.Stream {
+		if h.shouldEnforceReturningUsageData() {
+			ctx = core.WithEnforceReturningUsageData(ctx, true)
+		}
 		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
 			return h.provider.StreamResponses(ctx, req)
 		})
