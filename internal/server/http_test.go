@@ -583,7 +583,7 @@ func TestProviderPassthroughRoute_DisabledRequiresAuthBefore404(t *testing.T) {
 	mock := &mockProvider{}
 	srv := New(mock, &Config{
 		MasterKey:                  "test-secret-key",
-		DisableProviderPassthrough: true,
+		DisablePassthroughRoutes: true,
 	})
 
 	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses", strings.NewReader(`{"model":"gpt-5-mini"}`))

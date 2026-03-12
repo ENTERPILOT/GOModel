@@ -150,7 +150,9 @@ Key settings:
 |----------|---------|-------------|
 | `PORT` | `8080` | Server port |
 | `GOMODEL_MASTER_KEY` | (none) | API key for authentication |
-| `ENABLE_PROVIDER_PASSTHROUGH` | `true` | Enable provider-native passthrough routes under `/p/{provider}/...` |
+| `ENABLE_PASSTHROUGH_ROUTES` | `true` | Enable provider-native passthrough routes under `/p/{provider}/...` |
+| `ALLOW_PASSTHROUGH_V1_ALIAS` | `true` | Allow `/p/{provider}/v1/...` aliases while keeping `/p/{provider}/...` canonical |
+| `ALLOWED_PASSTHROUGH_PROVIDERS` | `openai,anthropic` | Comma-separated allowlist for passthrough route providers |
 | `CACHE_TYPE` | `local` | Cache backend (`local` or `redis`) |
 | `STORAGE_TYPE` | `sqlite` | Storage backend (`sqlite`, `postgresql`, `mongodb`) |
 | `METRICS_ENABLED` | `false` | Enable Prometheus metrics |

@@ -41,9 +41,9 @@ type Config struct {
 	PricingResolver                        usage.PricingResolver                  // Optional: Resolves pricing for cost calculation
 	BatchStore                             batchstore.Store                       // Optional: Batch lifecycle persistence store
 	LogOnlyModelInteractions               bool                                   // Only log AI model endpoints (default: true)
-	DisableProviderPassthrough             bool                                   // Disable /p/{provider}/{endpoint} route registration
-	SupportedPassthroughProviders          []string                               // Provider types allowed on /p/{provider}/... passthrough routes
-	EnablePassthroughV1PrefixNormalization *bool                                  // Enable /p/{provider}/v1/... normalization while keeping /p/{provider}/... as canonical; nil defaults to true
+	DisablePassthroughRoutes      bool     // Disable /p/{provider}/{endpoint} route registration
+	AllowedPassthroughProviders   []string // Provider types allowed on /p/{provider}/... passthrough routes
+	AllowPassthroughV1Alias       *bool    // Allow /p/{provider}/v1/... aliases; nil defaults to true
 	AdminEndpointsEnabled                  bool                                   // Whether admin API endpoints are enabled
 	AdminUIEnabled                         bool                                   // Whether admin dashboard UI is enabled
 	AdminHandler                           *admin.Handler                         // Admin API handler (nil if disabled)
@@ -68,8 +68,8 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	handler := NewHandler(provider, auditLogger, usageLogger, pricingResolver)
-	if cfg != nil && cfg.SupportedPassthroughProviders != nil {
-		handler.setSupportedPassthroughProviders(cfg.SupportedPassthroughProviders)
+	if cfg != nil && cfg.AllowedPassthroughProviders != nil {
+		handler.setAllowedPassthroughProviders(cfg.AllowedPassthroughProviders)
 	}
 	if cfg != nil && !passthroughV1PrefixNormalizationEnabled(cfg) {
 		handler.normalizePassthroughV1Prefix = false
@@ -166,7 +166,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	})
 
 	// Ingress capture (before auth/audit/model validation so they can consume shared raw request state)
-	e.Use(IngressCapture())
+	e.Use(RequestSnapshotCapture())
 
 	// Audit logging middleware (before authentication to capture all requests)
 	if cfg != nil && cfg.AuditLogger != nil && cfg.AuditLogger.Config().Enabled {
@@ -195,7 +195,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	// API routes
-	if cfg == nil || !cfg.DisableProviderPassthrough {
+	if cfg == nil || !cfg.DisablePassthroughRoutes {
 		e.GET("/p/:provider/*", handler.ProviderPassthrough)
 		e.POST("/p/:provider/*", handler.ProviderPassthrough)
 		e.PUT("/p/:provider/*", handler.ProviderPassthrough)
@@ -251,10 +251,10 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 }
 
 func passthroughV1PrefixNormalizationEnabled(cfg *Config) bool {
-	if cfg == nil || cfg.EnablePassthroughV1PrefixNormalization == nil {
+	if cfg == nil || cfg.AllowPassthroughV1Alias == nil {
 		return true
 	}
-	return *cfg.EnablePassthroughV1PrefixNormalization
+	return *cfg.AllowPassthroughV1Alias
 }
 
 // Start starts the HTTP server on the given address and exits when ctx is canceled.

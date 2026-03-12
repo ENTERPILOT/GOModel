@@ -190,10 +190,10 @@ func TestApplyEnvOverrides(t *testing.T) {
 		},
 		{
 			name:    "passthrough v1 normalization override",
-			envVars: map[string]string{"NORMALIZE_PASSTHROUGH_V1_PREFIX": "false"},
+			envVars: map[string]string{"ALLOW_PASSTHROUGH_V1_ALIAS": "false"},
 			check: func(t *testing.T, cfg *Config) {
-				if cfg.Server.NormalizePassthroughV1Prefix {
-					t.Error("Server.NormalizePassthroughV1Prefix should be false")
+				if cfg.Server.AllowPassthroughV1Alias {
+					t.Error("Server.AllowPassthroughV1Alias should be false")
 				}
 			},
 		},
@@ -325,10 +325,10 @@ func TestApplyEnvOverrides(t *testing.T) {
 		},
 		{
 			name:    "provider passthrough override",
-			envVars: map[string]string{"ENABLE_PROVIDER_PASSTHROUGH": "false"},
+			envVars: map[string]string{"ENABLE_PASSTHROUGH_ROUTES": "false"},
 			check: func(t *testing.T, cfg *Config) {
-				if cfg.Server.EnableProviderPassthrough {
-					t.Error("EnableProviderPassthrough = true, want false")
+				if cfg.Server.EnablePassthroughRoutes {
+					t.Error("EnablePassthroughRoutes = true, want false")
 				}
 			},
 		},

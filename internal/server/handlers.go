@@ -28,7 +28,7 @@ var batchResultsPending404Providers = map[string]struct{}{
 	"anthropic": {},
 }
 
-var defaultSupportedPassthroughProviders = []string{"openai", "anthropic"}
+var defaultAllowedPassthroughProviders = []string{"openai", "anthropic"}
 
 // Handler holds the HTTP handlers
 type Handler struct {
@@ -38,7 +38,7 @@ type Handler struct {
 	pricingResolver               usage.PricingResolver
 	batchStore                    batchstore.Store
 	normalizePassthroughV1Prefix  bool
-	supportedPassthroughProviders map[string]struct{}
+	allowedPassthroughProviders map[string]struct{}
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
@@ -50,7 +50,7 @@ func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface,
 		pricingResolver:               pricingResolver,
 		batchStore:                    batchstore.NewMemoryStore(),
 		normalizePassthroughV1Prefix:  true,
-		supportedPassthroughProviders: normalizeSupportedPassthroughProviders(defaultSupportedPassthroughProviders),
+		allowedPassthroughProviders: normalizeAllowedPassthroughProviders(defaultAllowedPassthroughProviders),
 	}
 }
 
@@ -63,8 +63,8 @@ func (h *Handler) SetBatchStore(store batchstore.Store) {
 	h.batchStore = store
 }
 
-func (h *Handler) setSupportedPassthroughProviders(providerTypes []string) {
-	h.supportedPassthroughProviders = normalizeSupportedPassthroughProviders(providerTypes)
+func (h *Handler) setAllowedPassthroughProviders(providerTypes []string) {
+	h.allowedPassthroughProviders = normalizeAllowedPassthroughProviders(providerTypes)
 }
 
 // handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
@@ -229,33 +229,33 @@ func (h *Handler) logUsage(model, providerType string, extractFn func(*core.Mode
 }
 
 func resolveModelSelector(ctx context.Context, model, provider *string) error {
-	return core.NormalizeModelSelector(core.GetSemanticEnvelope(ctx), model, provider)
+	return core.NormalizeModelSelector(core.GetRequestSemantics(ctx), model, provider)
 }
 
-func isSupportedPassthroughProvider(providerType string, supportedPassthroughProviders map[string]struct{}) bool {
+func isAllowedPassthroughProvider(providerType string, allowedPassthroughProviders map[string]struct{}) bool {
 	providerType = strings.TrimSpace(providerType)
 	if providerType == "" {
 		return false
 	}
-	_, ok := supportedPassthroughProviders[providerType]
+	_, ok := allowedPassthroughProviders[providerType]
 	return ok
 }
 
-func normalizeSupportedPassthroughProviders(providerTypes []string) map[string]struct{} {
-	supported := make(map[string]struct{}, len(providerTypes))
+func normalizeAllowedPassthroughProviders(providerTypes []string) map[string]struct{} {
+	allowed := make(map[string]struct{}, len(providerTypes))
 	for _, providerType := range providerTypes {
 		providerType = strings.TrimSpace(providerType)
 		if providerType == "" {
 			continue
 		}
-		supported[providerType] = struct{}{}
+		allowed[providerType] = struct{}{}
 	}
-	return supported
+	return allowed
 }
 
-func (h *Handler) supportedPassthroughProviderNames() []string {
-	providers := make([]string, 0, len(h.supportedPassthroughProviders))
-	for providerType := range h.supportedPassthroughProviders {
+func (h *Handler) allowedPassthroughProviderNames() []string {
+	providers := make([]string, 0, len(h.allowedPassthroughProviders))
+	for providerType := range h.allowedPassthroughProviders {
 		providers = append(providers, providerType)
 	}
 	sort.Strings(providers)
@@ -263,12 +263,12 @@ func (h *Handler) supportedPassthroughProviderNames() []string {
 }
 
 func (h *Handler) unsupportedPassthroughProviderError(providerType string) error {
-	providers := h.supportedPassthroughProviderNames()
+	providers := h.allowedPassthroughProviderNames()
 	if len(providers) == 0 {
 		return core.NewInvalidRequestError("provider passthrough is not enabled for any providers", nil)
 	}
 	return core.NewInvalidRequestError(
-		fmt.Sprintf("provider passthrough for %q is not enabled; currently supported providers: %s", strings.TrimSpace(providerType), strings.Join(providers, ", ")),
+		fmt.Sprintf("provider passthrough for %q is not enabled; currently allowed providers: %s", strings.TrimSpace(providerType), strings.Join(providers, ", ")),
 		nil,
 	)
 }
@@ -471,7 +471,7 @@ func (h *Handler) proxyPassthroughResponse(c *echo.Context, providerType, endpoi
 // providers are intentionally deferred until they fit the same low-friction opaque path.
 //
 // @Summary      Provider passthrough
-// @Description  Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_provider_passthrough. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.
+// @Description  Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.
 // @Tags         passthrough
 // @Accept       json
 // @Accept       mpfd
@@ -496,7 +496,7 @@ func (h *Handler) proxyPassthroughResponse(c *echo.Context, providerType, endpoi
 // @Router       /p/{provider}/{endpoint} [head]
 // @Router       /p/{provider}/{endpoint} [options]
 func (h *Handler) ProviderPassthrough(c *echo.Context) error {
-	passthroughProvider, ok := h.provider.(core.PassthroughRoutableProvider)
+	passthroughProvider, ok := h.provider.(core.RoutablePassthrough)
 	if !ok {
 		return handleError(c, core.NewInvalidRequestError("provider passthrough is not supported by the current provider router", nil))
 	}
@@ -505,7 +505,7 @@ func (h *Handler) ProviderPassthrough(c *echo.Context) error {
 	if err != nil {
 		return handleError(c, err)
 	}
-	if !isSupportedPassthroughProvider(providerType, h.supportedPassthroughProviders) {
+	if !isAllowedPassthroughProvider(providerType, h.allowedPassthroughProviders) {
 		return handleError(c, h.unsupportedPassthroughProviderError(providerType))
 	}
 
@@ -547,7 +547,7 @@ func (h *Handler) ProviderPassthrough(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/chat/completions [post]
 func (h *Handler) ChatCompletion(c *echo.Context) error {
-	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.ChatRequest](c, core.DecodeChatRequest)
+	req, err := canonicalJSONRequestFromSemantics[*core.ChatRequest](c, core.DecodeChatRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -660,7 +660,7 @@ func (h *Handler) fileByID(
 		return handleError(c, err)
 	}
 
-	fileReq, err := fileRequestFromSemanticEnvelope(c)
+	fileReq, err := fileRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -766,7 +766,7 @@ func (h *Handler) CreateFile(c *echo.Context) error {
 		return handleError(c, err)
 	}
 
-	fileReq, err := fileRequestFromSemanticEnvelope(c)
+	fileReq, err := fileRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -849,7 +849,7 @@ func (h *Handler) ListFiles(c *echo.Context) error {
 		return handleError(c, err)
 	}
 
-	fileReq, err := fileRequestFromSemanticEnvelope(c)
+	fileReq, err := fileRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -1028,7 +1028,7 @@ func (h *Handler) GetFileContent(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/responses [post]
 func (h *Handler) Responses(c *echo.Context) error {
-	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
+	req, err := canonicalJSONRequestFromSemantics[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -1072,7 +1072,7 @@ func (h *Handler) Responses(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/embeddings [post]
 func (h *Handler) Embeddings(c *echo.Context) error {
-	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.EmbeddingRequest](c, core.DecodeEmbeddingRequest)
+	req, err := canonicalJSONRequestFromSemantics[*core.EmbeddingRequest](c, core.DecodeEmbeddingRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -1112,7 +1112,7 @@ func (h *Handler) Embeddings(c *echo.Context) error {
 // @Failure      502      {object}  core.GatewayError
 // @Router       /v1/batches [post]
 func (h *Handler) Batches(c *echo.Context) error {
-	req, err := canonicalJSONRequestFromSemanticEnvelope[*core.BatchRequest](c, core.DecodeBatchRequest)
+	req, err := canonicalJSONRequestFromSemantics[*core.BatchRequest](c, core.DecodeBatchRequest)
 	if err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
@@ -1272,7 +1272,7 @@ func (h *Handler) loadBatch(c *echo.Context, id string) (*batchstore.StoredBatch
 func (h *Handler) GetBatch(c *echo.Context) error {
 	ctx, _ := requestContextWithRequestID(c.Request())
 
-	batchMeta, err := batchRequestMetadataFromSemanticEnvelope(c)
+	batchMeta, err := batchRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -1329,7 +1329,7 @@ func (h *Handler) GetBatch(c *echo.Context) error {
 // @Failure      500    {object}  core.GatewayError
 // @Router       /v1/batches [get]
 func (h *Handler) ListBatches(c *echo.Context) error {
-	batchMeta, err := batchRequestMetadataFromSemanticEnvelope(c)
+	batchMeta, err := batchRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -1404,7 +1404,7 @@ func (h *Handler) ListBatches(c *echo.Context) error {
 func (h *Handler) CancelBatch(c *echo.Context) error {
 	ctx, _ := requestContextWithRequestID(c.Request())
 
-	batchMeta, err := batchRequestMetadataFromSemanticEnvelope(c)
+	batchMeta, err := batchRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -1465,7 +1465,7 @@ func (h *Handler) CancelBatch(c *echo.Context) error {
 func (h *Handler) BatchResults(c *echo.Context) error {
 	ctx, requestID := requestContextWithRequestID(c.Request())
 
-	batchMeta, err := batchRequestMetadataFromSemanticEnvelope(c)
+	batchMeta, err := batchRouteInfoFromSemantics(c)
 	if err != nil {
 		return handleError(c, err)
 	}

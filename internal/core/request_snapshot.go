@@ -1,10 +1,10 @@
 package core
 
-// IngressFrame is the transport-level capture of an inbound request. It
+// RequestSnapshot is the transport-level capture of an inbound request. It
 // preserves the request as received at the HTTP boundary so later stages can
 // extract semantics without losing fidelity while keeping mutable state behind
 // defensive-copy accessors.
-type IngressFrame struct {
+type RequestSnapshot struct {
 	// Method is the inbound HTTP method.
 	Method string
 	// Path is the request URL path as received at ingress.
@@ -19,10 +19,10 @@ type IngressFrame struct {
 	ContentType string
 	// RawBody contains the captured request body bytes when the body fit within
 	// the ingress capture limit.
-	rawBody []byte
-	// RawBodyTooLarge reports that the request body exceeded the capture limit,
-	// so RawBody is omitted and the live body stream remains on the request.
-	RawBodyTooLarge bool
+	capturedBody []byte
+	// BodyNotCaptured reports that the request body exceeded the capture limit,
+	// so CapturedBody is omitted and the live body stream remains on the request.
+	BodyNotCaptured bool
 	// RequestID is the canonical request id propagated through context, headers,
 	// providers, and audit records for this request.
 	RequestID string
@@ -31,61 +31,61 @@ type IngressFrame struct {
 	traceMetadata map[string]string
 }
 
-// NewIngressFrame constructs an IngressFrame and defensively copies its
+// NewRequestSnapshot constructs a RequestSnapshot and defensively copies its
 // mutable map and byte-slice inputs.
-func NewIngressFrame(method, path string, routeParams map[string]string, queryParams, headers map[string][]string, contentType string, rawBody []byte, rawBodyTooLarge bool, requestID string, traceMetadata map[string]string) *IngressFrame {
-	return &IngressFrame{
+func NewRequestSnapshot(method, path string, routeParams map[string]string, queryParams, headers map[string][]string, contentType string, capturedBody []byte, bodyNotCaptured bool, requestID string, traceMetadata map[string]string) *RequestSnapshot {
+	return &RequestSnapshot{
 		Method:          method,
 		Path:            path,
 		routeParams:     cloneStringMap(routeParams),
 		queryParams:     cloneMultiMap(queryParams),
 		headers:         cloneMultiMap(headers),
 		ContentType:     contentType,
-		rawBody:         cloneBytes(rawBody),
-		RawBodyTooLarge: rawBodyTooLarge,
+		capturedBody:    cloneBytes(capturedBody),
+		BodyNotCaptured: bodyNotCaptured,
 		RequestID:       requestID,
 		traceMetadata:   cloneStringMap(traceMetadata),
 	}
 }
 
-// GetRawBody returns a defensive copy of the captured raw body bytes.
-func (f *IngressFrame) GetRawBody() []byte {
-	if f == nil {
+// CapturedBody returns a defensive copy of the captured request body bytes.
+func (s *RequestSnapshot) CapturedBody() []byte {
+	if s == nil {
 		return nil
 	}
-	return cloneBytes(f.rawBody)
+	return cloneBytes(s.capturedBody)
 }
 
 // GetRouteParams returns a defensive copy of the captured route parameters.
-func (f *IngressFrame) GetRouteParams() map[string]string {
-	if f == nil {
+func (s *RequestSnapshot) GetRouteParams() map[string]string {
+	if s == nil {
 		return nil
 	}
-	return cloneStringMap(f.routeParams)
+	return cloneStringMap(s.routeParams)
 }
 
 // GetQueryParams returns a defensive copy of the captured query parameters.
-func (f *IngressFrame) GetQueryParams() map[string][]string {
-	if f == nil {
+func (s *RequestSnapshot) GetQueryParams() map[string][]string {
+	if s == nil {
 		return nil
 	}
-	return cloneMultiMap(f.queryParams)
+	return cloneMultiMap(s.queryParams)
 }
 
 // GetHeaders returns a defensive copy of the captured request headers.
-func (f *IngressFrame) GetHeaders() map[string][]string {
-	if f == nil {
+func (s *RequestSnapshot) GetHeaders() map[string][]string {
+	if s == nil {
 		return nil
 	}
-	return cloneMultiMap(f.headers)
+	return cloneMultiMap(s.headers)
 }
 
 // GetTraceMetadata returns a defensive copy of the captured trace metadata.
-func (f *IngressFrame) GetTraceMetadata() map[string]string {
-	if f == nil {
+func (s *RequestSnapshot) GetTraceMetadata() map[string]string {
+	if s == nil {
 		return nil
 	}
-	return cloneStringMap(f.traceMetadata)
+	return cloneStringMap(s.traceMetadata)
 }
 
 func cloneBytes(src []byte) []byte {

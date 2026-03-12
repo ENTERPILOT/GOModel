@@ -7,9 +7,9 @@ server:
   port: "8080"
   master_key: "your-secret-key"
   body_size_limit: "10M"
-  enable_provider_passthrough: true # expose /p/{provider}/{endpoint} passthrough routes
-  normalize_passthrough_v1_prefix: true # allow /p/{provider}/v1/... while keeping /p/{provider}/... canonical
-  supported_passthrough_providers: ["openai", "anthropic"] # providers allowed on /p/{provider}/...
+  enable_passthrough_routes: true # expose /p/{provider}/{endpoint} passthrough routes
+  allow_passthrough_v1_alias: true # allow /p/{provider}/v1/... while keeping /p/{provider}/... canonical
+  allowed_passthrough_providers: ["openai", "anthropic"] # providers allowed on /p/{provider}/...
 
 cache:
   model:

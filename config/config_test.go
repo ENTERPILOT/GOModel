@@ -26,7 +26,7 @@ func clearProviderEnvVars(t *testing.T) {
 func clearAllConfigEnvVars(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
-		"PORT", "GOMODEL_MASTER_KEY", "BODY_SIZE_LIMIT", "ENABLE_PROVIDER_PASSTHROUGH", "NORMALIZE_PASSTHROUGH_V1_PREFIX", "SUPPORTED_PASSTHROUGH_PROVIDERS",
+		"PORT", "GOMODEL_MASTER_KEY", "BODY_SIZE_LIMIT", "ENABLE_PASSTHROUGH_ROUTES", "ALLOW_PASSTHROUGH_V1_ALIAS", "ALLOWED_PASSTHROUGH_PROVIDERS",
 		"GOMODEL_CACHE_DIR", "CACHE_REFRESH_INTERVAL",
 		"REDIS_URL", "REDIS_KEY_MODELS", "REDIS_KEY_RESPONSES", "REDIS_TTL_MODELS", "REDIS_TTL_RESPONSES",
 		"STORAGE_TYPE", "SQLITE_PATH", "POSTGRES_URL", "POSTGRES_MAX_CONNS",
@@ -67,14 +67,14 @@ func TestBuildDefaultConfig(t *testing.T) {
 	if cfg.Server.Port != "8080" {
 		t.Errorf("expected Server.Port=8080, got %s", cfg.Server.Port)
 	}
-	if !cfg.Server.EnableProviderPassthrough {
-		t.Error("expected Server.EnableProviderPassthrough=true")
+	if !cfg.Server.EnablePassthroughRoutes {
+		t.Error("expected Server.EnablePassthroughRoutes=true")
 	}
-	if !cfg.Server.NormalizePassthroughV1Prefix {
-		t.Error("expected Server.NormalizePassthroughV1Prefix=true")
+	if !cfg.Server.AllowPassthroughV1Alias {
+		t.Error("expected Server.AllowPassthroughV1Alias=true")
 	}
-	if got, want := cfg.Server.SupportedPassthroughProviders, []string{"openai", "anthropic"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Errorf("expected Server.SupportedPassthroughProviders=%v, got %v", want, got)
+	if got, want := cfg.Server.AllowedPassthroughProviders, []string{"openai", "anthropic"}; len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("expected Server.AllowedPassthroughProviders=%v, got %v", want, got)
 	}
 	if cfg.Cache.Model.Local != nil {
 		t.Error("expected Cache.Model.Local to be nil in raw defaults")
@@ -276,25 +276,25 @@ func TestLoad_PassthroughFlags_EnvOverridesYAML(t *testing.T) {
 
 				yaml := `
 server:
-  enable_provider_passthrough: ` + tt.yamlEnabled + `
-  normalize_passthrough_v1_prefix: ` + tt.yamlNormalize + `
+  enable_passthrough_routes: ` + tt.yamlEnabled + `
+  allow_passthrough_v1_alias: ` + tt.yamlNormalize + `
 `
 				if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
 					t.Fatalf("Failed to write config.yaml: %v", err)
 				}
 
-				t.Setenv("ENABLE_PROVIDER_PASSTHROUGH", tt.envEnabled)
-				t.Setenv("NORMALIZE_PASSTHROUGH_V1_PREFIX", tt.envNormalize)
+				t.Setenv("ENABLE_PASSTHROUGH_ROUTES", tt.envEnabled)
+				t.Setenv("ALLOW_PASSTHROUGH_V1_ALIAS", tt.envNormalize)
 
 				result, err := Load()
 				if err != nil {
 					t.Fatalf("Load() failed: %v", err)
 				}
-				if result.Config.Server.EnableProviderPassthrough != tt.wantEnabled {
-					t.Fatalf("EnableProviderPassthrough = %v, want %v", result.Config.Server.EnableProviderPassthrough, tt.wantEnabled)
+				if result.Config.Server.EnablePassthroughRoutes != tt.wantEnabled {
+					t.Fatalf("EnablePassthroughRoutes = %v, want %v", result.Config.Server.EnablePassthroughRoutes, tt.wantEnabled)
 				}
-				if result.Config.Server.NormalizePassthroughV1Prefix != tt.wantNormalize {
-					t.Fatalf("NormalizePassthroughV1Prefix = %v, want %v", result.Config.Server.NormalizePassthroughV1Prefix, tt.wantNormalize)
+				if result.Config.Server.AllowPassthroughV1Alias != tt.wantNormalize {
+					t.Fatalf("AllowPassthroughV1Alias = %v, want %v", result.Config.Server.AllowPassthroughV1Alias, tt.wantNormalize)
 				}
 			})
 		})
@@ -309,8 +309,8 @@ func TestLoad_PassthroughFlags_YAMLExpansion(t *testing.T) {
 
 		yaml := `
 server:
-  enable_provider_passthrough: ${PASSTHROUGH_ENABLED_FROM_YAML}
-  normalize_passthrough_v1_prefix: ${PASSTHROUGH_NORMALIZE_FROM_YAML:-false}
+  enable_passthrough_routes: ${PASSTHROUGH_ENABLED_FROM_YAML}
+  allow_passthrough_v1_alias: ${PASSTHROUGH_NORMALIZE_FROM_YAML:-false}
 `
 		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
 			t.Fatalf("Failed to write config.yaml: %v", err)
@@ -320,11 +320,11 @@ server:
 		if err != nil {
 			t.Fatalf("Load() failed: %v", err)
 		}
-		if result.Config.Server.EnableProviderPassthrough {
-			t.Fatal("expected YAML ${VAR} expansion to set EnableProviderPassthrough=false")
+		if result.Config.Server.EnablePassthroughRoutes {
+			t.Fatal("expected YAML ${VAR} expansion to set EnablePassthroughRoutes=false")
 		}
-		if result.Config.Server.NormalizePassthroughV1Prefix {
-			t.Fatal("expected YAML ${VAR:-default} expansion to set NormalizePassthroughV1Prefix=false")
+		if result.Config.Server.AllowPassthroughV1Alias {
+			t.Fatal("expected YAML ${VAR:-default} expansion to set AllowPassthroughV1Alias=false")
 		}
 	})
 }
@@ -363,21 +363,21 @@ func TestLoad_ConfigExample_UsesNestedModelCacheSettings(t *testing.T) {
 		if result.Config.Cache.Model.Redis != nil {
 			t.Fatalf("expected Cache.Model.Redis to be nil in example config, got %+v", result.Config.Cache.Model.Redis)
 		}
-		gotProviders := result.Config.Server.SupportedPassthroughProviders
+		gotProviders := result.Config.Server.AllowedPassthroughProviders
 		wantProviders := []string{"openai", "anthropic"}
 		if len(gotProviders) != len(wantProviders) || gotProviders[0] != wantProviders[0] || gotProviders[1] != wantProviders[1] {
-			t.Fatalf("Server.SupportedPassthroughProviders = %v, want %v", gotProviders, wantProviders)
+			t.Fatalf("Server.AllowedPassthroughProviders = %v, want %v", gotProviders, wantProviders)
 		}
 	})
 }
 
-func TestLoad_SupportedPassthroughProviders_EnvOverridesYAML(t *testing.T) {
+func TestLoad_AllowedPassthroughProviders_EnvOverridesYAML(t *testing.T) {
 	withTempDir(t, func(dir string) {
 		clearAllConfigEnvVars(t)
 
 		yaml := `
 server:
-  supported_passthrough_providers:
+  allowed_passthrough_providers:
     - openai
     - anthropic
 `
@@ -385,17 +385,17 @@ server:
 			t.Fatalf("Failed to write config.yaml: %v", err)
 		}
 
-		t.Setenv("SUPPORTED_PASSTHROUGH_PROVIDERS", " groq , gemini ")
+		t.Setenv("ALLOWED_PASSTHROUGH_PROVIDERS", " groq , gemini ")
 
 		result, err := Load()
 		if err != nil {
 			t.Fatalf("Load() failed: %v", err)
 		}
 
-		got := result.Config.Server.SupportedPassthroughProviders
+		got := result.Config.Server.AllowedPassthroughProviders
 		want := []string{"groq", "gemini"}
 		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-			t.Fatalf("SupportedPassthroughProviders = %v, want %v", got, want)
+			t.Fatalf("AllowedPassthroughProviders = %v, want %v", got, want)
 		}
 	})
 }

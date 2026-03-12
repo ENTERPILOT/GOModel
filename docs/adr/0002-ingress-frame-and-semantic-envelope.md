@@ -23,23 +23,23 @@ GOModel needs a model that preserves the original request faithfully while still
 
 ## Flow Diagram
 
-![IngressFrame and SemanticEnvelope request flow](assets/0002-ingress-frame-flow.svg)
+![RequestSnapshot and RequestSemantics request flow](assets/0002-ingress-frame-flow.svg)
 
 ## Decision
 
-Use `IngressFrame` and `SemanticEnvelope` for transport-bearing model and provider request routes such as `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/batches*`, `/v1/files*`, and `/p/{provider}/{endpoint}`.
+Use `RequestSnapshot` and `RequestSemantics` for transport-bearing model and provider request routes such as `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/batches*`, `/v1/files*`, and `/p/{provider}/{endpoint}`.
 
 Discovery routes such as `GET /v1/models` are out of scope.
 
-`IngressFrame` is always present.
+`RequestSnapshot` is always present.
 
-`SemanticEnvelope` is optional and best-effort. It may be rich, sparse, or absent, depending on how much the gateway understands about the route, content type, and request body.
+`RequestSemantics` is optional and best-effort. It may be rich, sparse, or absent, depending on how much the gateway understands about the route, content type, and request body.
 
 This gives GOModel one consistent ingress model across both `/v1/*` and `/p/*`.
 
-## IngressFrame
+## RequestSnapshot
 
-`IngressFrame` is the immutable capture of the inbound request at the transport boundary.
+`RequestSnapshot` is the immutable capture of the inbound request at the transport boundary.
 
 It should contain:
 
@@ -52,7 +52,7 @@ It should contain:
 - raw body bytes
 - request ID and tracing metadata
 
-`IngressFrame` is transport-oriented, not schema-oriented.
+`RequestSnapshot` is transport-oriented, not schema-oriented.
 
 Its job is to preserve what came over the wire so the gateway can:
 
@@ -60,11 +60,11 @@ Its job is to preserve what came over the wire so the gateway can:
 - re-use it for pass-through when appropriate
 - derive semantics from it without losing fidelity
 
-`IngressFrame` must not be mutated.
+`RequestSnapshot` must not be mutated.
 
-## SemanticEnvelope
+## RequestSemantics
 
-`SemanticEnvelope` is the gateway's best-effort semantic extraction from the ingress frame.
+`RequestSemantics` is the gateway's best-effort semantic extraction from the ingress frame.
 
 It may contain:
 
@@ -102,9 +102,9 @@ The gateway must allow the semantic envelope to be partial or absent rather than
 
 For HTTP SSE endpoints, streaming remains a standard ingress request plus a streamed egress response.
 
-`IngressFrame` captures the initial HTTP request only. The semantic envelope may include `stream=true` and any streaming options the gateway understands.
+`RequestSnapshot` captures the initial HTTP request only. The semantic envelope may include `stream=true` and any streaming options the gateway understands.
 
-The streamed response is not part of `IngressFrame`. If the gateway needs structured handling of outbound SSE, it should use a separate egress stream abstraction that preserves raw event frames and optionally derives per-event semantics.
+The streamed response is not part of `RequestSnapshot`. If the gateway needs structured handling of outbound SSE, it should use a separate egress stream abstraction that preserves raw event frames and optionally derives per-event semantics.
 
 ## Why This Is Good
 
@@ -139,4 +139,4 @@ The streamed response is not part of `IngressFrame`. If the gateway needs struct
 
 ## Notes
 
-If future realtime transports require it, the `IngressFrame` concept can be generalized later without changing the core decision here: preserve the transport input first, and derive semantics second.
+If future realtime transports require it, the `RequestSnapshot` concept can be generalized later without changing the core decision here: preserve the transport input first, and derive semantics second.

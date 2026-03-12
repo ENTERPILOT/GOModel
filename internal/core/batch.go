@@ -34,9 +34,9 @@ const (
 	BatchActionResults = "results"
 )
 
-// BatchRequestSemantic is the sparse canonical metadata the gateway can derive for /v1/batches* routes.
+// BatchRouteInfo is sparse canonical metadata the gateway can derive for /v1/batches* routes.
 // The full create payload remains in BatchRequest when the gateway lazily decodes JSON bodies.
-type BatchRequestSemantic struct {
+type BatchRouteInfo struct {
 	Action   string
 	BatchID  string
 	After    string
@@ -45,7 +45,7 @@ type BatchRequestSemantic struct {
 	HasLimit bool
 }
 
-func (req *BatchRequestSemantic) ensureParsedLimit() error {
+func (req *BatchRouteInfo) ensureParsedLimit() error {
 	if req == nil || req.LimitRaw == "" || req.HasLimit {
 		return nil
 	}

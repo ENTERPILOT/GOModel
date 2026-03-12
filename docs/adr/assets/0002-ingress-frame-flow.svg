@@ -15,7 +15,7 @@
   <rect width="900" height="795" fill="#f9fafb" rx="12"/>
 
   <!-- Title -->
-  <text x="400" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">IngressFrame &amp; SemanticEnvelope — Request Flow</text>
+  <text x="400" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#111827">RequestSnapshot &amp; RequestSemantics — Request Flow</text>
 
   <!-- ══════════════════════════════════════════
        CLIENT
@@ -23,7 +23,7 @@
   <rect x="335" y="46" width="180" height="42" rx="8" fill="#111827"/>
   <text x="425" y="72" text-anchor="middle" font-size="13" font-weight="700" fill="white">Client Request</text>
 
-  <!-- Arrow: Client → IngressFrame -->
+  <!-- Arrow: Client → RequestSnapshot -->
   <line x1="425" y1="88" x2="425" y2="117" stroke="#6b7280" stroke-width="2" marker-end="url(#arr)"/>
   <text x="432" y="107" font-size="10" fill="#6b7280">HTTP</text>
 
@@ -34,13 +34,13 @@
        INGRESSFRAME
        ══════════════════════════════════════════ -->
   <rect x="90" y="134" width="520" height="100" rx="8" fill="#1d4ed8"/>
-  <text x="350" y="157" text-anchor="middle" font-size="14" font-weight="700" fill="white">IngressFrame</text>
+  <text x="350" y="157" text-anchor="middle" font-size="14" font-weight="700" fill="white">RequestSnapshot</text>
   <text x="350" y="173" text-anchor="middle" font-size="11" fill="#93c5fd" font-style="italic">immutable · transport-oriented · never mutated</text>
   <text x="108" y="195" font-size="11" fill="white">• method, path, route params, query params</text>
   <text x="108" y="211" font-size="11" fill="white">• headers · content-type · raw body bytes</text>
   <text x="108" y="227" font-size="11" fill="white">• request ID · tracing metadata</text>
 
-  <!-- Arrow: IngressFrame right → AuditLog -->
+  <!-- Arrow: RequestSnapshot right → AuditLog -->
   <line x1="610" y1="179" x2="648" y2="179" stroke="#059669" stroke-width="2" marker-end="url(#arrG)"/>
   <text x="612" y="171" font-size="9" fill="#059669" font-weight="600">always</text>
 
@@ -51,7 +51,7 @@
   <text x="717" y="177" text-anchor="middle" font-size="12" font-weight="700" fill="white">Audit Log</text>
   <text x="717" y="194" text-anchor="middle" font-size="10" fill="#d1fae5">reliable raw source</text>
 
-  <!-- Arrow: IngressFrame bottom → SemanticEnvelope -->
+  <!-- Arrow: RequestSnapshot bottom → RequestSemantics -->
   <line x1="350" y1="234" x2="350" y2="258" stroke="#6b7280" stroke-width="2" marker-end="url(#arr)"/>
   <text x="356" y="250" font-size="9" fill="#9ca3af">best-effort extraction</text>
 
@@ -60,7 +60,7 @@
        ══════════════════════════════════════════ -->
   <!-- box: y=262, h=106, bottom=368 -->
   <rect x="90" y="262" width="520" height="106" rx="8" fill="#5b21b6" stroke="#a78bfa" stroke-width="2" stroke-dasharray="8,4"/>
-  <text x="350" y="285" text-anchor="middle" font-size="14" font-weight="700" fill="white">SemanticEnvelope</text>
+  <text x="350" y="285" text-anchor="middle" font-size="14" font-weight="700" fill="white">RequestSemantics</text>
   <text x="350" y="301" text-anchor="middle" font-size="11" fill="#ddd6fe" font-style="italic">optional · may be rich, partial, or absent</text>
   <text x="108" y="323" font-size="11" fill="white">• dialect: openai_compat | provider_passthrough</text>
   <text x="108" y="339" font-size="11" fill="white">• operation kind: chat_completions | responses | embeddings | ...</text>

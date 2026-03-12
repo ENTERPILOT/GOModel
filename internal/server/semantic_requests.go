@@ -6,28 +6,28 @@ import (
 	"gomodel/internal/core"
 )
 
-func ensureSemanticEnvelope(c *echo.Context) *core.SemanticEnvelope {
+func ensureRequestSemantics(c *echo.Context) *core.RequestSemantics {
 	ctx := c.Request().Context()
-	if env := core.GetSemanticEnvelope(ctx); env != nil {
-		return env
+	if semantics := core.GetRequestSemantics(ctx); semantics != nil {
+		return semantics
 	}
 
-	frame := core.GetIngressFrame(ctx)
-	if frame == nil {
+	snapshot := core.GetRequestSnapshot(ctx)
+	if snapshot == nil {
 		return nil
 	}
 
-	env := core.BuildSemanticEnvelope(frame)
-	if env == nil {
+	semantics := core.DeriveRequestSemantics(snapshot)
+	if semantics == nil {
 		return nil
 	}
 
-	c.SetRequest(c.Request().WithContext(core.WithSemanticEnvelope(ctx, env)))
-	return env
+	c.SetRequest(c.Request().WithContext(core.WithRequestSemantics(ctx, semantics)))
+	return semantics
 }
 
-func semanticJSONBody(c *echo.Context) ([]byte, *core.SemanticEnvelope, error) {
-	env := ensureSemanticEnvelope(c)
+func semanticJSONBody(c *echo.Context) ([]byte, *core.RequestSemantics, error) {
+	env := ensureRequestSemantics(c)
 	bodyBytes, err := requestBodyBytes(c)
 	if err != nil {
 		return nil, env, err
@@ -35,7 +35,7 @@ func semanticJSONBody(c *echo.Context) ([]byte, *core.SemanticEnvelope, error) {
 	return bodyBytes, env, nil
 }
 
-func canonicalJSONRequestFromSemanticEnvelope[T any](c *echo.Context, decode func([]byte, *core.SemanticEnvelope) (T, error)) (T, error) {
+func canonicalJSONRequestFromSemantics[T any](c *echo.Context, decode func([]byte, *core.RequestSemantics) (T, error)) (T, error) {
 	bodyBytes, env, err := semanticJSONBody(c)
 	if err != nil {
 		var zero T
@@ -44,9 +44,9 @@ func canonicalJSONRequestFromSemanticEnvelope[T any](c *echo.Context, decode fun
 	return decode(bodyBytes, env)
 }
 
-func batchRequestMetadataFromSemanticEnvelope(c *echo.Context) (*core.BatchRequestSemantic, error) {
+func batchRouteInfoFromSemantics(c *echo.Context) (*core.BatchRouteInfo, error) {
 	return core.BatchRouteMetadata(
-		ensureSemanticEnvelope(c),
+		ensureRequestSemantics(c),
 		c.Request().Method,
 		c.Request().URL.Path,
 		routeParamsMap(c.PathValues()),
@@ -54,8 +54,8 @@ func batchRequestMetadataFromSemanticEnvelope(c *echo.Context) (*core.BatchReque
 	)
 }
 
-func fileRequestFromSemanticEnvelope(c *echo.Context) (*core.FileRequestSemantic, error) {
-	env := ensureSemanticEnvelope(c)
+func fileRouteInfoFromSemantics(c *echo.Context) (*core.FileRouteInfo, error) {
+	env := ensureRequestSemantics(c)
 	req, err := core.FileRouteMetadata(
 		env,
 		c.Request().Method,
@@ -66,8 +66,8 @@ func fileRequestFromSemanticEnvelope(c *echo.Context) (*core.FileRequestSemantic
 	if err != nil {
 		return nil, err
 	}
-	req = core.EnrichFileCreateRequestSemantic(req, echoFileMultipartReader{ctx: c})
-	core.CacheFileRequestSemantic(env, req)
+	req = core.EnrichFileCreateRouteInfo(req, echoFileMultipartReader{ctx: c})
+	core.CacheFileRouteInfo(env, req)
 	return req, nil
 }
 

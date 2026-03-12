@@ -13,10 +13,10 @@ import (
 	"gomodel/internal/core"
 )
 
-// IngressCapture captures immutable transport-level request data for model-facing endpoints.
+// RequestSnapshotCapture captures immutable transport-level request data for model-facing endpoints.
 // Small request bodies are captured once and shared through context; oversized bodies are left
-// on the live request stream so ingress capture does not defeat audit-log body limits.
-func IngressCapture() echo.MiddlewareFunc {
+// on the live request stream so snapshot capture does not defeat audit-log body limits.
+func RequestSnapshotCapture() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			req, requestID := ensureRequestID(c.Request())
@@ -27,15 +27,15 @@ func IngressCapture() echo.MiddlewareFunc {
 				return next(c)
 			}
 
-			bodyBytes, bodyTooLarge, err := captureIngressBody(req, desc.BodyMode)
+			bodyBytes, bodyTooLarge, err := captureRequestBodyForSnapshot(req, desc.BodyMode)
 			if err != nil {
 				return handleError(c, core.NewInvalidRequestError("failed to read request body", err))
 			}
 
-			frame := core.NewIngressFrame(
+			snapshot := core.NewRequestSnapshot(
 				req.Method,
 				req.URL.Path,
-				ingressRouteParams(req.URL.Path, routeParamsMap(c.PathValues())),
+				snapshotRouteParams(req.URL.Path, routeParamsMap(c.PathValues())),
 				req.URL.Query(),
 				req.Header,
 				req.Header.Get("Content-Type"),
@@ -45,9 +45,9 @@ func IngressCapture() echo.MiddlewareFunc {
 				extractTraceMetadata(req.Header),
 			)
 
-			ctx := core.WithIngressFrame(req.Context(), frame)
-			if env := core.BuildSemanticEnvelope(frame); env != nil {
-				ctx = core.WithSemanticEnvelope(ctx, env)
+			ctx := core.WithRequestSnapshot(req.Context(), snapshot)
+			if semantics := core.DeriveRequestSemantics(snapshot); semantics != nil {
+				ctx = core.WithRequestSemantics(ctx, semantics)
 			}
 			c.SetRequest(req.WithContext(ctx))
 
@@ -75,7 +75,7 @@ func ensureRequestID(req *http.Request) (*http.Request, string) {
 	return req, requestID
 }
 
-func ingressRouteParams(path string, params map[string]string) map[string]string {
+func snapshotRouteParams(path string, params map[string]string) map[string]string {
 	if provider, endpoint, ok := core.ParseProviderPassthroughPath(path); ok {
 		if params == nil {
 			params = make(map[string]string, 2)
@@ -107,7 +107,7 @@ func extractTraceMetadata(headers map[string][]string) map[string]string {
 	return metadata
 }
 
-func captureIngressBody(req *http.Request, bodyMode core.BodyMode) ([]byte, bool, error) {
+func captureRequestBodyForSnapshot(req *http.Request, bodyMode core.BodyMode) ([]byte, bool, error) {
 	if req.Body == nil {
 		return []byte{}, false, nil
 	}
@@ -149,9 +149,9 @@ func (c *combinedReadCloser) Close() error {
 }
 
 func requestBodyBytes(c *echo.Context) ([]byte, error) {
-	if frame := core.GetIngressFrame(c.Request().Context()); frame != nil {
-		if rawBody := frame.GetRawBody(); rawBody != nil {
-			return rawBody, nil
+	if snapshot := core.GetRequestSnapshot(c.Request().Context()); snapshot != nil {
+		if body := snapshot.CapturedBody(); body != nil {
+			return body, nil
 		}
 	}
 

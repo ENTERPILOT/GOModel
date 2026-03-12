@@ -77,15 +77,15 @@ func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
 
 func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed bool, err error) {
 	ctx := c.Request().Context()
-	if env := core.GetSemanticEnvelope(ctx); env != nil {
+	if env := core.GetRequestSemantics(ctx); env != nil {
 		if model, provider, ok := cachedCanonicalSelectorHints(env); ok {
 			return model, provider, true, nil
 		}
 		if model, provider, ok := decodeCanonicalSelectorHintsForValidation(ctx, env); ok {
 			return model, provider, true, nil
 		}
-		if env.JSONBodyParsed || env.SelectorHints.Model != "" || env.SelectorHints.Provider != "" {
-			return env.SelectorHints.Model, env.SelectorHints.Provider, true, nil
+		if env.BodyParsedAsJSON || env.RoutingHints.Model != "" || env.RoutingHints.Provider != "" {
+			return env.RoutingHints.Model, env.RoutingHints.Provider, true, nil
 		}
 	}
 
@@ -93,7 +93,7 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 	if err != nil {
 		return "", "", false, err
 	}
-	if env := core.GetSemanticEnvelope(ctx); env != nil {
+	if env := core.GetRequestSemantics(ctx); env != nil {
 		if model, provider, ok := core.DecodeCanonicalSelector(bodyBytes, env); ok {
 			return model, provider, true, nil
 		}
@@ -109,19 +109,19 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 	return peek.Model, peek.Provider, true, nil
 }
 
-func cachedCanonicalSelectorHints(env *core.SemanticEnvelope) (model, provider string, ok bool) {
-	return env.CachedCanonicalSelector()
+func cachedCanonicalSelectorHints(env *core.RequestSemantics) (model, provider string, ok bool) {
+	return env.CanonicalSelectorFromCachedRequest()
 }
 
-func decodeCanonicalSelectorHintsForValidation(ctx context.Context, env *core.SemanticEnvelope) (model, provider string, ok bool) {
+func decodeCanonicalSelectorHintsForValidation(ctx context.Context, env *core.RequestSemantics) (model, provider string, ok bool) {
 	if env == nil {
 		return "", "", false
 	}
-	frame := core.GetIngressFrame(ctx)
-	if frame == nil {
+	snapshot := core.GetRequestSnapshot(ctx)
+	if snapshot == nil {
 		return "", "", false
 	}
-	rawBody := frame.GetRawBody()
+	rawBody := snapshot.CapturedBody()
 	if rawBody == nil {
 		return "", "", false
 	}
@@ -138,8 +138,8 @@ func isBatchOrFileRootOrSubresource(path string) bool {
 }
 
 func providerPassthroughType(c *echo.Context) (string, bool) {
-	if env := core.GetSemanticEnvelope(c.Request().Context()); env != nil && env.Operation == "provider_passthrough" {
-		providerType := strings.TrimSpace(env.SelectorHints.Provider)
+	if env := core.GetRequestSemantics(c.Request().Context()); env != nil && env.OperationKind == "provider_passthrough" {
+		providerType := strings.TrimSpace(env.RoutingHints.Provider)
 		if providerType != "" {
 			return providerType, true
 		}

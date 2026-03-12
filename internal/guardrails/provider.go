@@ -121,8 +121,8 @@ func (g *GuardedProvider) nativeFileRouter() (core.NativeFileRoutableProvider, e
 	return fp, nil
 }
 
-func (g *GuardedProvider) passthroughRouter() (core.PassthroughRoutableProvider, error) {
-	pp, ok := g.inner.(core.PassthroughRoutableProvider)
+func (g *GuardedProvider) passthroughRouter() (core.RoutablePassthrough, error) {
+	pp, ok := g.inner.(core.RoutablePassthrough)
 	if !ok {
 		return nil, core.NewInvalidRequestError("passthrough routing is not supported by the current provider router", nil)
 	}

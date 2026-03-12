@@ -28,7 +28,8 @@ type PassthroughProvider interface {
 	Passthrough(ctx context.Context, req *PassthroughRequest) (*PassthroughResponse, error)
 }
 
-// PassthroughRoutableProvider resolves a provider type before issuing an opaque passthrough request.
-type PassthroughRoutableProvider interface {
+// RoutablePassthrough resolves a provider type before issuing an opaque
+// passthrough request.
+type RoutablePassthrough interface {
 	Passthrough(ctx context.Context, providerType string, req *PassthroughRequest) (*PassthroughResponse, error)
 }

@@ -23,9 +23,9 @@ type FileCreateRequest struct {
 	Content  []byte `json:"-"`
 }
 
-// FileRequestSemantic is the sparse canonical metadata the gateway can derive for /v1/files* routes.
+// FileRouteInfo is sparse canonical metadata the gateway can derive for /v1/files* routes.
 // It intentionally excludes file bytes, which remain transport data rather than semantic data.
-type FileRequestSemantic struct {
+type FileRouteInfo struct {
 	Action   string
 	Provider string
 	Purpose  string
@@ -37,7 +37,7 @@ type FileRequestSemantic struct {
 	HasLimit bool
 }
 
-func (req *FileRequestSemantic) ensureParsedLimit() error {
+func (req *FileRouteInfo) ensureParsedLimit() error {
 	if req == nil || req.LimitRaw == "" || req.HasLimit {
 		return nil
 	}
@@ -57,11 +57,11 @@ type FileMultipartMetadataReader interface {
 	Filename(name string) (string, bool)
 }
 
-// EnrichFileCreateRequestSemantic enriches req with provider, purpose, and
+// EnrichFileCreateRouteInfo enriches req with provider, purpose, and
 // filename metadata extracted from a multipart reader for file-create requests.
 // It returns req unchanged when req is nil, req.Action is not FileActionCreate,
 // or reader is nil.
-func EnrichFileCreateRequestSemantic(req *FileRequestSemantic, reader FileMultipartMetadataReader) *FileRequestSemantic {
+func EnrichFileCreateRouteInfo(req *FileRouteInfo, reader FileMultipartMetadataReader) *FileRouteInfo {
 	if req == nil || req.Action != FileActionCreate || reader == nil {
 		return req
 	}

@@ -21,7 +21,7 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesChatRequest(t *testing.T
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/chat/completions",
 		nil,
@@ -38,26 +38,26 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesChatRequest(t *testing.T
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := canonicalJSONRequestFromSemanticEnvelope[*core.ChatRequest](c, core.DecodeChatRequest)
+	first, err := canonicalJSONRequestFromSemantics[*core.ChatRequest](c, core.DecodeChatRequest)
 	require.NoError(t, err)
 
-	second, err := canonicalJSONRequestFromSemanticEnvelope[*core.ChatRequest](c, core.DecodeChatRequest)
+	second, err := canonicalJSONRequestFromSemantics[*core.ChatRequest](c, core.DecodeChatRequest)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
 	require.NotNil(t, first.ExtraFields["response_format"])
 
-	env := core.GetSemanticEnvelope(c.Request().Context())
+	env := core.GetRequestSemantics(c.Request().Context())
 	require.NotNil(t, env)
 	require.Same(t, first, env.CachedChatRequest())
-	assert.Equal(t, "gpt-5-mini", env.SelectorHints.Model)
-	assert.Equal(t, "openai", env.SelectorHints.Provider)
+	assert.Equal(t, "gpt-5-mini", env.RoutingHints.Model)
+	assert.Equal(t, "openai", env.RoutingHints.Provider)
 }
 
 func TestCanonicalJSONRequestFromSemanticEnvelope_CachesResponsesRequest(t *testing.T) {
@@ -66,7 +66,7 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesResponsesRequest(t *test
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/responses",
 		nil,
@@ -81,16 +81,16 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesResponsesRequest(t *test
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := canonicalJSONRequestFromSemanticEnvelope[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
+	first, err := canonicalJSONRequestFromSemantics[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
 	require.NoError(t, err)
 
-	second, err := canonicalJSONRequestFromSemanticEnvelope[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
+	second, err := canonicalJSONRequestFromSemantics[*core.ResponsesRequest](c, core.DecodeResponsesRequest)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
@@ -100,10 +100,10 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesResponsesRequest(t *test
 	require.Len(t, input, 1)
 	require.NotNil(t, input[0].ExtraFields["x_trace"])
 
-	env := core.GetSemanticEnvelope(c.Request().Context())
+	env := core.GetRequestSemantics(c.Request().Context())
 	require.NotNil(t, env)
 	require.Same(t, first, env.CachedResponsesRequest())
-	assert.Equal(t, "gpt-5-mini", env.SelectorHints.Model)
+	assert.Equal(t, "gpt-5-mini", env.RoutingHints.Model)
 }
 
 func TestCanonicalJSONRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngressBodyMissing(t *testing.T) {
@@ -116,24 +116,24 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_FallsBackToLiveBodyWhenIngress
 	}`))
 	req.Header.Set("Content-Type", "application/json")
 
-	frame := core.NewIngressFrame(http.MethodPost, "/v1/embeddings", nil, nil, nil, "application/json", nil, true, "", nil)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	frame := core.NewRequestSnapshot(http.MethodPost, "/v1/embeddings", nil, nil, nil, "application/json", nil, true, "", nil)
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	embeddingReq, err := canonicalJSONRequestFromSemanticEnvelope[*core.EmbeddingRequest](c, core.DecodeEmbeddingRequest)
+	embeddingReq, err := canonicalJSONRequestFromSemantics[*core.EmbeddingRequest](c, core.DecodeEmbeddingRequest)
 	require.NoError(t, err)
 	require.Equal(t, "text-embedding-3-large", embeddingReq.Model)
 	require.Equal(t, "openai", embeddingReq.Provider)
 	require.NotNil(t, embeddingReq.ExtraFields["x_meta"])
 
-	env := core.GetSemanticEnvelope(c.Request().Context())
+	env := core.GetRequestSemantics(c.Request().Context())
 	require.NotNil(t, env)
 	require.Same(t, embeddingReq, env.CachedEmbeddingRequest())
-	assert.True(t, env.JSONBodyParsed)
-	assert.Equal(t, "text-embedding-3-large", env.SelectorHints.Model)
+	assert.True(t, env.BodyParsedAsJSON)
+	assert.Equal(t, "text-embedding-3-large", env.RoutingHints.Model)
 }
 
 func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.T) {
@@ -142,7 +142,7 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = &explodingReadCloser{}
 
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/batches",
 		nil,
@@ -163,16 +163,16 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := canonicalJSONRequestFromSemanticEnvelope[*core.BatchRequest](c, core.DecodeBatchRequest)
+	first, err := canonicalJSONRequestFromSemantics[*core.BatchRequest](c, core.DecodeBatchRequest)
 	require.NoError(t, err)
 
-	second, err := canonicalJSONRequestFromSemanticEnvelope[*core.BatchRequest](c, core.DecodeBatchRequest)
+	second, err := canonicalJSONRequestFromSemantics[*core.BatchRequest](c, core.DecodeBatchRequest)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
@@ -180,17 +180,17 @@ func TestCanonicalJSONRequestFromSemanticEnvelope_CachesBatchRequest(t *testing.
 	require.Len(t, first.Requests, 1)
 	require.NotNil(t, first.Requests[0].ExtraFields["x_item_flag"])
 
-	env := core.GetSemanticEnvelope(c.Request().Context())
+	env := core.GetRequestSemantics(c.Request().Context())
 	require.NotNil(t, env)
 	require.Same(t, first, env.CachedBatchRequest())
-	assert.True(t, env.JSONBodyParsed)
+	assert.True(t, env.BodyParsedAsJSON)
 }
 
 func TestBatchRequestMetadataFromSemanticEnvelope_CachesListMetadata(t *testing.T) {
 	e := echo.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/batches?after=batch_prev&limit=5", nil)
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodGet,
 		"/v1/batches",
 		nil,
@@ -205,15 +205,15 @@ func TestBatchRequestMetadataFromSemanticEnvelope_CachesListMetadata(t *testing.
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := batchRequestMetadataFromSemanticEnvelope(c)
+	first, err := batchRouteInfoFromSemantics(c)
 	require.NoError(t, err)
-	second, err := batchRequestMetadataFromSemanticEnvelope(c)
+	second, err := batchRouteInfoFromSemantics(c)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
@@ -222,16 +222,16 @@ func TestBatchRequestMetadataFromSemanticEnvelope_CachesListMetadata(t *testing.
 	assert.True(t, first.HasLimit)
 	assert.Equal(t, 5, first.Limit)
 
-	env := core.GetSemanticEnvelope(c.Request().Context())
+	env := core.GetRequestSemantics(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.CachedBatchMetadata())
+	require.Same(t, first, env.CachedBatchRouteInfo())
 }
 
 func TestFileRequestFromSemanticEnvelope_InvalidLimitFromIngressReturnsError(t *testing.T) {
 	e := echo.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/files?limit=bad", nil)
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodGet,
 		"/v1/files",
 		nil,
@@ -245,13 +245,13 @@ func TestFileRequestFromSemanticEnvelope_InvalidLimitFromIngressReturnsError(t *
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	_, err := fileRequestFromSemanticEnvelope(c)
+	_, err := fileRouteInfoFromSemantics(c)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid limit parameter")
 }
@@ -272,16 +272,16 @@ func TestFileRequestFromSemanticEnvelope_EnrichesCreateMetadata(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/files", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	frame := core.NewIngressFrame(http.MethodPost, "/v1/files", nil, nil, nil, writer.FormDataContentType(), nil, false, "", nil)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	frame := core.NewRequestSnapshot(http.MethodPost, "/v1/files", nil, nil, nil, writer.FormDataContentType(), nil, false, "", nil)
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := fileRequestFromSemanticEnvelope(c)
+	first, err := fileRouteInfoFromSemantics(c)
 	require.NoError(t, err)
-	second, err := fileRequestFromSemanticEnvelope(c)
+	second, err := fileRouteInfoFromSemantics(c)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)
@@ -290,17 +290,17 @@ func TestFileRequestFromSemanticEnvelope_EnrichesCreateMetadata(t *testing.T) {
 	assert.Equal(t, "batch", first.Purpose)
 	assert.Equal(t, "requests.jsonl", first.Filename)
 
-	env := core.GetSemanticEnvelope(c.Request().Context())
+	env := core.GetRequestSemantics(c.Request().Context())
 	require.NotNil(t, env)
-	require.Same(t, first, env.CachedFileRequest())
-	assert.Equal(t, "openai", env.SelectorHints.Provider)
+	require.Same(t, first, env.CachedFileRouteInfo())
+	assert.Equal(t, "openai", env.RoutingHints.Provider)
 }
 
 func TestFileRequestFromSemanticEnvelope_CachesListMetadata(t *testing.T) {
 	e := echo.New()
 
 	req := httptest.NewRequest(http.MethodGet, "/v1/files?provider=openai&purpose=batch&after=file_prev&limit=5", nil)
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodGet,
 		"/v1/files",
 		nil,
@@ -317,15 +317,15 @@ func TestFileRequestFromSemanticEnvelope_CachesListMetadata(t *testing.T) {
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, httptest.NewRecorder())
 
-	first, err := fileRequestFromSemanticEnvelope(c)
+	first, err := fileRouteInfoFromSemantics(c)
 	require.NoError(t, err)
-	second, err := fileRequestFromSemanticEnvelope(c)
+	second, err := fileRouteInfoFromSemantics(c)
 	require.NoError(t, err)
 
 	require.Same(t, first, second)

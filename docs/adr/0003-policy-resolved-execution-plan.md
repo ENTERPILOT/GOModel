@@ -15,8 +15,8 @@ Those concerns should not be scattered across handlers, provider adapters, and m
 
 ADR-0002 establishes the ingress boundary:
 
-- immutable raw request capture via `IngressFrame`
-- optional best-effort semantic extraction via `SemanticEnvelope`
+- immutable raw request capture via `RequestSnapshot`
+- optional best-effort semantic extraction via `RequestSemantics`
 
 GOModel still needs a single place where request processing policy is resolved into a concrete runtime decision.
 
@@ -26,8 +26,8 @@ Introduce `ExecutionPlan` as the policy-resolved plan for handling a request.
 
 `ExecutionPlan` is derived after authentication and identity resolution, using:
 
-- `IngressFrame`
-- `SemanticEnvelope`
+- `RequestSnapshot`
+- `RequestSemantics`
 - route and endpoint metadata
 - resolved identity
 - API key, user, team, and organization context

@@ -320,7 +320,7 @@ func TestMiddleware_UsesIngressFrameRequestBodyWithoutReadingStream(t *testing.T
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	trackedBody := &readCountCloser{reader: strings.NewReader(`{"model":"from-body"}`)}
 	req.Body = trackedBody
-	req = req.WithContext(core.WithIngressFrame(req.Context(), core.NewIngressFrame(
+	req = req.WithContext(core.WithRequestSnapshot(req.Context(), core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/chat/completions",
 		nil,
@@ -368,7 +368,7 @@ func TestMiddleware_UsesIngressTooLargeFlagWithoutReadingStream(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
 	trackedBody := &readCountCloser{reader: strings.NewReader(strings.Repeat("x", 16))}
 	req.Body = trackedBody
-	req = req.WithContext(core.WithIngressFrame(req.Context(), core.NewIngressFrame(
+	req = req.WithContext(core.WithRequestSnapshot(req.Context(), core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/chat/completions",
 		nil,

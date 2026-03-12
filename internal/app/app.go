@@ -157,7 +157,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 
 	// Create server
-	enablePassthroughV1PrefixNormalization := appCfg.Server.NormalizePassthroughV1Prefix
+	allowPassthroughV1Alias := appCfg.Server.AllowPassthroughV1Alias
 	serverCfg := &server.Config{
 		MasterKey:                              appCfg.Server.MasterKey,
 		MetricsEnabled:                         appCfg.Metrics.Enabled,
@@ -168,9 +168,9 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		PricingResolver:                        providerResult.Registry,
 		BatchStore:                             batchResult.Store,
 		LogOnlyModelInteractions:               appCfg.Logging.OnlyModelInteractions,
-		DisableProviderPassthrough:             !appCfg.Server.EnableProviderPassthrough,
-		SupportedPassthroughProviders:          appCfg.Server.SupportedPassthroughProviders,
-		EnablePassthroughV1PrefixNormalization: &enablePassthroughV1PrefixNormalization,
+		DisablePassthroughRoutes:               !appCfg.Server.EnablePassthroughRoutes,
+		AllowedPassthroughProviders:            appCfg.Server.AllowedPassthroughProviders,
+		AllowPassthroughV1Alias:                &allowPassthroughV1Alias,
 		SwaggerEnabled:                         appCfg.Server.SwaggerEnabled,
 	}
 
@@ -201,7 +201,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if appCfg.Server.SwaggerEnabled {
 		slog.Info("swagger UI enabled", "path", "/swagger/index.html")
 	}
-	if appCfg.Server.EnableProviderPassthrough {
+	if appCfg.Server.EnablePassthroughRoutes {
 		slog.Info("provider passthrough enabled", "path", "/p/{provider}/{endpoint}")
 	} else {
 		slog.Info("provider passthrough disabled")

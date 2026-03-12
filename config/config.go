@@ -335,16 +335,15 @@ type ServerConfig struct {
 	MasterKey      string `yaml:"master_key" env:"GOMODEL_MASTER_KEY"`   // Optional: Master key for authentication
 	BodySizeLimit  string `yaml:"body_size_limit" env:"BODY_SIZE_LIMIT"` // Max request body size (e.g., "10M", "1024K")
 	SwaggerEnabled bool   `yaml:"swagger_enabled" env:"SWAGGER_ENABLED"` // Whether to expose the Swagger UI at /swagger/index.html
-	// EnableProviderPassthrough exposes provider-native passthrough endpoints
-	// under /p/{provider}/{endpoint}. Default: true
-	EnableProviderPassthrough bool `yaml:"enable_provider_passthrough" env:"ENABLE_PROVIDER_PASSTHROUGH"`
-	// NormalizePassthroughV1Prefix allows /p/{provider}/v1/... style
-	// passthrough routes while keeping /p/{provider}/... as the canonical form.
-	// Default: true
-	NormalizePassthroughV1Prefix bool `yaml:"normalize_passthrough_v1_prefix" env:"NORMALIZE_PASSTHROUGH_V1_PREFIX"`
-	// SupportedPassthroughProviders lists the provider types allowed on
-	// /p/{provider}/... passthrough routes. Default: ["openai", "anthropic"]
-	SupportedPassthroughProviders []string `yaml:"supported_passthrough_providers" env:"SUPPORTED_PASSTHROUGH_PROVIDERS"`
+	// EnablePassthroughRoutes exposes provider-native passthrough endpoints under
+	// /p/{provider}/{endpoint}. Default: true.
+	EnablePassthroughRoutes bool `yaml:"enable_passthrough_routes" env:"ENABLE_PASSTHROUGH_ROUTES"`
+	// AllowPassthroughV1Alias allows /p/{provider}/v1/... style passthrough routes
+	// while keeping /p/{provider}/... as the canonical form. Default: true.
+	AllowPassthroughV1Alias bool `yaml:"allow_passthrough_v1_alias" env:"ALLOW_PASSTHROUGH_V1_ALIAS"`
+	// AllowedPassthroughProviders lists the provider types allowed on
+	// /p/{provider}/... passthrough routes. Default: ["openai", "anthropic"].
+	AllowedPassthroughProviders []string `yaml:"allowed_passthrough_providers" env:"ALLOWED_PASSTHROUGH_PROVIDERS"`
 }
 
 // MetricsConfig holds observability configuration for Prometheus metrics
@@ -408,9 +407,9 @@ func buildDefaultConfig() *Config {
 		Server: ServerConfig{
 			Port:                         "8080",
 			SwaggerEnabled:               true,
-			EnableProviderPassthrough:    true,
-			NormalizePassthroughV1Prefix: true,
-			SupportedPassthroughProviders: []string{
+			EnablePassthroughRoutes: true,
+			AllowPassthroughV1Alias: true,
+			AllowedPassthroughProviders: []string{
 				"openai",
 				"anthropic",
 			},

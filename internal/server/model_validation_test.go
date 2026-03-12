@@ -318,13 +318,13 @@ func TestModelValidation_DoesNotReadLiveBodyWhenSelectorHintsAlreadyExist(t *tes
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := core.NewIngressFrame(http.MethodPost, "/v1/chat/completions", nil, nil, nil, "application/json", nil, false, "", nil)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, &core.SemanticEnvelope{
-		Dialect:        "openai_compat",
-		Operation:      "chat_completions",
-		JSONBodyParsed: true,
-		SelectorHints: core.SelectorHints{
+	frame := core.NewRequestSnapshot(http.MethodPost, "/v1/chat/completions", nil, nil, nil, "application/json", nil, false, "", nil)
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, &core.RequestSemantics{
+		RouteKind:        "openai_compat",
+		OperationKind:      "chat_completions",
+		BodyParsedAsJSON: true,
+		RoutingHints: core.RoutingHints{
 			Model: "gpt-4o-mini",
 		},
 	})
@@ -355,7 +355,7 @@ func TestModelValidation_UsesIngressBodyForMissingSelectorHints(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/chat/completions",
 		nil,
@@ -367,8 +367,8 @@ func TestModelValidation_UsesIngressBodyForMissingSelectorHints(t *testing.T) {
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -418,12 +418,12 @@ func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T)
 	}
 
 	e := echo.New()
-	var capturedEnv *core.SemanticEnvelope
+	var capturedEnv *core.RequestSemantics
 	var capturedProviderType string
 
 	middleware := ModelValidation(provider)
 	handler := middleware(func(c *echo.Context) error {
-		capturedEnv = core.GetSemanticEnvelope(c.Request().Context())
+		capturedEnv = core.GetRequestSemantics(c.Request().Context())
 		capturedProviderType = GetProviderType(c)
 		return c.String(http.StatusOK, "ok")
 	})
@@ -436,9 +436,9 @@ func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Request-ID", "oversized-live-body")
 
-	frame := core.NewIngressFrame(http.MethodPost, "/v1/chat/completions", nil, nil, nil, "application/json", nil, true, "", nil)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	frame := core.NewRequestSnapshot(http.MethodPost, "/v1/chat/completions", nil, nil, nil, "application/json", nil, true, "", nil)
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -459,11 +459,11 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
 
 	e := echo.New()
-	var capturedEnv *core.SemanticEnvelope
+	var capturedEnv *core.RequestSemantics
 
 	middleware := ModelValidation(provider)
 	handler := middleware(func(c *echo.Context) error {
-		capturedEnv = core.GetSemanticEnvelope(c.Request().Context())
+		capturedEnv = core.GetRequestSemantics(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	})
 
@@ -471,7 +471,7 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/chat/completions",
 		nil,
@@ -488,8 +488,8 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
@@ -509,11 +509,11 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
 
 	e := echo.New()
-	var capturedEnv *core.SemanticEnvelope
+	var capturedEnv *core.RequestSemantics
 
 	middleware := ModelValidation(provider)
 	handler := middleware(func(c *echo.Context) error {
-		capturedEnv = core.GetSemanticEnvelope(c.Request().Context())
+		capturedEnv = core.GetRequestSemantics(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	})
 
@@ -521,7 +521,7 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	req.Header.Set("Content-Type", "application/json")
 	req.Body = explodingValidationReadCloser{}
 
-	frame := core.NewIngressFrame(
+	frame := core.NewRequestSnapshot(
 		http.MethodPost,
 		"/v1/responses",
 		nil,
@@ -536,8 +536,8 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 		"",
 		nil,
 	)
-	ctx := core.WithIngressFrame(req.Context(), frame)
-	ctx = core.WithSemanticEnvelope(ctx, core.BuildSemanticEnvelope(frame))
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithRequestSemantics(ctx, core.DeriveRequestSemantics(frame))
 	req = req.WithContext(ctx)
 
 	rec := httptest.NewRecorder()
