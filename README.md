@@ -1,12 +1,14 @@
-# GOModel
+# GOModel — AI Gateway Written in Go
 
 [![CI](https://github.com/ENTERPILOT/GOModel/actions/workflows/test.yml/badge.svg)](https://github.com/ENTERPILOT/GOModel/actions/workflows/test.yml)
 [![Docs](https://img.shields.io/badge/docs-gomodel-blue)](https://gomodel.enterpilot.io/docs)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/gaEB9BQSPH)
+[![Docker Pulls](https://img.shields.io/docker/pulls/enterpilot/gomodel)](https://hub.docker.com/r/enterpilot/gomodel)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ENTERPILOT/GOModel)](go.mod)
 
 A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
 
-## Quick Start
+## Quick Start — Deploy the AI Gateway
 
 **Step 1:** Start GOModel
 
@@ -44,7 +46,7 @@ curl http://localhost:8080/v1/chat/completions \
 
 **That's it!** GOModel automatically detects which providers are available based on the credentials you supply.
 
-### Supported Providers
+### Supported LLM Providers
 
 Example model identifiers are illustrative and subject to change; consult provider catalogs for current models. Feature columns reflect gateway API support, not every individual model capability exposed by an upstream provider.
 
@@ -106,7 +108,7 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 
 ---
 
-## API Endpoints
+## OpenAI-Compatible API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -140,7 +142,7 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 
 ---
 
-## Configuration
+## Gateway Configuration
 
 GOModel is configured through environment variables and an optional `config.yaml`. Environment variables override YAML values. See [`.env.template`](.env.template) and [`config/config.example.yaml`](config/config.example.yaml) for the available options.
 
@@ -195,6 +197,10 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 | SSO / OIDC | 🚧 | No SSO implementation is present yet. |
 
 ✅ Shipped  🚧 Planned or in progress
+
+## Community
+
+Join our [Discord](https://discord.gg/gaEB9BQSPH) to connect with other GOModel users.
 
 ## Star History
 
