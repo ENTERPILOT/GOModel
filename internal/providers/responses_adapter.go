@@ -810,7 +810,7 @@ func buildResponsesMessageContent(content any) []core.ResponsesContentItem {
 			{
 				Type:        "output_text",
 				Text:        c,
-				Annotations: []string{},
+				Annotations: []json.RawMessage{},
 			},
 		}
 	case []core.ContentPart:
@@ -830,7 +830,7 @@ func buildResponsesMessageContent(content any) []core.ResponsesContentItem {
 			{
 				Type:        "output_text",
 				Text:        text,
-				Annotations: []string{},
+				Annotations: []json.RawMessage{},
 			},
 		}
 	}
@@ -844,7 +844,7 @@ func buildResponsesContentItemsFromParts(parts []core.ContentPart) []core.Respon
 			items = append(items, core.ResponsesContentItem{
 				Type:        "output_text",
 				Text:        part.Text,
-				Annotations: []string{},
+				Annotations: []json.RawMessage{},
 			})
 		case "image_url":
 			if part.ImageURL == nil {
@@ -895,7 +895,7 @@ func BuildResponsesOutputItems(msg core.ResponseMessage) []core.ResponsesOutputI
 				{
 					Type:        "output_text",
 					Text:        "",
-					Annotations: []string{},
+					Annotations: []json.RawMessage{},
 				},
 			}
 		}
@@ -933,7 +933,7 @@ func ConvertChatResponseToResponses(resp *core.ChatResponse) *core.ResponsesResp
 				{
 					Type:        "output_text",
 					Text:        "",
-					Annotations: []string{},
+					Annotations: []json.RawMessage{},
 				},
 			},
 		},

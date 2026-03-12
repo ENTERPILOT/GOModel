@@ -389,6 +389,68 @@ func TestResponsesRequestJSON_PreservesUnknownFields(t *testing.T) {
 	}
 }
 
+func TestResponsesResponseJSON_AcceptsStructuredAnnotations(t *testing.T) {
+	var resp ResponsesResponse
+	if err := json.Unmarshal([]byte(`{
+		"id":"resp_123",
+		"object":"response",
+		"created_at":1677652288,
+		"model":"gpt-4o-mini",
+		"status":"completed",
+		"output":[{
+			"id":"msg_123",
+			"type":"message",
+			"role":"assistant",
+			"status":"completed",
+			"content":[{
+				"type":"output_text",
+				"text":"Found a result.",
+				"annotations":[{
+					"type":"url_citation",
+					"title":"Example Domain",
+					"url":"https://example.com"
+				}]
+			}]
+		}]
+	}`), &resp); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if len(resp.Output) != 1 || len(resp.Output[0].Content) != 1 {
+		t.Fatalf("unexpected output shape: %+v", resp.Output)
+	}
+	annotations := resp.Output[0].Content[0].Annotations
+	if len(annotations) != 1 {
+		t.Fatalf("len(Annotations) = %d, want 1", len(annotations))
+	}
+
+	var annotation map[string]any
+	if err := json.Unmarshal(annotations[0], &annotation); err != nil {
+		t.Fatalf("json.Unmarshal(annotation) error = %v", err)
+	}
+	if annotation["type"] != "url_citation" {
+		t.Fatalf("annotation.type = %#v, want url_citation", annotation["type"])
+	}
+
+	body, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal(roundTrip) error = %v", err)
+	}
+
+	output := decoded["output"].([]any)
+	content := output[0].(map[string]any)["content"].([]any)
+	roundTripAnnotations := content[0].(map[string]any)["annotations"].([]any)
+	firstAnnotation := roundTripAnnotations[0].(map[string]any)
+	if firstAnnotation["url"] != "https://example.com" {
+		t.Fatalf("roundTrip annotation.url = %#v, want https://example.com", firstAnnotation["url"])
+	}
+}
+
 func TestResponsesInputElementMarshalJSON_FunctionCall(t *testing.T) {
 	elem := ResponsesInputElement{
 		Type:      "function_call",

@@ -85,7 +85,7 @@ func (s *ResponsesOutputEventState) AssistantMessageItem(status string, includeC
 			{
 				"type":        "output_text",
 				"text":        s.assistantText.String(),
-				"annotations": []string{},
+				"annotations": []json.RawMessage{},
 			},
 		}
 	}
