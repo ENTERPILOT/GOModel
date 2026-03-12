@@ -862,8 +862,11 @@ func (a *registryAccessor) SetMetadata(modelID string, meta *core.ModelMetadata)
 // Returns a cancel function to stop the refresh loop.
 func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelListURL string) func() {
 	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var stopOnce sync.Once
 
 	go func() {
+		defer close(done)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
@@ -872,7 +875,7 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
 				if err := r.Refresh(refreshCtx); err != nil {
 					slog.Warn("background model refresh failed", "error", err)
 				} else {
@@ -885,18 +888,23 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 
 				// Also refresh model list if configured
 				if modelListURL != "" {
-					r.refreshModelList(modelListURL)
+					r.refreshModelList(ctx, modelListURL)
 				}
 			}
 		}
 	}()
 
-	return cancel
+	return func() {
+		stopOnce.Do(func() {
+			cancel()
+			<-done
+		})
+	}
 }
 
 // refreshModelList fetches the model list and re-enriches all models.
-func (r *ModelRegistry) refreshModelList(url string) {
-	fetchCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+func (r *ModelRegistry) refreshModelList(ctx context.Context, url string) {
+	fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
 	list, raw, err := modeldata.Fetch(fetchCtx, url)

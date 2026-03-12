@@ -520,6 +520,49 @@ func TestStartBackgroundRefresh(t *testing.T) {
 		}
 	})
 
+	t.Run("CancelWaitsForInFlightRefreshToExit", func(t *testing.T) {
+		var refreshCount atomic.Int32
+		mock := &registryMockProvider{
+			name: "test",
+			modelsResponse: &core.ModelsResponse{
+				Object: "list",
+				Data: []core.Model{
+					{ID: "test-model", Object: "model", OwnedBy: "test"},
+				},
+			},
+		}
+
+		countingMock := &countingRegistryMockProvider{
+			registryMockProvider: mock,
+			listCount:            &refreshCount,
+		}
+
+		registry := NewModelRegistry()
+		registry.RegisterProvider(countingMock)
+		_ = registry.Initialize(context.Background())
+
+		refreshCount.Store(0)
+		mock.listModelsDelay = 5 * time.Second
+
+		cancel := registry.StartBackgroundRefresh(10*time.Millisecond, "")
+		for start := time.Now(); time.Since(start) < 500*time.Millisecond; {
+			if refreshCount.Load() > 0 {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if refreshCount.Load() == 0 {
+			t.Fatal("expected background refresh to start")
+		}
+
+		start := time.Now()
+		cancel()
+
+		if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+			t.Fatalf("cancel() took %v, want <= 500ms", elapsed)
+		}
+	})
+
 	t.Run("HandlesRefreshErrors", func(t *testing.T) {
 		var refreshCount atomic.Int32
 		mock := &registryMockProvider{
