@@ -35,12 +35,28 @@ type lifecycleApp interface {
 	Shutdown(ctx context.Context) error
 }
 
+var shutdownTimeout = 30 * time.Second
+
+func shutdownApplication(application lifecycleApp, ctx context.Context) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- application.Shutdown(ctx)
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func startApplication(application lifecycleApp, addr string) error {
 	if err := application.Start(context.Background(), addr); err != nil {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 
-		if shutdownErr := application.Shutdown(shutdownCtx); shutdownErr != nil {
+		if shutdownErr := shutdownApplication(application, shutdownCtx); shutdownErr != nil {
 			return fmt.Errorf("server failed to start: %w", errors.Join(err, fmt.Errorf("shutdown after start failure: %w", shutdownErr)))
 		}
 		return err
@@ -119,10 +135,10 @@ func main() {
 		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer cancel()
 
-		if err := application.Shutdown(ctx); err != nil {
+		if err := shutdownApplication(application, ctx); err != nil {
 			slog.Error("application shutdown error", "error", err)
 		}
 	}()
