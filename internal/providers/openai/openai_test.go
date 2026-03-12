@@ -793,6 +793,50 @@ func TestResponses(t *testing.T) {
 			},
 		},
 		{
+			name:       "successful request with structured annotations",
+			statusCode: http.StatusOK,
+			responseBody: `{
+				"id": "resp_annotated",
+				"object": "response",
+				"created_at": 1677652288,
+				"model": "gpt-4o",
+				"status": "completed",
+				"output": [{
+					"id": "msg_annotated",
+					"type": "message",
+					"role": "assistant",
+					"status": "completed",
+					"content": [{
+						"type": "output_text",
+						"text": "Search result summary",
+						"annotations": [{
+							"type": "url_citation",
+							"title": "Example Domain",
+							"url": "https://example.com"
+						}]
+					}]
+				}]
+			}`,
+			checkResponse: func(t *testing.T, resp *core.ResponsesResponse) {
+				if len(resp.Output) != 1 || len(resp.Output[0].Content) != 1 {
+					t.Fatalf("unexpected output shape: %+v", resp.Output)
+				}
+
+				annotations := resp.Output[0].Content[0].Annotations
+				if len(annotations) != 1 {
+					t.Fatalf("len(Annotations) = %d, want 1", len(annotations))
+				}
+
+				var annotation map[string]any
+				if err := json.Unmarshal(annotations[0], &annotation); err != nil {
+					t.Fatalf("json.Unmarshal(annotation) error = %v", err)
+				}
+				if annotation["type"] != "url_citation" {
+					t.Fatalf("annotation.type = %#v, want url_citation", annotation["type"])
+				}
+			},
+		},
+		{
 			name:          "API error - unauthorized",
 			statusCode:    http.StatusUnauthorized,
 			responseBody:  `{"error": {"message": "Invalid API key"}}`,
