@@ -68,8 +68,8 @@ type Config struct {
 	// Enabled controls whether usage tracking is active
 	Enabled bool
 
-	// EnforceReturningUsageData controls whether to enforce returning usage data in streaming responses.
-	// When true, stream_options: {"include_usage": true} is automatically added to streaming requests.
+	// EnforceReturningUsageData controls whether to ask streaming providers to return usage data when possible.
+	// When true, stream_options: {"include_usage": true} is added for provider paths that support it.
 	// Default: true
 	EnforceReturningUsageData bool
 

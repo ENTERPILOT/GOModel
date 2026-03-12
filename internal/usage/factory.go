@@ -49,7 +49,7 @@ func New(ctx context.Context, cfg *config.Config) (*Result, error) {
 	// Return noop if usage tracking is disabled
 	if !cfg.Usage.Enabled {
 		return &Result{
-			Logger:  &NoopLogger{},
+			Logger:  NewNoopLogger(buildLoggerConfig(cfg.Usage)),
 			Storage: nil,
 		}, nil
 	}
@@ -86,7 +86,7 @@ func NewWithSharedStorage(ctx context.Context, cfg *config.Config, store storage
 	// Return noop if usage tracking is disabled
 	if !cfg.Usage.Enabled {
 		return &Result{
-			Logger:  &NoopLogger{},
+			Logger:  NewNoopLogger(buildLoggerConfig(cfg.Usage)),
 			Storage: nil,
 		}, nil
 	}

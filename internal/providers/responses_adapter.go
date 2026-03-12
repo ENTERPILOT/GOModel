@@ -37,7 +37,7 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatReques
 		ParallelToolCalls: req.ParallelToolCalls,
 		Temperature:       req.Temperature,
 		Stream:            req.Stream,
-		StreamOptions:     req.StreamOptions,
+		StreamOptions:     cloneStreamOptions(req.StreamOptions),
 		Reasoning:         req.Reasoning,
 		ExtraFields:       core.CloneRawJSONMap(req.ExtraFields),
 	}
@@ -60,6 +60,14 @@ func ConvertResponsesRequestToChat(req *core.ResponsesRequest) (*core.ChatReques
 	chatReq.Messages = append(chatReq.Messages, messages...)
 
 	return chatReq, nil
+}
+
+func cloneStreamOptions(src *core.StreamOptions) *core.StreamOptions {
+	if src == nil {
+		return nil
+	}
+	cloned := *src
+	return &cloned
 }
 
 func normalizeResponsesToolsForChat(tools []map[string]any) []map[string]any {
@@ -981,6 +989,12 @@ func StreamResponsesViaChat(ctx context.Context, p ChatProvider, req *core.Respo
 	chatReq, err := ConvertResponsesRequestToChat(req)
 	if err != nil {
 		return nil, err
+	}
+	if core.GetEnforceReturningUsageData(ctx) {
+		if chatReq.StreamOptions == nil {
+			chatReq.StreamOptions = &core.StreamOptions{}
+		}
+		chatReq.StreamOptions.IncludeUsage = true
 	}
 
 	stream, err := p.StreamChatCompletion(ctx, chatReq)

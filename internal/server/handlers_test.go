@@ -19,6 +19,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	provideradapter "gomodel/internal/providers"
 	"gomodel/internal/usage"
 )
 
@@ -2806,6 +2807,16 @@ func (c *capturingProvider) StreamResponses(_ context.Context, req *core.Respons
 	return io.NopCloser(strings.NewReader(c.streamData)), nil
 }
 
+type chatBackedResponsesProvider struct {
+	capturingProvider
+	providerName string
+}
+
+func (p *chatBackedResponsesProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	p.capturedResponsesReq = req
+	return provideradapter.StreamResponsesViaChat(ctx, p, req, p.providerName)
+}
+
 func (c *capturingProvider) Embeddings(_ context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
 	c.capturedEmbeddingReq = req
 	if c.embeddingErr != nil {
@@ -2817,7 +2828,100 @@ func (c *capturingProvider) Embeddings(_ context.Context, req *core.EmbeddingReq
 	return c.embeddingResponse, nil
 }
 
-func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
+func TestStreamingResponses_ChatBackedProviderInjectsUsageWhenEnforced(t *testing.T) {
+	streamData := strings.Join([]string{
+		`data: {"id":"chatcmpl-1","choices":[{"delta":{"content":"hi"}}]}`,
+		`data: {"id":"chatcmpl-1","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}}`,
+		`data: [DONE]`,
+		"",
+	}, "\n\n")
+	provider := &chatBackedResponsesProvider{
+		capturingProvider: capturingProvider{
+			mockProvider: mockProvider{
+				supportedModels: []string{"gpt-4o-mini"},
+				streamData:      streamData,
+			},
+		},
+		providerName: "gemini",
+	}
+
+	usageLog := &mockUsageLogger{
+		config: usage.Config{
+			Enabled:                   true,
+			EnforceReturningUsageData: true,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, usageLog, nil)
+
+	reqBody := `{"model":"gpt-4o-mini","input":"Hello","stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(string(providerTypeKey), "mock")
+
+	if err := handler.Responses(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if provider.capturedResponsesReq == nil {
+		t.Fatal("capturedResponsesReq = nil")
+	}
+	if provider.capturedResponsesReq.StreamOptions != nil {
+		t.Fatalf("responses request was mutated: %+v", provider.capturedResponsesReq.StreamOptions)
+	}
+	if provider.capturedChatReq == nil {
+		t.Fatal("capturedChatReq = nil")
+	}
+	if provider.capturedChatReq.StreamOptions == nil || !provider.capturedChatReq.StreamOptions.IncludeUsage {
+		t.Fatalf("captured chat StreamOptions = %+v, want include_usage=true", provider.capturedChatReq.StreamOptions)
+	}
+}
+
+func TestStreamingResponses_ChatBackedProviderDoesNotInjectUsageWhenDisabled(t *testing.T) {
+	provider := &chatBackedResponsesProvider{
+		capturingProvider: capturingProvider{
+			mockProvider: mockProvider{
+				supportedModels: []string{"gpt-4o-mini"},
+				streamData:      "data: [DONE]\n\n",
+			},
+		},
+		providerName: "gemini",
+	}
+
+	usageLog := &mockUsageLogger{
+		config: usage.Config{
+			Enabled:                   true,
+			EnforceReturningUsageData: false,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, usageLog, nil)
+
+	reqBody := `{"model":"gpt-4o-mini","input":"Hello","stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(string(providerTypeKey), "mock")
+
+	if err := handler.Responses(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if provider.capturedChatReq == nil {
+		t.Fatal("capturedChatReq = nil")
+	}
+	if provider.capturedChatReq.StreamOptions != nil {
+		t.Fatalf("captured chat StreamOptions = %+v, want nil", provider.capturedChatReq.StreamOptions)
+	}
+}
+
+func TestStreamingResponses_NativeProviderRequestRemainsUnchanged(t *testing.T) {
 	streamData := "data: {\"type\":\"response.completed\"}\n\ndata: [DONE]\n\n"
 	provider := &capturingProvider{
 		mockProvider: mockProvider{
@@ -2836,27 +2940,79 @@ func TestStreamingResponses_DoesNotInjectStreamOptions(t *testing.T) {
 	e := echo.New()
 	handler := NewHandler(provider, nil, usageLog, nil)
 
-	// Streaming Responses request should NOT have StreamOptions injected
 	reqBody := `{"model":"gpt-4o-mini","input":"Hello","stream":true}`
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
+	c.Set(string(providerTypeKey), "mock")
 
-	err := handler.Responses(c)
-	if err != nil {
+	if err := handler.Responses(c); err != nil {
 		t.Fatalf("handler returned error: %v", err)
 	}
-
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
-
 	if provider.capturedResponsesReq == nil {
-		t.Fatalf("expected capturedResponsesReq to be set, got nil")
+		t.Fatal("capturedResponsesReq = nil")
 	}
 	if provider.capturedResponsesReq.StreamOptions != nil {
-		t.Errorf("Responses streaming should NOT have StreamOptions injected, got: %+v", provider.capturedResponsesReq.StreamOptions)
+		t.Fatalf("native responses request should remain unchanged, got %+v", provider.capturedResponsesReq.StreamOptions)
+	}
+}
+
+func TestStreamingResponses_ChatBackedProviderWritesExactlyOneUsageEntry(t *testing.T) {
+	streamData := strings.Join([]string{
+		`data: {"id":"chatcmpl-1","model":"gemini-2.0-flash","choices":[{"delta":{"content":"hi"}}]}`,
+		`data: {"id":"chatcmpl-1","model":"gemini-2.0-flash","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":5,"total_tokens":16}}`,
+		`data: [DONE]`,
+		"",
+	}, "\n\n")
+	provider := &chatBackedResponsesProvider{
+		capturingProvider: capturingProvider{
+			mockProvider: mockProvider{
+				supportedModels: []string{"gemini-2.0-flash"},
+				streamData:      streamData,
+			},
+		},
+		providerName: "gemini",
+	}
+	usageLog := &collectingUsageLogger{
+		config: usage.Config{
+			Enabled:                   true,
+			EnforceReturningUsageData: true,
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, usageLog, nil)
+
+	reqBody := `{"model":"gemini-2.0-flash","input":"Hello","stream":true}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "req-stream-responses-1")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.Set(string(providerTypeKey), "mock")
+
+	if err := handler.Responses(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(usageLog.entries) != 1 {
+		t.Fatalf("expected exactly 1 usage entry, got %d", len(usageLog.entries))
+	}
+	entry := usageLog.entries[0]
+	if entry.RequestID != "req-stream-responses-1" {
+		t.Fatalf("RequestID = %q, want req-stream-responses-1", entry.RequestID)
+	}
+	if entry.Provider != "mock" {
+		t.Fatalf("Provider = %q, want mock", entry.Provider)
+	}
+	if entry.Endpoint != "/v1/responses" {
+		t.Fatalf("Endpoint = %q, want /v1/responses", entry.Endpoint)
+	}
+	if entry.InputTokens != 11 || entry.OutputTokens != 5 || entry.TotalTokens != 16 {
+		t.Fatalf("usage entry = %+v, want 11/5/16 tokens", entry)
 	}
 }
 
