@@ -1808,8 +1808,8 @@ func TestHandleError_UnexpectedErrorUsesOpenAISchema(t *testing.T) {
 		t.Fatalf("error body = %#v, want object", body["error"])
 	}
 
-	if errorBody["type"] != "internal_error" {
-		t.Errorf("error.type = %v, want internal_error", errorBody["type"])
+	if errorBody["type"] != "provider_error" {
+		t.Errorf("error.type = %v, want provider_error", errorBody["type"])
 	}
 	if errorBody["message"] != "an unexpected error occurred" {
 		t.Errorf("error.message = %v, want unexpected error message", errorBody["message"])

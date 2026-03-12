@@ -1887,13 +1887,7 @@ func handleError(c *echo.Context, err error) error {
 	}
 
 	// Fallback for unexpected errors
-	auditlog.EnrichEntryWithError(c, "internal_error", "an unexpected error occurred")
-	return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-		"error": map[string]interface{}{
-			"type":    "internal_error",
-			"message": "an unexpected error occurred",
-			"param":   nil,
-			"code":    nil,
-		},
-	})
+	gatewayErr = core.NewProviderError("", http.StatusInternalServerError, "an unexpected error occurred", err)
+	auditlog.EnrichEntryWithError(c, string(gatewayErr.Type), gatewayErr.Message)
+	return c.JSON(gatewayErr.HTTPStatusCode(), gatewayErr.ToJSON())
 }
