@@ -184,6 +184,38 @@ func TestGetBatchResultsWithHints(t *testing.T) {
 	}
 }
 
+func TestGetBatchResultsWithHints_ExplicitEmptyHintsDoNotUseTransientHints(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/messages/batches/batch_1/results" {
+			http.NotFound(w, r)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(
+			`{"custom_id":"ok-1","result":{"type":"succeeded","message":{"id":"msg_123","type":"message","role":"assistant","model":"claude-sonnet-4-5-20250929","content":[{"type":"text","text":"hi"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}}}`,
+		))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+	provider.setBatchResultEndpoints("batch_1", map[string]string{
+		"ok-1": "/v1/responses",
+	})
+
+	resp, err := provider.GetBatchResultsWithHints(context.Background(), "batch_1", map[string]string{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("len(Data) = %d, want 1", len(resp.Data))
+	}
+	if resp.Data[0].URL != "/v1/chat/completions" {
+		t.Fatalf("URL = %q, want /v1/chat/completions", resp.Data[0].URL)
+	}
+}
+
 func TestClearBatchResultHints(t *testing.T) {
 	provider := &Provider{
 		batchResultEndpoints: map[string]map[string]string{
@@ -3138,6 +3170,46 @@ func TestBuildAnthropicBatchCreateRequest_NormalizesFullURLResponsesEndpoint(t *
 	}
 	if got := endpointByCustomID["resp-1"]; got != "/v1/responses" {
 		t.Fatalf("endpointByCustomID[resp-1] = %q, want /v1/responses", got)
+	}
+}
+
+func TestBuildAnthropicBatchCreateRequest_RejectsDuplicateCustomIDs(t *testing.T) {
+	req := &core.BatchRequest{
+		Requests: []core.BatchRequestItem{
+			{
+				CustomID: "dup-1",
+				Method:   http.MethodPost,
+				URL:      "/v1/chat/completions",
+				Body: json.RawMessage(`{
+					"model":"claude-sonnet-4-5-20250929",
+					"messages":[{"role":"user","content":"hello"}]
+				}`),
+			},
+			{
+				CustomID: "dup-1",
+				Method:   http.MethodPost,
+				URL:      "/v1/responses",
+				Body: json.RawMessage(`{
+					"model":"claude-sonnet-4-5-20250929",
+					"input":"hello"
+				}`),
+			},
+		},
+	}
+
+	_, _, err := buildAnthropicBatchCreateRequest(req)
+	if err == nil {
+		t.Fatal("expected error for duplicate custom_id")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("error type = %q, want invalid_request_error", gatewayErr.Type)
+	}
+	if !strings.Contains(gatewayErr.Message, `duplicate custom_id "dup-1"`) {
+		t.Fatalf("error message = %q, want duplicate custom_id", gatewayErr.Message)
 	}
 }
 

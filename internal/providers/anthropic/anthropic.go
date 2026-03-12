@@ -1096,6 +1096,7 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 		Requests: make([]anthropicBatchRequest, 0, len(req.Requests)),
 	}
 	endpointByCustomID := make(map[string]string, len(req.Requests))
+	seenCustomIDs := make(map[string]int, len(req.Requests))
 
 	for i, item := range req.Requests {
 		decoded, err := core.DecodeKnownBatchItemRequest(req.Endpoint, item)
@@ -1112,6 +1113,13 @@ func buildAnthropicBatchCreateRequest(req *core.BatchRequest) (*anthropicBatchCr
 		if customID == "" {
 			customID = fmt.Sprintf("req-%d", i)
 		}
+		if previousIndex, exists := seenCustomIDs[customID]; exists {
+			return nil, nil, core.NewInvalidRequestError(
+				fmt.Sprintf("batch item %d: duplicate custom_id %q (already used by batch item %d)", i, customID, previousIndex),
+				nil,
+			)
+		}
+		seenCustomIDs[customID] = i
 		out.Requests = append(out.Requests, anthropicBatchRequest{
 			CustomID: customID,
 			Params:   *params,
@@ -1260,7 +1268,7 @@ func (p *Provider) getBatchResults(ctx context.Context, id string, endpointByCus
 	scanner := bufio.NewScanner(resp.Body)
 	// Allow larger result lines than Scanner's default 64K.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	if len(endpointByCustomID) == 0 {
+	if endpointByCustomID == nil {
 		endpointByCustomID = p.getBatchResultEndpoints(id)
 	} else {
 		endpointByCustomID = cloneBatchResultEndpoints(endpointByCustomID)
