@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +22,9 @@ type registryMockProvider struct {
 	modelsResponse    *core.ModelsResponse
 	err               error
 	listModelsDelay   time.Duration
+	listModelsStarted chan struct{}
+	listModelsBlocked chan struct{}
+	listModelsRelease chan struct{}
 }
 
 func (m *registryMockProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
@@ -37,10 +42,25 @@ func (m *registryMockProvider) StreamChatCompletion(_ context.Context, _ *core.C
 }
 
 func (m *registryMockProvider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	if m.listModelsStarted != nil {
+		select {
+		case m.listModelsStarted <- struct{}{}:
+		default:
+		}
+	}
 	if m.listModelsDelay > 0 {
 		select {
 		case <-time.After(m.listModelsDelay):
 		case <-ctx.Done():
+			if m.listModelsBlocked != nil {
+				select {
+				case m.listModelsBlocked <- struct{}{}:
+				default:
+				}
+			}
+			if m.listModelsRelease != nil {
+				<-m.listModelsRelease
+			}
 			return nil, ctx.Err()
 		}
 	}
@@ -521,46 +541,116 @@ func TestStartBackgroundRefresh(t *testing.T) {
 	})
 
 	t.Run("CancelWaitsForInFlightRefreshToExit", func(t *testing.T) {
-		var refreshCount atomic.Int32
-		mock := &registryMockProvider{
-			name: "test",
-			modelsResponse: &core.ModelsResponse{
-				Object: "list",
-				Data: []core.Model{
-					{ID: "test-model", Object: "model", OwnedBy: "test"},
+		t.Run("ListModels", func(t *testing.T) {
+			var refreshCount atomic.Int32
+			mock := &registryMockProvider{
+				name: "test",
+				modelsResponse: &core.ModelsResponse{
+					Object: "list",
+					Data: []core.Model{
+						{ID: "test-model", Object: "model", OwnedBy: "test"},
+					},
 				},
-			},
-		}
-
-		countingMock := &countingRegistryMockProvider{
-			registryMockProvider: mock,
-			listCount:            &refreshCount,
-		}
-
-		registry := NewModelRegistry()
-		registry.RegisterProvider(countingMock)
-		_ = registry.Initialize(context.Background())
-
-		refreshCount.Store(0)
-		mock.listModelsDelay = 5 * time.Second
-
-		cancel := registry.StartBackgroundRefresh(10*time.Millisecond, "")
-		for start := time.Now(); time.Since(start) < 500*time.Millisecond; {
-			if refreshCount.Load() > 0 {
-				break
 			}
-			time.Sleep(5 * time.Millisecond)
-		}
-		if refreshCount.Load() == 0 {
-			t.Fatal("expected background refresh to start")
-		}
 
-		start := time.Now()
-		cancel()
+			countingMock := &countingRegistryMockProvider{
+				registryMockProvider: mock,
+				listCount:            &refreshCount,
+			}
 
-		if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
-			t.Fatalf("cancel() took %v, want <= 500ms", elapsed)
-		}
+			registry := NewModelRegistry()
+			registry.RegisterProvider(countingMock)
+			_ = registry.Initialize(context.Background())
+			refreshCount.Store(0)
+			mock.listModelsDelay = 5 * time.Second
+			mock.listModelsStarted = make(chan struct{}, 1)
+			mock.listModelsBlocked = make(chan struct{}, 1)
+			mock.listModelsRelease = make(chan struct{})
+
+			cancel := registry.StartBackgroundRefresh(10*time.Millisecond, "")
+			select {
+			case <-mock.listModelsStarted:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("expected StartBackgroundRefresh to begin ListModels")
+			}
+
+			cancelDone := make(chan struct{})
+			go func() {
+				cancel()
+				close(cancelDone)
+			}()
+
+			select {
+			case <-mock.listModelsBlocked:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("expected ListModels to observe cancellation")
+			}
+
+			select {
+			case <-cancelDone:
+				t.Fatal("cancel() returned before in-flight ListModels finished")
+			case <-time.After(50 * time.Millisecond):
+			}
+
+			close(mock.listModelsRelease)
+
+			select {
+			case <-cancelDone:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("cancel() did not return after releasing ListModels")
+			}
+		})
+
+		t.Run("ModelListFetch", func(t *testing.T) {
+			fetchStarted := make(chan struct{}, 1)
+			fetchCanceled := make(chan struct{}, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				select {
+				case fetchStarted <- struct{}{}:
+				default:
+				}
+				<-r.Context().Done()
+				select {
+				case fetchCanceled <- struct{}{}:
+				default:
+				}
+			}))
+			defer server.Close()
+
+			var refreshCount atomic.Int32
+			mock := &registryMockProvider{
+				name: "test",
+				modelsResponse: &core.ModelsResponse{
+					Object: "list",
+					Data: []core.Model{
+						{ID: "test-model", Object: "model", OwnedBy: "test"},
+					},
+				},
+			}
+			countingMock := &countingRegistryMockProvider{
+				registryMockProvider: mock,
+				listCount:            &refreshCount,
+			}
+
+			registry := NewModelRegistry()
+			registry.RegisterProvider(countingMock)
+			_ = registry.Initialize(context.Background())
+
+			cancel := registry.StartBackgroundRefresh(10*time.Millisecond, server.URL)
+			select {
+			case <-fetchStarted:
+			case <-time.After(2 * time.Second):
+				t.Fatal("expected StartBackgroundRefresh to begin model list fetch")
+			}
+
+			cancel()
+
+			select {
+			case <-fetchCanceled:
+			case <-time.After(500 * time.Millisecond):
+				t.Fatal("expected model list fetch to be canceled during shutdown")
+			}
+		})
 	})
 
 	t.Run("HandlesRefreshErrors", func(t *testing.T) {

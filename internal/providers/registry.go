@@ -4,6 +4,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -859,7 +860,9 @@ func (a *registryAccessor) SetMetadata(modelID string, meta *core.ModelMetadata)
 
 // StartBackgroundRefresh starts a goroutine that periodically refreshes the model registry.
 // If modelListURL is non-empty, the model list is also re-fetched on each tick.
-// Returns a cancel function to stop the refresh loop.
+// The returned stop function is blocking: it cancels the refresh loop and waits
+// for the goroutine to exit before returning, so callers should expect it to
+// block during shutdown until any in-flight refresh work unwinds.
 func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelListURL string) func() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -877,11 +880,15 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 			case <-ticker.C:
 				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
 				if err := r.Refresh(refreshCtx); err != nil {
-					slog.Warn("background model refresh failed", "error", err)
+					if !isBenignBackgroundRefreshError(ctx, err) {
+						slog.Warn("background model refresh failed", "error", err)
+					}
 				} else {
 					// Save to cache after successful refresh
 					if err := r.SaveToCache(refreshCtx); err != nil {
-						slog.Warn("failed to save models to cache after refresh", "error", err)
+						if !isBenignBackgroundRefreshError(ctx, err) {
+							slog.Warn("failed to save models to cache after refresh", "error", err)
+						}
 					}
 				}
 				refreshCancel()
@@ -909,7 +916,9 @@ func (r *ModelRegistry) refreshModelList(ctx context.Context, url string) {
 
 	list, raw, err := modeldata.Fetch(fetchCtx, url)
 	if err != nil {
-		slog.Warn("failed to refresh model list", "url", url, "error", err)
+		if !isBenignBackgroundRefreshError(ctx, err) {
+			slog.Warn("failed to refresh model list", "url", url, "error", err)
+		}
 		return
 	}
 	if list == nil {
@@ -920,7 +929,19 @@ func (r *ModelRegistry) refreshModelList(ctx context.Context, url string) {
 	r.EnrichModels()
 
 	if err := r.SaveToCache(fetchCtx); err != nil {
-		slog.Warn("failed to save cache after model list refresh", "error", err)
+		if !isBenignBackgroundRefreshError(ctx, err) {
+			slog.Warn("failed to save cache after model list refresh", "error", err)
+		}
 	}
 	slog.Debug("model list refreshed", "models", len(list.Models))
+}
+
+func isBenignBackgroundRefreshError(parent context.Context, err error) bool {
+	if err == nil {
+		return true
+	}
+	if parent == nil || parent.Err() == nil {
+		return false
+	}
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
