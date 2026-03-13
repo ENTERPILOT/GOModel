@@ -41,24 +41,9 @@ snapshot:
   version_template: "{{ .Tag }}-next"
 
 changelog:
-  use: github
-  sort: asc
-  abbrev: -1
-  filters:
-    exclude:
-      - "^docs:"
-      - "^doc:"
-      - "^Docs:"
-      - "^test:"
-      - "^tests:"
-      - "^refactor:"
-      - "^ci:"
-      - "^chore:"
-      - "^build:"
-      - "^style:"
-      - "^perf:"
-      - "^Revert"
-      - "^Merge"
+  # Use GitHub's release notes generator (PR-based) instead of commit-based notes.
+  # This makes release entries cleaner and aligned with .github/release.yml categories.
+  use: github-native
 
 release:
   footer: |
