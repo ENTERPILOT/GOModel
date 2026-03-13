@@ -109,13 +109,41 @@ func (p *Provider) setHeaders(req *http.Request) {
 	}
 }
 
+// adaptChatRequest rewrites a ChatRequest for Gemini's OpenAI-compatible endpoint.
+// Gemini uses "reasoning_effort" as a top-level string (e.g. "low", "medium", "high"),
+// not the nested "reasoning": {"effort": "..."} format.
+func adaptChatRequest(req *core.ChatRequest) (any, error) {
+	if req.Reasoning == nil || req.Reasoning.Effort == "" {
+		return req, nil
+	}
+
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, core.NewInvalidRequestError("failed to marshal gemini request: "+err.Error(), err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, core.NewInvalidRequestError("failed to decode gemini request payload: "+err.Error(), err)
+	}
+
+	effort, _ := json.Marshal(req.Reasoning.Effort)
+	raw["reasoning_effort"] = effort
+	delete(raw, "reasoning")
+	return raw, nil
+}
+
 // ChatCompletion sends a chat completion request to Gemini
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+	body, err := adaptChatRequest(req)
+	if err != nil {
+		return nil, err
+	}
 	var resp core.ChatResponse
-	err := p.client.Do(ctx, llmclient.Request{
+	err = p.client.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req,
+		Body:     body,
 	}, &resp)
 	if err != nil {
 		return nil, err
@@ -128,10 +156,15 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 
 // StreamChatCompletion returns a raw response body for streaming (caller must close)
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	streamReq := req.WithStreaming()
+	body, err := adaptChatRequest(streamReq)
+	if err != nil {
+		return nil, err
+	}
 	stream, err := p.client.DoStream(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
-		Body:     req.WithStreaming(),
+		Body:     body,
 	})
 	if err != nil {
 		return nil, err
