@@ -35,6 +35,16 @@ make lint          # Check code quality
 make lint-fix      # Auto-fix issues
 ```
 
+## Release Hygiene
+
+Releases are generated automatically from merged PRs, categorized by labels and PR titles.
+
+- PR titles are validated in CI using Conventional Commit format (`type(scope): summary`)
+- Release labels are auto-applied from PR title type (`feat` -> feature, `fix` -> bug fix, etc.)
+- Internal changes (`chore`, `ci`, `build`, `test`, most `refactor`) are excluded from release notes by default
+- Prefer **Squash and merge** so each PR lands as one commit aligned with the PR title
+- If needed, apply `release:skip` on a PR to force exclusion from release notes
+
 ## Log output
 
 Log format is chosen automatically based on the environment:
