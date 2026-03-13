@@ -184,14 +184,29 @@ func (l *Logger) flushBatch(batch []*UsageEntry) {
 }
 
 // NoopLogger is a logger that does nothing (used when usage tracking is disabled)
-type NoopLogger struct{}
+type NoopLogger struct {
+	config     Config
+	configured bool
+}
+
+// NewNoopLogger creates a disabled logger that still carries policy config such as
+// whether streaming requests should ask providers to include usage.
+func NewNoopLogger(cfg Config) *NoopLogger {
+	cfg.Enabled = false
+	return &NoopLogger{config: cfg, configured: true}
+}
 
 // Write does nothing
 func (l *NoopLogger) Write(_ *UsageEntry) {}
 
-// Config returns an empty config
+// Config returns the effective config with logging disabled.
 func (l *NoopLogger) Config() Config {
-	return Config{Enabled: false}
+	cfg := l.config
+	if !l.configured {
+		cfg = DefaultConfig()
+	}
+	cfg.Enabled = false
+	return cfg
 }
 
 // Close does nothing

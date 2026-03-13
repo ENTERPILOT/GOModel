@@ -281,11 +281,13 @@ type anthropicResponse struct {
 
 // anthropicContent represents content in Anthropic response
 type anthropicContent struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	ID    string          `json:"id,omitempty"`
-	Name  string          `json:"name,omitempty"`
-	Input json.RawMessage `json:"input,omitempty"`
+	Type      string          `json:"type"`
+	Text      string          `json:"text,omitempty"`
+	Thinking  string          `json:"thinking,omitempty"`
+	Signature string          `json:"signature,omitempty"`
+	ID        string          `json:"id,omitempty"`
+	Name      string          `json:"name,omitempty"`
+	Input     json.RawMessage `json:"input,omitempty"`
 }
 
 // anthropicUsage represents token usage in Anthropic response
@@ -310,6 +312,8 @@ type anthropicStreamEvent struct {
 type anthropicDelta struct {
 	Type        string `json:"type"`
 	Text        string `json:"text,omitempty"`
+	Thinking    string `json:"thinking,omitempty"`
+	Signature   string `json:"signature,omitempty"`
 	PartialJSON string `json:"partial_json,omitempty"`
 	StopReason  string `json:"stop_reason,omitempty"`
 }
@@ -394,6 +398,7 @@ func normalizeEffort(effort string) string {
 // convertFromAnthropicResponse converts Anthropic response to core.ChatResponse
 func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	content := extractTextContent(resp.Content)
+	thinking := extractThinkingContent(resp.Content)
 	toolCalls := extractToolCalls(resp.Content)
 
 	finishReason := normalizeAnthropicStopReason(resp.StopReason)
@@ -412,6 +417,22 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 		usage.RawUsage = rawUsage
 	}
 
+	msg := core.ResponseMessage{
+		Role:      "assistant",
+		Content:   content,
+		ToolCalls: toolCalls,
+	}
+
+	// Surface thinking content as reasoning_content (OpenAI-compatible format).
+	if thinking != "" {
+		raw, err := json.Marshal(thinking)
+		if err == nil {
+			msg.ExtraFields = map[string]json.RawMessage{
+				"reasoning_content": raw,
+			}
+		}
+	}
+
 	return &core.ChatResponse{
 		ID:      resp.ID,
 		Object:  "chat.completion",
@@ -419,12 +440,8 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 		Created: time.Now().Unix(),
 		Choices: []core.Choice{
 			{
-				Index: 0,
-				Message: core.ResponseMessage{
-					Role:      "assistant",
-					Content:   content,
-					ToolCalls: toolCalls,
-				},
+				Index:        0,
+				Message:      msg,
 				FinishReason: finishReason,
 			},
 		},
@@ -481,6 +498,7 @@ type streamConverter struct {
 	msgID             string
 	nextToolCallIndex int
 	toolCalls         map[int]*streamToolCallState
+	thinkingBlocks    map[int]bool // tracks which content block indices are thinking blocks
 	usage             anthropicUsage
 	hasUsage          bool
 	buffer            []byte
@@ -499,11 +517,12 @@ type streamToolCallState struct {
 
 func newStreamConverter(body io.ReadCloser, model string) *streamConverter {
 	return &streamConverter{
-		reader:    bufio.NewReader(body),
-		body:      body,
-		model:     model,
-		toolCalls: make(map[int]*streamToolCallState),
-		buffer:    make([]byte, 0, 1024),
+		reader:         bufio.NewReader(body),
+		body:           body,
+		model:          model,
+		toolCalls:      make(map[int]*streamToolCallState),
+		thinkingBlocks: make(map[int]bool),
+		buffer:         make([]byte, 0, 1024),
 	}
 }
 
@@ -727,6 +746,10 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		return ""
 
 	case "content_block_start":
+		if event.ContentBlock != nil && event.ContentBlock.Type == "thinking" {
+			sc.thinkingBlocks[event.Index] = true
+			return ""
+		}
 		if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
 			state := &streamToolCallState{
 				ID:    event.ContentBlock.ID,
@@ -770,6 +793,16 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		}
 
 		switch event.Delta.Type {
+		case "thinking_delta":
+			if sc.thinkingBlocks[event.Index] && event.Delta.Thinking != "" {
+				return sc.formatChatChunk(map[string]any{
+					"reasoning_content": event.Delta.Thinking,
+				}, nil, nil)
+			}
+		case "signature_delta":
+			// Signature deltas are internal to Anthropic's thinking protocol;
+			// no OpenAI-compatible equivalent to emit.
+			return ""
 		case "text_delta":
 			if event.Delta.Text != "" {
 				return sc.formatChatChunk(map[string]any{
@@ -902,17 +935,45 @@ func parseCreatedAt(createdAt string) int64 {
 	return t.Unix()
 }
 
-// extractTextContent returns the text from the last "text" content block.
-// When extended thinking is enabled, Anthropic returns: [text("\n\n"), thinking(...), text(answer)].
-// Taking the last text block ensures we get the actual answer, not the empty preamble.
+// extractTextContent returns the text content from the response.
+// When thinking blocks are present, only text blocks after the last thinking block
+// are included (earlier text blocks are typically empty preambles).
+// When no thinking blocks are present, all text blocks are concatenated.
 func extractTextContent(blocks []anthropicContent) string {
-	last := ""
-	for _, b := range blocks {
-		if b.Type == "text" {
-			last = b.Text
+	lastThinkingIdx := -1
+	for i, b := range blocks {
+		if b.Type == "thinking" {
+			lastThinkingIdx = i
 		}
 	}
-	return last
+
+	var sb strings.Builder
+	for i, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			if lastThinkingIdx >= 0 && i < lastThinkingIdx {
+				continue // skip text blocks before thinking
+			}
+			if sb.Len() > 0 {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString(b.Text)
+		}
+	}
+	return sb.String()
+}
+
+// extractThinkingContent returns the concatenated thinking text from all "thinking" content blocks.
+func extractThinkingContent(blocks []anthropicContent) string {
+	var sb strings.Builder
+	for _, b := range blocks {
+		if b.Type == "thinking" && b.Thinking != "" {
+			if sb.Len() > 0 {
+				sb.WriteString("\n\n")
+			}
+			sb.WriteString(b.Thinking)
+		}
+	}
+	return sb.String()
 }
 
 // extractToolCalls maps Anthropic "tool_use" content blocks to OpenAI-compatible tool calls.
@@ -1411,6 +1472,7 @@ type responsesStreamConverter struct {
 	output          *providers.ResponsesOutputEventState
 	nextOutputIndex int
 	toolCalls       map[int]*providers.ResponsesOutputToolCallState
+	thinkingBlocks  map[int]bool // tracks which content block indices are thinking blocks
 	buffer          []byte
 	closed          bool
 	sentDone        bool
@@ -1421,13 +1483,14 @@ type responsesStreamConverter struct {
 func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
 	responseID := "resp_" + uuid.New().String()
 	return &responsesStreamConverter{
-		reader:     bufio.NewReader(body),
-		body:       body,
-		model:      model,
-		responseID: responseID,
-		output:     providers.NewResponsesOutputEventState(responseID),
-		toolCalls:  make(map[int]*providers.ResponsesOutputToolCallState),
-		buffer:     make([]byte, 0, 1024),
+		reader:         bufio.NewReader(body),
+		body:           body,
+		model:          model,
+		responseID:     responseID,
+		output:         providers.NewResponsesOutputEventState(responseID),
+		toolCalls:      make(map[int]*providers.ResponsesOutputToolCallState),
+		thinkingBlocks: make(map[int]bool),
+		buffer:         make([]byte, 0, 1024),
 	}
 }
 
@@ -1565,6 +1628,10 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		return fmt.Sprintf("event: response.created\ndata: %s\n\n", jsonData)
 
 	case "content_block_start":
+		if event.ContentBlock != nil && event.ContentBlock.Type == "thinking" {
+			sc.thinkingBlocks[event.Index] = true
+			return ""
+		}
 		if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
 			if sc.output.AssistantStarted() && !sc.output.AssistantDone() {
 				prefix := sc.output.CompleteAssistantOutput(0)
@@ -1584,6 +1651,10 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		}
 
 		switch event.Delta.Type {
+		case "thinking_delta", "signature_delta":
+			// Thinking and signature deltas are part of Anthropic's extended thinking;
+			// the Responses API format does not have a direct equivalent, so skip them.
+			return ""
 		case "text_delta":
 			if event.Delta.Text != "" {
 				sc.reserveAssistantMessageOutput()

@@ -1,17 +1,23 @@
-# GOModel
+# GOModel - AI Gateway Written in Go
 
 [![CI](https://github.com/ENTERPILOT/GOModel/actions/workflows/test.yml/badge.svg)](https://github.com/ENTERPILOT/GOModel/actions/workflows/test.yml)
 [![Docs](https://img.shields.io/badge/docs-gomodel-blue)](https://gomodel.enterpilot.io/docs)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/gaEB9BQSPH)
+[![Docker Pulls](https://img.shields.io/docker/pulls/enterpilot/gomodel)](https://hub.docker.com/r/enterpilot/gomodel)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/ENTERPILOT/GOModel)](https://github.com/ENTERPILOT/GOModel/blob/main/go.mod)
 
 A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
 
-## Quick Start
+## Quick Start - Deploy the AI Gateway
 
 **Step 1:** Start GOModel
 
 ```bash
 docker run --rm -p 8080:8080 \
+  -e LOGGING_ENABLED=true \
+  -e LOGGING_LOG_BODIES=true \
+  -e LOG_FORMAT=text \
+  -e LOGGING_LOG_HEADERS=true \
   -e OPENAI_API_KEY="your-openai-key" \
   enterpilot/gomodel
 ```
@@ -29,7 +35,7 @@ docker run --rm -p 8080:8080 \
   enterpilot/gomodel
 ```
 
-⚠️ Avoid passing secrets via `-e` on the command line—they can leak via shell history and process lists. For production, use `docker run --env-file .env` to load API keys from a file instead.
+⚠️ Avoid passing secrets via `-e` on the command line - they can leak via shell history and process lists. For production, use `docker run --env-file .env` to load API keys from a file instead.
 
 **Step 2:** Make your first API call
 
@@ -44,7 +50,7 @@ curl http://localhost:8080/v1/chat/completions \
 
 **That's it!** GOModel automatically detects which providers are available based on the credentials you supply.
 
-### Supported Providers
+### Supported LLM Providers
 
 Example model identifiers are illustrative and subject to change; consult provider catalogs for current models. Feature columns reflect gateway API support, not every individual model capability exposed by an upstream provider.
 
@@ -106,7 +112,7 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 
 ---
 
-## API Endpoints
+## OpenAI-Compatible API Endpoints
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
@@ -140,7 +146,7 @@ docker run --rm -p 8080:8080 --env-file .env gomodel
 
 ---
 
-## Configuration
+## Gateway Configuration
 
 GOModel is configured through environment variables and an optional `config.yaml`. Environment variables override YAML values. See [`.env.template`](.env.template) and [`config/config.example.yaml`](config/config.example.yaml) for the available options.
 
@@ -159,7 +165,7 @@ Key settings:
 | `LOGGING_ENABLED` | `false` | Enable audit logging |
 | `GUARDRAILS_ENABLED` | `false` | Enable the configured guardrails pipeline |
 
-**Quick Start — Authentication:** By default `GOMODEL_MASTER_KEY` is unset. Without this key, API endpoints are unprotected and anyone can call them. This is insecure for production. **Strongly recommend** setting a strong secret before exposing the service. Add `GOMODEL_MASTER_KEY` to your `.env` or environment for production deployments.
+**Quick Start - Authentication:** By default `GOMODEL_MASTER_KEY` is unset. Without this key, API endpoints are unprotected and anyone can call them. This is insecure for production. **Strongly recommend** setting a strong secret before exposing the service. Add `GOMODEL_MASTER_KEY` to your `.env` or environment for production deployments.
 
 ---
 
@@ -197,6 +203,10 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 | SSO / OIDC | 🚧 | No SSO implementation is present yet. |
 
 ✅ Shipped  🚧 Planned or in progress
+
+## Community
+
+Join our [Discord](https://discord.gg/gaEB9BQSPH) to connect with other GOModel users.
 
 ## Star History
 

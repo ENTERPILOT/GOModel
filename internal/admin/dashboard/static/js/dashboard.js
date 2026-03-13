@@ -1,6 +1,9 @@
 // GOModel Dashboard — Alpine.js + Chart.js logic
 
 function dashboard() {
+    const calendarModuleFactory =
+        typeof dashboardContributionCalendarModule === 'function' ? dashboardContributionCalendarModule : null;
+
     const base = {
         // State
         page: 'overview',
@@ -30,6 +33,7 @@ function dashboard() {
         models: [],
         categories: [],
         activeCategory: 'all',
+        hasCalendarModule: calendarModuleFactory !== null,
 
         // Filters
         modelFilter: '',
@@ -179,7 +183,11 @@ function dashboard() {
             this.loading = true;
             this.authError = false;
             this.needsAuth = false;
-            await Promise.all([this.fetchUsage(), this.fetchModels(), this.fetchCategories()]);
+            const requests = [this.fetchUsage(), this.fetchModels(), this.fetchCategories()];
+            if (this.hasCalendarModule && typeof this.fetchCalendarData === 'function') {
+                requests.push(this.fetchCalendarData());
+            }
+            await Promise.all(requests);
             this.loading = false;
         },
 
@@ -315,6 +323,7 @@ function dashboard() {
         typeof dashboardUsageModule === 'function' ? dashboardUsageModule : null,
         typeof dashboardAuditListModule === 'function' ? dashboardAuditListModule : null,
         typeof dashboardConversationDrawerModule === 'function' ? dashboardConversationDrawerModule : null,
+        calendarModuleFactory,
         typeof dashboardChartsModule === 'function' ? dashboardChartsModule : null
     ];
 
