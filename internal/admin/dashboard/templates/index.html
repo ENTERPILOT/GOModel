@@ -57,8 +57,8 @@
         <div class="contribution-calendar-header">
             <h3>Activity</h3>
             <div class="usage-mode-toggle">
-                <button class="usage-mode-btn" :class="{active: calendarMode==='tokens'}" @click="toggleCalendarMode('tokens')">Tokens</button>
-                <button class="usage-mode-btn" :class="{active: calendarMode==='costs'}" @click="toggleCalendarMode('costs')">Costs</button>
+                <button type="button" class="usage-mode-btn" :class="{active: calendarMode==='tokens'}" @click="toggleCalendarMode('tokens')">Tokens</button>
+                <button type="button" class="usage-mode-btn" :class="{active: calendarMode==='costs'}" @click="toggleCalendarMode('costs')">Costs</button>
             </div>
         </div>
         <div class="contribution-calendar-grid-wrapper">

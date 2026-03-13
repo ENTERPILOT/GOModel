@@ -129,13 +129,21 @@
             },
 
             calendarSummaryText() {
-                var weeks = this.buildCalendarGrid();
                 var total = 0;
-                for (var i = 0; i < weeks.length; i++) {
-                    for (var j = 0; j < weeks[i].length; j++) {
-                        if (!weeks[i][j].empty) {
-                            total += weeks[i][j].value;
+                var data = this.calendarData || [];
+                for (var i = 0; i < data.length; i++) {
+                    var entry = data[i];
+                    if (!entry) {
+                        continue;
+                    }
+                    if (this.calendarMode === 'costs') {
+                        if (entry.total_cost) {
+                            total += entry.total_cost;
                         }
+                        continue;
+                    }
+                    if (entry.total_tokens) {
+                        total += entry.total_tokens;
                     }
                 }
                 if (this.calendarMode === 'costs') {

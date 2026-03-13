@@ -27,7 +27,7 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 	conditions, args := sqliteDateRangeConditions(params)
 	where := buildWhereClause(conditions)
 
-	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
 	query := `SELECT COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
 			FROM usage` + where
 
@@ -48,7 +48,7 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 	conditions, args := sqliteDateRangeConditions(params)
 	where := buildWhereClause(conditions)
 
-	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
 	query := `SELECT model, provider, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
 			FROM usage` + where + ` GROUP BY model, provider`
 
@@ -195,7 +195,7 @@ func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParam
 	conditions, args := sqliteDateRangeConditions(params)
 	where := buildWhereClause(conditions)
 
-	costCols := `, COALESCE(SUM(input_cost),0), COALESCE(SUM(output_cost),0), COALESCE(SUM(total_cost),0)`
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
 	query := fmt.Sprintf(`SELECT %s as period, COUNT(*), COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)`+costCols+`
 		FROM usage%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
 
