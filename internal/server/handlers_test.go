@@ -1155,14 +1155,12 @@ func TestGetBatch_UsesSemanticEnvelopeRouteMetadata(t *testing.T) {
 	createCtx := e.NewContext(createReq, createRec)
 	require.NoError(t, handler.Batches(createCtx))
 
-	var created core.BatchResponse
-	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &created))
+		var created core.BatchResponse
+		require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &created))
 
-	getReq := httptest.NewRequest(http.MethodGet, "/v1/batches/wrong-id", nil)
-	frame := core.NewRequestSnapshot(http.MethodGet, "/v1/batches/"+created.ID, map[string]string{"id": created.ID}, nil, nil, "", nil, false, "", nil)
-	ctx := core.WithRequestSnapshot(getReq.Context(), frame)
-	ctx = core.WithWhiteBoxPrompt(ctx, core.DeriveWhiteBoxPrompt(frame))
-	getReq = getReq.WithContext(ctx)
+		getReq := httptest.NewRequest(http.MethodGet, "/v1/batches/wrong-id", nil)
+		frame := core.NewRequestSnapshot(http.MethodGet, "/v1/batches/"+created.ID, map[string]string{"id": created.ID}, nil, nil, "", nil, false, "", nil)
+		getReq = withRequestSnapshotAndPrompt(getReq, frame)
 
 	getRec := httptest.NewRecorder()
 	getCtx := e.NewContext(getReq, getRec)
@@ -1201,10 +1199,10 @@ func TestListBatches_UsesSemanticEnvelopeQueryMetadata(t *testing.T) {
 	createCtx := e.NewContext(createReq, createRec)
 	require.NoError(t, handler.Batches(createCtx))
 
-	listReq := httptest.NewRequest(http.MethodGet, "/v1/batches?limit=bad", nil)
-	frame := core.NewRequestSnapshot(
-		http.MethodGet,
-		"/v1/batches",
+		listReq := httptest.NewRequest(http.MethodGet, "/v1/batches?limit=bad", nil)
+		frame := core.NewRequestSnapshot(
+			http.MethodGet,
+			"/v1/batches",
 		nil,
 		map[string][]string{
 			"limit": {"1"},
@@ -1213,12 +1211,10 @@ func TestListBatches_UsesSemanticEnvelopeQueryMetadata(t *testing.T) {
 		"",
 		nil,
 		false,
-		"",
-		nil,
-	)
-	ctx := core.WithRequestSnapshot(listReq.Context(), frame)
-	ctx = core.WithWhiteBoxPrompt(ctx, core.DeriveWhiteBoxPrompt(frame))
-	listReq = listReq.WithContext(ctx)
+			"",
+			nil,
+		)
+		listReq = withRequestSnapshotAndPrompt(listReq, frame)
 
 	listRec := httptest.NewRecorder()
 	listCtx := e.NewContext(listReq, listRec)

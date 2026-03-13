@@ -64,7 +64,7 @@ Its job is to preserve what came over the wire so the gateway can:
 
 ## WhiteBoxPrompt
 
-`WhiteBoxPrompt` is the gateway's best-effort semantic extraction from the ingress frame.
+`WhiteBoxPrompt` is the gateway's best-effort semantic extraction from the `RequestSnapshot`.
 
 It may contain:
 

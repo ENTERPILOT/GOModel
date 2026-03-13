@@ -72,18 +72,19 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 				entry.Data.RequestHeaders = extractHeaders(req.Header)
 			}
 
-			// Capture request body if enabled
-			if cfg.LogBodies && req.Body != nil {
-				if snapshot := core.GetRequestSnapshot(req.Context()); snapshot != nil {
-					switch {
-					case snapshot.BodyNotCaptured:
-						entry.Data.RequestBodyTooBigToHandle = true
-					case snapshot.CapturedBody() != nil:
-						captureLoggedRequestBody(entry, snapshot.CapturedBody())
-					default:
-						captureRequestBodyForLogging(entry, req)
-					}
-				} else {
+				// Capture request body if enabled
+				if cfg.LogBodies && req.Body != nil {
+					if snapshot := core.GetRequestSnapshot(req.Context()); snapshot != nil {
+						body := snapshot.CapturedBody()
+						switch {
+						case snapshot.BodyNotCaptured:
+							entry.Data.RequestBodyTooBigToHandle = true
+						case body != nil:
+							captureLoggedRequestBody(entry, body)
+						default:
+							captureRequestBodyForLogging(entry, req)
+						}
+					} else {
 					captureRequestBodyForLogging(entry, req)
 				}
 			}
