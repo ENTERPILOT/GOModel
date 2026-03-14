@@ -127,6 +127,45 @@ func TestListAliases(t *testing.T) {
 	}
 }
 
+func TestAliasesEndpointsReturn503WhenServiceUnavailable(t *testing.T) {
+	h := NewHandler(nil, nil)
+	e := echo.New()
+
+	assertUnavailable := func(name string, err error, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if err != nil {
+			t.Fatalf("%s error = %v", name, err)
+		}
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("%s status = %d, want 503", name, rec.Code)
+		}
+
+		var body map[string]map[string]any
+		if decodeErr := json.Unmarshal(rec.Body.Bytes(), &body); decodeErr != nil {
+			t.Fatalf("%s decode error = %v", name, decodeErr)
+		}
+		if got := body["error"]["code"]; got != "feature_unavailable" {
+			t.Fatalf("%s error code = %v, want feature_unavailable", name, got)
+		}
+	}
+
+	listCtx, listRec := newHandlerContext("/admin/api/v1/aliases")
+	assertUnavailable("ListAliases", h.ListAliases(listCtx), listRec)
+
+	putReq := httptest.NewRequest(http.MethodPut, "/admin/api/v1/aliases/smart", bytes.NewBufferString(`{"target_model":"gpt-4o"}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	putCtx := e.NewContext(putReq, putRec)
+	putCtx.SetPathValues(echo.PathValues{{Name: "name", Value: "smart"}})
+	assertUnavailable("UpsertAlias", h.UpsertAlias(putCtx), putRec)
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/api/v1/aliases/smart", nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "name", Value: "smart"}})
+	assertUnavailable("DeleteAlias", h.DeleteAlias(deleteCtx), deleteRec)
+}
+
 func TestUpsertAliasAndDeleteAlias(t *testing.T) {
 	h := newAliasHandler(t)
 	e := echo.New()

@@ -519,13 +519,14 @@ type upsertAliasRequest struct {
 }
 
 func (h *Handler) aliasesUnavailableError() error {
-	return core.NewProviderError("aliases", http.StatusInternalServerError, "aliases service is unavailable", nil)
+	return core.NewInvalidRequestErrorWithStatus(http.StatusServiceUnavailable, "aliases feature is unavailable", nil).
+		WithCode("feature_unavailable")
 }
 
 // ListAliases handles GET /admin/api/v1/aliases
 func (h *Handler) ListAliases(c *echo.Context) error {
 	if h.aliases == nil {
-		return c.JSON(http.StatusOK, []aliases.View{})
+		return handleError(c, h.aliasesUnavailableError())
 	}
 	views := h.aliases.ListViews()
 	if views == nil {
