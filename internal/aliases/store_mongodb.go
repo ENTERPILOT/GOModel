@@ -21,6 +21,10 @@ type mongoAliasDocument struct {
 	UpdatedAt      time.Time `bson:"updated_at"`
 }
 
+type mongoAliasIDFilter struct {
+	ID string `bson:"_id"`
+}
+
 // MongoDBStore stores aliases in MongoDB.
 type MongoDBStore struct {
 	collection *mongo.Collection
@@ -68,7 +72,7 @@ func (s *MongoDBStore) List(ctx context.Context) ([]Alias, error) {
 
 func (s *MongoDBStore) Get(ctx context.Context, name string) (*Alias, error) {
 	var doc mongoAliasDocument
-	err := s.collection.FindOne(ctx, bson.M{"_id": normalizeName(name)}).Decode(&doc)
+	err := s.collection.FindOne(ctx, mongoAliasIDFilter{ID: normalizeName(name)}).Decode(&doc)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, ErrNotFound
@@ -102,7 +106,7 @@ func (s *MongoDBStore) Upsert(ctx context.Context, alias Alias) error {
 			"created_at": alias.CreatedAt,
 		},
 	}
-	_, err = s.collection.UpdateOne(ctx, bson.M{"_id": alias.Name}, update, options.UpdateOne().SetUpsert(true))
+	_, err = s.collection.UpdateOne(ctx, mongoAliasIDFilter{ID: alias.Name}, update, options.UpdateOne().SetUpsert(true))
 	if err != nil {
 		return fmt.Errorf("upsert alias: %w", err)
 	}
@@ -110,7 +114,7 @@ func (s *MongoDBStore) Upsert(ctx context.Context, alias Alias) error {
 }
 
 func (s *MongoDBStore) Delete(ctx context.Context, name string) error {
-	result, err := s.collection.DeleteOne(ctx, bson.M{"_id": normalizeName(name)})
+	result, err := s.collection.DeleteOne(ctx, mongoAliasIDFilter{ID: normalizeName(name)})
 	if err != nil {
 		return fmt.Errorf("delete alias: %w", err)
 	}
