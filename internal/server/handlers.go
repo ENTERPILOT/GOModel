@@ -32,25 +32,29 @@ var defaultEnabledPassthroughProviders = []string{"openai", "anthropic"}
 
 // Handler holds the HTTP handlers
 type Handler struct {
-	provider                      core.RoutableProvider
-	logger                        auditlog.LoggerInterface
-	usageLogger                   usage.LoggerInterface
-	pricingResolver               usage.PricingResolver
-	batchStore                    batchstore.Store
-	normalizePassthroughV1Prefix  bool
-	enabledPassthroughProviders map[string]struct{}
+	provider                     core.RoutableProvider
+	logger                       auditlog.LoggerInterface
+	usageLogger                  usage.LoggerInterface
+	pricingResolver              usage.PricingResolver
+	batchStore                   batchstore.Store
+	normalizePassthroughV1Prefix bool
+	enabledPassthroughProviders  map[string]struct{}
+}
+
+type resolvedModelProvider interface {
+	ResolveModel(model, provider string) (core.ModelSelector, bool, error)
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
 func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface, pricingResolver usage.PricingResolver) *Handler {
 	return &Handler{
-		provider:                      provider,
-		logger:                        logger,
-		usageLogger:                   usageLogger,
-		pricingResolver:               pricingResolver,
-		batchStore:                    batchstore.NewMemoryStore(),
-		normalizePassthroughV1Prefix:  true,
-		enabledPassthroughProviders: normalizeEnabledPassthroughProviders(defaultEnabledPassthroughProviders),
+		provider:                     provider,
+		logger:                       logger,
+		usageLogger:                  usageLogger,
+		pricingResolver:              pricingResolver,
+		batchStore:                   batchstore.NewMemoryStore(),
+		normalizePassthroughV1Prefix: true,
+		enabledPassthroughProviders:  normalizeEnabledPassthroughProviders(defaultEnabledPassthroughProviders),
 	}
 }
 
@@ -193,6 +197,19 @@ func requestContextWithRequestID(req *http.Request) (context.Context, string) {
 	}
 
 	return ctx, requestID
+}
+
+func (h *Handler) streamingUsageModel(model, provider string) (string, error) {
+	if resolver, ok := h.provider.(resolvedModelProvider); ok {
+		selector, _, err := resolver.ResolveModel(model, provider)
+		if err != nil {
+			return "", err
+		}
+		if selector.Model != "" {
+			return selector.Model, nil
+		}
+	}
+	return model, nil
 }
 
 func sanitizePublicBatchMetadata(metadata map[string]string) map[string]string {
@@ -584,7 +601,11 @@ func (h *Handler) ChatCompletion(c *echo.Context) error {
 			}
 			streamReq.StreamOptions.IncludeUsage = true
 		}
-		return h.handleStreamingResponse(c, streamReq.Model, providerType, func() (io.ReadCloser, error) {
+		usageModel, err := h.streamingUsageModel(streamReq.Model, streamReq.Provider)
+		if err != nil {
+			return handleError(c, err)
+		}
+		return h.handleStreamingResponse(c, usageModel, providerType, func() (io.ReadCloser, error) {
 			return h.provider.StreamChatCompletion(ctx, streamReq)
 		})
 	}
@@ -1061,7 +1082,11 @@ func (h *Handler) Responses(c *echo.Context) error {
 		if h.shouldEnforceReturningUsageData() {
 			ctx = core.WithEnforceReturningUsageData(ctx, true)
 		}
-		return h.handleStreamingResponse(c, req.Model, providerType, func() (io.ReadCloser, error) {
+		usageModel, err := h.streamingUsageModel(req.Model, req.Provider)
+		if err != nil {
+			return handleError(c, err)
+		}
+		return h.handleStreamingResponse(c, usageModel, providerType, func() (io.ReadCloser, error) {
 			return h.provider.StreamResponses(ctx, req)
 		})
 	}

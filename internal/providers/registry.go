@@ -467,6 +467,17 @@ func (r *ModelRegistry) GetModel(model string) *ModelInfo {
 	return nil
 }
 
+// LookupModel returns a defensive copy of the concrete model for the given selector.
+// Qualified selectors use the configured provider name prefix when present.
+func (r *ModelRegistry) LookupModel(model string) (*core.Model, bool) {
+	info := r.GetModel(model)
+	if info == nil {
+		return nil, false
+	}
+	cloned := info.Model
+	return &cloned, true
+}
+
 // Supports returns true if the registry has a provider for the given model
 func (r *ModelRegistry) Supports(model string) bool {
 	r.mu.RLock()
