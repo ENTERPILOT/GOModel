@@ -11,6 +11,7 @@ import (
 
 	"github.com/labstack/echo/v5"
 
+	"gomodel/internal/aliases"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/providers"
@@ -22,6 +23,7 @@ type Handler struct {
 	usageReader usage.UsageReader
 	auditReader auditlog.Reader
 	registry    *providers.ModelRegistry
+	aliases     *aliases.Service
 }
 
 // Option configures the admin API handler.
@@ -31,6 +33,13 @@ type Option func(*Handler)
 func WithAuditReader(reader auditlog.Reader) Option {
 	return func(h *Handler) {
 		h.auditReader = reader
+	}
+}
+
+// WithAliases enables alias administration endpoints.
+func WithAliases(service *aliases.Service) Option {
+	return func(h *Handler) {
+		h.aliases = service
 	}
 }
 
@@ -500,4 +509,85 @@ func (h *Handler) ListCategories(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, h.registry.GetCategoryCounts())
+}
+
+type upsertAliasRequest struct {
+	TargetModel    string `json:"target_model"`
+	TargetProvider string `json:"target_provider,omitempty"`
+	Description    string `json:"description,omitempty"`
+	Enabled        *bool  `json:"enabled,omitempty"`
+}
+
+func (h *Handler) aliasesUnavailableError() error {
+	return core.NewProviderError("aliases", http.StatusInternalServerError, "aliases service is unavailable", nil)
+}
+
+// ListAliases handles GET /admin/api/v1/aliases
+func (h *Handler) ListAliases(c *echo.Context) error {
+	if h.aliases == nil {
+		return c.JSON(http.StatusOK, []aliases.View{})
+	}
+	views := h.aliases.ListViews()
+	if views == nil {
+		views = []aliases.View{}
+	}
+	return c.JSON(http.StatusOK, views)
+}
+
+// UpsertAlias handles PUT /admin/api/v1/aliases/{name}
+func (h *Handler) UpsertAlias(c *echo.Context) error {
+	if h.aliases == nil {
+		return handleError(c, h.aliasesUnavailableError())
+	}
+
+	name := strings.TrimSpace(c.Param("name"))
+	if name == "" {
+		return handleError(c, core.NewInvalidRequestError("alias name is required", nil))
+	}
+
+	var req upsertAliasRequest
+	if err := c.Bind(&req); err != nil {
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
+	}
+
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	if err := h.aliases.Upsert(c.Request().Context(), aliases.Alias{
+		Name:           name,
+		TargetModel:    req.TargetModel,
+		TargetProvider: req.TargetProvider,
+		Description:    req.Description,
+		Enabled:        enabled,
+	}); err != nil {
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+
+	alias, ok := h.aliases.Get(name)
+	if !ok {
+		return c.NoContent(http.StatusNoContent)
+	}
+	return c.JSON(http.StatusOK, alias)
+}
+
+// DeleteAlias handles DELETE /admin/api/v1/aliases/{name}
+func (h *Handler) DeleteAlias(c *echo.Context) error {
+	if h.aliases == nil {
+		return handleError(c, h.aliasesUnavailableError())
+	}
+
+	name := strings.TrimSpace(c.Param("name"))
+	if name == "" {
+		return handleError(c, core.NewInvalidRequestError("alias name is required", nil))
+	}
+
+	if err := h.aliases.Delete(c.Request().Context(), name); err != nil {
+		if errors.Is(err, aliases.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("alias not found: "+name))
+		}
+		return handleError(c, core.NewInvalidRequestError(err.Error(), err))
+	}
+	return c.NoContent(http.StatusNoContent)
 }
