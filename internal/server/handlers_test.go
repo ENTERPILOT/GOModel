@@ -3020,6 +3020,51 @@ func TestBatchResults_PendingReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestBatchResults_DoesNotCleanupRewrittenFileBeforeTerminalStatus(t *testing.T) {
+	mock := &mockProvider{
+		batchResults: &core.BatchResultsResponse{
+			Object:  "list",
+			BatchID: "provider-batch-1",
+			Data: []core.BatchResultItem{
+				{Index: 0, StatusCode: 200, CustomID: "partial-1"},
+			},
+		},
+	}
+
+	handler := NewHandler(mock, nil, nil, nil)
+	store := batchstore.NewMemoryStore()
+	handler.SetBatchStore(store)
+	require.NoError(t, store.Create(context.Background(), &batchstore.StoredBatch{
+		Batch: &core.BatchResponse{
+			ID:              "batch_1",
+			Object:          "batch",
+			Provider:        "openai",
+			ProviderBatchID: "provider-batch-1",
+			Status:          "in_progress",
+			InputFileID:     "file_source",
+		},
+		OriginalInputFileID:  "file_source",
+		RewrittenInputFileID: "file_hidden",
+	}))
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/v1/batches/batch_1/results", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/v1/batches/:id/results")
+	setPathParam(c, "id", "batch_1")
+
+	err := handler.BatchResults(c)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Empty(t, mock.capturedFileDeleteIDs)
+
+	stored, err := store.Get(context.Background(), "batch_1")
+	require.NoError(t, err)
+	require.Equal(t, "file_hidden", stored.RewrittenInputFileID)
+	require.Len(t, stored.Batch.Results, 1)
+}
+
 func TestBatchResults_LogsUsageOnce(t *testing.T) {
 	mock := &mockProvider{
 		supportedModels: []string{"claude-3-haiku-20240307"},
@@ -4077,6 +4122,89 @@ func TestMergeStoredBatchFromUpstreamPreservesGatewayMetadata(t *testing.T) {
 	}
 	if stored.Batch.InputFileID != "file_source" {
 		t.Fatalf("input_file_id overwritten: %q", stored.Batch.InputFileID)
+	}
+}
+
+func TestMergeStoredBatchFromUpstreamPreservesExistingValuesOnSparseUpstream(t *testing.T) {
+	inProgressAt := int64(1001)
+	completedAt := int64(1002)
+	inputCost := 0.11
+	totalCost := 0.22
+
+	stored := &batchstore.StoredBatch{
+		Batch: &core.BatchResponse{
+			ID:               "batch_1",
+			Status:           "in_progress",
+			Endpoint:         "/v1/chat/completions",
+			InputFileID:      "file_source",
+			CompletionWindow: "24h",
+			RequestCounts: core.BatchRequestCounts{
+				Total:     10,
+				Completed: 4,
+				Failed:    1,
+			},
+			Usage: core.BatchUsageSummary{
+				InputTokens:  100,
+				OutputTokens: 50,
+				TotalTokens:  150,
+				InputCost:    &inputCost,
+				TotalCost:    &totalCost,
+			},
+			Results: []core.BatchResultItem{
+				{Index: 0, CustomID: "keep-me", StatusCode: 200},
+			},
+			InProgressAt: &inProgressAt,
+			CompletedAt:  &completedAt,
+			Metadata: map[string]string{
+				"provider": "openai",
+			},
+		},
+		OriginalInputFileID: "file_source",
+	}
+
+	upstream := &core.BatchResponse{
+		Status:        "",
+		Endpoint:      "",
+		InputFileID:   "",
+		RequestCounts: core.BatchRequestCounts{},
+		Usage:         core.BatchUsageSummary{},
+		Results:       nil,
+		Metadata: map[string]string{
+			"upstream_only": "value",
+		},
+	}
+
+	mergeStoredBatchFromUpstream(stored, upstream)
+
+	if got := stored.Batch.Status; got != "in_progress" {
+		t.Fatalf("Status = %q, want in_progress", got)
+	}
+	if got := stored.Batch.Endpoint; got != "/v1/chat/completions" {
+		t.Fatalf("Endpoint = %q, want /v1/chat/completions", got)
+	}
+	if got := stored.Batch.InputFileID; got != "file_source" {
+		t.Fatalf("InputFileID = %q, want file_source", got)
+	}
+	if got := stored.Batch.CompletionWindow; got != "24h" {
+		t.Fatalf("CompletionWindow = %q, want 24h", got)
+	}
+	if got := stored.Batch.RequestCounts; got != (core.BatchRequestCounts{Total: 10, Completed: 4, Failed: 1}) {
+		t.Fatalf("RequestCounts = %#v, want preserved counts", got)
+	}
+	if got := stored.Batch.Usage; got.InputTokens != 100 || got.OutputTokens != 50 || got.TotalTokens != 150 || got.InputCost == nil || *got.InputCost != inputCost || got.TotalCost == nil || *got.TotalCost != totalCost {
+		t.Fatalf("Usage = %#v, want preserved usage", got)
+	}
+	if len(stored.Batch.Results) != 1 || stored.Batch.Results[0].CustomID != "keep-me" {
+		t.Fatalf("Results = %#v, want preserved results", stored.Batch.Results)
+	}
+	if stored.Batch.InProgressAt == nil || *stored.Batch.InProgressAt != inProgressAt {
+		t.Fatalf("InProgressAt = %#v, want %d", stored.Batch.InProgressAt, inProgressAt)
+	}
+	if stored.Batch.CompletedAt == nil || *stored.Batch.CompletedAt != completedAt {
+		t.Fatalf("CompletedAt = %#v, want %d", stored.Batch.CompletedAt, completedAt)
+	}
+	if got := stored.Batch.Metadata["upstream_only"]; got != "value" {
+		t.Fatalf("metadata[upstream_only] = %q, want value", got)
 	}
 }
 

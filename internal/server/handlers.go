@@ -1572,7 +1572,10 @@ func (h *Handler) BatchResults(c *echo.Context) error {
 	if len(result.Data) > 0 {
 		stored.Batch.Results = result.Data
 	}
-	cleanedRewrittenInput := h.cleanupStoredBatchRewrittenInputFile(ctx, stored)
+	cleanedRewrittenInput := false
+	if isTerminalBatchStatus(stored.Batch.Status) {
+		cleanedRewrittenInput = h.cleanupStoredBatchRewrittenInputFile(ctx, stored)
+	}
 	if len(result.Data) > 0 || usageLogged || cleanedRewrittenInput {
 		if updateErr := h.batchStore.Update(c.Request().Context(), stored); updateErr != nil {
 			slog.Warn(
@@ -1914,20 +1917,36 @@ func mergeStoredBatchFromUpstream(stored *batchstore.StoredBatch, upstream *core
 		return
 	}
 
-	stored.Batch.Status = upstream.Status
-	stored.Batch.Endpoint = upstream.Endpoint
+	stored.Batch.Status = firstNonEmpty(upstream.Status, stored.Batch.Status)
+	stored.Batch.Endpoint = firstNonEmpty(upstream.Endpoint, stored.Batch.Endpoint)
 	if strings.TrimSpace(stored.Batch.InputFileID) == "" {
 		stored.Batch.InputFileID = firstNonEmpty(stored.OriginalInputFileID, upstream.InputFileID)
 	}
-	stored.Batch.CompletionWindow = upstream.CompletionWindow
-	stored.Batch.RequestCounts = upstream.RequestCounts
-	stored.Batch.Usage = upstream.Usage
-	stored.Batch.Results = upstream.Results
-	stored.Batch.InProgressAt = upstream.InProgressAt
-	stored.Batch.CompletedAt = upstream.CompletedAt
-	stored.Batch.FailedAt = upstream.FailedAt
-	stored.Batch.CancellingAt = upstream.CancellingAt
-	stored.Batch.CancelledAt = upstream.CancelledAt
+	stored.Batch.CompletionWindow = firstNonEmpty(upstream.CompletionWindow, stored.Batch.CompletionWindow)
+	if hasBatchRequestCounts(upstream.RequestCounts) {
+		stored.Batch.RequestCounts = upstream.RequestCounts
+	}
+	if hasBatchUsageSummary(upstream.Usage) {
+		stored.Batch.Usage = upstream.Usage
+	}
+	if len(upstream.Results) > 0 {
+		stored.Batch.Results = upstream.Results
+	}
+	if upstream.InProgressAt != nil {
+		stored.Batch.InProgressAt = upstream.InProgressAt
+	}
+	if upstream.CompletedAt != nil {
+		stored.Batch.CompletedAt = upstream.CompletedAt
+	}
+	if upstream.FailedAt != nil {
+		stored.Batch.FailedAt = upstream.FailedAt
+	}
+	if upstream.CancellingAt != nil {
+		stored.Batch.CancellingAt = upstream.CancellingAt
+	}
+	if upstream.CancelledAt != nil {
+		stored.Batch.CancelledAt = upstream.CancelledAt
+	}
 	if upstream.Metadata != nil {
 		if stored.Batch.Metadata == nil {
 			stored.Batch.Metadata = map[string]string{}
@@ -1949,6 +1968,19 @@ func mergeStoredBatchFromUpstream(stored *batchstore.StoredBatch, upstream *core
 		}
 		stored.Batch.Metadata = sanitizePublicBatchMetadata(stored.Batch.Metadata)
 	}
+}
+
+func hasBatchRequestCounts(counts core.BatchRequestCounts) bool {
+	return counts.Total != 0 || counts.Completed != 0 || counts.Failed != 0
+}
+
+func hasBatchUsageSummary(usage core.BatchUsageSummary) bool {
+	return usage.InputTokens != 0 ||
+		usage.OutputTokens != 0 ||
+		usage.TotalTokens != 0 ||
+		usage.InputCost != nil ||
+		usage.OutputCost != nil ||
+		usage.TotalCost != nil
 }
 
 func isTerminalBatchStatus(status string) bool {
