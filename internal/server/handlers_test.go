@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gomodel/internal/aliases"
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	provideradapter "gomodel/internal/providers"
@@ -32,6 +34,76 @@ func withRequestSnapshotAndPrompt(req *http.Request, frame *core.RequestSnapshot
 		ctx = core.WithWhiteBoxPrompt(ctx, prompt)
 	}
 	return req.WithContext(ctx)
+}
+
+type aliasesTestStore struct {
+	aliases []aliases.Alias
+}
+
+func newAliasesTestStore(aliasesList ...aliases.Alias) *aliasesTestStore {
+	return &aliasesTestStore{aliases: append([]aliases.Alias(nil), aliasesList...)}
+}
+
+func (s *aliasesTestStore) List(_ context.Context) ([]aliases.Alias, error) {
+	return append([]aliases.Alias(nil), s.aliases...), nil
+}
+
+func (s *aliasesTestStore) Get(_ context.Context, name string) (*aliases.Alias, error) {
+	for _, alias := range s.aliases {
+		if alias.Name == name {
+			copy := alias
+			return &copy, nil
+		}
+	}
+	return nil, aliases.ErrNotFound
+}
+
+func (s *aliasesTestStore) Upsert(_ context.Context, alias aliases.Alias) error {
+	for i := range s.aliases {
+		if s.aliases[i].Name == alias.Name {
+			s.aliases[i] = alias
+			return nil
+		}
+	}
+	s.aliases = append(s.aliases, alias)
+	return nil
+}
+
+func (s *aliasesTestStore) Delete(_ context.Context, name string) error {
+	for i := range s.aliases {
+		if s.aliases[i].Name == name {
+			s.aliases = append(s.aliases[:i], s.aliases[i+1:]...)
+			return nil
+		}
+	}
+	return aliases.ErrNotFound
+}
+
+func (s *aliasesTestStore) Close() error {
+	return nil
+}
+
+type aliasesTestCatalog struct {
+	supported     map[string]bool
+	providerTypes map[string]string
+	models        map[string]core.Model
+}
+
+func (c *aliasesTestCatalog) Supports(model string) bool {
+	return c.supported[model]
+}
+
+func (c *aliasesTestCatalog) GetProviderType(model string) string {
+	return c.providerTypes[model]
+}
+
+func (c *aliasesTestCatalog) LookupModel(model string) (*core.Model, bool) {
+	entry, ok := c.models[model]
+	if !ok {
+		return nil, false
+	}
+	copy := entry
+	return &copy, true
 }
 
 type chunkedReadCloser struct {
@@ -258,6 +330,23 @@ func (m *mockProvider) GetProviderType(model string) string {
 		return "mock"
 	}
 	return ""
+}
+
+func (m *mockProvider) NativeFileProviderTypes() []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0, len(m.providerTypes))
+	for _, providerType := range m.providerTypes {
+		if providerType == "" {
+			continue
+		}
+		if _, exists := seen[providerType]; exists {
+			continue
+		}
+		seen[providerType] = struct{}{}
+		result = append(result, providerType)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (m *mockProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
@@ -1156,12 +1245,12 @@ func TestGetBatch_UsesSemanticEnvelopeRouteMetadata(t *testing.T) {
 	createCtx := e.NewContext(createReq, createRec)
 	require.NoError(t, handler.Batches(createCtx))
 
-		var created core.BatchResponse
-		require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &created))
+	var created core.BatchResponse
+	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &created))
 
-		getReq := httptest.NewRequest(http.MethodGet, "/v1/batches/wrong-id", nil)
-		frame := core.NewRequestSnapshot(http.MethodGet, "/v1/batches/"+created.ID, map[string]string{"id": created.ID}, nil, nil, "", nil, false, "", nil)
-		getReq = withRequestSnapshotAndPrompt(getReq, frame)
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/batches/wrong-id", nil)
+	frame := core.NewRequestSnapshot(http.MethodGet, "/v1/batches/"+created.ID, map[string]string{"id": created.ID}, nil, nil, "", nil, false, "", nil)
+	getReq = withRequestSnapshotAndPrompt(getReq, frame)
 
 	getRec := httptest.NewRecorder()
 	getCtx := e.NewContext(getReq, getRec)
@@ -1200,10 +1289,10 @@ func TestListBatches_UsesSemanticEnvelopeQueryMetadata(t *testing.T) {
 	createCtx := e.NewContext(createReq, createRec)
 	require.NoError(t, handler.Batches(createCtx))
 
-		listReq := httptest.NewRequest(http.MethodGet, "/v1/batches?limit=bad", nil)
-		frame := core.NewRequestSnapshot(
-			http.MethodGet,
-			"/v1/batches",
+	listReq := httptest.NewRequest(http.MethodGet, "/v1/batches?limit=bad", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodGet,
+		"/v1/batches",
 		nil,
 		map[string][]string{
 			"limit": {"1"},
@@ -1212,10 +1301,10 @@ func TestListBatches_UsesSemanticEnvelopeQueryMetadata(t *testing.T) {
 		"",
 		nil,
 		false,
-			"",
-			nil,
-		)
-		listReq = withRequestSnapshotAndPrompt(listReq, frame)
+		"",
+		nil,
+	)
+	listReq = withRequestSnapshotAndPrompt(listReq, frame)
 
 	listRec := httptest.NewRecorder()
 	listCtx := e.NewContext(listReq, listRec)
@@ -3459,6 +3548,82 @@ func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 		t.Fatalf("expected status 200, got %d", rec.Code)
 	}
 	if !strings.Contains(rec.Body.String(), "\"id\":\"file_ok_1\"") {
+		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+func TestGetFileWithoutProviderUsesProviderInventoryWhenAliasMasksModel(t *testing.T) {
+	catalog := aliasesTestCatalog{
+		supported: map[string]bool{
+			"gpt-4o":         true,
+			"claude-3-haiku": true,
+		},
+		providerTypes: map[string]string{
+			"gpt-4o":         "openai",
+			"claude-3-haiku": "anthropic",
+		},
+		models: map[string]core.Model{
+			"gpt-4o":         {ID: "gpt-4o", Object: "model"},
+			"claude-3-haiku": {ID: "claude-3-haiku", Object: "model"},
+		},
+	}
+
+	service, err := aliases.NewService(newAliasesTestStore(
+		aliases.Alias{Name: "gpt-4o", TargetModel: "claude-3-haiku", Enabled: true},
+	), &catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o", "claude-3-haiku"},
+		providerTypes: map[string]string{
+			"gpt-4o":         "openai",
+			"claude-3-haiku": "anthropic",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o", Object: "model"},
+				{ID: "claude-3-haiku", Object: "model"},
+			},
+		},
+		fileErrByProvider: map[string]error{
+			"anthropic": core.NewNotFoundError(""),
+		},
+		fileGetByProvider: map[string]*core.FileObject{
+			"openai": {
+				ID:        "file_ok_1",
+				Object:    "file",
+				Bytes:     10,
+				CreatedAt: 1000,
+				Filename:  "a.jsonl",
+				Purpose:   "batch",
+				Provider:  "openai",
+			},
+		},
+	}
+
+	provider := aliases.NewProvider(mock, service)
+	e := echo.New()
+	handler := NewHandler(provider, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files/file_ok_1", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/v1/files/:id")
+	setPathParam(c, "id", "file_ok_1")
+
+	if err := handler.GetFile(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "\"provider\":\"openai\"") {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
 	}
 }

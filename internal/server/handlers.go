@@ -665,6 +665,10 @@ func (h *Handler) nativeFileRouter() (core.NativeFileRoutableProvider, error) {
 }
 
 func (h *Handler) fileProviderTypes(ctx *echo.Context) ([]string, error) {
+	if typed, ok := h.provider.(core.NativeFileProviderTypeLister); ok {
+		return typed.NativeFileProviderTypes(), nil
+	}
+
 	resp, err := h.provider.ListModels(ctx.Request().Context())
 	if err != nil {
 		return nil, err

@@ -59,6 +59,15 @@ func (g *GuardedProvider) ModelCount() int {
 	return -1
 }
 
+// NativeFileProviderTypes delegates provider capability inventory to the inner
+// provider when available.
+func (g *GuardedProvider) NativeFileProviderTypes() []string {
+	if typed, ok := g.inner.(core.NativeFileProviderTypeLister); ok {
+		return typed.NativeFileProviderTypes()
+	}
+	return nil
+}
+
 // ChatCompletion extracts messages, applies guardrails, then routes the request.
 func (g *GuardedProvider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
 	modified, err := g.processChat(ctx, req)

@@ -185,9 +185,9 @@ func TestProviderMaskingAliasOverridesConcreteModelEntry(t *testing.T) {
 
 func TestProviderRewritesBatchItemBodies(t *testing.T) {
 	catalog := newTestCatalog()
-	catalog.add("gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})
+	catalog.add("openai/gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})
 
-	service, err := NewService(newMemoryStore(Alias{Name: "smart", TargetModel: "gpt-4o", Enabled: true}), catalog)
+	service, err := NewService(newMemoryStore(Alias{Name: "smart", TargetModel: "gpt-4o", TargetProvider: "openai", Enabled: true}), catalog)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
@@ -210,13 +210,14 @@ func TestProviderRewritesBatchItemBodies(t *testing.T) {
 		t.Fatalf("captured batch request = %#v, want one request", inner.batchReq)
 	}
 
-	var rewritten struct {
-		Model string `json:"model"`
-	}
+	var rewritten map[string]json.RawMessage
 	if err := json.Unmarshal(inner.batchReq.Requests[0].Body, &rewritten); err != nil {
 		t.Fatalf("unmarshal rewritten batch item: %v", err)
 	}
-	if rewritten.Model != "gpt-4o" {
-		t.Fatalf("rewritten batch model = %q, want gpt-4o", rewritten.Model)
+	if got := string(rewritten["model"]); got != `"gpt-4o"` {
+		t.Fatalf("rewritten batch model = %s, want gpt-4o", got)
+	}
+	if _, exists := rewritten["provider"]; exists {
+		t.Fatalf("rewritten batch item unexpectedly preserved provider hint: %s", inner.batchReq.Requests[0].Body)
 	}
 }

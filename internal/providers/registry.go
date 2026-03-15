@@ -587,6 +587,29 @@ func (r *ModelRegistry) ProviderByType(providerType string) core.Provider {
 	return nil
 }
 
+// ProviderTypes returns the unique registered provider types in sorted order.
+// This inventory is independent of discovered models.
+func (r *ModelRegistry) ProviderTypes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	seen := make(map[string]struct{}, len(r.providerTypes))
+	result := make([]string, 0, len(r.providerTypes))
+	for _, provider := range r.providers {
+		providerType := strings.TrimSpace(r.providerTypes[provider])
+		if providerType == "" {
+			continue
+		}
+		if _, exists := seen[providerType]; exists {
+			continue
+		}
+		seen[providerType] = struct{}{}
+		result = append(result, providerType)
+	}
+	sort.Strings(result)
+	return result
+}
+
 func splitModelSelector(model string) (providerName, modelID string) {
 	model = strings.TrimSpace(model)
 	if model == "" {

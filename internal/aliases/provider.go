@@ -16,6 +16,13 @@ type Provider struct {
 	service *Service
 }
 
+type requestRewriteMode int
+
+const (
+	rewriteForRouting requestRewriteMode = iota
+	rewriteForUpstream
+)
+
 // NewProvider creates an alias-aware provider wrapper.
 func NewProvider(inner core.RoutableProvider, service *Service) *Provider {
 	return &Provider{inner: inner, service: service}
@@ -35,7 +42,7 @@ func (p *Provider) ResolveModel(model, provider string) (core.ModelSelector, boo
 }
 
 func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
-	forward, err := p.rewriteChatRequest(req)
+	forward, err := p.rewriteChatRequest(req, rewriteForRouting)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +50,7 @@ func (p *Provider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*
 }
 
 func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
-	forward, err := p.rewriteChatRequest(req)
+	forward, err := p.rewriteChatRequest(req, rewriteForRouting)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +88,7 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 }
 
 func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
-	forward, err := p.rewriteResponsesRequest(req)
+	forward, err := p.rewriteResponsesRequest(req, rewriteForRouting)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +96,7 @@ func (p *Provider) Responses(ctx context.Context, req *core.ResponsesRequest) (*
 }
 
 func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
-	forward, err := p.rewriteResponsesRequest(req)
+	forward, err := p.rewriteResponsesRequest(req, rewriteForRouting)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +104,7 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 }
 
 func (p *Provider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
-	forward, err := p.rewriteEmbeddingRequest(req)
+	forward, err := p.rewriteEmbeddingRequest(req, rewriteForRouting)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +132,15 @@ func (p *Provider) ModelCount() int {
 		return counted.ModelCount()
 	}
 	return -1
+}
+
+// NativeFileProviderTypes delegates provider capability inventory to the inner
+// provider when available.
+func (p *Provider) NativeFileProviderTypes() []string {
+	if typed, ok := p.inner.(core.NativeFileProviderTypeLister); ok {
+		return typed.NativeFileProviderTypes()
+	}
+	return nil
 }
 
 func (p *Provider) CreateBatch(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchResponse, error) {
@@ -247,45 +263,45 @@ func (p *Provider) Passthrough(ctx context.Context, providerType string, req *co
 	return passthrough.Passthrough(ctx, providerType, req)
 }
 
-func (p *Provider) rewriteChatRequest(req *core.ChatRequest) (*core.ChatRequest, error) {
+func (p *Provider) rewriteChatRequest(req *core.ChatRequest, mode requestRewriteMode) (*core.ChatRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
-	selector, changed, err := p.ResolveModel(req.Model, req.Provider)
-	if err != nil || !changed {
-		return req, err
+	selector, err := p.resolveRequestSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, err
 	}
 	forward := *req
 	forward.Model = selector.Model
-	forward.Provider = selector.Provider
+	forward.Provider = providerValueForMode(selector, mode)
 	return &forward, nil
 }
 
-func (p *Provider) rewriteResponsesRequest(req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
+func (p *Provider) rewriteResponsesRequest(req *core.ResponsesRequest, mode requestRewriteMode) (*core.ResponsesRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
-	selector, changed, err := p.ResolveModel(req.Model, req.Provider)
-	if err != nil || !changed {
-		return req, err
+	selector, err := p.resolveRequestSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, err
 	}
 	forward := *req
 	forward.Model = selector.Model
-	forward.Provider = selector.Provider
+	forward.Provider = providerValueForMode(selector, mode)
 	return &forward, nil
 }
 
-func (p *Provider) rewriteEmbeddingRequest(req *core.EmbeddingRequest) (*core.EmbeddingRequest, error) {
+func (p *Provider) rewriteEmbeddingRequest(req *core.EmbeddingRequest, mode requestRewriteMode) (*core.EmbeddingRequest, error) {
 	if req == nil {
 		return nil, nil
 	}
-	selector, changed, err := p.ResolveModel(req.Model, req.Provider)
-	if err != nil || !changed {
-		return req, err
+	selector, err := p.resolveRequestSelector(req.Model, req.Provider)
+	if err != nil {
+		return nil, err
 	}
 	forward := *req
 	forward.Model = selector.Model
-	forward.Provider = selector.Provider
+	forward.Provider = providerValueForMode(selector, mode)
 	return &forward, nil
 }
 
@@ -310,7 +326,7 @@ func (p *Provider) rewriteBatchRequest(req *core.BatchRequest) (*core.BatchReque
 		var body []byte
 		switch typed := decoded.Request.(type) {
 		case *core.ChatRequest:
-			modified, err := p.rewriteChatRequest(typed)
+			modified, err := p.rewriteChatRequest(typed, rewriteForUpstream)
 			if err != nil {
 				return nil, err
 			}
@@ -319,7 +335,7 @@ func (p *Provider) rewriteBatchRequest(req *core.BatchRequest) (*core.BatchReque
 				return nil, core.NewInvalidRequestError("failed to encode batch item", err)
 			}
 		case *core.ResponsesRequest:
-			modified, err := p.rewriteResponsesRequest(typed)
+			modified, err := p.rewriteResponsesRequest(typed, rewriteForUpstream)
 			if err != nil {
 				return nil, err
 			}
@@ -328,7 +344,7 @@ func (p *Provider) rewriteBatchRequest(req *core.BatchRequest) (*core.BatchReque
 				return nil, core.NewInvalidRequestError("failed to encode batch item", err)
 			}
 		case *core.EmbeddingRequest:
-			modified, err := p.rewriteEmbeddingRequest(typed)
+			modified, err := p.rewriteEmbeddingRequest(typed, rewriteForUpstream)
 			if err != nil {
 				return nil, err
 			}
@@ -342,6 +358,24 @@ func (p *Provider) rewriteBatchRequest(req *core.BatchRequest) (*core.BatchReque
 		forward.Requests[i].Body = body
 	}
 	return &forward, nil
+}
+
+func (p *Provider) resolveRequestSelector(model, provider string) (core.ModelSelector, error) {
+	selector, changed, err := p.ResolveModel(model, provider)
+	if err != nil {
+		return core.ModelSelector{}, err
+	}
+	if changed {
+		return selector, nil
+	}
+	return core.ParseModelSelector(model, provider)
+}
+
+func providerValueForMode(selector core.ModelSelector, mode requestRewriteMode) string {
+	if mode == rewriteForUpstream {
+		return ""
+	}
+	return selector.Provider
 }
 
 func (p *Provider) nativeBatchRouter() (core.NativeBatchRoutableProvider, error) {
