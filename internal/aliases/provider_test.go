@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"strings"
 	"testing"
 
 	"gomodel/internal/core"
@@ -14,6 +15,9 @@ type providerMock struct {
 	responsesReq *core.ResponsesRequest
 	embeddingReq *core.EmbeddingRequest
 	batchReq     *core.BatchRequest
+	fileContent  *core.FileContentResponse
+	fileCreates  []*core.FileCreateRequest
+	fileObject   *core.FileObject
 	modelsResp   *core.ModelsResponse
 	supported    map[string]bool
 	providerType map[string]string
@@ -83,6 +87,35 @@ func (m *providerMock) CancelBatch(_ context.Context, _ string, _ string) (*core
 
 func (m *providerMock) GetBatchResults(_ context.Context, _ string, _ string) (*core.BatchResultsResponse, error) {
 	return &core.BatchResultsResponse{Object: "list", BatchID: "batch_1"}, nil
+}
+
+func (m *providerMock) CreateFile(_ context.Context, _ string, req *core.FileCreateRequest) (*core.FileObject, error) {
+	copy := *req
+	copy.Content = append([]byte(nil), req.Content...)
+	m.fileCreates = append(m.fileCreates, &copy)
+	if m.fileObject != nil {
+		return m.fileObject, nil
+	}
+	return &core.FileObject{ID: "file_rewritten", Object: "file", Filename: req.Filename, Purpose: req.Purpose}, nil
+}
+
+func (m *providerMock) ListFiles(_ context.Context, _ string, _ string, _ int, _ string) (*core.FileListResponse, error) {
+	return &core.FileListResponse{Object: "list"}, nil
+}
+
+func (m *providerMock) GetFile(_ context.Context, _ string, id string) (*core.FileObject, error) {
+	return &core.FileObject{ID: id, Object: "file"}, nil
+}
+
+func (m *providerMock) DeleteFile(_ context.Context, _ string, id string) (*core.FileDeleteResponse, error) {
+	return &core.FileDeleteResponse{ID: id, Object: "file", Deleted: true}, nil
+}
+
+func (m *providerMock) GetFileContent(_ context.Context, _ string, id string) (*core.FileContentResponse, error) {
+	if m.fileContent != nil {
+		return m.fileContent, nil
+	}
+	return &core.FileContentResponse{ID: id, Filename: "batch.jsonl", Data: []byte("{}\n")}, nil
 }
 
 func TestProviderResolvesRequestsAndExposesAliasModels(t *testing.T) {
@@ -219,5 +252,85 @@ func TestProviderRewritesBatchItemBodies(t *testing.T) {
 	}
 	if _, exists := rewritten["provider"]; exists {
 		t.Fatalf("rewritten batch item unexpectedly preserved provider hint: %s", inner.batchReq.Requests[0].Body)
+	}
+}
+
+func TestProviderRewritesBatchInputFiles(t *testing.T) {
+	catalog := newTestCatalog()
+	catalog.add("openai/gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})
+
+	service, err := NewService(newMemoryStore(Alias{Name: "smart", TargetModel: "gpt-4o", TargetProvider: "openai", Enabled: true}), catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	inner := newProviderMock()
+	inner.fileContent = &core.FileContentResponse{
+		ID:       "file_source",
+		Filename: "batch.jsonl",
+		Data:     []byte("{\"custom_id\":\"1\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"smart\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n"),
+	}
+	inner.fileObject = &core.FileObject{ID: "file_rewritten", Object: "file", Filename: "batch.jsonl", Purpose: "batch"}
+	provider := NewProvider(inner, service)
+
+	_, err = provider.CreateBatch(context.Background(), "openai", &core.BatchRequest{
+		InputFileID: "file_source",
+		Endpoint:    "/v1/chat/completions",
+	})
+	if err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+	if inner.batchReq == nil {
+		t.Fatal("captured batch request = nil")
+	}
+	if inner.batchReq.InputFileID != "file_rewritten" {
+		t.Fatalf("rewritten input_file_id = %q, want file_rewritten", inner.batchReq.InputFileID)
+	}
+	if len(inner.fileCreates) != 1 {
+		t.Fatalf("len(fileCreates) = %d, want 1", len(inner.fileCreates))
+	}
+	if got := string(inner.fileCreates[0].Content); !strings.Contains(got, "\"model\":\"gpt-4o\"") {
+		t.Fatalf("rewritten file content = %s, want concrete model", got)
+	}
+}
+
+func TestProviderBatchInputFileSkipsUploadWhenUnchanged(t *testing.T) {
+	catalog := newTestCatalog()
+	catalog.add("openai/gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})
+
+	service, err := NewService(newMemoryStore(Alias{Name: "smart", TargetModel: "gpt-4o", TargetProvider: "openai", Enabled: true}), catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	inner := newProviderMock()
+	inner.fileContent = &core.FileContentResponse{
+		ID:       "file_source",
+		Filename: "batch.jsonl",
+		Data:     []byte("{\"custom_id\":\"1\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n"),
+	}
+	provider := NewProvider(inner, service)
+
+	_, err = provider.CreateBatch(context.Background(), "openai", &core.BatchRequest{
+		InputFileID: "file_source",
+		Endpoint:    "/v1/chat/completions",
+	})
+	if err != nil {
+		t.Fatalf("CreateBatch() error = %v", err)
+	}
+	if inner.batchReq == nil {
+		t.Fatal("captured batch request = nil")
+	}
+	if inner.batchReq.InputFileID != "file_source" {
+		t.Fatalf("input_file_id = %q, want file_source", inner.batchReq.InputFileID)
+	}
+	if len(inner.fileCreates) != 0 {
+		t.Fatalf("len(fileCreates) = %d, want 0", len(inner.fileCreates))
 	}
 }

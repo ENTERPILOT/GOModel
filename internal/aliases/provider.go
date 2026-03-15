@@ -3,7 +3,6 @@ package aliases
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"sort"
 
@@ -148,11 +147,12 @@ func (p *Provider) CreateBatch(ctx context.Context, providerType string, req *co
 	if err != nil {
 		return nil, err
 	}
-	forward, err := p.rewriteBatchRequest(req)
+	result, err := p.rewriteBatchSource(ctx, providerType, req)
 	if err != nil {
 		return nil, err
 	}
-	return native.CreateBatch(ctx, providerType, forward)
+	p.recordBatchPreparation(ctx, req, result.Request)
+	return native.CreateBatch(ctx, providerType, result.Request)
 }
 
 func (p *Provider) GetBatch(ctx context.Context, providerType, id string) (*core.BatchResponse, error) {
@@ -192,11 +192,16 @@ func (p *Provider) CreateBatchWithHints(ctx context.Context, providerType string
 	if err != nil {
 		return nil, nil, err
 	}
-	forward, err := p.rewriteBatchRequest(req)
+	result, err := p.rewriteBatchSource(ctx, providerType, req)
 	if err != nil {
 		return nil, nil, err
 	}
-	return hinted.CreateBatchWithHints(ctx, providerType, forward)
+	p.recordBatchPreparation(ctx, req, result.Request)
+	resp, hints, err := hinted.CreateBatchWithHints(ctx, providerType, result.Request)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, mergeBatchHints(result.RequestEndpointHints, hints), nil
 }
 
 func (p *Provider) GetBatchResultsWithHints(ctx context.Context, providerType, id string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
@@ -305,59 +310,81 @@ func (p *Provider) rewriteEmbeddingRequest(req *core.EmbeddingRequest, mode requ
 	return &forward, nil
 }
 
-func (p *Provider) rewriteBatchRequest(req *core.BatchRequest) (*core.BatchRequest, error) {
-	if req == nil || len(req.Requests) == 0 {
-		return req, nil
+func (p *Provider) rewriteBatchSource(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchRewriteResult, error) {
+	files, err := p.nativeFileRouter()
+	if err != nil {
+		files = nil
 	}
+	return core.RewriteBatchSource(ctx, providerType, req, files, []string{"chat_completions", "responses", "embeddings"}, p.rewriteBatchDecodedItem)
+}
 
-	forward := *req
-	forward.Requests = make([]core.BatchRequestItem, len(req.Requests))
-	copy(forward.Requests, req.Requests)
-
-	for i, item := range forward.Requests {
-		decoded, handled, err := core.MaybeDecodeKnownBatchItemRequest(req.Endpoint, item, "chat_completions", "responses", "embeddings")
+func (p *Provider) rewriteBatchDecodedItem(_ context.Context, _ core.BatchRequestItem, decoded *core.DecodedBatchItemRequest) (json.RawMessage, error) {
+	switch typed := decoded.Request.(type) {
+	case *core.ChatRequest:
+		modified, err := p.rewriteChatRequest(typed, rewriteForUpstream)
 		if err != nil {
-			return nil, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
+			return nil, err
 		}
-		if !handled {
-			continue
+		body, err := json.Marshal(modified)
+		if err != nil {
+			return nil, core.NewInvalidRequestError("failed to encode batch item", err)
 		}
-
-		var body []byte
-		switch typed := decoded.Request.(type) {
-		case *core.ChatRequest:
-			modified, err := p.rewriteChatRequest(typed, rewriteForUpstream)
-			if err != nil {
-				return nil, err
-			}
-			body, err = json.Marshal(modified)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("failed to encode batch item", err)
-			}
-		case *core.ResponsesRequest:
-			modified, err := p.rewriteResponsesRequest(typed, rewriteForUpstream)
-			if err != nil {
-				return nil, err
-			}
-			body, err = json.Marshal(modified)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("failed to encode batch item", err)
-			}
-		case *core.EmbeddingRequest:
-			modified, err := p.rewriteEmbeddingRequest(typed, rewriteForUpstream)
-			if err != nil {
-				return nil, err
-			}
-			body, err = json.Marshal(modified)
-			if err != nil {
-				return nil, core.NewInvalidRequestError("failed to encode batch item", err)
-			}
-		default:
-			continue
+		return body, nil
+	case *core.ResponsesRequest:
+		modified, err := p.rewriteResponsesRequest(typed, rewriteForUpstream)
+		if err != nil {
+			return nil, err
 		}
-		forward.Requests[i].Body = body
+		body, err := json.Marshal(modified)
+		if err != nil {
+			return nil, core.NewInvalidRequestError("failed to encode batch item", err)
+		}
+		return body, nil
+	case *core.EmbeddingRequest:
+		modified, err := p.rewriteEmbeddingRequest(typed, rewriteForUpstream)
+		if err != nil {
+			return nil, err
+		}
+		body, err := json.Marshal(modified)
+		if err != nil {
+			return nil, core.NewInvalidRequestError("failed to encode batch item", err)
+		}
+		return body, nil
+	default:
+		return nil, core.NewInvalidRequestError("unsupported batch item url: "+decoded.Endpoint, nil)
 	}
-	return &forward, nil
+}
+
+func (p *Provider) recordBatchPreparation(ctx context.Context, original, rewritten *core.BatchRequest) {
+	if ctx == nil || original == nil || rewritten == nil {
+		return
+	}
+	metadata := core.GetBatchPreparationMetadata(ctx)
+	if metadata == nil {
+		return
+	}
+	metadata.RecordInputFileRewrite(original.InputFileID, rewritten.InputFileID)
+}
+
+func mergeBatchHints(left, right map[string]string) map[string]string {
+	if len(left) == 0 {
+		if len(right) == 0 {
+			return nil
+		}
+		merged := make(map[string]string, len(right))
+		for key, value := range right {
+			merged[key] = value
+		}
+		return merged
+	}
+	merged := make(map[string]string, len(left)+len(right))
+	for key, value := range left {
+		merged[key] = value
+	}
+	for key, value := range right {
+		merged[key] = value
+	}
+	return merged
 }
 
 func (p *Provider) resolveRequestSelector(model, provider string) (core.ModelSelector, error) {

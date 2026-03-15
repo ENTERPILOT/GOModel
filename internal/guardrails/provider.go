@@ -122,6 +122,14 @@ func (g *GuardedProvider) nativeBatchRouter() (core.NativeBatchRoutableProvider,
 	return bp, nil
 }
 
+func (g *GuardedProvider) nativeBatchHintRouter() (core.NativeBatchHintRoutableProvider, error) {
+	hinted, ok := g.inner.(core.NativeBatchHintRoutableProvider)
+	if !ok {
+		return nil, core.NewInvalidRequestError("batch hint routing is not supported by the current provider router", nil)
+	}
+	return hinted, nil
+}
+
 func (g *GuardedProvider) nativeFileRouter() (core.NativeFileRoutableProvider, error) {
 	fp, ok := g.inner.(core.NativeFileRoutableProvider)
 	if !ok {
@@ -138,61 +146,40 @@ func (g *GuardedProvider) passthroughRouter() (core.RoutablePassthrough, error) 
 	return pp, nil
 }
 
-func (g *GuardedProvider) processBatchRequest(ctx context.Context, req *core.BatchRequest) (*core.BatchRequest, error) {
-	if req == nil || len(req.Requests) == 0 {
-		return req, nil
+func (g *GuardedProvider) processBatchRequest(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchRewriteResult, error) {
+	files, err := g.nativeFileRouter()
+	if err != nil {
+		files = nil
 	}
+	return core.RewriteBatchSource(ctx, providerType, req, files, []string{"chat_completions", "responses"}, g.rewriteBatchDecodedItem)
+}
 
-	out := *req
-	out.Requests = make([]core.BatchRequestItem, len(req.Requests))
-	copy(out.Requests, req.Requests)
-
-	for i := range out.Requests {
-		item := out.Requests[i]
-		decoded, handled, err := core.MaybeDecodeKnownBatchItemRequest(req.Endpoint, item, "chat_completions", "responses")
-		if err != nil {
-			operation := core.DescribeEndpointPath(core.NormalizeOperationPath(core.ResolveBatchItemEndpoint(req.Endpoint, item.URL))).Operation
-			label := strings.TrimSpace(strings.ReplaceAll(operation, "_", " "))
-			if label == "" {
-				return nil, core.NewInvalidRequestError("invalid batch item request", err)
+func (g *GuardedProvider) rewriteBatchDecodedItem(ctx context.Context, item core.BatchRequestItem, decoded *core.DecodedBatchItemRequest) (json.RawMessage, error) {
+	itemBody := core.CloneRawJSON(item.Body)
+	return core.DispatchDecodedBatchItem(decoded, core.DecodedBatchItemHandlers[json.RawMessage]{
+		Chat: func(original *core.ChatRequest) (json.RawMessage, error) {
+			modified, err := g.processChat(ctx, original)
+			if err != nil {
+				return nil, err
 			}
-			return nil, core.NewInvalidRequestError("invalid "+label+" request in batch item", err)
-		}
-		if !handled {
-			continue
-		}
-
-		body, err := core.DispatchDecodedBatchItem(decoded, core.DecodedBatchItemHandlers[json.RawMessage]{
-			Chat: func(original *core.ChatRequest) (json.RawMessage, error) {
-				modified, err := g.processChat(ctx, original)
-				if err != nil {
-					return nil, err
-				}
-				body, err := rewriteGuardedChatBatchBody(item.Body, original, modified)
-				if err != nil {
-					return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
-				}
-				return body, nil
-			},
-			Responses: func(original *core.ResponsesRequest) (json.RawMessage, error) {
-				modified, err := g.processResponses(ctx, original)
-				if err != nil {
-					return nil, err
-				}
-				body, err := rewriteGuardedResponsesBatchBody(item.Body, modified)
-				if err != nil {
-					return nil, core.NewInvalidRequestError("failed to encode guarded responses batch item", err)
-				}
-				return body, nil
-			},
-		})
-		if err != nil {
-			return nil, err
-		}
-		out.Requests[i].Body = body
-	}
-
-	return &out, nil
+			body, err := rewriteGuardedChatBatchBody(itemBody, original, modified)
+			if err != nil {
+				return nil, core.NewInvalidRequestError("failed to encode guarded chat batch item", err)
+			}
+			return body, nil
+		},
+		Responses: func(original *core.ResponsesRequest) (json.RawMessage, error) {
+			modified, err := g.processResponses(ctx, original)
+			if err != nil {
+				return nil, err
+			}
+			body, err := rewriteGuardedResponsesBatchBody(itemBody, modified)
+			if err != nil {
+				return nil, core.NewInvalidRequestError("failed to encode guarded responses batch item", err)
+			}
+			return body, nil
+		},
+	})
 }
 
 func rewriteGuardedChatBatchBody(originalBody json.RawMessage, original *core.ChatRequest, modified *core.ChatRequest) (json.RawMessage, error) {
@@ -385,11 +372,35 @@ func (g *GuardedProvider) CreateBatch(ctx context.Context, providerType string, 
 		return bp.CreateBatch(ctx, providerType, req)
 	}
 
-	modifiedReq, err := g.processBatchRequest(ctx, req)
+	result, err := g.processBatchRequest(ctx, providerType, req)
 	if err != nil {
 		return nil, err
 	}
-	return bp.CreateBatch(ctx, providerType, modifiedReq)
+	g.recordBatchPreparation(ctx, req, result.Request)
+	return bp.CreateBatch(ctx, providerType, result.Request)
+}
+
+// CreateBatchWithHints delegates hint-aware native batch creation while preserving
+// guardrail batch processing when enabled.
+func (g *GuardedProvider) CreateBatchWithHints(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchResponse, map[string]string, error) {
+	hinted, err := g.nativeBatchHintRouter()
+	if err != nil {
+		return nil, nil, err
+	}
+	if !g.options.EnableForBatchProcessing {
+		return hinted.CreateBatchWithHints(ctx, providerType, req)
+	}
+
+	result, err := g.processBatchRequest(ctx, providerType, req)
+	if err != nil {
+		return nil, nil, err
+	}
+	g.recordBatchPreparation(ctx, req, result.Request)
+	resp, hints, err := hinted.CreateBatchWithHints(ctx, providerType, result.Request)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, mergeBatchHints(result.RequestEndpointHints, hints), nil
 }
 
 // GetBatch delegates native batch retrieval.
@@ -426,6 +437,24 @@ func (g *GuardedProvider) GetBatchResults(ctx context.Context, providerType, id 
 		return nil, err
 	}
 	return bp.GetBatchResults(ctx, providerType, id)
+}
+
+// GetBatchResultsWithHints delegates hint-aware native batch results retrieval.
+func (g *GuardedProvider) GetBatchResultsWithHints(ctx context.Context, providerType, id string, endpointByCustomID map[string]string) (*core.BatchResultsResponse, error) {
+	hinted, err := g.nativeBatchHintRouter()
+	if err != nil {
+		return nil, err
+	}
+	return hinted.GetBatchResultsWithHints(ctx, providerType, id, endpointByCustomID)
+}
+
+// ClearBatchResultHints delegates cleanup of transient provider-side result hints.
+func (g *GuardedProvider) ClearBatchResultHints(providerType, batchID string) {
+	hinted, err := g.nativeBatchHintRouter()
+	if err != nil {
+		return
+	}
+	hinted.ClearBatchResultHints(providerType, batchID)
 }
 
 // CreateFile delegates native file upload.
@@ -471,6 +500,38 @@ func (g *GuardedProvider) GetFileContent(ctx context.Context, providerType, id s
 		return nil, err
 	}
 	return fp.GetFileContent(ctx, providerType, id)
+}
+
+func (g *GuardedProvider) recordBatchPreparation(ctx context.Context, original, rewritten *core.BatchRequest) {
+	if ctx == nil || original == nil || rewritten == nil {
+		return
+	}
+	metadata := core.GetBatchPreparationMetadata(ctx)
+	if metadata == nil {
+		return
+	}
+	metadata.RecordInputFileRewrite(original.InputFileID, rewritten.InputFileID)
+}
+
+func mergeBatchHints(left, right map[string]string) map[string]string {
+	if len(left) == 0 {
+		if len(right) == 0 {
+			return nil
+		}
+		merged := make(map[string]string, len(right))
+		for key, value := range right {
+			merged[key] = value
+		}
+		return merged
+	}
+	merged := make(map[string]string, len(left)+len(right))
+	for key, value := range left {
+		merged[key] = value
+	}
+	for key, value := range right {
+		merged[key] = value
+	}
+	return merged
 }
 
 // Passthrough delegates opaque provider-native requests without semantic guardrail processing.

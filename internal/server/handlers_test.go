@@ -20,6 +20,7 @@ import (
 
 	"gomodel/internal/aliases"
 	"gomodel/internal/auditlog"
+	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
 	provideradapter "gomodel/internal/providers"
 	"gomodel/internal/usage"
@@ -265,16 +266,17 @@ type mockProvider struct {
 	clearedBatchHintProvider   string
 	clearedBatchHintID         string
 
-	fileCreateResponse  *core.FileObject
-	fileGetResponse     *core.FileObject
-	fileDeleteResponse  *core.FileDeleteResponse
-	fileListResponse    *core.FileListResponse
-	fileContentResponse *core.FileContentResponse
-	fileErr             error
-	fileListByProvider  map[string]*core.FileListResponse
-	fileErrByProvider   map[string]error
-	fileGetByProvider   map[string]*core.FileObject
-	fileContentByProv   map[string]*core.FileContentResponse
+	fileCreateResponse     *core.FileObject
+	capturedFileCreateReqs []*core.FileCreateRequest
+	fileGetResponse        *core.FileObject
+	fileDeleteResponse     *core.FileDeleteResponse
+	fileListResponse       *core.FileListResponse
+	fileContentResponse    *core.FileContentResponse
+	fileErr                error
+	fileListByProvider     map[string]*core.FileListResponse
+	fileErrByProvider      map[string]error
+	fileGetByProvider      map[string]*core.FileObject
+	fileContentByProv      map[string]*core.FileContentResponse
 
 	passthroughResponse     *core.PassthroughResponse
 	passthroughErr          error
@@ -569,6 +571,9 @@ func (m *mockProvider) CreateFile(_ context.Context, providerType string, req *c
 	if m.fileErr != nil {
 		return nil, m.fileErr
 	}
+	copy := *req
+	copy.Content = append([]byte(nil), req.Content...)
+	m.capturedFileCreateReqs = append(m.capturedFileCreateReqs, &copy)
 	if m.fileCreateResponse != nil {
 		return m.fileCreateResponse, nil
 	}
@@ -2510,6 +2515,83 @@ func TestBatches_MixedProviderRejected(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rec.Code)
 	}
+}
+
+func TestBatches_InputFileRewritesAliasesAndPersistsBatchPreparation(t *testing.T) {
+	store := newAliasesTestStore(aliases.Alias{Name: "smart", TargetModel: "gpt-4o", TargetProvider: "openai", Enabled: true})
+	catalog := &aliasesTestCatalog{
+		supported: map[string]bool{
+			"openai/gpt-4o": true,
+		},
+		providerTypes: map[string]string{
+			"openai/gpt-4o": "openai",
+		},
+		models: map[string]core.Model{
+			"openai/gpt-4o": {ID: "gpt-4o", Object: "model"},
+		},
+	}
+	service, err := aliases.NewService(store, catalog)
+	require.NoError(t, err)
+	require.NoError(t, service.Refresh(context.Background()))
+
+	inner := &mockProvider{
+		fileContentResponse: &core.FileContentResponse{
+			ID:       "file_source",
+			Filename: "batch.jsonl",
+			Data:     []byte("{\"custom_id\":\"chat-1\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"smart\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}]}}\n"),
+		},
+		fileCreateResponse: &core.FileObject{
+			ID:       "file_rewritten",
+			Object:   "file",
+			Filename: "batch.jsonl",
+			Purpose:  "batch",
+			Provider: "openai",
+		},
+		batchCreateResponse: &core.BatchResponse{
+			ID:          "provider-batch-1",
+			Object:      "batch",
+			Status:      "validating",
+			Endpoint:    "/v1/chat/completions",
+			CreatedAt:   1234567890,
+			InputFileID: "file_rewritten",
+			RequestCounts: core.BatchRequestCounts{
+				Total: 1,
+			},
+		},
+	}
+
+	provider := aliases.NewProvider(inner, service)
+	handler := NewHandler(provider, nil, nil, nil)
+	batchStore := batchstore.NewMemoryStore()
+	handler.SetBatchStore(batchStore)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(`{
+	  "input_file_id":"file_source",
+	  "endpoint":"/v1/chat/completions",
+	  "completion_window":"24h",
+	  "metadata":{"provider":"openai"}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err = handler.Batches(c)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, inner.capturedBatchReq)
+	require.Equal(t, "file_rewritten", inner.capturedBatchReq.InputFileID)
+	require.Len(t, inner.capturedFileCreateReqs, 1)
+	require.Contains(t, string(inner.capturedFileCreateReqs[0].Content), `"model":"gpt-4o"`)
+
+	var created core.BatchResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
+
+	stored, err := batchStore.Get(context.Background(), created.ID)
+	require.NoError(t, err)
+	require.NotNil(t, stored)
+	require.Equal(t, "file_source", stored.OriginalInputFileID)
+	require.Equal(t, "file_rewritten", stored.RewrittenInputFileID)
 }
 
 func TestBatches_EmptyRequests(t *testing.T) {

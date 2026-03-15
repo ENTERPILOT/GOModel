@@ -1139,6 +1139,8 @@ func (h *Handler) Batches(c *echo.Context) error {
 	}
 
 	ctx, requestID := requestContextWithRequestID(c.Request())
+	batchPreparation := &core.BatchPreparationMetadata{}
+	ctx = core.WithBatchPreparationMetadata(ctx, batchPreparation)
 
 	nativeRouter, ok := h.provider.(core.NativeBatchRoutableProvider)
 	if !ok {
@@ -1200,6 +1202,8 @@ func (h *Handler) Batches(c *echo.Context) error {
 		stored := &batchstore.StoredBatch{
 			Batch:                     &resp,
 			RequestEndpointByCustomID: hints,
+			OriginalInputFileID:       batchPreparation.OriginalInputFileID,
+			RewrittenInputFileID:      batchPreparation.RewrittenInputFileID,
 			RequestID:                 requestID,
 		}
 		if err := h.batchStore.Create(ctx, stored); err != nil {
