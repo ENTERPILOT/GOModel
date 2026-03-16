@@ -33,3 +33,11 @@ type PassthroughProvider interface {
 type RoutablePassthrough interface {
 	Passthrough(ctx context.Context, providerType string, req *PassthroughRequest) (*PassthroughResponse, error)
 }
+
+// PassthroughSemanticEnricher derives provider-specific passthrough metadata
+// from ingress transport and best-effort prompt state before execution
+// planning runs.
+type PassthroughSemanticEnricher interface {
+	ProviderType() string
+	Enrich(snapshot *RequestSnapshot, prompt *WhiteBoxPrompt, info *PassthroughRouteInfo) *PassthroughRouteInfo
+}

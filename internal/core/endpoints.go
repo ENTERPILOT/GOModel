@@ -15,12 +15,24 @@ const (
 	BodyModeOpaque    BodyMode = "opaque"
 )
 
+// Operation identifies the gateway operation represented by an endpoint.
+type Operation string
+
+const (
+	OperationChatCompletions     Operation = "chat_completions"
+	OperationResponses           Operation = "responses"
+	OperationEmbeddings          Operation = "embeddings"
+	OperationBatches             Operation = "batches"
+	OperationFiles               Operation = "files"
+	OperationProviderPassthrough Operation = "provider_passthrough"
+)
+
 // EndpointDescriptor centralizes the transport-facing classification of model and provider routes.
 type EndpointDescriptor struct {
 	ModelInteraction bool
 	IngressManaged   bool
 	Dialect          string
-	Operation        string
+	Operation        Operation
 	BodyMode         BodyMode
 }
 
@@ -47,56 +59,56 @@ func describeEndpointPath(path string) EndpointDescriptor {
 			ModelInteraction: true,
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
-			Operation:        "chat_completions",
+			Operation:        OperationChatCompletions,
 		}
 	case matchesEndpointPath(path, "/v1/responses"):
 		return EndpointDescriptor{
 			ModelInteraction: true,
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
-			Operation:        "responses",
+			Operation:        OperationResponses,
 		}
 	case path == "/v1/embeddings":
 		return EndpointDescriptor{
 			ModelInteraction: true,
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
-			Operation:        "embeddings",
+			Operation:        OperationEmbeddings,
 		}
 	case path == "/v1/batches" || strings.HasPrefix(path, "/v1/batches/"):
 		return EndpointDescriptor{
 			ModelInteraction: true,
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
-			Operation:        "batches",
+			Operation:        OperationBatches,
 		}
 	case path == "/v1/files" || strings.HasPrefix(path, "/v1/files/"):
 		return EndpointDescriptor{
 			ModelInteraction: true,
 			IngressManaged:   true,
 			Dialect:          "openai_compat",
-			Operation:        "files",
+			Operation:        OperationFiles,
 		}
 	case strings.HasPrefix(path, "/p/"):
 		return EndpointDescriptor{
 			ModelInteraction: true,
 			IngressManaged:   true,
 			Dialect:          "provider_passthrough",
-			Operation:        "provider_passthrough",
+			Operation:        OperationProviderPassthrough,
 		}
 	default:
 		return EndpointDescriptor{}
 	}
 }
 
-func bodyModeForEndpoint(method, path, operation string) BodyMode {
+func bodyModeForEndpoint(method, path string, operation Operation) BodyMode {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = normalizeEndpointPath(path)
 
 	switch operation {
-	case "chat_completions", "responses", "embeddings":
+	case OperationChatCompletions, OperationResponses, OperationEmbeddings:
 		return BodyModeJSON
-	case "batches":
+	case OperationBatches:
 		switch method {
 		case http.MethodPost:
 			if strings.HasSuffix(path, "/cancel") {
@@ -106,12 +118,12 @@ func bodyModeForEndpoint(method, path, operation string) BodyMode {
 		default:
 			return BodyModeNone
 		}
-	case "files":
+	case OperationFiles:
 		if method == http.MethodPost && path == "/v1/files" {
 			return BodyModeMultipart
 		}
 		return BodyModeNone
-	case "provider_passthrough":
+	case OperationProviderPassthrough:
 		return BodyModeOpaque
 	default:
 		return BodyModeNone

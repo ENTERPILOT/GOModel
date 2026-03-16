@@ -26,6 +26,23 @@ type RouteHints struct {
 	Endpoint string
 }
 
+// PassthroughRouteInfo is typed passthrough metadata derived from ingress
+// transport and later enrichment stages.
+//
+// RawEndpoint reflects the route-relative provider endpoint from the inbound
+// path. NormalizedEndpoint, SemanticOperation, and AuditPath are optional and
+// may be filled by later gateway enrichment before execution. Once cached on
+// WhiteBoxPrompt or ExecutionPlan, it should be treated as immutable by later
+// request stages.
+type PassthroughRouteInfo struct {
+	Provider           string
+	RawEndpoint        string
+	NormalizedEndpoint string
+	SemanticOperation  string
+	AuditPath          string
+	Model              string
+}
+
 type semanticCacheKey string
 
 const (
@@ -35,6 +52,7 @@ const (
 	semanticBatchRequestKey     semanticCacheKey = "batch_request"
 	semanticBatchMetadataKey    semanticCacheKey = "batch_metadata"
 	semanticFileRequestKey      semanticCacheKey = "file_request"
+	semanticPassthroughRouteKey semanticCacheKey = "passthrough_route"
 )
 
 // WhiteBoxPrompt is the gateway's best-effort semantic extraction from the
@@ -47,9 +65,12 @@ const (
 //   - canonical request decode may cache a parsed request and refine RouteHints
 //   - NormalizeModelSelector may rewrite selector hints into canonical form
 type WhiteBoxPrompt struct {
-	RouteType    string
+	RouteType     string
 	OperationType string
-	RouteHints RouteHints
+	RouteHints    RouteHints
+	// StreamRequested reports that the inbound request explicitly asked for
+	// streaming semantics. This is request intent, not endpoint capability.
+	StreamRequested bool
 	// JSONBodyParsed reports that the captured request body was parsed as JSON
 	// (for selector peeking and/or canonical request decode).
 	JSONBodyParsed bool
@@ -93,13 +114,19 @@ func (env *WhiteBoxPrompt) CachedFileRouteInfo() *FileRouteInfo {
 	return req
 }
 
+// CachedPassthroughRouteInfo returns cached typed passthrough route info, if present.
+func (env *WhiteBoxPrompt) CachedPassthroughRouteInfo() *PassthroughRouteInfo {
+	req, _ := cachedSemanticValue[*PassthroughRouteInfo](env, semanticPassthroughRouteKey)
+	return req
+}
+
 // CanonicalSelectorFromCachedRequest returns model/provider selector hints from
 // any cached canonical JSON request for the current operation kind.
 func (env *WhiteBoxPrompt) CanonicalSelectorFromCachedRequest() (model, provider string, ok bool) {
 	if env == nil {
 		return "", "", false
 	}
-	codec, ok := canonicalOperationCodecFor(env.OperationType)
+	codec, ok := canonicalOperationCodecFor(Operation(env.OperationType))
 	if !ok {
 		return "", "", false
 	}
@@ -162,6 +189,23 @@ func CacheFileRouteInfo(env *WhiteBoxPrompt, req *FileRouteInfo) {
 	}
 }
 
+// CachePassthroughRouteInfo stores typed passthrough route metadata on the request semantics.
+func CachePassthroughRouteInfo(env *WhiteBoxPrompt, req *PassthroughRouteInfo) {
+	if env == nil || req == nil {
+		return
+	}
+	env.cacheValue(semanticPassthroughRouteKey, req)
+	if req.Provider != "" {
+		env.RouteHints.Provider = req.Provider
+	}
+	if req.RawEndpoint != "" {
+		env.RouteHints.Endpoint = req.RawEndpoint
+	}
+	if req.Model != "" {
+		env.RouteHints.Model = req.Model
+	}
+}
+
 // DeriveWhiteBoxPrompt derives best-effort request semantics from the captured
 // transport snapshot.
 // Unknown or invalid bodies are tolerated; the returned envelope may be partial.
@@ -181,33 +225,17 @@ func DeriveWhiteBoxPrompt(snapshot *RequestSnapshot) *WhiteBoxPrompt {
 		return nil
 	}
 	env.RouteType = desc.Dialect
-	env.OperationType = desc.Operation
+	env.OperationType = string(desc.Operation)
 
-	if env.OperationType == "files" {
+	if env.OperationType == string(OperationFiles) {
 		CacheFileRouteInfo(env, DeriveFileRouteInfoFromTransport(snapshot.Method, snapshot.Path, snapshot.routeParams, snapshot.queryParams))
 	}
-	if env.OperationType == "batches" {
+	if env.OperationType == string(OperationBatches) {
 		cacheBatchRouteMetadata(env, DeriveBatchRouteInfoFromTransport(snapshot.Method, snapshot.Path, snapshot.routeParams, snapshot.queryParams))
 	}
 
 	if env.RouteType == "provider_passthrough" {
-		env.RouteHints.Endpoint = ""
-		if provider := snapshot.routeParams["provider"]; provider != "" {
-			env.RouteHints.Provider = provider
-		}
-		if endpoint := snapshot.routeParams["endpoint"]; endpoint != "" {
-			env.RouteHints.Endpoint = endpoint
-		}
-		if env.RouteHints.Provider == "" || env.RouteHints.Endpoint == "" {
-			if provider, endpoint, ok := ParseProviderPassthroughPath(snapshot.Path); ok {
-				if env.RouteHints.Provider == "" {
-					env.RouteHints.Provider = provider
-				}
-				if env.RouteHints.Endpoint == "" {
-					env.RouteHints.Endpoint = endpoint
-				}
-			}
-		}
+		CachePassthroughRouteInfo(env, derivePassthroughRouteInfoFromTransport(snapshot))
 	}
 
 	if snapshot.capturedBody == nil {
@@ -222,6 +250,7 @@ func DeriveWhiteBoxPrompt(snapshot *RequestSnapshot) *WhiteBoxPrompt {
 	var selectors struct {
 		Model    string `json:"model"`
 		Provider string `json:"provider"`
+		Stream   bool   `json:"stream"`
 	}
 	if err := json.Unmarshal(trimmed, &selectors); err != nil {
 		return env
@@ -232,8 +261,48 @@ func DeriveWhiteBoxPrompt(snapshot *RequestSnapshot) *WhiteBoxPrompt {
 	if env.RouteHints.Provider == "" {
 		env.RouteHints.Provider = selectors.Provider
 	}
+	env.StreamRequested = selectors.Stream
+	if passthrough := env.CachedPassthroughRouteInfo(); passthrough != nil {
+		cloned := *passthrough
+		if cloned.Provider == "" {
+			cloned.Provider = selectors.Provider
+		}
+		if selectors.Model != "" {
+			cloned.Model = selectors.Model
+		}
+		CachePassthroughRouteInfo(env, &cloned)
+	}
 
 	return env
+}
+
+func derivePassthroughRouteInfoFromTransport(snapshot *RequestSnapshot) *PassthroughRouteInfo {
+	if snapshot == nil {
+		return nil
+	}
+	info := &PassthroughRouteInfo{
+		AuditPath: snapshot.Path,
+	}
+	if provider := snapshot.routeParams["provider"]; provider != "" {
+		info.Provider = provider
+	}
+	if endpoint := snapshot.routeParams["endpoint"]; endpoint != "" {
+		info.RawEndpoint = endpoint
+	}
+	if info.Provider == "" || info.RawEndpoint == "" {
+		if provider, endpoint, ok := ParseProviderPassthroughPath(snapshot.Path); ok {
+			if info.Provider == "" {
+				info.Provider = provider
+			}
+			if info.RawEndpoint == "" {
+				info.RawEndpoint = endpoint
+			}
+		}
+	}
+	if info.Provider == "" && info.RawEndpoint == "" && info.AuditPath == "" {
+		return nil
+	}
+	return info
 }
 
 // DeriveFileRouteInfoFromTransport derives sparse file route info from transport metadata.

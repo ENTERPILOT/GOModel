@@ -171,7 +171,7 @@ func TestModelValidation(t *testing.T) {
 			e := echo.New()
 			handlerCalled := false
 
-			middleware := ModelValidation(provider)
+			middleware := ExecutionPlanning(provider)
 			handler := middleware(func(c *echo.Context) error {
 				handlerCalled = true
 				return c.String(http.StatusOK, "ok")
@@ -210,7 +210,7 @@ func TestModelValidation_SetsProviderType(t *testing.T) {
 	e := echo.New()
 	var capturedProviderType string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedProviderType = GetProviderType(c)
 		return c.String(http.StatusOK, "ok")
@@ -228,13 +228,152 @@ func TestModelValidation_SetsProviderType(t *testing.T) {
 	assert.Equal(t, "mock", capturedProviderType)
 }
 
+func TestModelValidation_StoresExecutionPlan(t *testing.T) {
+	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+
+	e := echo.New()
+	var capturedPlan *core.ExecutionPlan
+
+	middleware := ExecutionPlanning(provider)
+	handler := middleware(func(c *echo.Context) error {
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "plan-req-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	if assert.NotNil(t, capturedPlan) {
+		assert.Equal(t, "plan-req-123", capturedPlan.RequestID)
+		assert.Equal(t, core.ExecutionModeTranslated, capturedPlan.Mode)
+		assert.Equal(t, "mock", capturedPlan.ProviderType)
+		assert.True(t, capturedPlan.Capabilities.SemanticExtraction)
+		assert.True(t, capturedPlan.Capabilities.AliasResolution)
+		assert.True(t, capturedPlan.Capabilities.ResponseCaching)
+		if assert.NotNil(t, capturedPlan.Resolution) {
+			assert.Equal(t, "gpt-4o-mini", capturedPlan.Resolution.RequestedModel)
+			assert.Equal(t, "gpt-4o-mini", capturedPlan.Resolution.ResolvedSelector.Model)
+		}
+	}
+}
+
+func TestExecutionPlanning_StoresPassthroughRouteInfo(t *testing.T) {
+	provider := &mockProvider{}
+
+	e := echo.New()
+	var capturedPlan *core.ExecutionPlan
+
+	middleware := ExecutionPlanning(provider)
+	handler := middleware(func(c *echo.Context) error {
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodPost,
+		"/p/openai/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{"model":"gpt-5-mini"}`),
+		false,
+		"pass-req-123",
+		nil,
+	)
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithWhiteBoxPrompt(ctx, core.DeriveWhiteBoxPrompt(frame))
+	req = req.WithContext(ctx)
+	req.Header.Set("X-Request-ID", "pass-req-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	if assert.NotNil(t, capturedPlan) {
+		assert.Equal(t, "pass-req-123", capturedPlan.RequestID)
+		assert.Equal(t, core.ExecutionModePassthrough, capturedPlan.Mode)
+		assert.Equal(t, "openai", capturedPlan.ProviderType)
+		if assert.NotNil(t, capturedPlan.Passthrough) {
+			assert.Equal(t, "openai", capturedPlan.Passthrough.Provider)
+			assert.Equal(t, "responses", capturedPlan.Passthrough.RawEndpoint)
+			assert.Equal(t, "gpt-5-mini", capturedPlan.Passthrough.Model)
+			assert.Equal(t, "/p/openai/responses", capturedPlan.Passthrough.AuditPath)
+		}
+	}
+}
+
+func TestExecutionPlanning_PopulatesPassthroughProviderFromPathFallback(t *testing.T) {
+	provider := &mockProvider{}
+
+	e := echo.New()
+	var capturedPlan *core.ExecutionPlan
+
+	middleware := ExecutionPlanning(provider)
+	handler := middleware(func(c *echo.Context) error {
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodPost,
+		"/p/openai/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{"model":"gpt-5-mini"}`),
+		false,
+		"pass-req-fallback-123",
+		nil,
+	)
+	env := &core.WhiteBoxPrompt{
+		RouteType:     "provider_passthrough",
+		OperationType: string(core.OperationProviderPassthrough),
+	}
+	core.CachePassthroughRouteInfo(env, &core.PassthroughRouteInfo{
+		RawEndpoint: "responses",
+		Model:       "gpt-5-mini",
+		AuditPath:   "/p/openai/responses",
+	})
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithWhiteBoxPrompt(ctx, env)
+	req = req.WithContext(ctx)
+	req.Header.Set("X-Request-ID", "pass-req-fallback-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	if assert.NotNil(t, capturedPlan) {
+		assert.Equal(t, core.ExecutionModePassthrough, capturedPlan.Mode)
+		assert.Equal(t, "openai", capturedPlan.ProviderType)
+		if assert.NotNil(t, capturedPlan.Passthrough) {
+			assert.Equal(t, "openai", capturedPlan.Passthrough.Provider)
+			assert.Equal(t, "responses", capturedPlan.Passthrough.RawEndpoint)
+			assert.Equal(t, "gpt-5-mini", capturedPlan.Passthrough.Model)
+		}
+	}
+}
+
 func TestModelValidation_SetsRequestIDInContext(t *testing.T) {
 	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
 
 	e := echo.New()
 	var capturedRequestID string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedRequestID = core.GetRequestID(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -259,7 +398,7 @@ func TestModelValidation_DoesNotTreatPrefixOvermatchAsBatchPath(t *testing.T) {
 	e := echo.New()
 	var capturedRequestID string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedRequestID = core.GetRequestID(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -284,7 +423,7 @@ func TestModelValidation_BodyRewound(t *testing.T) {
 	e := echo.New()
 	var boundReq core.ChatRequest
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		if err := c.Bind(&boundReq); err != nil {
 			return err
@@ -311,7 +450,7 @@ func TestModelValidation_DoesNotReadLiveBodyWhenSelectorHintsAlreadyExist(t *tes
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -348,7 +487,7 @@ func TestModelValidation_UsesIngressBodyForMissingSelectorHints(t *testing.T) {
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -392,7 +531,7 @@ func TestModelValidation_RegistryNotInitializedReturnsGatewayError(t *testing.T)
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -440,7 +579,7 @@ func TestModelValidation_EnrichesAuditEntryWithRequestedModelOnResolutionError(t
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -477,7 +616,7 @@ func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T)
 	var capturedEnv *core.WhiteBoxPrompt
 	var capturedProviderType string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedEnv = core.GetWhiteBoxPrompt(c.Request().Context())
 		capturedProviderType = GetProviderType(c)
@@ -517,7 +656,7 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 	e := echo.New()
 	var capturedEnv *core.WhiteBoxPrompt
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedEnv = core.GetWhiteBoxPrompt(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -567,7 +706,7 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	e := echo.New()
 	var capturedEnv *core.WhiteBoxPrompt
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedEnv = core.GetWhiteBoxPrompt(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -611,18 +750,6 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	assert.NotNil(t, input[0].ExtraFields["x_trace"])
 }
 
-func TestModelCtx_ReturnsContextAndProviderType(t *testing.T) {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	rec := httptest.NewRecorder()
-	c := e.NewContext(req, rec)
-	c.Set(string(providerTypeKey), "openai")
-
-	ctx, pt := ModelCtx(c)
-	assert.NotNil(t, ctx)
-	assert.Equal(t, "openai", pt)
-}
-
 func TestGetProviderType_EmptyWhenNotSet(t *testing.T) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -630,6 +757,18 @@ func TestGetProviderType_EmptyWhenNotSet(t *testing.T) {
 	c := e.NewContext(req, rec)
 
 	assert.Equal(t, "", GetProviderType(c))
+}
+
+func TestGetProviderType_UsesExecutionPlan(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req = req.WithContext(core.WithExecutionPlan(req.Context(), &core.ExecutionPlan{
+		ProviderType: "openai",
+	}))
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	assert.Equal(t, "openai", GetProviderType(c))
 }
 
 func TestModelValidation_ResolvesQualifiedMaskingAliasBeforeProviderParsing(t *testing.T) {
@@ -670,13 +809,13 @@ func TestModelValidation_ResolvesQualifiedMaskingAliasBeforeProviderParsing(t *t
 	e := echo.New()
 	var (
 		capturedProviderType string
-		capturedResolution   *core.RequestModelResolution
+		capturedPlan         *core.ExecutionPlan
 	)
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedProviderType = GetProviderType(c)
-		capturedResolution = core.GetRequestModelResolution(c.Request().Context())
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
 	})
 
@@ -691,9 +830,69 @@ func TestModelValidation_ResolvesQualifiedMaskingAliasBeforeProviderParsing(t *t
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, "openai", capturedProviderType)
-	if assert.NotNil(t, capturedResolution) {
-		assert.True(t, capturedResolution.AliasApplied)
-		assert.Equal(t, "anthropic/claude-opus-4-6", capturedResolution.RequestedQualifiedModel())
-		assert.Equal(t, "openai/gpt-5-nano", capturedResolution.ResolvedQualifiedModel())
+	if assert.NotNil(t, capturedPlan) && assert.NotNil(t, capturedPlan.Resolution) {
+		assert.True(t, capturedPlan.Resolution.AliasApplied)
+		assert.Equal(t, "anthropic/claude-opus-4-6", capturedPlan.RequestedQualifiedModel())
+		assert.Equal(t, "openai/gpt-5-nano", capturedPlan.ResolvedQualifiedModel())
+	}
+}
+
+func TestExecutionPlanningWithResolver_UsesExplicitAliasResolverWithoutProviderDecorator(t *testing.T) {
+	catalog := aliasesTestCatalog{
+		supported: map[string]bool{
+			"anthropic/claude-opus-4-6": true,
+			"openai/gpt-5-nano":         true,
+		},
+		providerTypes: map[string]string{
+			"anthropic/claude-opus-4-6": "anthropic",
+			"openai/gpt-5-nano":         "openai",
+		},
+		models: map[string]core.Model{
+			"anthropic/claude-opus-4-6": {ID: "claude-opus-4-6", Object: "model"},
+			"openai/gpt-5-nano":         {ID: "gpt-5-nano", Object: "model"},
+		},
+	}
+
+	service, err := aliases.NewService(newAliasesTestStore(
+		aliases.Alias{Name: "anthropic/claude-opus-4-6", TargetModel: "gpt-5-nano", TargetProvider: "openai", Enabled: true},
+	), &catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-5-nano"},
+		providerTypes: map[string]string{
+			"openai/gpt-5-nano": "openai",
+		},
+	}
+
+	e := echo.New()
+	var capturedPlan *core.ExecutionPlan
+
+	middleware := ExecutionPlanningWithResolver(provider, service)
+	handler := middleware(func(c *echo.Context) error {
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"anthropic/claude-opus-4-6","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err = handler(c)
+	require.NoError(t, err)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	if assert.NotNil(t, capturedPlan) && assert.NotNil(t, capturedPlan.Resolution) {
+		assert.Equal(t, "openai", capturedPlan.ProviderType)
+		assert.True(t, capturedPlan.Resolution.AliasApplied)
+		assert.Equal(t, "anthropic/claude-opus-4-6", capturedPlan.RequestedQualifiedModel())
+		assert.Equal(t, "openai/gpt-5-nano", capturedPlan.ResolvedQualifiedModel())
 	}
 }

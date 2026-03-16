@@ -1934,13 +1934,15 @@ body.conversation-drawer-open {
     flex: 1;
     overflow-x: auto;
     min-width: 0;
+    --contribution-week-size: 13px;
+    --contribution-week-gap: 2px;
 }
 
 .contribution-calendar-months {
     display: grid;
-    grid-auto-columns: 15px;
+    grid-auto-columns: var(--contribution-week-size);
     grid-auto-flow: column;
-    gap: 2px;
+    gap: var(--contribution-week-gap);
     margin-bottom: 6px;
     height: 16px;
 }
@@ -1953,7 +1955,7 @@ body.conversation-drawer-open {
 
 .contribution-calendar-grid {
     display: flex;
-    gap: 2px;
+    gap: var(--contribution-week-gap);
 }
 
 .contribution-calendar-week {
@@ -1963,8 +1965,8 @@ body.conversation-drawer-open {
 }
 
 .contribution-calendar-cell {
-    width: 13px;
-    height: 13px;
+    width: var(--contribution-week-size);
+    height: var(--contribution-week-size);
     border-radius: 2px;
     background: var(--cal-level-0);
 }

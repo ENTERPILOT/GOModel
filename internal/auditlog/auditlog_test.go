@@ -413,18 +413,21 @@ func TestMiddleware_UsesIngressTooLargeFlagWithoutReadingStream(t *testing.T) {
 	}
 }
 
-func TestMiddleware_AppliesRequestModelResolution(t *testing.T) {
+func TestMiddleware_PrefersExecutionPlanOverLegacyResolution(t *testing.T) {
 	e := echo.New()
 	logger := &capturingLogger{
 		cfg: Config{Enabled: true},
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"anthropic/claude-opus-4-6"}`))
-	req = req.WithContext(core.WithRequestModelResolution(req.Context(), &core.RequestModelResolution{
-		RequestedModel:   "anthropic/claude-opus-4-6",
-		ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-5-nano"},
-		ProviderType:     "openai",
-		AliasApplied:     true,
+	req = req.WithContext(core.WithExecutionPlan(req.Context(), &core.ExecutionPlan{
+		ProviderType: "openai",
+		Resolution: &core.RequestModelResolution{
+			RequestedModel:   "anthropic/claude-opus-4-6",
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-5-nano"},
+			ProviderType:     "openai",
+			AliasApplied:     true,
+		},
 	}))
 
 	rec := httptest.NewRecorder()
@@ -454,6 +457,124 @@ func TestMiddleware_AppliesRequestModelResolution(t *testing.T) {
 	}
 	if !entry.AliasUsed {
 		t.Fatal("AliasUsed = false, want true")
+	}
+}
+
+func TestMiddleware_UsesExecutionPlanRequestID(t *testing.T) {
+	e := echo.New()
+	logger := &capturingLogger{
+		cfg: Config{Enabled: true},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-5-nano"}`))
+	req.Header.Set("X-Request-ID", "header-req-id")
+	req = req.WithContext(core.WithExecutionPlan(req.Context(), &core.ExecutionPlan{
+		RequestID:    "plan-req-id",
+		ProviderType: "openai",
+		Resolution: &core.RequestModelResolution{
+			RequestedModel:   "gpt-5-nano",
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-5-nano"},
+			ProviderType:     "openai",
+		},
+	}))
+
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	handler := Middleware(logger)(func(c *echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	if err := handler(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(logger.entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(logger.entries))
+	}
+
+	entry := logger.entries[0]
+	if entry.RequestID != "plan-req-id" {
+		t.Fatalf("RequestID = %q, want plan-req-id", entry.RequestID)
+	}
+}
+
+func TestMiddleware_DoesNotApplyModelMetadataWithoutExecutionPlan(t *testing.T) {
+	e := echo.New()
+	logger := &capturingLogger{
+		cfg: Config{Enabled: true},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"legacy-only"}`))
+
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	handler := Middleware(logger)(func(c *echo.Context) error {
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	if err := handler(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(logger.entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(logger.entries))
+	}
+
+	entry := logger.entries[0]
+	if entry.Model != "" {
+		t.Fatalf("Model = %q, want empty", entry.Model)
+	}
+	if entry.ResolvedModel != "" {
+		t.Fatalf("ResolvedModel = %q, want empty", entry.ResolvedModel)
+	}
+	if entry.Provider != "" {
+		t.Fatalf("Provider = %q, want empty", entry.Provider)
+	}
+	if entry.AliasUsed {
+		t.Fatal("AliasUsed = true, want false")
+	}
+}
+
+func TestMiddleware_PassthroughExecutionPlanUsesPassthroughModel(t *testing.T) {
+	e := echo.New()
+	logger := &capturingLogger{
+		cfg: Config{Enabled: true},
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1-nano"}`))
+	req = req.WithContext(core.WithExecutionPlan(req.Context(), &core.ExecutionPlan{
+		Mode:         core.ExecutionModePassthrough,
+		ProviderType: "openai",
+		Passthrough: &core.PassthroughRouteInfo{
+			Provider: "openai",
+			Model:    "gpt-4.1-nano",
+		},
+	}))
+
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	handler := Middleware(logger)(func(c *echo.Context) error {
+		EnrichEntry(c, "placeholder", "placeholder")
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	if err := handler(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if len(logger.entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(logger.entries))
+	}
+
+	entry := logger.entries[0]
+	if entry.Model != "gpt-4.1-nano" {
+		t.Fatalf("Model = %q, want gpt-4.1-nano", entry.Model)
+	}
+	if entry.Provider != "openai" {
+		t.Fatalf("Provider = %q, want openai", entry.Provider)
+	}
+	if entry.ResolvedModel != "" {
+		t.Fatalf("ResolvedModel = %q, want empty", entry.ResolvedModel)
 	}
 }
 

@@ -1,0 +1,69 @@
+package server
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/labstack/echo/v5"
+
+	"gomodel/internal/core"
+)
+
+func TestPassthroughExecutionTarget_PrefersExecutionPlan(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/v1/responses?trace=1", nil)
+	req = req.WithContext(core.WithExecutionPlan(req.Context(), &core.ExecutionPlan{
+		Mode:         core.ExecutionModePassthrough,
+		ProviderType: "openai",
+		Passthrough: &core.PassthroughRouteInfo{
+			Provider:           "openai",
+			RawEndpoint:        "v1/responses",
+			NormalizedEndpoint: "responses",
+			AuditPath:          "/v1/responses",
+		},
+	}))
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	providerType, endpoint, info, err := passthroughExecutionTarget(c, false)
+	if err != nil {
+		t.Fatalf("passthroughExecutionTarget() error = %v", err)
+	}
+	if providerType != "openai" {
+		t.Fatalf("providerType = %q, want openai", providerType)
+	}
+	if endpoint != "responses?trace=1" {
+		t.Fatalf("endpoint = %q, want responses?trace=1", endpoint)
+	}
+	if info == nil {
+		t.Fatal("info = nil")
+	}
+	if info.NormalizedEndpoint != "responses" {
+		t.Fatalf("NormalizedEndpoint = %q, want responses", info.NormalizedEndpoint)
+	}
+}
+
+func TestPassthroughExecutionTarget_NormalizesFallbackFromPath(t *testing.T) {
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/v1/responses?trace=1", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	providerType, endpoint, info, err := passthroughExecutionTarget(c, true)
+	if err != nil {
+		t.Fatalf("passthroughExecutionTarget() error = %v", err)
+	}
+	if providerType != "openai" {
+		t.Fatalf("providerType = %q, want openai", providerType)
+	}
+	if endpoint != "responses?trace=1" {
+		t.Fatalf("endpoint = %q, want responses?trace=1", endpoint)
+	}
+	if info == nil {
+		t.Fatal("info = nil")
+	}
+	if info.NormalizedEndpoint != "responses" {
+		t.Fatalf("NormalizedEndpoint = %q, want responses", info.NormalizedEndpoint)
+	}
+}

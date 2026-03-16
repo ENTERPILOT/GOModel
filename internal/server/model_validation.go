@@ -11,59 +11,111 @@ import (
 	"gomodel/internal/core"
 )
 
-type contextKey string
-
-const providerTypeKey contextKey = "providerType"
-
 type modelCountProvider interface {
 	ModelCount() int
 }
 
-// ModelValidation validates model-interaction requests, enriches audit metadata,
-// and propagates request-scoped values needed by downstream handlers.
-func ModelValidation(provider core.RoutableProvider) echo.MiddlewareFunc {
+// ExecutionPlanning resolves the request-scoped execution plan for model-facing
+// routes. The plan centralizes endpoint capabilities, execution mode, resolved
+// provider type, and any early model routing decision that downstream handlers
+// or middleware need to consume.
+func ExecutionPlanning(provider core.RoutableProvider) echo.MiddlewareFunc {
+	return ExecutionPlanningWithResolver(provider, nil)
+}
+
+// ExecutionPlanningWithResolver resolves request-scoped execution plans using
+// an explicit selector resolver when provided. This lets request planning own
+// alias policy instead of depending on provider decorators.
+func ExecutionPlanningWithResolver(provider core.RoutableProvider, resolver RequestModelResolver) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c *echo.Context) error {
 			path := c.Request().URL.Path
 			if !core.IsModelInteractionPath(path) {
 				return next(c)
 			}
-			if providerType, ok := providerPassthroughType(c); ok {
-				c.Set(string(providerTypeKey), providerType)
-				auditlog.EnrichEntry(c, "passthrough", providerType)
-				requestID := c.Request().Header.Get("X-Request-ID")
-				ctx := core.WithRequestID(c.Request().Context(), requestID)
-				c.SetRequest(c.Request().WithContext(ctx))
-				return next(c)
-			}
-			if isBatchOrFileRootOrSubresource(path) {
-				requestID := c.Request().Header.Get("X-Request-ID")
-				ctx := core.WithRequestID(c.Request().Context(), requestID)
-				c.SetRequest(c.Request().WithContext(ctx))
-				return next(c)
-			}
-
-			resolution, parsed, err := ensureRequestModelResolution(c, provider)
+			plan, err := deriveExecutionPlan(c, provider, resolver)
 			if err != nil {
 				return handleError(c, err)
 			}
-			if !parsed || resolution == nil {
-				return next(c)
+			if plan != nil {
+				storeExecutionPlan(c, plan)
 			}
-			if counted, ok := provider.(modelCountProvider); ok && counted.ModelCount() == 0 {
-				return handleError(c, core.NewProviderError("", 0, "model registry not initialized", nil))
-			}
-
-			c.Set(string(providerTypeKey), resolution.ProviderType)
-			auditlog.EnrichEntryWithResolution(c, resolution)
-
-			requestID := c.Request().Header.Get("X-Request-ID")
-			ctx := core.WithRequestID(c.Request().Context(), requestID)
-			c.SetRequest(c.Request().WithContext(ctx))
-
 			return next(c)
 		}
 	}
+}
+
+func deriveExecutionPlan(c *echo.Context, provider core.RoutableProvider, resolver RequestModelResolver) (*core.ExecutionPlan, error) {
+	if c == nil {
+		return nil, nil
+	}
+
+	requestID := requestIDFromContextOrHeader(c.Request())
+	if requestID != "" && strings.TrimSpace(core.GetRequestID(c.Request().Context())) != requestID {
+		c.SetRequest(c.Request().WithContext(core.WithRequestID(c.Request().Context(), requestID)))
+	}
+
+	desc := core.DescribeEndpoint(c.Request().Method, c.Request().URL.Path)
+	plan := &core.ExecutionPlan{
+		RequestID:    requestID,
+		Endpoint:     desc,
+		Capabilities: core.CapabilitiesForEndpoint(desc),
+	}
+
+	switch desc.Operation {
+	case core.OperationProviderPassthrough:
+		passthrough := passthroughRouteInfo(c)
+		providerType, ok := providerPassthroughType(c)
+		if !ok {
+			return nil, nil
+		}
+		if passthrough == nil {
+			passthrough = &core.PassthroughRouteInfo{}
+		}
+		if strings.TrimSpace(passthrough.Provider) == "" {
+			cloned := *passthrough
+			cloned.Provider = providerType
+			passthrough = &cloned
+		}
+		plan.Mode = core.ExecutionModePassthrough
+		plan.ProviderType = providerType
+		plan.Passthrough = passthrough
+		auditlog.EnrichEntryWithExecutionPlan(c, plan)
+		return plan, nil
+
+	case core.OperationBatches:
+		plan.Mode = core.ExecutionModeNativeBatch
+		return plan, nil
+
+	case core.OperationFiles:
+		plan.Mode = core.ExecutionModeNativeFile
+		return plan, nil
+
+	case core.OperationChatCompletions, core.OperationResponses, core.OperationEmbeddings:
+		plan.Mode = core.ExecutionModeTranslated
+		resolution, parsed, err := ensureRequestModelResolution(c, provider, resolver)
+		if err != nil {
+			return nil, err
+		}
+		if !parsed || resolution == nil {
+			return plan, nil
+		}
+		plan.ProviderType = resolution.ProviderType
+		plan.Resolution = resolution
+		auditlog.EnrichEntryWithExecutionPlan(c, plan)
+		return plan, nil
+
+	default:
+		return nil, nil
+	}
+}
+
+func storeExecutionPlan(c *echo.Context, plan *core.ExecutionPlan) {
+	if c == nil || plan == nil {
+		return
+	}
+	ctx := core.WithExecutionPlan(c.Request().Context(), plan)
+	c.SetRequest(c.Request().WithContext(ctx))
 }
 
 func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed bool, err error) {
@@ -119,17 +171,14 @@ func decodeCanonicalSelectorHintsForValidation(ctx context.Context, env *core.Wh
 	return core.DecodeCanonicalSelector(rawBody, env)
 }
 
-func isBatchOrFileRootOrSubresource(path string) bool {
-	switch core.DescribeEndpointPath(path).Operation {
-	case "batches", "files":
-		return true
-	default:
-		return false
-	}
-}
-
 func providerPassthroughType(c *echo.Context) (string, bool) {
-	if env := core.GetWhiteBoxPrompt(c.Request().Context()); env != nil && env.OperationType == "provider_passthrough" {
+	if info := passthroughRouteInfo(c); info != nil {
+		providerType := strings.TrimSpace(info.Provider)
+		if providerType != "" {
+			return providerType, true
+		}
+	}
+	if env := core.GetWhiteBoxPrompt(c.Request().Context()); env != nil && env.OperationType == string(core.OperationProviderPassthrough) {
 		providerType := strings.TrimSpace(env.RouteHints.Provider)
 		if providerType != "" {
 			return providerType, true
@@ -141,18 +190,55 @@ func providerPassthroughType(c *echo.Context) (string, bool) {
 	return "", false
 }
 
-// GetProviderType returns the provider type set by ModelValidation for this request.
-func GetProviderType(c *echo.Context) string {
-	if v, ok := c.Get(string(providerTypeKey)).(string); ok {
-		return v
+func passthroughRouteInfo(c *echo.Context) *core.PassthroughRouteInfo {
+	if c == nil {
+		return nil
 	}
-	if resolution := core.GetRequestModelResolution(c.Request().Context()); resolution != nil {
-		return resolution.ProviderType
+	if plan := core.GetExecutionPlan(c.Request().Context()); plan != nil && plan.Passthrough != nil {
+		if plan.Passthrough.Provider == "" && strings.TrimSpace(plan.ProviderType) != "" {
+			plan.Passthrough.Provider = strings.TrimSpace(plan.ProviderType)
+		}
+		if plan.Passthrough.AuditPath == "" {
+			plan.Passthrough.AuditPath = c.Request().URL.Path
+		}
+		return plan.Passthrough
 	}
-	return ""
+	if env := core.GetWhiteBoxPrompt(c.Request().Context()); env != nil {
+		if info := env.CachedPassthroughRouteInfo(); info != nil {
+			if info.AuditPath == "" {
+				info.AuditPath = c.Request().URL.Path
+			}
+			return info
+		}
+		if env.OperationType == string(core.OperationProviderPassthrough) {
+			info := &core.PassthroughRouteInfo{
+				Provider:    env.RouteHints.Provider,
+				RawEndpoint: env.RouteHints.Endpoint,
+				Model:       env.RouteHints.Model,
+				AuditPath:   c.Request().URL.Path,
+			}
+			if info.Provider != "" || info.RawEndpoint != "" || info.Model != "" {
+				return info
+			}
+		}
+	}
+	provider, endpoint, ok := core.ParseProviderPassthroughPath(c.Request().URL.Path)
+	if !ok {
+		return nil
+	}
+	return &core.PassthroughRouteInfo{
+		Provider:    provider,
+		RawEndpoint: endpoint,
+		AuditPath:   c.Request().URL.Path,
+	}
 }
 
-// ModelCtx returns the request context and resolved provider type.
-func ModelCtx(c *echo.Context) (context.Context, string) {
-	return c.Request().Context(), GetProviderType(c)
+// GetProviderType returns the provider type captured in the execution plan for this request.
+func GetProviderType(c *echo.Context) string {
+	if plan := core.GetExecutionPlan(c.Request().Context()); plan != nil {
+		if providerType := strings.TrimSpace(plan.ProviderType); providerType != "" {
+			return providerType
+		}
+	}
+	return ""
 }

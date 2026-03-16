@@ -17,8 +17,9 @@ import (
 
 // Registration provides factory registration for the OpenAI provider.
 var Registration = providers.Registration{
-	Type: "openai",
-	New:  New,
+	Type:                        "openai",
+	New:                         New,
+	PassthroughSemanticEnricher: passthroughSemanticEnricher{},
 }
 
 const (

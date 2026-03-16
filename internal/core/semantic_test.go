@@ -16,6 +16,7 @@ func TestDeriveWhiteBoxPrompt_OpenAICompat(t *testing.T) {
 		[]byte(`{
 			"model":"gpt-5-mini",
 			"provider":"openai",
+			"stream":true,
 			"messages":[{"role":"user","content":"hello"}],
 			"response_format":{"type":"json_schema"}
 		}`),
@@ -44,7 +45,10 @@ func TestDeriveWhiteBoxPrompt_OpenAICompat(t *testing.T) {
 	if env.RouteHints.Provider != "openai" {
 		t.Fatalf("RouteHints.Provider = %q, want openai", env.RouteHints.Provider)
 	}
-	if env.CachedChatRequest() != nil || env.CachedResponsesRequest() != nil || env.CachedEmbeddingRequest() != nil || env.CachedBatchRequest() != nil || env.CachedBatchRouteInfo() != nil || env.CachedFileRouteInfo() != nil {
+	if !env.StreamRequested {
+		t.Fatal("StreamRequested = false, want true")
+	}
+	if env.CachedChatRequest() != nil || env.CachedResponsesRequest() != nil || env.CachedEmbeddingRequest() != nil || env.CachedBatchRequest() != nil || env.CachedBatchRouteInfo() != nil || env.CachedFileRouteInfo() != nil || env.CachedPassthroughRouteInfo() != nil {
 		t.Fatalf("canonical request payloads should be nil, got %+v", env)
 	}
 }
@@ -79,7 +83,7 @@ func TestDeriveWhiteBoxPrompt_PassthroughRouteParams(t *testing.T) {
 		nil,
 		nil,
 		"",
-		[]byte(`{"model":"gpt-5-mini","foo":"bar"}`),
+		[]byte(`{"model":"gpt-5-mini","stream":true,"foo":"bar"}`),
 		false,
 		"",
 		nil,
@@ -105,6 +109,25 @@ func TestDeriveWhiteBoxPrompt_PassthroughRouteParams(t *testing.T) {
 	if env.RouteHints.Model != "gpt-5-mini" {
 		t.Fatalf("RouteHints.Model = %q, want gpt-5-mini", env.RouteHints.Model)
 	}
+	if !env.StreamRequested {
+		t.Fatal("StreamRequested = false, want true")
+	}
+	info := env.CachedPassthroughRouteInfo()
+	if info == nil {
+		t.Fatal("CachedPassthroughRouteInfo() = nil")
+	}
+	if info.Provider != "openai" {
+		t.Fatalf("PassthroughRouteInfo.Provider = %q, want openai", info.Provider)
+	}
+	if info.RawEndpoint != "responses" {
+		t.Fatalf("PassthroughRouteInfo.RawEndpoint = %q, want responses", info.RawEndpoint)
+	}
+	if info.Model != "gpt-5-mini" {
+		t.Fatalf("PassthroughRouteInfo.Model = %q, want gpt-5-mini", info.Model)
+	}
+	if info.AuditPath != "/p/openai/responses" {
+		t.Fatalf("PassthroughRouteInfo.AuditPath = %q, want /p/openai/responses", info.AuditPath)
+	}
 	if env.CachedChatRequest() != nil || env.CachedResponsesRequest() != nil || env.CachedEmbeddingRequest() != nil || env.CachedBatchRequest() != nil || env.CachedBatchRouteInfo() != nil || env.CachedFileRouteInfo() != nil {
 		t.Fatalf("canonical request payloads should be nil, got %+v", env)
 	}
@@ -123,6 +146,16 @@ func TestDeriveWhiteBoxPrompt_PassthroughPathFallback(t *testing.T) {
 	}
 	if env.RouteHints.Endpoint != "messages" {
 		t.Fatalf("RouteHints.Endpoint = %q, want messages", env.RouteHints.Endpoint)
+	}
+	info := env.CachedPassthroughRouteInfo()
+	if info == nil {
+		t.Fatal("CachedPassthroughRouteInfo() = nil")
+	}
+	if info.Provider != "anthropic" {
+		t.Fatalf("PassthroughRouteInfo.Provider = %q, want anthropic", info.Provider)
+	}
+	if info.RawEndpoint != "messages" {
+		t.Fatalf("PassthroughRouteInfo.RawEndpoint = %q, want messages", info.RawEndpoint)
 	}
 }
 

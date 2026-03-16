@@ -89,15 +89,36 @@ func TestSimpleCacheMiddleware_DifferentBodyDifferentKey(t *testing.T) {
 func TestHashRequest_ResolvedModelChangesKey(t *testing.T) {
 	body := []byte(`{"model":"anthropic/claude-opus-4-6","messages":[{"role":"user","content":"hi"}]}`)
 
-	first := hashRequest("/v1/chat/completions", body, &core.RequestModelResolution{
-		ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-5-nano"},
+	first := hashRequest("/v1/chat/completions", body, &core.ExecutionPlan{
+		Mode: core.ExecutionModeTranslated,
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-5-nano"},
+		},
 	})
-	second := hashRequest("/v1/chat/completions", body, &core.RequestModelResolution{
-		ResolvedSelector: core.ModelSelector{Provider: "anthropic", Model: "claude-opus-4-6"},
+	second := hashRequest("/v1/chat/completions", body, &core.ExecutionPlan{
+		Mode: core.ExecutionModeTranslated,
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "anthropic", Model: "claude-opus-4-6"},
+		},
 	})
 
 	if first == second {
 		t.Fatal("resolved model should affect cache key")
+	}
+}
+
+func TestHashRequest_ModeChangesKey(t *testing.T) {
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
+
+	first := hashRequest("/v1/chat/completions", body, &core.ExecutionPlan{
+		Mode: core.ExecutionModeTranslated,
+	})
+	second := hashRequest("/v1/chat/completions", body, &core.ExecutionPlan{
+		Mode: core.ExecutionModePassthrough,
+	})
+
+	if first == second {
+		t.Fatal("execution mode should affect cache key")
 	}
 }
 
@@ -122,6 +143,46 @@ func TestSimpleCacheMiddleware_SkipsStreaming(t *testing.T) {
 	}
 	if callCount != 2 {
 		t.Fatalf("streaming requests should not be cached, handler called %d times", callCount)
+	}
+}
+
+func TestSimpleCacheMiddleware_SkipsPartialTranslatedPlan(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
+	e := echo.New()
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			desc := core.DescribeEndpoint(c.Request().Method, c.Request().URL.Path)
+			ctx := core.WithExecutionPlan(c.Request().Context(), &core.ExecutionPlan{
+				Endpoint:     desc,
+				Mode:         core.ExecutionModeTranslated,
+				Capabilities: core.CapabilitiesForEndpoint(desc),
+			})
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	})
+	e.Use(mw.Middleware())
+	callCount := 0
+	e.POST("/v1/chat/completions", func(c *echo.Context) error {
+		callCount++
+		return c.JSON(http.StatusOK, map[string]string{"n": "1"})
+	})
+
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Header().Get("X-Cache") != "" {
+			t.Fatalf("partial translated plan should bypass cache, got X-Cache=%q", rec.Header().Get("X-Cache"))
+		}
+	}
+
+	if callCount != 2 {
+		t.Fatalf("partial translated plans should bypass cache, handler called %d times", callCount)
 	}
 }
 

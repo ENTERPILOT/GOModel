@@ -3,6 +3,8 @@ package providers
 import (
 	"net/http"
 	"strings"
+
+	"gomodel/internal/core"
 )
 
 // PassthroughEndpoint normalizes a provider-relative passthrough endpoint into
@@ -30,4 +32,24 @@ func CloneHTTPHeaders(src http.Header) map[string][]string {
 		dst[key] = cloned
 	}
 	return dst
+}
+
+// PassthroughEndpointPath returns the normalized path portion of a provider
+// passthrough endpoint, preferring a semantic normalized endpoint when present.
+func PassthroughEndpointPath(info *core.PassthroughRouteInfo) string {
+	if info == nil {
+		return ""
+	}
+	endpoint := strings.TrimSpace(info.NormalizedEndpoint)
+	if endpoint == "" {
+		endpoint = strings.TrimSpace(info.RawEndpoint)
+	}
+	endpoint, _, _ = strings.Cut(endpoint, "?")
+	if endpoint == "" {
+		return ""
+	}
+	if !strings.HasPrefix(endpoint, "/") {
+		endpoint = "/" + endpoint
+	}
+	return endpoint
 }

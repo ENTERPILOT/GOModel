@@ -107,6 +107,11 @@ func TestRequestSnapshotCapture_PreservesPassthroughRouteParams(t *testing.T) {
 	assert.Equal(t, "provider_passthrough", capturedEnv.RouteType)
 	assert.Equal(t, "openai", capturedEnv.RouteHints.Provider)
 	assert.Equal(t, "responses", capturedEnv.RouteHints.Endpoint)
+	if info := capturedEnv.CachedPassthroughRouteInfo(); assert.NotNil(t, info) {
+		assert.Equal(t, "openai", info.Provider)
+		assert.Equal(t, "responses", info.RawEndpoint)
+		assert.Equal(t, "/p/openai/responses", info.AuditPath)
+	}
 }
 
 func TestRequestSnapshotCapture_GeneratesRequestIDWhenMissing(t *testing.T) {
@@ -187,7 +192,7 @@ func TestModelValidation_UsesSemanticEnvelopeWithoutReadingBody(t *testing.T) {
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	handler := ModelValidation(provider)(func(c *echo.Context) error {
+	handler := ExecutionPlanning(provider)(func(c *echo.Context) error {
 		return c.String(http.StatusOK, "ok")
 	})
 
