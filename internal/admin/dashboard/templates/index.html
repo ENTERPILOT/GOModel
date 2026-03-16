@@ -74,7 +74,7 @@
             <div class="contribution-calendar-scroll">
                 <div class="contribution-calendar-months">
                     <template x-for="ml in calendarMonthLabels()" :key="ml.key">
-                        <span class="contribution-calendar-month-label" :style="'grid-column: ' + (ml.col + 1)" x-text="ml.label"></span>
+                        <span class="contribution-calendar-month-label" :style="'grid-column: ' + (ml.col + 1) + ' / span ' + ml.span" x-text="ml.label"></span>
                     </template>
                 </div>
                 <div class="contribution-calendar-grid">

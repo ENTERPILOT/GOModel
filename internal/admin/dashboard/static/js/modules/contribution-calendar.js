@@ -112,17 +112,48 @@
 
                 var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
                 var labels = [];
-                var lastMonth = -1;
-                var weekIdx = 0;
+                var seenMonths = {};
+                var totalWeeks = 0;
 
-                for (var d = new Date(start); d <= today; ) {
-                    var m = d.getMonth();
-                    if (m !== lastMonth) {
-                        labels.push({ label: months[m], col: weekIdx, key: m + '-' + d.getFullYear() });
-                        lastMonth = m;
+                for (var weekStart = new Date(start); weekStart <= today; weekStart.setDate(weekStart.getDate() + 7), totalWeeks++) {
+                    var labelDay = null;
+
+                    if (totalWeeks === 0) {
+                        labelDay = new Date(weekStart);
+                    } else {
+                        for (var offset = 0; offset < 7; offset++) {
+                            var d = new Date(weekStart);
+                            d.setDate(weekStart.getDate() + offset);
+                            if (d > today) {
+                                break;
+                            }
+                            if (d.getDate() === 1) {
+                                labelDay = d;
+                                break;
+                            }
+                        }
                     }
-                    d.setDate(d.getDate() + 7);
-                    weekIdx++;
+
+                    if (!labelDay) {
+                        continue;
+                    }
+
+                    var monthKey = labelDay.getFullYear() + '-' + labelDay.getMonth();
+                    if (seenMonths[monthKey]) {
+                        continue;
+                    }
+
+                    labels.push({
+                        label: months[labelDay.getMonth()],
+                        col: totalWeeks,
+                        key: monthKey
+                    });
+                    seenMonths[monthKey] = true;
+                }
+
+                for (var i = 0; i < labels.length; i++) {
+                    var nextCol = i + 1 < labels.length ? labels[i + 1].col : totalWeeks;
+                    labels[i].span = Math.max(1, nextCol - labels[i].col);
                 }
 
                 return labels;
