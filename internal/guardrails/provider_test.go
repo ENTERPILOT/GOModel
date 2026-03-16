@@ -1122,6 +1122,33 @@ func TestGuardedProvider_PrepareBatchRequest_DefaultNoBatchGuardrails(t *testing
 	}
 }
 
+func TestBatchPreparer_PrepareBatchRequest_NoPipelineReturnsOriginalRequest(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	preparer := NewBatchPreparer(inner, nil)
+
+	req := &core.BatchRequest{
+		Endpoint: "/v1/chat/completions",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "/v1/chat/completions",
+				Body:   json.RawMessage(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`),
+			},
+		},
+	}
+
+	result, err := preparer.PrepareBatchRequest(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result == nil || result.Request != req {
+		t.Fatalf("expected original request, got %#v", result)
+	}
+	if len(inner.fileCreates) != 0 {
+		t.Fatalf("len(fileCreates) = %d, want 0", len(inner.fileCreates))
+	}
+}
+
 func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()

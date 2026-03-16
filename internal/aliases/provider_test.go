@@ -273,6 +273,47 @@ func TestProviderCanDisableTranslatedRequestRewriting(t *testing.T) {
 	}
 }
 
+func TestProviderPrepareBatchRequestHonorsDisableNativeBatchPreparation(t *testing.T) {
+	catalog := newTestCatalog()
+	catalog.add("openai/gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})
+
+	service, err := NewService(newMemoryStore(Alias{Name: "smart", TargetModel: "gpt-4o", TargetProvider: "openai", Enabled: true}), catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	inner := newProviderMock()
+	inner.supported["openai/gpt-4o"] = true
+	inner.providerType["openai/gpt-4o"] = "openai"
+	inner.fileContent = &core.FileContentResponse{
+		ID:       "file_source",
+		Filename: "batch.jsonl",
+		Data:     []byte("{\"custom_id\":\"1\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"smart\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}}\n"),
+	}
+
+	provider := NewProviderWithOptions(inner, service, Options{
+		DisableNativeBatchPreparation: true,
+	})
+	req := &core.BatchRequest{
+		InputFileID: "file_source",
+		Endpoint:    "/v1/chat/completions",
+	}
+
+	result, err := provider.PrepareBatchRequest(context.Background(), "openai", req)
+	if err != nil {
+		t.Fatalf("PrepareBatchRequest() error = %v", err)
+	}
+	if result == nil || result.Request != req {
+		t.Fatalf("PrepareBatchRequest() result = %#v, want original request", result)
+	}
+	if len(inner.fileCreates) != 0 {
+		t.Fatalf("len(fileCreates) = %d, want 0", len(inner.fileCreates))
+	}
+}
+
 func TestProviderRewritesBatchItemBodies(t *testing.T) {
 	catalog := newTestCatalog()
 	catalog.add("openai/gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})

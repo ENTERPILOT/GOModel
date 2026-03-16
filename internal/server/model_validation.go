@@ -75,6 +75,14 @@ func deriveExecutionPlan(c *echo.Context, provider core.RoutableProvider, resolv
 		if !ok {
 			return nil, nil
 		}
+		if passthrough == nil {
+			passthrough = &core.PassthroughRouteInfo{}
+		}
+		if strings.TrimSpace(passthrough.Provider) == "" {
+			cloned := *passthrough
+			cloned.Provider = providerType
+			passthrough = &cloned
+		}
 		plan.Mode = core.ExecutionModePassthrough
 		plan.ProviderType = providerType
 		plan.Passthrough = passthrough

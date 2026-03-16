@@ -312,6 +312,61 @@ func TestExecutionPlanning_StoresPassthroughRouteInfo(t *testing.T) {
 	}
 }
 
+func TestExecutionPlanning_PopulatesPassthroughProviderFromPathFallback(t *testing.T) {
+	provider := &mockProvider{}
+
+	e := echo.New()
+	var capturedPlan *core.ExecutionPlan
+
+	middleware := ExecutionPlanning(provider)
+	handler := middleware(func(c *echo.Context) error {
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodPost,
+		"/p/openai/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{"model":"gpt-5-mini"}`),
+		false,
+		"pass-req-fallback-123",
+		nil,
+	)
+	env := &core.WhiteBoxPrompt{
+		RouteType:     "provider_passthrough",
+		OperationType: string(core.OperationProviderPassthrough),
+	}
+	core.CachePassthroughRouteInfo(env, &core.PassthroughRouteInfo{
+		RawEndpoint: "responses",
+		Model:       "gpt-5-mini",
+		AuditPath:   "/p/openai/responses",
+	})
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithWhiteBoxPrompt(ctx, env)
+	req = req.WithContext(ctx)
+	req.Header.Set("X-Request-ID", "pass-req-fallback-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	if assert.NotNil(t, capturedPlan) {
+		assert.Equal(t, core.ExecutionModePassthrough, capturedPlan.Mode)
+		assert.Equal(t, "openai", capturedPlan.ProviderType)
+		if assert.NotNil(t, capturedPlan.Passthrough) {
+			assert.Equal(t, "openai", capturedPlan.Passthrough.Provider)
+			assert.Equal(t, "responses", capturedPlan.Passthrough.RawEndpoint)
+			assert.Equal(t, "gpt-5-mini", capturedPlan.Passthrough.Model)
+		}
+	}
+}
+
 func TestModelValidation_SetsRequestIDInContext(t *testing.T) {
 	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
 

@@ -310,6 +310,9 @@ func (p *Provider) Passthrough(ctx context.Context, providerType string, req *co
 // PrepareBatchRequest resolves aliases for batch subrequests without
 // submitting the native batch to the wrapped provider.
 func (p *Provider) PrepareBatchRequest(ctx context.Context, providerType string, req *core.BatchRequest) (*core.BatchRewriteResult, error) {
+	if p.options.DisableNativeBatchPreparation {
+		return &core.BatchRewriteResult{Request: req}, nil
+	}
 	return rewriteAliasBatchSource(ctx, providerType, req, p.service, p.inner, p.batchFileTransport())
 }
 

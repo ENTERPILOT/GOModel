@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"sort"
@@ -73,6 +74,7 @@ func (s *nativeFileService) fileByID(
 	for _, candidate := range providers {
 		result, err := callFn(nativeRouter, candidate, id)
 		if err == nil {
+			auditlog.EnrichEntry(c, "file", candidate)
 			return respondFn(c, result)
 		}
 		if isNotFoundGatewayError(err) || isUnsupportedNativeFilesError(err) {
@@ -194,46 +196,11 @@ func (s *nativeFileService) ListFiles(c *echo.Context) error {
 		return handleError(c, err)
 	}
 	auditlog.EnrichEntry(c, "file", "")
-
-	aggregated := make([]core.FileObject, 0)
-	anySuccess := false
-	var firstErr error
-	for _, candidate := range providers {
-		resp, err := nativeRouter.ListFiles(c.Request().Context(), candidate, purpose, limit+1, "")
-		if err != nil {
-			if isUnsupportedNativeFilesError(err) || isNotFoundGatewayError(err) {
-				continue
-			}
-			if firstErr == nil {
-				firstErr = err
-			}
-			continue
-		}
-		anySuccess = true
-		if resp == nil {
-			continue
-		}
-		aggregated = append(aggregated, resp.Data...)
-	}
-	if !anySuccess && firstErr != nil {
-		return handleError(c, firstErr)
-	}
-
-	sortFilesDesc(aggregated)
-	aggregated, err = applyAfterCursor(aggregated, after)
+	resp, err := s.listMergedFiles(c.Request().Context(), nativeRouter, providers, purpose, limit, after)
 	if err != nil {
 		return handleError(c, err)
 	}
-	hasMore := len(aggregated) > limit
-	if hasMore {
-		aggregated = aggregated[:limit]
-	}
-
-	return c.JSON(http.StatusOK, core.FileListResponse{
-		Object:  "list",
-		Data:    aggregated,
-		HasMore: hasMore,
-	})
+	return c.JSON(http.StatusOK, resp)
 }
 
 func (s *nativeFileService) GetFile(c *echo.Context) error {
@@ -293,13 +260,180 @@ func isUnsupportedNativeFilesError(err error) bool {
 	return strings.Contains(strings.ToLower(gatewayErr.Message), "does not support native file operations")
 }
 
+type providerFileListState struct {
+	provider  string
+	after     string
+	items     []core.FileObject
+	index     int
+	hasMore   bool
+	exhausted bool
+}
+
+func (s *nativeFileService) listMergedFiles(
+	ctx context.Context,
+	nativeRouter core.NativeFileRoutableProvider,
+	providers []string,
+	purpose string,
+	limit int,
+	after string,
+) (*core.FileListResponse, error) {
+	pageSize := limit + 1
+	if pageSize <= 0 {
+		pageSize = 1
+	}
+	after = strings.TrimSpace(after)
+
+	states := make([]*providerFileListState, 0, len(providers))
+	anySuccess := false
+	var firstErr error
+	for _, candidate := range providers {
+		state := &providerFileListState{provider: candidate}
+		loaded, err := loadProviderFilePage(ctx, nativeRouter, state, purpose, pageSize)
+		if err != nil {
+			if isUnsupportedNativeFilesError(err) || isNotFoundGatewayError(err) {
+				continue
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		anySuccess = true
+		if loaded {
+			states = append(states, state)
+		}
+	}
+	if !anySuccess && firstErr != nil {
+		return nil, firstErr
+	}
+
+	foundAfter := strings.TrimSpace(after) == ""
+	collected := make([]core.FileObject, 0, limit+1)
+	for len(collected) <= limit {
+		next, err := nextMergedFile(ctx, nativeRouter, states, purpose, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		if next == nil {
+			break
+		}
+		if !foundAfter {
+			if next.ID == after {
+				foundAfter = true
+			}
+			continue
+		}
+		collected = append(collected, *next)
+	}
+	if !foundAfter {
+		return nil, core.NewNotFoundError("after cursor file not found: " + after)
+	}
+
+	resp := &core.FileListResponse{
+		Object: "list",
+		Data:   collected,
+	}
+	if len(resp.Data) > limit {
+		resp.HasMore = true
+		resp.Data = resp.Data[:limit]
+	}
+	return resp, nil
+}
+
+func loadProviderFilePage(
+	ctx context.Context,
+	nativeRouter core.NativeFileRoutableProvider,
+	state *providerFileListState,
+	purpose string,
+	limit int,
+) (bool, error) {
+	if state == nil {
+		return false, nil
+	}
+
+	resp, err := nativeRouter.ListFiles(ctx, state.provider, purpose, limit, state.after)
+	if err != nil {
+		return false, err
+	}
+
+	state.index = 0
+	state.items = nil
+	state.hasMore = false
+	state.exhausted = true
+	if resp == nil || len(resp.Data) == 0 {
+		return false, nil
+	}
+
+	state.items = make([]core.FileObject, len(resp.Data))
+	copy(state.items, resp.Data)
+	for i := range state.items {
+		if strings.TrimSpace(state.items[i].Provider) == "" {
+			state.items[i].Provider = state.provider
+		}
+	}
+	state.hasMore = resp.HasMore
+	state.after = strings.TrimSpace(state.items[len(state.items)-1].ID)
+	state.exhausted = false
+	return true, nil
+}
+
+func nextMergedFile(
+	ctx context.Context,
+	nativeRouter core.NativeFileRoutableProvider,
+	states []*providerFileListState,
+	purpose string,
+	pageSize int,
+) (*core.FileObject, error) {
+	var best *providerFileListState
+	for _, state := range states {
+		for state != nil && !state.exhausted && state.index >= len(state.items) {
+			if !state.hasMore {
+				state.exhausted = true
+				break
+			}
+			loaded, err := loadProviderFilePage(ctx, nativeRouter, state, purpose, pageSize)
+			if err != nil {
+				if isUnsupportedNativeFilesError(err) || isNotFoundGatewayError(err) {
+					state.exhausted = true
+					break
+				}
+				return nil, err
+			}
+			if !loaded {
+				state.exhausted = true
+				break
+			}
+		}
+		if state == nil || state.exhausted || state.index >= len(state.items) {
+			continue
+		}
+		if best == nil || fileSortsBefore(state.items[state.index], best.items[best.index]) {
+			best = state
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+
+	item := best.items[best.index]
+	best.index++
+	return &item, nil
+}
+
 func sortFilesDesc(items []core.FileObject) {
 	sort.Slice(items, func(i, j int) bool {
-		if items[i].CreatedAt == items[j].CreatedAt {
-			return items[i].ID > items[j].ID
-		}
-		return items[i].CreatedAt > items[j].CreatedAt
+		return fileSortsBefore(items[i], items[j])
 	})
+}
+
+func fileSortsBefore(left, right core.FileObject) bool {
+	if left.CreatedAt == right.CreatedAt {
+		if left.ID == right.ID {
+			return left.Provider > right.Provider
+		}
+		return left.ID > right.ID
+	}
+	return left.CreatedAt > right.CreatedAt
 }
 
 func applyAfterCursor(items []core.FileObject, after string) ([]core.FileObject, error) {

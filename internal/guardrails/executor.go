@@ -66,6 +66,9 @@ func processGuardedBatchRequest(
 	pipeline *Pipeline,
 	fileTransport core.BatchFileTransport,
 ) (*core.BatchRewriteResult, error) {
+	if pipeline == nil || pipeline.Len() == 0 || req == nil {
+		return &core.BatchRewriteResult{Request: req}, nil
+	}
 	return core.RewriteBatchSource(
 		ctx,
 		providerType,

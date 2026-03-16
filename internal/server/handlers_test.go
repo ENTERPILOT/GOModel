@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -311,24 +312,33 @@ type mockProvider struct {
 	clearedBatchHintProvider    string
 	clearedBatchHintID          string
 
-	fileCreateResponse     *core.FileObject
-	fileCreateResponses    []*core.FileObject
-	capturedFileCreateReqs []*core.FileCreateRequest
-	capturedFileDeleteIDs  []string
-	fileGetResponse        *core.FileObject
-	fileDeleteResponse     *core.FileDeleteResponse
-	fileListResponse       *core.FileListResponse
-	fileContentResponse    *core.FileContentResponse
-	fileErr                error
-	fileListByProvider     map[string]*core.FileListResponse
-	fileErrByProvider      map[string]error
-	fileGetByProvider      map[string]*core.FileObject
-	fileContentByProv      map[string]*core.FileContentResponse
+	fileCreateResponse      *core.FileObject
+	fileCreateResponses     []*core.FileObject
+	capturedFileCreateReqs  []*core.FileCreateRequest
+	capturedFileDeleteIDs   []string
+	fileGetResponse         *core.FileObject
+	fileDeleteResponse      *core.FileDeleteResponse
+	fileListResponse        *core.FileListResponse
+	fileContentResponse     *core.FileContentResponse
+	fileErr                 error
+	fileListByProvider      map[string]*core.FileListResponse
+	fileListPagesByProvider map[string]map[string]*core.FileListResponse
+	fileListCalls           []fileListCall
+	fileErrByProvider       map[string]error
+	fileGetByProvider       map[string]*core.FileObject
+	fileContentByProv       map[string]*core.FileContentResponse
 
 	passthroughResponse     *core.PassthroughResponse
 	passthroughErr          error
 	lastPassthroughProvider string
 	lastPassthroughReq      *core.PassthroughRequest
+}
+
+type fileListCall struct {
+	provider string
+	purpose  string
+	limit    int
+	after    string
 }
 
 func readPassthroughRequestBody(t *testing.T, body io.ReadCloser) string {
@@ -651,7 +661,13 @@ func (m *mockProvider) CreateFile(_ context.Context, providerType string, req *c
 	}, nil
 }
 
-func (m *mockProvider) ListFiles(_ context.Context, providerType, purpose string, _ int, _ string) (*core.FileListResponse, error) {
+func (m *mockProvider) ListFiles(_ context.Context, providerType, purpose string, limit int, after string) (*core.FileListResponse, error) {
+	m.fileListCalls = append(m.fileListCalls, fileListCall{
+		provider: providerType,
+		purpose:  purpose,
+		limit:    limit,
+		after:    after,
+	})
 	if m.fileErrByProvider != nil {
 		if err, ok := m.fileErrByProvider[providerType]; ok && err != nil {
 			return nil, err
@@ -659,6 +675,13 @@ func (m *mockProvider) ListFiles(_ context.Context, providerType, purpose string
 	}
 	if m.fileErr != nil {
 		return nil, m.fileErr
+	}
+	if m.fileListPagesByProvider != nil {
+		if byCursor, ok := m.fileListPagesByProvider[providerType]; ok {
+			if resp, ok := byCursor[after]; ok {
+				return resp, nil
+			}
+		}
 	}
 	if m.fileListByProvider != nil {
 		if resp, ok := m.fileListByProvider[providerType]; ok {
@@ -4602,6 +4625,102 @@ func TestListFilesWithUnknownAfterCursorReturnsNotFound(t *testing.T) {
 	}
 }
 
+func TestListFilesWithoutProviderPagesProvidersUntilAfterCursor(t *testing.T) {
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini":    "openai",
+			"claude-3-haiku": "anthropic",
+		},
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-4o-mini", Object: "model"},
+				{ID: "claude-3-haiku", Object: "model"},
+			},
+		},
+		fileListPagesByProvider: map[string]map[string]*core.FileListResponse{
+			"openai": {
+				"": {
+					Object: "list",
+					Data: []core.FileObject{
+						{ID: "file_o6", Object: "file", CreatedAt: 106, Provider: "openai"},
+						{ID: "file_o5", Object: "file", CreatedAt: 105, Provider: "openai"},
+						{ID: "file_o4", Object: "file", CreatedAt: 104, Provider: "openai"},
+					},
+					HasMore: true,
+				},
+				"file_o4": {
+					Object: "list",
+					Data: []core.FileObject{
+						{ID: "file_o3", Object: "file", CreatedAt: 100, Provider: "openai"},
+						{ID: "file_o2", Object: "file", CreatedAt: 99, Provider: "openai"},
+						{ID: "file_o1", Object: "file", CreatedAt: 98, Provider: "openai"},
+					},
+				},
+			},
+			"anthropic": {
+				"": {
+					Object: "list",
+					Data: []core.FileObject{
+						{ID: "file_a3", Object: "file", CreatedAt: 103, Provider: "anthropic"},
+						{ID: "file_a2", Object: "file", CreatedAt: 102, Provider: "anthropic"},
+						{ID: "file_a1", Object: "file", CreatedAt: 101, Provider: "anthropic"},
+					},
+				},
+			},
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/files?limit=2&after=file_a1", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodGet,
+		"/v1/files",
+		nil,
+		map[string][]string{
+			"limit": {"2"},
+			"after": {"file_a1"},
+		},
+		nil,
+		"",
+		nil,
+		false,
+		"",
+		nil,
+	)
+	req = withRequestSnapshotAndPrompt(req, frame)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := handler.ListFiles(c); err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rec.Code)
+	}
+
+	var resp core.FileListResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if got := []string{resp.Data[0].ID, resp.Data[1].ID}; !reflect.DeepEqual(got, []string{"file_o3", "file_o2"}) {
+		t.Fatalf("response ids = %v, want [file_o3 file_o2]", got)
+	}
+	if !resp.HasMore {
+		t.Fatal("HasMore = false, want true")
+	}
+	if len(mock.fileListCalls) < 3 {
+		t.Fatalf("len(fileListCalls) = %d, want at least 3", len(mock.fileListCalls))
+	}
+	lastCall := mock.fileListCalls[len(mock.fileListCalls)-1]
+	if lastCall.provider != "openai" || lastCall.after != "file_o4" {
+		t.Fatalf("last file list call = %#v, want openai after file_o4", lastCall)
+	}
+}
+
 func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 	mock := &mockProvider{
 		supportedModels: []string{"gpt-4o-mini", "claude-3-haiku", "gemini-2.5-flash"},
@@ -4643,6 +4762,8 @@ func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 	c := e.NewContext(req, rec)
 	c.SetPath("/v1/files/:id")
 	setPathParam(c, "id", "file_ok_1")
+	entry := &auditlog.LogEntry{Data: &auditlog.LogData{}}
+	c.Set(string(auditlog.LogEntryKey), entry)
 
 	if err := handler.GetFile(c); err != nil {
 		t.Fatalf("handler returned error: %v", err)
@@ -4652,6 +4773,9 @@ func TestGetFileWithoutProviderSkipsProviderErrors(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "\"id\":\"file_ok_1\"") {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+	if entry.Provider != "openai" {
+		t.Fatalf("audit entry provider = %q, want openai", entry.Provider)
 	}
 }
 
