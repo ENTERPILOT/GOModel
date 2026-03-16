@@ -25,8 +25,9 @@ import (
 
 // Registration provides factory registration for the Anthropic provider.
 var Registration = providers.Registration{
-	Type: "anthropic",
-	New:  New,
+	Type:                        "anthropic",
+	New:                         New,
+	PassthroughSemanticEnricher: passthroughSemanticEnricher{},
 }
 
 const (

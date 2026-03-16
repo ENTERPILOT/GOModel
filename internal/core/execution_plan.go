@@ -26,7 +26,7 @@ type CapabilitySet struct {
 // CapabilitiesForEndpoint returns the current capability set for one endpoint.
 func CapabilitiesForEndpoint(desc EndpointDescriptor) CapabilitySet {
 	switch desc.Operation {
-	case "chat_completions", "responses":
+	case OperationChatCompletions, OperationResponses:
 		return CapabilitySet{
 			SemanticExtraction: true,
 			AliasResolution:    true,
@@ -36,14 +36,14 @@ func CapabilitiesForEndpoint(desc EndpointDescriptor) CapabilitySet {
 			ResponseCaching:    true,
 			Streaming:          true,
 		}
-	case "embeddings":
+	case OperationEmbeddings:
 		return CapabilitySet{
 			SemanticExtraction: true,
 			AliasResolution:    true,
 			UsageTracking:      true,
 			ResponseCaching:    true,
 		}
-	case "batches":
+	case OperationBatches:
 		return CapabilitySet{
 			SemanticExtraction: true,
 			AliasResolution:    true,
@@ -51,11 +51,11 @@ func CapabilitiesForEndpoint(desc EndpointDescriptor) CapabilitySet {
 			RequestPatching:    true,
 			UsageTracking:      true,
 		}
-	case "files":
+	case OperationFiles:
 		return CapabilitySet{
 			SemanticExtraction: true,
 		}
-	case "provider_passthrough":
+	case OperationProviderPassthrough:
 		return CapabilitySet{
 			SemanticExtraction: true,
 			Passthrough:        true,
@@ -74,6 +74,7 @@ type ExecutionPlan struct {
 	Mode         ExecutionMode
 	Capabilities CapabilitySet
 	ProviderType string
+	Passthrough  *PassthroughRouteInfo
 	Resolution   *RequestModelResolution
 }
 

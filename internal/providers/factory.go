@@ -3,6 +3,7 @@ package providers
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"gomodel/config"
@@ -21,21 +22,24 @@ type ProviderConstructor func(apiKey string, opts ProviderOptions) core.Provider
 
 // Registration contains metadata for registering a provider with the factory.
 type Registration struct {
-	Type string
-	New  ProviderConstructor
+	Type                        string
+	New                         ProviderConstructor
+	PassthroughSemanticEnricher core.PassthroughSemanticEnricher
 }
 
 // ProviderFactory manages provider registration and creation.
 type ProviderFactory struct {
-	mu       sync.RWMutex
-	builders map[string]ProviderConstructor
-	hooks    llmclient.Hooks
+	mu                   sync.RWMutex
+	builders             map[string]ProviderConstructor
+	passthroughEnrichers map[string]core.PassthroughSemanticEnricher
+	hooks                llmclient.Hooks
 }
 
 // NewProviderFactory creates a new provider factory instance.
 func NewProviderFactory() *ProviderFactory {
 	return &ProviderFactory{
-		builders: make(map[string]ProviderConstructor),
+		builders:             make(map[string]ProviderConstructor),
+		passthroughEnrichers: make(map[string]core.PassthroughSemanticEnricher),
 	}
 }
 
@@ -59,6 +63,11 @@ func (f *ProviderFactory) Add(reg Registration) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.builders[reg.Type] = reg.New
+	if reg.PassthroughSemanticEnricher != nil {
+		f.passthroughEnrichers[reg.Type] = reg.PassthroughSemanticEnricher
+	} else {
+		delete(f.passthroughEnrichers, reg.Type)
+	}
 }
 
 // Create instantiates a provider based on its resolved configuration.
@@ -98,4 +107,32 @@ func (f *ProviderFactory) RegisteredTypes() []string {
 		types = append(types, t)
 	}
 	return types
+}
+
+// PassthroughSemanticEnrichers returns registered passthrough semantic
+// enrichers in deterministic provider-type order.
+func (f *ProviderFactory) PassthroughSemanticEnrichers() []core.PassthroughSemanticEnricher {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if len(f.passthroughEnrichers) == 0 {
+		return nil
+	}
+
+	types := make([]string, 0, len(f.passthroughEnrichers))
+	for providerType := range f.passthroughEnrichers {
+		types = append(types, providerType)
+	}
+	sort.Strings(types)
+
+	enrichers := make([]core.PassthroughSemanticEnricher, 0, len(types))
+	for _, providerType := range types {
+		if enricher := f.passthroughEnrichers[providerType]; enricher != nil {
+			enrichers = append(enrichers, enricher)
+		}
+	}
+	if len(enrichers) == 0 {
+		return nil
+	}
+	return enrichers
 }

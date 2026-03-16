@@ -152,7 +152,7 @@ func MaybeDecodeKnownBatchItemRequest(defaultEndpoint string, item BatchRequestI
 	if endpoint == "" {
 		return nil, false, nil
 	}
-	operation := DescribeEndpointPath(endpoint).Operation
+	operation := string(DescribeEndpointPath(endpoint).Operation)
 	if len(operations) > 0 && !slices.Contains(operations, operation) {
 		return nil, false, nil
 	}
@@ -185,7 +185,7 @@ func DecodeKnownBatchItemRequest(defaultEndpoint string, item BatchRequestItem) 
 	decoded := &DecodedBatchItemRequest{
 		Endpoint:  endpoint,
 		Method:    method,
-		Operation: DescribeEndpointPath(endpoint).Operation,
+		Operation: string(DescribeEndpointPath(endpoint).Operation),
 	}
 
 	codec, ok := canonicalOperationCodecFor(decoded.Operation)

@@ -56,7 +56,11 @@ func (m *simpleCacheMiddleware) Middleware() echo.MiddlewareFunc {
 			if isStreamingRequest(path, body) {
 				return next(c)
 			}
-			key := hashRequest(path, body, core.GetExecutionPlan(c.Request().Context()))
+			plan := core.GetExecutionPlan(c.Request().Context())
+			if shouldSkipCacheForExecutionPlan(plan) {
+				return next(c)
+			}
+			key := hashRequest(path, body, plan)
 			ctx := c.Request().Context()
 			cached, err := m.store.Get(ctx, key)
 			if err != nil {
@@ -102,6 +106,10 @@ func (m *simpleCacheMiddleware) Middleware() echo.MiddlewareFunc {
 func (m *simpleCacheMiddleware) close() error {
 	m.wg.Wait()
 	return m.store.Close()
+}
+
+func shouldSkipCacheForExecutionPlan(plan *core.ExecutionPlan) bool {
+	return plan != nil && plan.Mode == core.ExecutionModeTranslated && plan.Resolution == nil
 }
 
 func shouldSkipCache(req *http.Request) bool {

@@ -10,16 +10,16 @@ func TestDescribeEndpointPath(t *testing.T) {
 		path        string
 		managed     bool
 		dialect     string
-		operation   string
+		operation   Operation
 		bodyMode    BodyMode
 		interaction bool
 	}{
-		{path: "/v1/chat/completions", managed: true, dialect: "openai_compat", operation: "chat_completions", bodyMode: BodyModeJSON, interaction: true},
-		{path: "/v1/chat/completions/", managed: true, dialect: "openai_compat", operation: "chat_completions", bodyMode: BodyModeJSON, interaction: true},
-		{path: "/v1/batches", managed: true, dialect: "openai_compat", operation: "batches", bodyMode: BodyModeNone, interaction: true},
-		{path: "/v1/embeddings/", managed: true, dialect: "openai_compat", operation: "embeddings", bodyMode: BodyModeJSON, interaction: true},
-		{path: "/v1/files/file_1", managed: true, dialect: "openai_compat", operation: "files", bodyMode: BodyModeNone, interaction: true},
-		{path: "/p/openai/responses", managed: true, dialect: "provider_passthrough", operation: "provider_passthrough", bodyMode: BodyModeOpaque, interaction: true},
+		{path: "/v1/chat/completions", managed: true, dialect: "openai_compat", operation: OperationChatCompletions, bodyMode: BodyModeJSON, interaction: true},
+		{path: "/v1/chat/completions/", managed: true, dialect: "openai_compat", operation: OperationChatCompletions, bodyMode: BodyModeJSON, interaction: true},
+		{path: "/v1/batches", managed: true, dialect: "openai_compat", operation: OperationBatches, bodyMode: BodyModeNone, interaction: true},
+		{path: "/v1/embeddings/", managed: true, dialect: "openai_compat", operation: OperationEmbeddings, bodyMode: BodyModeJSON, interaction: true},
+		{path: "/v1/files/file_1", managed: true, dialect: "openai_compat", operation: OperationFiles, bodyMode: BodyModeNone, interaction: true},
+		{path: "/p/openai/responses", managed: true, dialect: "provider_passthrough", operation: OperationProviderPassthrough, bodyMode: BodyModeOpaque, interaction: true},
 		{path: "/v1/models", managed: false, dialect: "", operation: "", bodyMode: BodyModeNone, interaction: false},
 	}
 

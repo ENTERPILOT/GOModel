@@ -20,7 +20,7 @@ func TestDecodeChatRequest_CachesOnSemanticEnvelope(t *testing.T) {
 	t.Parallel()
 
 	env := &WhiteBoxPrompt{OperationType: "chat_completions"}
-	first, err := DecodeChatRequest([]byte(`{"model":"gpt-4o-mini","provider":"openai","messages":[{"role":"user","content":"hi"}]}`), env)
+	first, err := DecodeChatRequest([]byte(`{"model":"gpt-4o-mini","provider":"openai","stream":true,"messages":[{"role":"user","content":"hi"}]}`), env)
 	if err != nil {
 		t.Fatalf("DecodeChatRequest() error = %v", err)
 	}
@@ -42,6 +42,9 @@ func TestDecodeChatRequest_CachesOnSemanticEnvelope(t *testing.T) {
 	}
 	if env.RouteHints.Provider != "openai" {
 		t.Fatalf("RouteHints.Provider = %q, want openai", env.RouteHints.Provider)
+	}
+	if !env.StreamRequested {
+		t.Fatal("StreamRequested = false, want true")
 	}
 }
 
@@ -127,7 +130,7 @@ func TestDecodeCanonicalSelector_UsesOperationCodec(t *testing.T) {
 	t.Parallel()
 
 	env := &WhiteBoxPrompt{OperationType: "responses"}
-	model, provider, ok := DecodeCanonicalSelector([]byte(`{"model":"gpt-5-mini","provider":"openai","input":"hi"}`), env)
+	model, provider, ok := DecodeCanonicalSelector([]byte(`{"model":"gpt-5-mini","provider":"openai","stream":true,"input":"hi"}`), env)
 	if !ok {
 		t.Fatal("DecodeCanonicalSelector() ok = false, want true")
 	}
@@ -139,6 +142,9 @@ func TestDecodeCanonicalSelector_UsesOperationCodec(t *testing.T) {
 	}
 	if env.CachedResponsesRequest() == nil {
 		t.Fatal("ResponsesRequest was not cached on semantic envelope")
+	}
+	if !env.StreamRequested {
+		t.Fatal("StreamRequested = false, want true")
 	}
 }
 

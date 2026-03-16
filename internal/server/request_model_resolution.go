@@ -71,6 +71,7 @@ func storeRequestModelResolution(c *echo.Context, resolution *core.RequestModelR
 		cloned := *plan
 		cloned.ProviderType = resolution.ProviderType
 		cloned.Resolution = resolution
+		auditlog.EnrichEntryWithExecutionPlan(c, &cloned)
 		ctx = core.WithExecutionPlan(ctx, &cloned)
 	}
 	if env := core.GetWhiteBoxPrompt(ctx); env != nil {

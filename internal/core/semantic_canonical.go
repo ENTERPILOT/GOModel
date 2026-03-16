@@ -51,9 +51,11 @@ func newCanonicalOperationCodec[T any](key semanticCacheKey, newValue func() T, 
 var canonicalOperationCodecs = map[string]canonicalOperationCodec{
 	"chat_completions": newCanonicalOperationCodec(semanticChatRequestKey, func() *ChatRequest { return &ChatRequest{} }, func(env *WhiteBoxPrompt, req *ChatRequest) {
 		cacheSemanticSelectorHintsFromRequest(env, req)
+		cacheSemanticStreamHint(env, req.Stream)
 	}),
 	"responses": newCanonicalOperationCodec(semanticResponsesRequestKey, func() *ResponsesRequest { return &ResponsesRequest{} }, func(env *WhiteBoxPrompt, req *ResponsesRequest) {
 		cacheSemanticSelectorHintsFromRequest(env, req)
+		cacheSemanticStreamHint(env, req.Stream)
 	}),
 	"embeddings": newCanonicalOperationCodec(semanticEmbeddingRequestKey, func() *EmbeddingRequest { return &EmbeddingRequest{} }, func(env *WhiteBoxPrompt, req *EmbeddingRequest) {
 		cacheSemanticSelectorHintsFromRequest(env, req)
@@ -242,6 +244,13 @@ func cacheSemanticSelectorHints(env *WhiteBoxPrompt, model, provider string) {
 	if env.RouteHints.Provider == "" {
 		env.RouteHints.Provider = provider
 	}
+}
+
+func cacheSemanticStreamHint(env *WhiteBoxPrompt, requested bool) {
+	if env == nil {
+		return
+	}
+	env.StreamRequested = requested
 }
 
 func cacheSemanticSelectorHintsFromRequest(env *WhiteBoxPrompt, req any) {

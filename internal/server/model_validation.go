@@ -69,25 +69,27 @@ func deriveExecutionPlan(c *echo.Context, provider core.RoutableProvider, resolv
 	}
 
 	switch desc.Operation {
-	case "provider_passthrough":
+	case core.OperationProviderPassthrough:
+		passthrough := passthroughRouteInfo(c)
 		providerType, ok := providerPassthroughType(c)
 		if !ok {
 			return nil, nil
 		}
 		plan.Mode = core.ExecutionModePassthrough
 		plan.ProviderType = providerType
+		plan.Passthrough = passthrough
 		auditlog.EnrichEntry(c, "passthrough", providerType)
 		return plan, nil
 
-	case "batches":
+	case core.OperationBatches:
 		plan.Mode = core.ExecutionModeNativeBatch
 		return plan, nil
 
-	case "files":
+	case core.OperationFiles:
 		plan.Mode = core.ExecutionModeNativeFile
 		return plan, nil
 
-	case "chat_completions", "responses", "embeddings":
+	case core.OperationChatCompletions, core.OperationResponses, core.OperationEmbeddings:
 		plan.Mode = core.ExecutionModeTranslated
 		resolution, parsed, err := ensureRequestModelResolution(c, provider, resolver)
 		if err != nil {
@@ -172,7 +174,7 @@ func decodeCanonicalSelectorHintsForValidation(ctx context.Context, env *core.Wh
 
 func isBatchOrFileRootOrSubresource(path string) bool {
 	switch core.DescribeEndpointPath(path).Operation {
-	case "batches", "files":
+	case core.OperationBatches, core.OperationFiles:
 		return true
 	default:
 		return false
@@ -180,7 +182,13 @@ func isBatchOrFileRootOrSubresource(path string) bool {
 }
 
 func providerPassthroughType(c *echo.Context) (string, bool) {
-	if env := core.GetWhiteBoxPrompt(c.Request().Context()); env != nil && env.OperationType == "provider_passthrough" {
+	if info := passthroughRouteInfo(c); info != nil {
+		providerType := strings.TrimSpace(info.Provider)
+		if providerType != "" {
+			return providerType, true
+		}
+	}
+	if env := core.GetWhiteBoxPrompt(c.Request().Context()); env != nil && env.OperationType == string(core.OperationProviderPassthrough) {
 		providerType := strings.TrimSpace(env.RouteHints.Provider)
 		if providerType != "" {
 			return providerType, true
@@ -190,6 +198,49 @@ func providerPassthroughType(c *echo.Context) (string, bool) {
 		return providerType, true
 	}
 	return "", false
+}
+
+func passthroughRouteInfo(c *echo.Context) *core.PassthroughRouteInfo {
+	if c == nil {
+		return nil
+	}
+	if plan := core.GetExecutionPlan(c.Request().Context()); plan != nil && plan.Passthrough != nil {
+		if plan.Passthrough.Provider == "" && strings.TrimSpace(plan.ProviderType) != "" {
+			plan.Passthrough.Provider = strings.TrimSpace(plan.ProviderType)
+		}
+		if plan.Passthrough.AuditPath == "" {
+			plan.Passthrough.AuditPath = c.Request().URL.Path
+		}
+		return plan.Passthrough
+	}
+	if env := core.GetWhiteBoxPrompt(c.Request().Context()); env != nil {
+		if info := env.CachedPassthroughRouteInfo(); info != nil {
+			if info.AuditPath == "" {
+				info.AuditPath = c.Request().URL.Path
+			}
+			return info
+		}
+		if env.OperationType == string(core.OperationProviderPassthrough) {
+			info := &core.PassthroughRouteInfo{
+				Provider:    env.RouteHints.Provider,
+				RawEndpoint: env.RouteHints.Endpoint,
+				Model:       env.RouteHints.Model,
+				AuditPath:   c.Request().URL.Path,
+			}
+			if info.Provider != "" || info.RawEndpoint != "" || info.Model != "" {
+				return info
+			}
+		}
+	}
+	provider, endpoint, ok := core.ParseProviderPassthroughPath(c.Request().URL.Path)
+	if !ok {
+		return nil
+	}
+	return &core.PassthroughRouteInfo{
+		Provider:    provider,
+		RawEndpoint: endpoint,
+		AuditPath:   c.Request().URL.Path,
+	}
 }
 
 // GetProviderType returns the provider type set by ModelValidation for this request.

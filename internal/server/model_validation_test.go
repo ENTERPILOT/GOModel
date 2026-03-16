@@ -171,7 +171,7 @@ func TestModelValidation(t *testing.T) {
 			e := echo.New()
 			handlerCalled := false
 
-			middleware := ModelValidation(provider)
+			middleware := ExecutionPlanning(provider)
 			handler := middleware(func(c *echo.Context) error {
 				handlerCalled = true
 				return c.String(http.StatusOK, "ok")
@@ -210,7 +210,7 @@ func TestModelValidation_SetsProviderType(t *testing.T) {
 	e := echo.New()
 	var capturedProviderType string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedProviderType = GetProviderType(c)
 		return c.String(http.StatusOK, "ok")
@@ -234,7 +234,7 @@ func TestModelValidation_StoresExecutionPlan(t *testing.T) {
 	e := echo.New()
 	var capturedPlan *core.ExecutionPlan
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedPlan = core.GetExecutionPlan(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -264,13 +264,61 @@ func TestModelValidation_StoresExecutionPlan(t *testing.T) {
 	}
 }
 
+func TestExecutionPlanning_StoresPassthroughRouteInfo(t *testing.T) {
+	provider := &mockProvider{}
+
+	e := echo.New()
+	var capturedPlan *core.ExecutionPlan
+
+	middleware := ExecutionPlanning(provider)
+	handler := middleware(func(c *echo.Context) error {
+		capturedPlan = core.GetExecutionPlan(c.Request().Context())
+		return c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/responses", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodPost,
+		"/p/openai/responses",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte(`{"model":"gpt-5-mini"}`),
+		false,
+		"pass-req-123",
+		nil,
+	)
+	ctx := core.WithRequestSnapshot(req.Context(), frame)
+	ctx = core.WithWhiteBoxPrompt(ctx, core.DeriveWhiteBoxPrompt(frame))
+	req = req.WithContext(ctx)
+	req.Header.Set("X-Request-ID", "pass-req-123")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	require.NoError(t, err)
+
+	if assert.NotNil(t, capturedPlan) {
+		assert.Equal(t, "pass-req-123", capturedPlan.RequestID)
+		assert.Equal(t, core.ExecutionModePassthrough, capturedPlan.Mode)
+		assert.Equal(t, "openai", capturedPlan.ProviderType)
+		if assert.NotNil(t, capturedPlan.Passthrough) {
+			assert.Equal(t, "openai", capturedPlan.Passthrough.Provider)
+			assert.Equal(t, "responses", capturedPlan.Passthrough.RawEndpoint)
+			assert.Equal(t, "gpt-5-mini", capturedPlan.Passthrough.Model)
+			assert.Equal(t, "/p/openai/responses", capturedPlan.Passthrough.AuditPath)
+		}
+	}
+}
+
 func TestModelValidation_SetsRequestIDInContext(t *testing.T) {
 	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
 
 	e := echo.New()
 	var capturedRequestID string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedRequestID = core.GetRequestID(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -295,7 +343,7 @@ func TestModelValidation_DoesNotTreatPrefixOvermatchAsBatchPath(t *testing.T) {
 	e := echo.New()
 	var capturedRequestID string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedRequestID = core.GetRequestID(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -320,7 +368,7 @@ func TestModelValidation_BodyRewound(t *testing.T) {
 	e := echo.New()
 	var boundReq core.ChatRequest
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		if err := c.Bind(&boundReq); err != nil {
 			return err
@@ -347,7 +395,7 @@ func TestModelValidation_DoesNotReadLiveBodyWhenSelectorHintsAlreadyExist(t *tes
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -384,7 +432,7 @@ func TestModelValidation_UsesIngressBodyForMissingSelectorHints(t *testing.T) {
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -428,7 +476,7 @@ func TestModelValidation_RegistryNotInitializedReturnsGatewayError(t *testing.T)
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -476,7 +524,7 @@ func TestModelValidation_EnrichesAuditEntryWithRequestedModelOnResolutionError(t
 	e := echo.New()
 	handlerCalled := false
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		handlerCalled = true
 		return c.String(http.StatusOK, "ok")
@@ -513,7 +561,7 @@ func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T)
 	var capturedEnv *core.WhiteBoxPrompt
 	var capturedProviderType string
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedEnv = core.GetWhiteBoxPrompt(c.Request().Context())
 		capturedProviderType = GetProviderType(c)
@@ -553,7 +601,7 @@ func TestModelValidation_CachesCanonicalChatRequestFromIngressBody(t *testing.T)
 	e := echo.New()
 	var capturedEnv *core.WhiteBoxPrompt
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedEnv = core.GetWhiteBoxPrompt(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -603,7 +651,7 @@ func TestModelValidation_CachesCanonicalResponsesRequestFromIngressBody(t *testi
 	e := echo.New()
 	var capturedEnv *core.WhiteBoxPrompt
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedEnv = core.GetWhiteBoxPrompt(c.Request().Context())
 		return c.String(http.StatusOK, "ok")
@@ -709,7 +757,7 @@ func TestModelValidation_ResolvesQualifiedMaskingAliasBeforeProviderParsing(t *t
 		capturedPlan         *core.ExecutionPlan
 	)
 
-	middleware := ModelValidation(provider)
+	middleware := ExecutionPlanning(provider)
 	handler := middleware(func(c *echo.Context) error {
 		capturedProviderType = GetProviderType(c)
 		capturedPlan = core.GetExecutionPlan(c.Request().Context())

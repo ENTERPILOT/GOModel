@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 )
 
@@ -29,6 +30,8 @@ func TestEnsureTranslatedRequestPlan_CompletesPartialPlanFromDecodedSelector(t *
 	req = req.WithContext(ctx)
 
 	c := e.NewContext(req, rec)
+	entry := &auditlog.LogEntry{Data: &auditlog.LogData{}}
+	c.Set(string(auditlog.LogEntryKey), entry)
 	model := "gpt-4o-mini"
 	providerHint := ""
 
@@ -54,4 +57,7 @@ func TestEnsureTranslatedRequestPlan_CompletesPartialPlanFromDecodedSelector(t *
 			assert.Equal(t, "gpt-4o-mini", storedPlan.Resolution.ResolvedSelector.Model)
 		}
 	}
+	assert.Equal(t, "gpt-4o-mini", entry.Model)
+	assert.Equal(t, "gpt-4o-mini", entry.ResolvedModel)
+	assert.Equal(t, "mock", entry.Provider)
 }
