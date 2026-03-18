@@ -2,7 +2,6 @@
 package server
 
 import (
-	"io"
 	"net/http"
 
 	"github.com/labstack/echo/v5"
@@ -61,12 +60,6 @@ func (h *Handler) SetBatchStore(store batchstore.Store) {
 		return
 	}
 	h.batchStore = store
-}
-
-// handleStreamingResponse handles SSE streaming responses for both ChatCompletion and Responses endpoints.
-// It wraps the stream with audit logging and usage tracking, and sets appropriate SSE headers.
-func (h *Handler) handleStreamingResponse(c *echo.Context, model, provider string, streamFn func() (io.ReadCloser, error)) error {
-	return h.translatedInference().handleStreamingResponse(c, model, provider, streamFn)
 }
 
 func (h *Handler) translatedInference() *translatedInferenceService {

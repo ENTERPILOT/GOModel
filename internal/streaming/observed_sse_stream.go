@@ -8,6 +8,13 @@ import (
 
 const maxPendingEventBytes = 256 * 1024
 
+var (
+	lfEventBoundary   = []byte("\n\n")
+	crlfEventBoundary = []byte("\r\n\r\n")
+	dataPrefix        = []byte("data:")
+	donePayload       = []byte("[DONE]")
+)
+
 // Observer receives parsed JSON SSE payloads in stream order.
 // Implementations must treat the payload as read-only.
 type Observer interface {
@@ -79,34 +86,39 @@ func (s *ObservedSSEStream) processChunk(data []byte) {
 	}
 
 	for {
-		idx := bytes.Index(data, []byte("\n\n"))
+		idx, sepLen := nextEventBoundary(data)
 		if idx == -1 {
 			s.savePending(data)
 			return
 		}
 
 		s.processEvent(data[:idx])
-		data = data[idx+2:]
+		data = data[idx+sepLen:]
 	}
 }
 
 func (s *ObservedSSEStream) processBufferedEvents(data []byte) {
-	for _, event := range bytes.Split(data, []byte("\n\n")) {
-		if len(event) == 0 {
-			continue
+	for len(data) > 0 {
+		idx, sepLen := nextEventBoundary(data)
+		if idx == -1 {
+			s.processEvent(data)
+			return
 		}
-		s.processEvent(event)
+		if idx > 0 {
+			s.processEvent(data[:idx])
+		}
+		data = data[idx+sepLen:]
 	}
 }
 
 func (s *ObservedSSEStream) processEvent(event []byte) {
 	lines := bytes.Split(event, []byte("\n"))
 	for _, line := range lines {
-		if !bytes.HasPrefix(line, []byte("data: ")) {
+		jsonData, ok := parseDataLine(line)
+		if !ok {
 			continue
 		}
-		jsonData := bytes.TrimPrefix(line, []byte("data: "))
-		if bytes.Equal(jsonData, []byte("[DONE]")) {
+		if bytes.Equal(jsonData, donePayload) {
 			continue
 		}
 
@@ -118,6 +130,35 @@ func (s *ObservedSSEStream) processEvent(event []byte) {
 			observer.OnJSONEvent(payload)
 		}
 	}
+}
+
+func nextEventBoundary(data []byte) (idx int, sepLen int) {
+	lfIdx := bytes.Index(data, lfEventBoundary)
+	crlfIdx := bytes.Index(data, crlfEventBoundary)
+
+	switch {
+	case lfIdx == -1:
+		if crlfIdx == -1 {
+			return -1, 0
+		}
+		return crlfIdx, len(crlfEventBoundary)
+	case crlfIdx == -1 || lfIdx < crlfIdx:
+		return lfIdx, len(lfEventBoundary)
+	default:
+		return crlfIdx, len(crlfEventBoundary)
+	}
+}
+
+func parseDataLine(line []byte) ([]byte, bool) {
+	line = bytes.TrimSuffix(line, []byte("\r"))
+	if !bytes.HasPrefix(line, dataPrefix) {
+		return nil, false
+	}
+	payload := bytes.TrimPrefix(line, dataPrefix)
+	if len(payload) > 0 && payload[0] == ' ' {
+		payload = payload[1:]
+	}
+	return payload, true
 }
 
 func (s *ObservedSSEStream) savePending(data []byte) {

@@ -101,3 +101,55 @@ func TestObservedSSEStream_CapsCombinedPendingData(t *testing.T) {
 		t.Fatal("pending bytes do not match the capped suffix of the latest chunk")
 	}
 }
+
+func TestObservedSSEStream_HandlesCRLFAndDataWithoutSpace(t *testing.T) {
+	streamData := "data:{\"id\":\"chatcmpl-1\"}\r\n\r\ndata: {\"id\":\"chatcmpl-2\"}\r\n\r\ndata:[DONE]\r\n\r\n"
+	observer := &trackingObserver{}
+	stream := NewObservedSSEStream(io.NopCloser(strings.NewReader(streamData)), observer)
+
+	data, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+	if string(data) != streamData {
+		t.Fatalf("stream passthrough mismatch")
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+	if observer.eventCount != 2 {
+		t.Fatalf("eventCount = %d, want 2", observer.eventCount)
+	}
+	if observer.lastID != "chatcmpl-2" {
+		t.Fatalf("lastID = %q, want chatcmpl-2", observer.lastID)
+	}
+	if !observer.closed {
+		t.Fatal("observer was not closed")
+	}
+}
+
+func TestObservedSSEStream_ParsesCRLFBufferedEventsOnClose(t *testing.T) {
+	streamData := "data:{\"id\":\"chatcmpl-1\"}\r\n\r\ndata:{\"id\":\"chatcmpl-2\"}"
+	observer := &trackingObserver{}
+	stream := NewObservedSSEStream(io.NopCloser(strings.NewReader(streamData)), observer)
+
+	data, err := io.ReadAll(stream)
+	if err != nil {
+		t.Fatalf("ReadAll error: %v", err)
+	}
+	if string(data) != streamData {
+		t.Fatalf("stream passthrough mismatch")
+	}
+	if err := stream.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
+	if observer.eventCount != 2 {
+		t.Fatalf("eventCount = %d, want 2", observer.eventCount)
+	}
+	if observer.lastID != "chatcmpl-2" {
+		t.Fatalf("lastID = %q, want chatcmpl-2", observer.lastID)
+	}
+	if !observer.closed {
+		t.Fatal("observer was not closed")
+	}
+}

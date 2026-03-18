@@ -2001,7 +2001,7 @@ func TestHandleStreamingResponse_FlushesEachChunk(t *testing.T) {
 		},
 	}
 
-	err := handler.handleStreamingResponse(c, "gpt-4o-mini", "openai", func() (io.ReadCloser, error) {
+	err := handler.translatedInference().handleStreamingResponse(c, "gpt-4o-mini", "openai", func() (io.ReadCloser, error) {
 		return stream, nil
 	})
 	if err != nil {
@@ -2093,7 +2093,7 @@ func TestHandleStreamingResponse_RecordsStreamingError(t *testing.T) {
 		Data:      &auditlog.LogData{},
 	})
 
-	err := handler.handleStreamingResponse(c, "gpt-4o-mini", "openai", func() (io.ReadCloser, error) {
+	err := handler.translatedInference().handleStreamingResponse(c, "gpt-4o-mini", "openai", func() (io.ReadCloser, error) {
 		return &erroringReadCloser{
 			data: []byte("data: {\"id\":\"1\"}\n\n"),
 			err:  expectedErr,
