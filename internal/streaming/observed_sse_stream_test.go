@@ -1,6 +1,7 @@
 package streaming
 
 import (
+	"bytes"
 	"io"
 	"strings"
 	"testing"
@@ -82,5 +83,21 @@ func TestObservedSSEStream_ParsesFragmentedFinalEventOnClose(t *testing.T) {
 	}
 	if !observer.closed {
 		t.Fatal("observer was not closed")
+	}
+}
+
+func TestObservedSSEStream_CapsCombinedPendingData(t *testing.T) {
+	s := &ObservedSSEStream{
+		pending: bytes.Repeat([]byte("a"), maxPendingEventBytes),
+	}
+	data := bytes.Repeat([]byte("b"), maxPendingEventBytes+1024)
+
+	s.processChunk(data)
+
+	if got := len(s.pending); got != maxPendingEventBytes {
+		t.Fatalf("pending length = %d, want %d", got, maxPendingEventBytes)
+	}
+	if !bytes.Equal(s.pending, data[len(data)-maxPendingEventBytes:]) {
+		t.Fatal("pending bytes do not match the capped suffix of the latest chunk")
 	}
 }
