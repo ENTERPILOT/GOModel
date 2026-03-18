@@ -6,8 +6,6 @@ import (
 	"io"
 	"strings"
 	"time"
-
-	"gomodel/internal/core"
 )
 
 // Note: MaxContentCapture and LogEntryStreamingKey constants are defined in constants.go
@@ -399,10 +397,4 @@ func IsEntryMarkedAsStreaming(c interface{ Get(string) interface{} }) bool {
 	}
 	streaming, _ := val.(bool)
 	return streaming
-}
-
-// IsModelInteractionPath returns true if the path is an AI model endpoint
-// Note: /v1/models is excluded as it's just a metadata listing, not a model interaction
-func IsModelInteractionPath(path string) bool {
-	return core.IsModelInteractionPath(path)
 }

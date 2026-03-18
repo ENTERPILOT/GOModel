@@ -133,7 +133,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	if cfg != nil && cfg.LogOnlyModelInteractions {
 		e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 			Skipper: func(c *echo.Context) bool {
-				return !auditlog.IsModelInteractionPath(c.Request().URL.Path)
+				return !core.IsModelInteractionPath(c.Request().URL.Path)
 			},
 			LogStatus:        true,
 			LogURI:           true,

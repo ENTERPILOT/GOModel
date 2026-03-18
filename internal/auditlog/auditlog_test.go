@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"gomodel/internal/core"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,8 +18,6 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/labstack/echo/v5"
-
-	"gomodel/internal/core"
 )
 
 func TestRedactHeaders(t *testing.T) {
@@ -698,9 +697,9 @@ func TestIsModelInteractionPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := IsModelInteractionPath(tt.path)
+			result := core.IsModelInteractionPath(tt.path)
 			if result != tt.expected {
-				t.Errorf("IsModelInteractionPath(%q) = %v, want %v", tt.path, result, tt.expected)
+				t.Errorf("core.IsModelInteractionPath(%q) = %v, want %v", tt.path, result, tt.expected)
 			}
 		})
 	}
