@@ -10,8 +10,7 @@ import (
 	"gomodel/internal/core"
 )
 
-// Note: MaxContentCapture, SSEBufferSize, and LogEntryStreamingKey
-// constants are defined in constants.go
+// Note: MaxContentCapture and LogEntryStreamingKey constants are defined in constants.go
 
 // streamResponseBuilder accumulates data from SSE events to reconstruct a response
 type streamResponseBuilder struct {
@@ -35,14 +34,12 @@ type streamResponseBuilder struct {
 	truncated  bool
 }
 
-// StreamLogWrapper wraps an io.ReadCloser to capture usage data from SSE streams.
-// It buffers the last portion of the stream to extract token usage from the
-// final SSE event (typically contains usage data in OpenAI-compatible APIs).
+// StreamLogWrapper wraps an io.ReadCloser to reconstruct streamed response bodies
+// for audit logging.
 type StreamLogWrapper struct {
 	io.ReadCloser
 	logger    LoggerInterface
 	entry     *LogEntry
-	buffer    bytes.Buffer // rolling 8KB buffer for usage extraction
 	builder   *streamResponseBuilder
 	logBodies bool
 	path      string // request path to detect endpoint type
@@ -51,8 +48,8 @@ type StreamLogWrapper struct {
 	pending   []byte // pending partial SSE data between reads
 }
 
-// NewStreamLogWrapper creates a wrapper around a stream to capture usage data.
-// When the stream is closed, it parses the final usage data and logs the entry.
+// NewStreamLogWrapper creates a wrapper around a stream for audit logging.
+// When the stream is closed, it logs the accumulated entry.
 // The path parameter is used to detect whether this is a ChatCompletion or Responses API request.
 func NewStreamLogWrapper(stream io.ReadCloser, logger LoggerInterface, entry *LogEntry, path string) *StreamLogWrapper {
 	// Use entry's timestamp as start time for duration calculation
@@ -86,27 +83,13 @@ func NewStreamLogWrapper(stream io.ReadCloser, logger LoggerInterface, entry *Lo
 	}
 }
 
-// Read implements io.Reader and buffers recent data to find usage.
+// Read implements io.Reader and incrementally processes SSE chunks for audit capture.
 func (w *StreamLogWrapper) Read(p []byte) (n int, err error) {
 	n, err = w.ReadCloser.Read(p)
 	if n > 0 {
 		// Parse SSE events and accumulate content if body logging is enabled
 		if w.logBodies && w.builder != nil {
 			w.processSSEData(p[:n])
-		}
-
-		// Buffer recent data to parse final usage event
-		if _, errBuf := w.buffer.Write(p[:n]); errBuf != nil {
-			return n, errBuf
-		}
-		// Keep only last SSEBufferSize bytes to find "data: [DONE]" and usage
-		if w.buffer.Len() > SSEBufferSize {
-			// Discard old data, keep recent
-			data := w.buffer.Bytes()
-			w.buffer.Reset()
-			if _, errBuf := w.buffer.Write(data[len(data)-SSEBufferSize:]); errBuf != nil {
-				return n, errBuf
-			}
 		}
 	}
 	return n, err
