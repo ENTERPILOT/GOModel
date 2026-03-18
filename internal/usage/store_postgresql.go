@@ -2,14 +2,36 @@ package usage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const (
+	usageInsertColumnCount     = 15
+	postgresMaxBindParameters  = 65535
+	usageInsertMaxRowsPerQuery = postgresMaxBindParameters / usageInsertColumnCount
+)
+
+const usageInsertPrefix = `
+		INSERT INTO usage (id, request_id, provider_id, timestamp, model, provider,
+			endpoint, input_tokens, output_tokens, total_tokens, raw_data,
+			input_cost, output_cost, total_cost, costs_calculation_caveat)
+		VALUES `
+
+const usageInsertSuffix = `
+		ON CONFLICT (id) DO NOTHING
+	`
+
+type usageBatchExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
 
 // PostgreSQLStore implements UsageStore for PostgreSQL databases.
 type PostgreSQLStore struct {
@@ -108,29 +130,9 @@ func (s *PostgreSQLStore) WriteBatch(ctx context.Context, entries []*UsageEntry)
 
 // writeBatchSmall uses INSERT for small batches
 func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*UsageEntry) error {
-	var errs []error
-
-	for _, e := range entries {
-		rawDataJSON := marshalRawData(e.RawData, e.ID)
-
-		_, err := s.pool.Exec(ctx, `
-			INSERT INTO usage (id, request_id, provider_id, timestamp, model, provider,
-				endpoint, input_tokens, output_tokens, total_tokens, raw_data,
-				input_cost, output_cost, total_cost, costs_calculation_caveat)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-			ON CONFLICT (id) DO NOTHING
-		`, e.ID, e.RequestID, e.ProviderID, e.Timestamp, e.Model, e.Provider,
-			e.Endpoint, e.InputTokens, e.OutputTokens, e.TotalTokens, rawDataJSON,
-			e.InputCost, e.OutputCost, e.TotalCost, e.CostsCalculationCaveat)
-
-		if err != nil {
-			slog.Warn("failed to insert usage entry", "error", err, "id", e.ID)
-			errs = append(errs, fmt.Errorf("insert %s: %w", e.ID, err))
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to insert %d of %d usage entries: %w", len(errs), len(entries), errors.Join(errs...))
+	if err := writeUsageInsertChunks(ctx, s.pool, entries); err != nil {
+		slog.Warn("failed to insert usage batch", "error", err, "count", len(entries))
+		return fmt.Errorf("failed to insert %d usage entries: %w", len(entries), err)
 	}
 	return nil
 }
@@ -143,29 +145,9 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*UsageE
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	var errs []error
-
-	for _, e := range entries {
-		rawDataJSON := marshalRawData(e.RawData, e.ID)
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO usage (id, request_id, provider_id, timestamp, model, provider,
-				endpoint, input_tokens, output_tokens, total_tokens, raw_data,
-				input_cost, output_cost, total_cost, costs_calculation_caveat)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-			ON CONFLICT (id) DO NOTHING
-		`, e.ID, e.RequestID, e.ProviderID, e.Timestamp, e.Model, e.Provider,
-			e.Endpoint, e.InputTokens, e.OutputTokens, e.TotalTokens, rawDataJSON,
-			e.InputCost, e.OutputCost, e.TotalCost, e.CostsCalculationCaveat)
-
-		if err != nil {
-			slog.Warn("failed to insert usage entry in batch", "error", err, "id", e.ID)
-			errs = append(errs, fmt.Errorf("insert %s: %w", e.ID, err))
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to insert %d of %d usage entries: %w", len(errs), len(entries), errors.Join(errs...))
+	if err := writeUsageInsertChunks(ctx, tx, entries); err != nil {
+		slog.Warn("failed to insert usage batch in transaction", "error", err, "count", len(entries))
+		return fmt.Errorf("failed to insert %d usage entries: %w", len(entries), err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -173,6 +155,64 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*UsageE
 	}
 
 	return nil
+}
+
+func writeUsageInsertChunks(ctx context.Context, exec usageBatchExecutor, entries []*UsageEntry) error {
+	for start := 0; start < len(entries); start += usageInsertMaxRowsPerQuery {
+		end := min(start+usageInsertMaxRowsPerQuery, len(entries))
+		query, args := buildUsageInsert(entries[start:end])
+		if _, err := exec.Exec(ctx, query, args...); err != nil {
+			return fmt.Errorf("batch chunk [%d:%d): %w", start, end, err)
+		}
+	}
+	return nil
+}
+
+func buildUsageInsert(entries []*UsageEntry) (string, []any) {
+	var builder strings.Builder
+	builder.Grow(len(usageInsertPrefix) + len(usageInsertSuffix) + len(entries)*usageInsertColumnCount*4)
+	builder.WriteString(usageInsertPrefix)
+
+	args := make([]any, 0, len(entries)*usageInsertColumnCount)
+	placeholder := 1
+
+	for i, entry := range entries {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+		builder.WriteByte('(')
+		for col := 0; col < usageInsertColumnCount; col++ {
+			if col > 0 {
+				builder.WriteString(", ")
+			}
+			builder.WriteByte('$')
+			builder.WriteString(strconv.Itoa(placeholder))
+			placeholder++
+		}
+		builder.WriteByte(')')
+
+		rawDataJSON := marshalRawData(entry.RawData, entry.ID)
+		args = append(args,
+			entry.ID,
+			entry.RequestID,
+			entry.ProviderID,
+			entry.Timestamp,
+			entry.Model,
+			entry.Provider,
+			entry.Endpoint,
+			entry.InputTokens,
+			entry.OutputTokens,
+			entry.TotalTokens,
+			rawDataJSON,
+			entry.InputCost,
+			entry.OutputCost,
+			entry.TotalCost,
+			entry.CostsCalculationCaveat,
+		)
+	}
+
+	builder.WriteString(usageInsertSuffix)
+	return builder.String(), args
 }
 
 // Flush is a no-op for PostgreSQL as writes are synchronous.

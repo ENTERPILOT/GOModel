@@ -2,14 +2,35 @@ package auditlog
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
+
+const (
+	auditLogInsertColumnCount     = 15
+	postgresMaxBindParameters     = 65535
+	auditLogInsertMaxRowsPerQuery = postgresMaxBindParameters / auditLogInsertColumnCount
+)
+
+const auditLogInsertPrefix = `
+		INSERT INTO audit_logs (id, timestamp, duration_ns, model, resolved_model, provider, alias_used, status_code,
+			request_id, client_ip, method, path, stream, error_type, data)
+		VALUES `
+
+const auditLogInsertSuffix = `
+		ON CONFLICT (id) DO NOTHING
+	`
+
+type auditLogBatchExecutor interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+}
 
 // PostgreSQLStore implements LogStore for PostgreSQL databases.
 type PostgreSQLStore struct {
@@ -114,62 +135,24 @@ func (s *PostgreSQLStore) WriteBatch(ctx context.Context, entries []*LogEntry) e
 
 // writeBatchSmall uses INSERT for small batches
 func (s *PostgreSQLStore) writeBatchSmall(ctx context.Context, entries []*LogEntry) error {
-	var errs []error
-
-	for _, e := range entries {
-		dataJSON := marshalLogData(e.Data, e.ID)
-
-		_, err := s.pool.Exec(ctx, `
-			INSERT INTO audit_logs (id, timestamp, duration_ns, model, resolved_model, provider, alias_used, status_code,
-				request_id, client_ip, method, path, stream, error_type, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-			ON CONFLICT (id) DO NOTHING
-		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.ResolvedModel, e.Provider, e.AliasUsed, e.StatusCode,
-			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream, e.ErrorType, dataJSON)
-
-		if err != nil {
-			slog.Warn("failed to insert audit log", "error", err, "id", e.ID)
-			errs = append(errs, fmt.Errorf("insert %s: %w", e.ID, err))
-		}
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to insert %d of %d audit logs: %w", len(errs), len(entries), errors.Join(errs...))
+	if err := writeAuditLogInsertChunks(ctx, s.pool, entries); err != nil {
+		slog.Warn("failed to insert audit log batch", "error", err, "count", len(entries))
+		return fmt.Errorf("failed to insert %d audit logs: %w", len(entries), err)
 	}
 	return nil
 }
 
 // writeBatchLarge uses batch insert for larger batches
 func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEntry) error {
-	// For larger batches, use individual inserts in a transaction
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
-	var errs []error
-
-	for _, e := range entries {
-		dataJSON := marshalLogData(e.Data, e.ID)
-
-		_, err = tx.Exec(ctx, `
-			INSERT INTO audit_logs (id, timestamp, duration_ns, model, resolved_model, provider, alias_used, status_code,
-				request_id, client_ip, method, path, stream, error_type, data)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-			ON CONFLICT (id) DO NOTHING
-		`, e.ID, e.Timestamp, e.DurationNs, e.Model, e.ResolvedModel, e.Provider, e.AliasUsed, e.StatusCode,
-			e.RequestID, e.ClientIP, e.Method, e.Path, e.Stream, e.ErrorType, dataJSON)
-
-		if err != nil {
-			slog.Warn("failed to insert audit log in batch", "error", err, "id", e.ID)
-			errs = append(errs, fmt.Errorf("insert %s: %w", e.ID, err))
-		}
-	}
-
-	// If any inserts failed, rollback and return error (consistent with writeBatchSmall)
-	if len(errs) > 0 {
-		return fmt.Errorf("failed to insert %d of %d audit logs: %w", len(errs), len(entries), errors.Join(errs...))
+	if err := writeAuditLogInsertChunks(ctx, tx, entries); err != nil {
+		slog.Warn("failed to insert audit log batch in transaction", "error", err, "count", len(entries))
+		return fmt.Errorf("failed to insert %d audit logs: %w", len(entries), err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -177,6 +160,64 @@ func (s *PostgreSQLStore) writeBatchLarge(ctx context.Context, entries []*LogEnt
 	}
 
 	return nil
+}
+
+func writeAuditLogInsertChunks(ctx context.Context, exec auditLogBatchExecutor, entries []*LogEntry) error {
+	for start := 0; start < len(entries); start += auditLogInsertMaxRowsPerQuery {
+		end := min(start+auditLogInsertMaxRowsPerQuery, len(entries))
+		query, args := buildAuditLogInsert(entries[start:end])
+		if _, err := exec.Exec(ctx, query, args...); err != nil {
+			return fmt.Errorf("batch chunk [%d:%d): %w", start, end, err)
+		}
+	}
+	return nil
+}
+
+func buildAuditLogInsert(entries []*LogEntry) (string, []any) {
+	var builder strings.Builder
+	builder.Grow(len(auditLogInsertPrefix) + len(auditLogInsertSuffix) + len(entries)*auditLogInsertColumnCount*4)
+	builder.WriteString(auditLogInsertPrefix)
+
+	args := make([]any, 0, len(entries)*auditLogInsertColumnCount)
+	placeholder := 1
+
+	for i, entry := range entries {
+		if i > 0 {
+			builder.WriteString(", ")
+		}
+		builder.WriteByte('(')
+		for col := 0; col < auditLogInsertColumnCount; col++ {
+			if col > 0 {
+				builder.WriteString(", ")
+			}
+			builder.WriteByte('$')
+			builder.WriteString(strconv.Itoa(placeholder))
+			placeholder++
+		}
+		builder.WriteByte(')')
+
+		dataJSON := marshalLogData(entry.Data, entry.ID)
+		args = append(args,
+			entry.ID,
+			entry.Timestamp,
+			entry.DurationNs,
+			entry.Model,
+			entry.ResolvedModel,
+			entry.Provider,
+			entry.AliasUsed,
+			entry.StatusCode,
+			entry.RequestID,
+			entry.ClientIP,
+			entry.Method,
+			entry.Path,
+			entry.Stream,
+			entry.ErrorType,
+			dataJSON,
+		)
+	}
+
+	builder.WriteString(auditLogInsertSuffix)
+	return builder.String(), args
 }
 
 // Flush is a no-op for PostgreSQL as writes are synchronous.
