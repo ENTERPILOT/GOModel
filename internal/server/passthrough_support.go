@@ -12,6 +12,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/streaming"
 )
 
 var defaultEnabledPassthroughProviders = []string{"openai", "anthropic"}
@@ -249,7 +250,11 @@ func (s *passthroughService) proxyPassthroughResponse(c *echo.Context, providerT
 			streamEntry.StatusCode = resp.StatusCode
 		}
 
-		wrappedStream := auditlog.WrapStreamForLogging(resp.Body, s.logger, streamEntry, passthroughAuditPath(c, providerType, endpoint, info))
+		observers := make([]streaming.Observer, 0, 1)
+		if observer := auditlog.NewStreamLogObserver(s.logger, streamEntry, passthroughAuditPath(c, providerType, endpoint, info)); observer != nil {
+			observers = append(observers, observer)
+		}
+		wrappedStream := streaming.NewObservedSSEStream(resp.Body, observers...)
 		defer func() {
 			_ = wrappedStream.Close()
 		}()

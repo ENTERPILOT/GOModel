@@ -149,7 +149,7 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 				}
 			}
 
-			// Write log entry asynchronously (skip if streaming - StreamLogWrapper handles it)
+			// Write log entry asynchronously (skip if streaming - the stream observer path handles it)
 			if !IsEntryMarkedAsStreaming(c) {
 				logger.Write(entry)
 			}
@@ -262,7 +262,7 @@ type responseBodyCapture struct {
 	body      *bytes.Buffer
 	truncated bool
 	// shouldCapture allows middleware to stop buffering once the request is
-	// known to be streaming. Streaming responses are handled by StreamLogWrapper.
+	// known to be streaming. Streaming responses are handled by the stream observer path.
 	shouldCapture func() bool
 }
 

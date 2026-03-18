@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"gomodel/internal/core"
+	"gomodel/internal/streaming"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -705,7 +706,7 @@ func TestIsModelInteractionPath(t *testing.T) {
 	}
 }
 
-func TestStreamLogWrapper(t *testing.T) {
+func TestStreamLogObserver(t *testing.T) {
 	// Create a mock stream with content
 	streamContent := `data: {"id":"chatcmpl-123","choices":[{"delta":{"content":"Hello"}}]}
 
@@ -733,19 +734,21 @@ data: [DONE]
 		Data:      &LogData{},
 	}
 
-	// Wrap the stream
-	wrapper := NewStreamLogWrapper(stream, logger, entry, "/v1/chat/completions")
+	observedStream := streaming.NewObservedSSEStream(
+		stream,
+		NewStreamLogObserver(logger, entry, "/v1/chat/completions"),
+	)
 
 	// Read all content
 	var buf bytes.Buffer
-	_, err := io.Copy(&buf, wrapper)
+	_, err := io.Copy(&buf, observedStream)
 	if err != nil {
 		t.Fatalf("failed to read stream: %v", err)
 	}
 
-	// Close wrapper to trigger logging
-	if err := wrapper.Close(); err != nil {
-		t.Fatalf("failed to close wrapper: %v", err)
+	// Close stream to trigger logging
+	if err := observedStream.Close(); err != nil {
+		t.Fatalf("failed to close stream: %v", err)
 	}
 
 	// Wait for async write
@@ -757,20 +760,12 @@ data: [DONE]
 	}
 }
 
-func TestWrapStreamForLogging(t *testing.T) {
-	stream := io.NopCloser(strings.NewReader("test"))
-
-	// Test with nil logger
-	result := WrapStreamForLogging(stream, nil, nil, "/v1/chat/completions")
-	if result != stream {
-		t.Error("expected original stream with nil logger")
+func TestNewStreamLogObserverNilInputs(t *testing.T) {
+	if observer := NewStreamLogObserver(nil, &LogEntry{}, "/v1/chat/completions"); observer != nil {
+		t.Error("expected nil observer with nil logger")
 	}
-
-	// Test with disabled logger
-	noopLogger := &NoopLogger{}
-	result = WrapStreamForLogging(stream, noopLogger, &LogEntry{}, "/v1/chat/completions")
-	if result != stream {
-		t.Error("expected original stream with disabled logger")
+	if observer := NewStreamLogObserver(&NoopLogger{}, nil, "/v1/chat/completions"); observer != nil {
+		t.Error("expected nil observer with nil entry")
 	}
 }
 

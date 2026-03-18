@@ -7,7 +7,7 @@ const (
 	MaxBodyCapture = 1024 * 1024
 
 	// MaxContentCapture is the maximum size of accumulated streaming content (1MB).
-	// Used by StreamLogWrapper to limit reconstructed response body size.
+	// Used by the stream observer to limit reconstructed response body size.
 	MaxContentCapture = 1024 * 1024
 
 	// BatchFlushThreshold is the number of entries that triggers an immediate flush.
@@ -27,6 +27,7 @@ const (
 	LogEntryKey contextKey = "auditlog_entry"
 
 	// LogEntryStreamingKey is the context key for marking a request as streaming.
-	// When true, the middleware skips logging (StreamLogWrapper handles it instead).
+	// When true, the middleware skips logging because the stream observer path
+	// handles streaming audit logging.
 	LogEntryStreamingKey contextKey = "auditlog_entry_streaming"
 )

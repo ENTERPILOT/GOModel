@@ -1,10 +1,7 @@
 package auditlog
 
 import (
-	"io"
 	"strings"
-
-	"gomodel/internal/streaming"
 )
 
 // Note: MaxContentCapture and LogEntryStreamingKey constants are defined in constants.go
@@ -28,25 +25,6 @@ type streamResponseBuilder struct {
 	// Tracking
 	contentLen int // track content length to enforce limit
 	truncated  bool
-}
-
-// StreamLogWrapper wraps an io.ReadCloser to reconstruct streamed response bodies
-// for audit logging.
-type StreamLogWrapper struct {
-	io.ReadCloser
-}
-
-// NewStreamLogWrapper creates a wrapper around a stream for audit logging.
-// When the stream is closed, it logs the accumulated entry.
-// The path parameter is used to detect whether this is a ChatCompletion or Responses API request.
-func NewStreamLogWrapper(stream io.ReadCloser, logger LoggerInterface, entry *LogEntry, path string) *StreamLogWrapper {
-	observer := NewStreamLogObserver(logger, entry, path)
-	if observer == nil {
-		return &StreamLogWrapper{ReadCloser: stream}
-	}
-	return &StreamLogWrapper{
-		ReadCloser: streaming.NewObservedSSEStream(stream, observer),
-	}
 }
 
 // buildChatCompletionResponse constructs a ChatCompletion response from accumulated data
@@ -92,16 +70,6 @@ func (b *streamResponseBuilder) buildResponsesAPIResponse() map[string]interface
 	}
 }
 
-// WrapStreamForLogging wraps a stream with logging if enabled.
-// This is a convenience function for use in handlers.
-// The path parameter is used to detect whether this is a ChatCompletion or Responses API request.
-func WrapStreamForLogging(stream io.ReadCloser, logger LoggerInterface, entry *LogEntry, path string) io.ReadCloser {
-	if logger == nil || !logger.Config().Enabled || entry == nil {
-		return stream
-	}
-	return NewStreamLogWrapper(stream, logger, entry, path)
-}
-
 // CreateStreamEntry creates a new log entry for a streaming request.
 // This should be called before starting the stream.
 func CreateStreamEntry(baseEntry *LogEntry) *LogEntry {
@@ -109,8 +77,8 @@ func CreateStreamEntry(baseEntry *LogEntry) *LogEntry {
 		return nil
 	}
 
-	// Create a copy of the entry for the stream
-	// The stream wrapper will complete and write it when the stream closes
+	// Create a copy of the entry for the stream.
+	// The stream observer will complete and write it when the stream closes.
 	entryCopy := &LogEntry{
 		ID:            baseEntry.ID,
 		Timestamp:     baseEntry.Timestamp,
@@ -172,7 +140,7 @@ func GetStreamEntryFromContext(c interface{ Get(string) interface{} }) *LogEntry
 }
 
 // MarkEntryAsStreaming marks the entry as a streaming request so the middleware
-// knows not to log it (the stream wrapper will handle logging).
+// knows not to log it (the stream observer path will handle logging).
 func MarkEntryAsStreaming(c interface{ Set(string, interface{}) }, isStreaming bool) {
 	c.Set(string(LogEntryStreamingKey), isStreaming)
 }
