@@ -16,7 +16,6 @@ import (
 type streamResponseBuilder struct {
 	// ChatCompletion fields
 	ID           string
-	Object       string
 	Model        string
 	Created      int64
 	Role         string
@@ -42,7 +41,6 @@ type StreamLogWrapper struct {
 	entry     *LogEntry
 	builder   *streamResponseBuilder
 	logBodies bool
-	path      string // request path to detect endpoint type
 	closed    bool
 	startTime time.Time
 	pending   []byte // pending partial SSE data between reads
@@ -78,7 +76,6 @@ func NewStreamLogWrapper(stream io.ReadCloser, logger LoggerInterface, entry *Lo
 		entry:      entry,
 		startTime:  startTime,
 		logBodies:  logBodies,
-		path:       path,
 		builder:    builder,
 	}
 }
@@ -158,9 +155,6 @@ func (w *StreamLogWrapper) parseChatCompletionEvent(event map[string]interface{}
 	if w.builder.ID == "" {
 		if id, ok := event["id"].(string); ok {
 			w.builder.ID = id
-		}
-		if obj, ok := event["object"].(string); ok {
-			w.builder.Object = obj
 		}
 		if model, ok := event["model"].(string); ok {
 			w.builder.Model = model

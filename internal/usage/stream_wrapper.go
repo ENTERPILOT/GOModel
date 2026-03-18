@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"strings"
 
 	"gomodel/internal/core"
 )
@@ -301,18 +300,4 @@ func WrapStreamForUsage(stream io.ReadCloser, logger LoggerInterface, model, pro
 		return stream
 	}
 	return NewStreamUsageWrapper(stream, logger, model, provider, requestID, endpoint, pricingResolver)
-}
-
-// IsModelInteractionPath returns true if the path is an AI model endpoint
-func IsModelInteractionPath(path string) bool {
-	modelPaths := []string{
-		"/v1/chat/completions",
-		"/v1/responses",
-	}
-	for _, p := range modelPaths {
-		if strings.HasPrefix(path, p) {
-			return true
-		}
-	}
-	return false
 }

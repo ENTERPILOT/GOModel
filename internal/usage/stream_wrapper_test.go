@@ -5,6 +5,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"gomodel/internal/core"
 )
 
 // trackingLogger tracks written entries for testing
@@ -217,9 +219,9 @@ func TestIsModelInteractionPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			got := IsModelInteractionPath(tt.path)
+			got := core.IsModelInteractionPath(tt.path)
 			if got != tt.want {
-				t.Errorf("IsModelInteractionPath(%q) = %v, want %v", tt.path, got, tt.want)
+				t.Errorf("core.IsModelInteractionPath(%q) = %v, want %v", tt.path, got, tt.want)
 			}
 		})
 	}
