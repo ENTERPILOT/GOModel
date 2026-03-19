@@ -59,11 +59,11 @@ changelog:
       order: 999
   filters:
     exclude:
-      - '^docs(\([^)]+\))?:'
-      - '^test(\([^)]+\))?:'
-      - '^ci(\([^)]+\))?:'
-      - '^build(\([^)]+\))?:'
-      - '^chore(\([^)]+\))?:'
-      - '^refactor(\([^)]+\))?:'
+      - '^docs(\([^)]+\))?!?:'
+      - '^test(\([^)]+\))?!?:'
+      - '^ci(\([^)]+\))?!?:'
+      - '^build(\([^)]+\))?!?:'
+      - '^chore(\([^)]+\))?!?:'
+      - '^refactor(\([^)]+\))?!?:'
       - 'Merge pull request'
       - 'Merge branch'
