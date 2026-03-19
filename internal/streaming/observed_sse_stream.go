@@ -7,6 +7,7 @@ import (
 )
 
 const maxPendingEventBytes = 256 * 1024
+const maxBoundaryTailBytes = 3
 
 var (
 	lfEventBoundary   = []byte("\n\n")
@@ -26,10 +27,11 @@ type Observer interface {
 // and fanning them out to observers.
 type ObservedSSEStream struct {
 	io.ReadCloser
-	observers  []Observer
-	pending    []byte
-	closed     bool
-	discarding bool
+	observers   []Observer
+	pending     []byte
+	discardTail []byte
+	closed      bool
+	discarding  bool
 }
 
 // NewObservedSSEStream returns the original stream when there are no observers.
@@ -76,44 +78,57 @@ func (s *ObservedSSEStream) Close() error {
 
 func (s *ObservedSSEStream) processChunk(data []byte) {
 	if len(s.pending) > 0 {
-		idx, sepLen := nextEventBoundary(data)
+		pendingLen := len(s.pending)
+		idx, sepLen := nextJoinedEventBoundary(s.pending, data)
 		if idx == -1 {
-			if len(data) > maxPendingEventBytes || len(s.pending) > maxPendingEventBytes-len(data) {
-				s.pending = nil
-				s.discarding = true
+			if len(data) > maxPendingEventBytes || pendingLen > maxPendingEventBytes-len(data) {
+				s.startDiscarding(s.pending, data)
 				return
 			}
 
-			combinedLen := len(s.pending) + len(data)
+			combinedLen := pendingLen + len(data)
 			combined := make([]byte, combinedLen)
 			copy(combined, s.pending)
-			copy(combined[len(s.pending):], data)
+			copy(combined[pendingLen:], data)
 			s.pending = combined
 			return
 		}
 
-		if idx > maxPendingEventBytes || len(s.pending) > maxPendingEventBytes-idx {
+		if idx > maxPendingEventBytes {
 			s.pending = nil
-			data = data[idx+sepLen:]
-		} else {
-			combinedLen := len(s.pending) + idx
-			event := make([]byte, combinedLen)
-			copy(event, s.pending)
-			copy(event[len(s.pending):], data[:idx])
+			data = data[dataOffsetAfterBoundary(pendingLen, idx, sepLen):]
+		} else if idx < pendingLen {
+			event := append([]byte(nil), s.pending[:idx]...)
 			s.pending = nil
 			s.processEvent(event)
-			data = data[idx+sepLen:]
+			data = data[dataOffsetAfterBoundary(pendingLen, idx, sepLen):]
+		} else {
+			dataIdx := idx - pendingLen
+			if pendingLen > maxPendingEventBytes-dataIdx {
+				s.pending = nil
+				data = data[dataIdx+sepLen:]
+			} else {
+				combinedLen := pendingLen + dataIdx
+				event := make([]byte, combinedLen)
+				copy(event, s.pending)
+				copy(event[pendingLen:], data[:dataIdx])
+				s.pending = nil
+				s.processEvent(event)
+				data = data[dataIdx+sepLen:]
+			}
 		}
 	}
 
 	for len(data) > 0 {
 		if s.discarding {
-			idx, sepLen := nextEventBoundary(data)
+			idx, sepLen := nextJoinedEventBoundary(s.discardTail, data)
 			if idx == -1 {
+				s.discardTail = joinedSuffix(s.discardTail, data, maxBoundaryTailBytes)
 				return
 			}
-			data = data[idx+sepLen:]
+			data = data[dataOffsetAfterBoundary(len(s.discardTail), idx, sepLen):]
 			s.discarding = false
+			s.discardTail = nil
 			continue
 		}
 
@@ -210,9 +225,107 @@ func (s *ObservedSSEStream) savePending(data []byte) {
 		return
 	}
 	if len(data) > maxPendingEventBytes {
-		s.pending = nil
-		s.discarding = true
+		s.startDiscarding(nil, data)
 		return
 	}
 	s.pending = append(s.pending[:0], data...)
+}
+
+func (s *ObservedSSEStream) startDiscarding(prefix, data []byte) {
+	s.pending = nil
+	s.discarding = true
+	s.discardTail = joinedSuffix(prefix, data, maxBoundaryTailBytes)
+}
+
+func nextJoinedEventBoundary(prefix, data []byte) (idx int, sepLen int) {
+	idx = -1
+
+	crossIdx, crossSepLen := nextBoundaryAcrossJoin(prefix, data)
+	if crossIdx != -1 {
+		idx, sepLen = crossIdx, crossSepLen
+	}
+
+	dataIdx, dataSepLen := nextEventBoundary(data)
+	if dataIdx != -1 {
+		combinedIdx := len(prefix) + dataIdx
+		if idx == -1 || combinedIdx < idx {
+			idx, sepLen = combinedIdx, dataSepLen
+		}
+	}
+
+	return idx, sepLen
+}
+
+func nextBoundaryAcrossJoin(prefix, data []byte) (idx int, sepLen int) {
+	idx = -1
+	start := len(prefix) - maxBoundaryTailBytes
+	if start < 0 {
+		start = 0
+	}
+
+	for offset := start; offset < len(prefix); offset++ {
+		for _, boundary := range [][]byte{lfEventBoundary, crlfEventBoundary} {
+			if offset+len(boundary) <= len(prefix) {
+				continue
+			}
+			if joinedBytesMatch(prefix, data, offset, boundary) {
+				if idx == -1 || offset < idx {
+					idx = offset
+					sepLen = len(boundary)
+				}
+			}
+		}
+	}
+
+	return idx, sepLen
+}
+
+func joinedBytesMatch(prefix, data []byte, start int, boundary []byte) bool {
+	for i, want := range boundary {
+		pos := start + i
+		var got byte
+		switch {
+		case pos < len(prefix):
+			got = prefix[pos]
+		case pos-len(prefix) < len(data):
+			got = data[pos-len(prefix)]
+		default:
+			return false
+		}
+		if got != want {
+			return false
+		}
+	}
+	return true
+}
+
+func dataOffsetAfterBoundary(prefixLen, idx, sepLen int) int {
+	if idx >= prefixLen {
+		return idx - prefixLen + sepLen
+	}
+
+	prefixConsumed := prefixLen - idx
+	if prefixConsumed >= sepLen {
+		return 0
+	}
+	return sepLen - prefixConsumed
+}
+
+func joinedSuffix(prefix, data []byte, n int) []byte {
+	if n <= 0 {
+		return nil
+	}
+	if len(data) >= n {
+		return append([]byte(nil), data[len(data)-n:]...)
+	}
+
+	needPrefix := n - len(data)
+	if needPrefix > len(prefix) {
+		needPrefix = len(prefix)
+	}
+
+	result := make([]byte, needPrefix+len(data))
+	copy(result, prefix[len(prefix)-needPrefix:])
+	copy(result[needPrefix:], data)
+	return result
 }

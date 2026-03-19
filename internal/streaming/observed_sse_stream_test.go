@@ -121,6 +121,26 @@ func TestObservedSSEStream_ReassemblesMultilineDataEvent(t *testing.T) {
 	}
 }
 
+func TestObservedSSEStream_DetectsBoundarySplitAcrossReads(t *testing.T) {
+	observer := &trackingObserver{}
+	s := &ObservedSSEStream{
+		observers: []Observer{observer},
+	}
+
+	s.processChunk([]byte("data:{\"id\":\"chatcmpl-1\"}\r\n\r"))
+	s.processChunk([]byte("\ndata:{\"id\":\"chatcmpl-2\"}\r\n\r\n"))
+
+	if observer.eventCount != 2 {
+		t.Fatalf("eventCount = %d, want 2", observer.eventCount)
+	}
+	if observer.lastID != "chatcmpl-2" {
+		t.Fatalf("lastID = %q, want chatcmpl-2", observer.lastID)
+	}
+	if len(s.pending) != 0 {
+		t.Fatalf("pending length = %d, want 0", len(s.pending))
+	}
+}
+
 func TestObservedSSEStream_DiscardsOversizedPendingDataWithoutTailCapping(t *testing.T) {
 	s := &ObservedSSEStream{
 		pending: bytes.Repeat([]byte("a"), maxPendingEventBytes),
@@ -164,6 +184,34 @@ func TestObservedSSEStream_DropsOversizedBufferedEventAndResumesWithinSameChunk(
 	}
 	if observer.lastID != "fresh" {
 		t.Fatalf("lastID = %q, want fresh", observer.lastID)
+	}
+}
+
+func TestObservedSSEStream_ResumesAfterDiscardWhenBoundarySplitsAcrossReads(t *testing.T) {
+	observer := &trackingObserver{}
+	s := &ObservedSSEStream{
+		observers: []Observer{observer},
+	}
+
+	oversized := append(
+		append(
+			[]byte("data:{\"id\":\"too-big\",\"payload\":\""),
+			bytes.Repeat([]byte("x"), maxPendingEventBytes)...,
+		),
+		[]byte("\"}\r\n\r")...,
+	)
+
+	s.processChunk(oversized)
+	s.processChunk([]byte("\ndata:{\"id\":\"fresh\"}\r\n\r\n"))
+
+	if observer.eventCount != 1 {
+		t.Fatalf("eventCount = %d, want 1", observer.eventCount)
+	}
+	if observer.lastID != "fresh" {
+		t.Fatalf("lastID = %q, want fresh", observer.lastID)
+	}
+	if s.discarding {
+		t.Fatal("discarding = true, want false")
 	}
 }
 
