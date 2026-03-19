@@ -5465,6 +5465,55 @@ func TestProviderPassthrough_OpenAIStreamWritesUsageEntry(t *testing.T) {
 	}
 }
 
+func TestProviderPassthrough_OpenAIStreamUsageKeepsClientVisibleRoute(t *testing.T) {
+	provider := &mockProvider{
+		passthroughResponse: &core.PassthroughResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string][]string{
+				"Content-Type": {"text/event-stream"},
+			},
+			Body: io.NopCloser(strings.NewReader(
+				"data: {\"id\":\"resp-123\",\"model\":\"gpt-5-mini\",\"usage\":{\"input_tokens\":7,\"output_tokens\":3,\"total_tokens\":10}}\n\n" +
+					"data: [DONE]\n\n",
+			)),
+		},
+	}
+	usageLog := &collectingUsageLogger{
+		config: usage.Config{Enabled: true},
+	}
+
+	e := echo.New()
+	handler := NewHandler(provider, nil, usageLog, nil)
+	e.POST("/p/:provider/*", handler.ProviderPassthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/p/openai/v1/responses", strings.NewReader(`{"model":"gpt-5-mini"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Request-ID", "req-pass-stream-visible-path")
+	req = req.WithContext(core.WithExecutionPlan(req.Context(), &core.ExecutionPlan{
+		Mode:         core.ExecutionModePassthrough,
+		ProviderType: "openai",
+		Passthrough: &core.PassthroughRouteInfo{
+			Provider:           "openai",
+			RawEndpoint:        "v1/responses",
+			NormalizedEndpoint: "responses",
+			AuditPath:          "/v1/responses",
+			Model:              "gpt-5-mini",
+		},
+	}))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if len(usageLog.entries) != 1 {
+		t.Fatalf("usage entries = %d, want 1", len(usageLog.entries))
+	}
+	if got := usageLog.entries[0].Endpoint; got != "/p/openai/v1/responses" {
+		t.Fatalf("Endpoint = %q, want /p/openai/v1/responses", got)
+	}
+}
+
 func TestPassthroughStreamAuditPath_NormalizesKnownEndpoints(t *testing.T) {
 	tests := []struct {
 		name        string

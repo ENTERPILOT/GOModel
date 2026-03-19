@@ -253,6 +253,10 @@ func (s *passthroughService) proxyPassthroughResponse(c *echo.Context, providerT
 
 		requestID := requestIDFromContextOrHeader(c.Request())
 		auditPath := passthroughAuditPath(c, providerType, endpoint, info)
+		usagePath := auditPath
+		if requestPath := strings.TrimSpace(c.Request().URL.Path); requestPath != "" {
+			usagePath = requestPath
+		}
 		model := ""
 		if info != nil {
 			model = strings.TrimSpace(info.Model)
@@ -264,7 +268,7 @@ func (s *passthroughService) proxyPassthroughResponse(c *echo.Context, providerT
 			observers = append(observers, observer)
 		}
 		if s.usageLogger != nil && s.usageLogger.Config().Enabled {
-			if observer := usage.NewStreamUsageObserver(s.usageLogger, model, providerType, requestID, auditPath, s.pricingResolver); observer != nil {
+			if observer := usage.NewStreamUsageObserver(s.usageLogger, model, providerType, requestID, usagePath, s.pricingResolver); observer != nil {
 				observers = append(observers, observer)
 			}
 		}
