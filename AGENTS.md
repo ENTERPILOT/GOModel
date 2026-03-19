@@ -21,3 +21,13 @@ Backward compatibility is not a primary constraint in the current development st
 
 1. Make small, focused changes.
 2. Run format/lint/tests relevant to the change.
+
+## Commit Format
+
+Use Conventional Commit format for commit subjects and PR titles:
+
+`type(scope): short summary`
+
+Allowed types: feat, fix, perf, docs, refactor, test, build, ci, chore, revert
+
+Squash merges should preserve the PR title as the resulting commit subject.

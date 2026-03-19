@@ -44,6 +44,16 @@ make swagger           # Regenerate Swagger docs
 
 **Build tags:** E2E tests require `-tags=e2e`, integration tests require `-tags=integration`, contract tests require `-tags=contract`. The Makefile handles this automatically.
 
+## Commit And PR Title Format
+
+Use Conventional Commit format for commit subjects and PR titles:
+
+`type(scope): short summary`
+
+Allowed types: feat, fix, perf, docs, refactor, test, build, ci, chore, revert
+
+Prefer squash-and-merge to keep the merged commit subject aligned with the PR title.
+
 ## Error Handling
 
 - All errors returned to clients must be instances of `core.GatewayError`.
