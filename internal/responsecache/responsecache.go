@@ -110,15 +110,18 @@ func (m *ResponseCacheMiddleware) HandleRequest(c *echo.Context, body []byte, ne
 		}
 	}
 
-	if !skipSemantic {
-		return m.semantic.Handle(c, body, next)
-	}
-
+	// innerNext is what actually calls the LLM. When exact caching is active we
+	// wrap next inside StoreAfter so both cache layers write on a full miss.
+	innerNext := next
 	if !skipExact && m.simple != nil {
-		return m.simple.StoreAfter(c, body, next)
+		innerNext = func() error { return m.simple.StoreAfter(c, body, next) }
 	}
 
-	return next()
+	if !skipSemantic {
+		return m.semantic.Handle(c, body, innerNext)
+	}
+
+	return innerNext()
 }
 
 // Close waits for any in-flight cache writes to complete, then releases cache resources.
