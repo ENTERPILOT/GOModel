@@ -60,46 +60,72 @@ func (m *simpleCacheMiddleware) Middleware() echo.MiddlewareFunc {
 			if shouldSkipCacheForExecutionPlan(plan) {
 				return next(c)
 			}
-			key := hashRequest(path, body, plan)
-			ctx := c.Request().Context()
-			cached, err := m.store.Get(ctx, key)
-			if err != nil {
-				return next(c)
-			}
-			if len(cached) > 0 {
-				c.Response().Header().Set("Content-Type", "application/json")
-				c.Response().Header().Set("X-Cache", "HIT")
-				c.Response().WriteHeader(http.StatusOK)
-				_, _ = c.Response().Write(cached)
-				slog.Info("response cache hit",
-					"path", path,
-					"request_id", c.Request().Header.Get("X-Request-ID"),
-				)
-				return nil
-			}
-			capture := &responseCapture{
-				ResponseWriter: c.Response(),
-				body:           &bytes.Buffer{},
-			}
-			c.SetResponse(capture)
-			if err := next(c); err != nil {
+			hit, err := m.TryHit(c, body)
+			if err != nil || hit {
 				return err
 			}
-			if capture.status == http.StatusOK && capture.body.Len() > 0 {
-				data := bytes.Clone(capture.body.Bytes())
-				m.wg.Add(1)
-				go func() {
-					defer m.wg.Done()
-					storeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-					defer cancel()
-					if err := m.store.Set(storeCtx, key, data, m.ttl); err != nil {
-						slog.Warn("response cache write failed", "key", key, "err", err)
-					}
-				}()
-			}
-			return nil
+			return m.StoreAfter(c, body, func() error { return next(c) })
 		}
 	}
+}
+
+// TryHit checks the exact-match cache. Returns (true, nil) and writes the cached
+// response if found. Returns (false, nil) on a miss.
+func (m *simpleCacheMiddleware) TryHit(c *echo.Context, body []byte) (bool, error) {
+	if m == nil || m.store == nil {
+		return false, nil
+	}
+	path := c.Request().URL.Path
+	plan := core.GetExecutionPlan(c.Request().Context())
+	key := hashRequest(path, body, plan)
+	cached, err := m.store.Get(c.Request().Context(), key)
+	if err != nil {
+		return false, nil
+	}
+	if len(cached) > 0 {
+		c.Response().Header().Set("Content-Type", "application/json")
+		c.Response().Header().Set("X-Cache", "HIT")
+		c.Response().WriteHeader(http.StatusOK)
+		_, _ = c.Response().Write(cached)
+		slog.Info("response cache hit (exact)",
+			"path", path,
+			"request_id", c.Request().Header.Get("X-Request-ID"),
+		)
+		return true, nil
+	}
+	return false, nil
+}
+
+// StoreAfter calls next, captures the response, and asynchronously stores it on 200 OK.
+func (m *simpleCacheMiddleware) StoreAfter(c *echo.Context, body []byte, next func() error) error {
+	if m == nil || m.store == nil {
+		return next()
+	}
+	path := c.Request().URL.Path
+	plan := core.GetExecutionPlan(c.Request().Context())
+	key := hashRequest(path, body, plan)
+
+	capture := &responseCapture{
+		ResponseWriter: c.Response(),
+		body:           &bytes.Buffer{},
+	}
+	c.SetResponse(capture)
+	if err := next(); err != nil {
+		return err
+	}
+	if capture.status == http.StatusOK && capture.body.Len() > 0 {
+		data := bytes.Clone(capture.body.Bytes())
+		m.wg.Add(1)
+		go func() {
+			defer m.wg.Done()
+			storeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			if err := m.store.Set(storeCtx, key, data, m.ttl); err != nil {
+				slog.Warn("response cache write failed", "key", key, "err", err)
+			}
+		}()
+	}
+	return nil
 }
 
 // close waits for all in-flight cache writes to complete, then closes the store.

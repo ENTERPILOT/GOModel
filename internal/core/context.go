@@ -20,6 +20,11 @@ const (
 	// enforceReturningUsageDataKey stores whether streaming requests should ask providers
 	// to include usage when the provider supports it.
 	enforceReturningUsageDataKey contextKey = "enforce-returning-usage-data"
+
+	// guardrailsHashKey stores the SHA-256 hash of the applied guardrail rules
+	// for the current request. Set by the translated inference handlers after
+	// PatchChatRequest; consumed by the semantic cache to build params_hash.
+	guardrailsHashKey contextKey = "guardrails-hash"
 )
 
 // WithRequestID returns a new context with the request ID attached.
@@ -112,4 +117,22 @@ func GetEnforceReturningUsageData(ctx context.Context) bool {
 		}
 	}
 	return false
+}
+
+// WithGuardrailsHash returns a new context with the guardrails hash attached.
+// The hash is the SHA-256 of all applied guardrail rule IDs and their versions,
+// computed post-patch in the translated inference handlers.
+func WithGuardrailsHash(ctx context.Context, hash string) context.Context {
+	return context.WithValue(ctx, guardrailsHashKey, hash)
+}
+
+// GetGuardrailsHash retrieves the guardrails hash from the context.
+// Returns empty string when no guardrails are active or the hash has not been set.
+func GetGuardrailsHash(ctx context.Context) string {
+	if v := ctx.Value(guardrailsHashKey); v != nil {
+		if h, ok := v.(string); ok {
+			return h
+		}
+	}
+	return ""
 }

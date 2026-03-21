@@ -9,6 +9,7 @@ import (
 	"gomodel/internal/auditlog"
 	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
+	"gomodel/internal/responsecache"
 	"gomodel/internal/usage"
 )
 
@@ -25,6 +26,8 @@ type Handler struct {
 	batchStore                   batchstore.Store
 	normalizePassthroughV1Prefix bool
 	enabledPassthroughProviders  map[string]struct{}
+	responseCache                *responsecache.ResponseCacheMiddleware
+	guardrailsHash               string
 }
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
@@ -70,6 +73,8 @@ func (h *Handler) translatedInference() *translatedInferenceService {
 		logger:                   h.logger,
 		usageLogger:              h.usageLogger,
 		pricingResolver:          h.pricingResolver,
+		responseCache:            h.responseCache,
+		guardrailsHash:           h.guardrailsHash,
 	}
 }
 

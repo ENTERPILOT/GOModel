@@ -39,7 +39,7 @@ func TestSimpleCacheMiddleware_CacheHit(t *testing.T) {
 	}
 
 	// Wait for the tracked background write to complete before the second request.
-	mw.inner.wg.Wait()
+	mw.simple.wg.Wait()
 
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 	req2.Header.Set("Content-Type", "application/json")

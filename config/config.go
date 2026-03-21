@@ -296,12 +296,61 @@ type RedisResponseConfig struct {
 
 // ResponseCacheConfig holds configuration for response cache middleware.
 type ResponseCacheConfig struct {
-	Simple SimpleCacheConfig `yaml:"simple"`
+	Simple   SimpleCacheConfig   `yaml:"simple"`
+	Semantic SemanticCacheConfig `yaml:"semantic"`
 }
 
 // SimpleCacheConfig holds configuration for exact-match response caching.
 type SimpleCacheConfig struct {
 	Redis *RedisResponseConfig `yaml:"redis"`
+}
+
+// SemanticCacheConfig holds configuration for the semantic (vector-similarity) response cache.
+type SemanticCacheConfig struct {
+	Enabled                 bool              `yaml:"enabled"                   env:"SEMANTIC_CACHE_ENABLED"`
+	SimilarityThreshold     float64           `yaml:"similarity_threshold"      env:"SEMANTIC_CACHE_THRESHOLD"`
+	TTL                     int               `yaml:"ttl"                       env:"SEMANTIC_CACHE_TTL"`
+	MaxConversationMessages int               `yaml:"max_conversation_messages" env:"SEMANTIC_CACHE_MAX_CONV_MESSAGES"`
+	ExcludeSystemPrompt     bool              `yaml:"exclude_system_prompt"     env:"SEMANTIC_CACHE_EXCLUDE_SYSTEM_PROMPT"`
+	Embedder                EmbedderConfig    `yaml:"embedder"`
+	VectorStore             VectorStoreConfig `yaml:"vector_store"`
+}
+
+// EmbedderConfig selects how embeddings are generated.
+// Provider "local" (default) uses the bundled MiniLM ONNX model.
+// Any other value must match a key in the top-level providers map;
+// that provider's api_key and base_url are reused automatically.
+type EmbedderConfig struct {
+	Provider  string `yaml:"provider"   env:"SEMANTIC_CACHE_EMBEDDER_PROVIDER"`
+	Model     string `yaml:"model"      env:"SEMANTIC_CACHE_EMBEDDER_MODEL"`
+	ModelPath string `yaml:"model_path" env:"SEMANTIC_CACHE_MODEL_PATH"`
+}
+
+// VectorStoreConfig selects the vector DB backend.
+// Type: "sqlite-vec" (default), "qdrant", "pgvector".
+type VectorStoreConfig struct {
+	Type      string          `yaml:"type"       env:"SEMANTIC_CACHE_VECTOR_STORE_TYPE"`
+	SQLiteVec SQLiteVecConfig `yaml:"sqlite_vec"`
+	Qdrant    QdrantConfig    `yaml:"qdrant"`
+	PGVector  PGVectorConfig  `yaml:"pgvector"`
+}
+
+// SQLiteVecConfig holds path configuration for the sqlite-vec vector store.
+type SQLiteVecConfig struct {
+	Path string `yaml:"path" env:"SEMANTIC_CACHE_SQLITE_PATH"`
+}
+
+// QdrantConfig holds connection configuration for the Qdrant vector store.
+type QdrantConfig struct {
+	URL        string `yaml:"url"        env:"SEMANTIC_CACHE_QDRANT_URL"`
+	Collection string `yaml:"collection" env:"SEMANTIC_CACHE_QDRANT_COLLECTION"`
+	APIKey     string `yaml:"api_key"    env:"SEMANTIC_CACHE_QDRANT_API_KEY"`
+}
+
+// PGVectorConfig holds connection configuration for the pgvector vector store.
+type PGVectorConfig struct {
+	URL   string `yaml:"url"   env:"SEMANTIC_CACHE_PGVECTOR_URL"`
+	Table string `yaml:"table" env:"SEMANTIC_CACHE_PGVECTOR_TABLE"`
 }
 
 // ValidateCacheConfig validates the cache configuration in c.
@@ -326,7 +375,33 @@ func ValidateCacheConfig(c *CacheConfig) error {
 	if hasRedis && m.Redis.URL == "" {
 		return fmt.Errorf("cache.model.redis: URL is required when using redis")
 	}
+
+	sem := &c.Response.Semantic
+	if semanticCacheActive(sem) {
+		switch sem.VectorStore.Type {
+		case "sqlite-vec", "qdrant", "pgvector":
+		default:
+			return fmt.Errorf("cache.response.semantic.vector_store.type: must be one of sqlite-vec, qdrant, pgvector; got %q", sem.VectorStore.Type)
+		}
+		if sem.VectorStore.Type == "qdrant" && sem.VectorStore.Qdrant.URL == "" {
+			return fmt.Errorf("cache.response.semantic.vector_store.qdrant.url: required when using qdrant")
+		}
+		if sem.VectorStore.Type == "pgvector" && sem.VectorStore.PGVector.URL == "" {
+			return fmt.Errorf("cache.response.semantic.vector_store.pgvector.url: required when using pgvector")
+		}
+	}
 	return nil
+}
+
+// semanticCacheActive reports whether any semantic cache field has been set,
+// indicating the user intends to enable the semantic cache layer.
+func semanticCacheActive(sem *SemanticCacheConfig) bool {
+	return sem != nil && (sem.SimilarityThreshold != 0 ||
+		sem.TTL != 0 ||
+		sem.MaxConversationMessages != 0 ||
+		sem.VectorStore.Type != "" ||
+		sem.VectorStore.SQLiteVec.Path != "" ||
+		sem.Embedder.Provider != "")
 }
 
 // ServerConfig holds HTTP server configuration
@@ -425,7 +500,23 @@ func buildDefaultConfig() *Config {
 				Local: nil,
 				Redis: nil,
 			},
-			Response: ResponseCacheConfig{},
+			Response: ResponseCacheConfig{
+				Semantic: SemanticCacheConfig{
+					SimilarityThreshold:     0.92,
+					TTL:                     3600,
+					MaxConversationMessages: 3,
+					ExcludeSystemPrompt:     false,
+					Embedder: EmbedderConfig{
+						Provider: "local",
+					},
+					VectorStore: VectorStoreConfig{
+						Type: "sqlite-vec",
+						SQLiteVec: SQLiteVecConfig{
+							Path: ".cache/semantic.db",
+						},
+					},
+				},
+			},
 		},
 		Storage: StorageConfig{
 			Type: "sqlite",

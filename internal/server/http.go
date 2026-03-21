@@ -57,6 +57,7 @@ type Config struct {
 	DashboardHandler             *dashboard.Handler                     // Dashboard UI handler (nil if disabled)
 	SwaggerEnabled               bool                                   // Whether to expose the Swagger UI at /swagger/index.html
 	ResponseCacheMiddleware      *responsecache.ResponseCacheMiddleware // Optional: response cache middleware for cacheable endpoints
+	GuardrailsHash               string                                 // Optional: SHA-256 hash of active guardrail rules; stored in context post-patch for semantic cache
 }
 
 // New creates a new HTTP server
@@ -85,6 +86,8 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	if cfg != nil {
 		handler.batchRequestPreparer = cfg.BatchRequestPreparer
 		handler.exposedModelLister = cfg.ExposedModelLister
+		handler.responseCache = cfg.ResponseCacheMiddleware
+		handler.guardrailsHash = cfg.GuardrailsHash
 	}
 	if cfg != nil && cfg.EnabledPassthroughProviders != nil {
 		handler.setEnabledPassthroughProviders(cfg.EnabledPassthroughProviders)
@@ -205,10 +208,6 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 
 	// Request planning (skips non-model paths via IsModelInteractionPath)
 	e.Use(ExecutionPlanningWithResolver(provider, modelResolver))
-
-	if cfg != nil && cfg.ResponseCacheMiddleware != nil {
-		e.Use(cfg.ResponseCacheMiddleware.Middleware())
-	}
 
 	// Public routes
 	e.GET("/health", handler.Health)

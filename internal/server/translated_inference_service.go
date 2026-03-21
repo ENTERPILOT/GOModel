@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/responsecache"
 	"gomodel/internal/streaming"
 	"gomodel/internal/usage"
 )
@@ -23,6 +25,8 @@ type translatedInferenceService struct {
 	logger                   auditlog.LoggerInterface
 	usageLogger              usage.LoggerInterface
 	pricingResolver          usage.PricingResolver
+	responseCache            *responsecache.ResponseCacheMiddleware
+	guardrailsHash           string
 }
 
 func (s *translatedInferenceService) ChatCompletion(c *echo.Context) error {
@@ -42,6 +46,25 @@ func (s *translatedInferenceService) ChatCompletion(c *echo.Context) error {
 			return handleError(c, err)
 		}
 	}
+
+	if s.guardrailsHash != "" {
+		ctx = core.WithGuardrailsHash(ctx, s.guardrailsHash)
+		c.SetRequest(c.Request().WithContext(ctx))
+	}
+
+	if s.responseCache != nil && !req.Stream {
+		if body, marshalErr := marshalRequestBody(req); marshalErr == nil {
+			return s.responseCache.HandleRequest(c, body, func() error {
+				return s.dispatchChatCompletion(c, req, plan)
+			})
+		}
+	}
+
+	return s.dispatchChatCompletion(c, req, plan)
+}
+
+func (s *translatedInferenceService) dispatchChatCompletion(c *echo.Context, req *core.ChatRequest, plan *core.ExecutionPlan) error {
+	ctx := c.Request().Context()
 	streamReq, providerType, usageModel := s.resolveProviderAndModelFromPlan(c, plan, req.Model, req)
 	requestID := requestIDFromContextOrHeader(c.Request())
 
@@ -80,6 +103,25 @@ func (s *translatedInferenceService) Responses(c *echo.Context) error {
 			return handleError(c, err)
 		}
 	}
+
+	if s.guardrailsHash != "" {
+		ctx = core.WithGuardrailsHash(ctx, s.guardrailsHash)
+		c.SetRequest(c.Request().WithContext(ctx))
+	}
+
+	if s.responseCache != nil && !req.Stream {
+		if body, marshalErr := marshalRequestBody(req); marshalErr == nil {
+			return s.responseCache.HandleRequest(c, body, func() error {
+				return s.dispatchResponses(c, req, plan)
+			})
+		}
+	}
+
+	return s.dispatchResponses(c, req, plan)
+}
+
+func (s *translatedInferenceService) dispatchResponses(c *echo.Context, req *core.ResponsesRequest, plan *core.ExecutionPlan) error {
+	ctx := c.Request().Context()
 	_, providerType, usageModel := s.resolveProviderAndModelFromPlan(c, plan, req.Model, nil)
 	requestID := requestIDFromContextOrHeader(c.Request())
 
@@ -261,4 +303,10 @@ func resolvedModelFromPlan(plan *core.ExecutionPlan, fallback string) string {
 		return resolvedModel
 	}
 	return fallback
+}
+
+// marshalRequestBody serializes a patched request struct to JSON bytes for cache key computation.
+// Returns an error only on marshalling failure; callers bypass cache on error.
+func marshalRequestBody(req any) ([]byte, error) {
+	return json.Marshal(req)
 }
