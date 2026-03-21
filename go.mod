@@ -136,5 +136,5 @@ require (
 	modernc.org/memory v1.11.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
-
+// Fork required for embedding pipeline compatibility with all-minilm-l6-v2-go
 replace github.com/sugarme/tokenizer => github.com/clems4ever/tokenizer v0.0.0-20250926133620-9ddc80533c43
