@@ -40,14 +40,14 @@ flowchart TD
     store --> ret
 ```
 
-Exact layer: `simpleCacheMiddleware` (byte-identical body, SHA-256). Semantic layer: `semanticCacheMiddleware` (vector KNN). On exact **HIT**, respond with `X-Cache: HIT exact`; on semantic **HIT**, `X-Cache: HIT semantic`. On full miss, the handler forwards to the LLM, stores exact + semantic entries, then returns.
+Exact layer: `simpleCacheMiddleware` (byte-identical body, SHA-256). Semantic layer: `semanticCacheMiddleware` (vector KNN). On exact **HIT**, respond with `X-Cache: HIT`; on semantic **HIT**, `X-Cache: HIT (semantic)`. On full miss, the handler forwards to the LLM, stores exact + semantic entries, then returns.
 
 ### Embedding
 
 Unified `Embedder` interface with two implementations:
 
-- `**MiniLMEmbedder`** (default): local `all-MiniLM-L6-v2` via ONNX Runtime (384-dim, zero external dependency). Activated when `embedder.provider` is `"local"` or absent.
-- `**APIEmbedder**`: calls `POST /v1/embeddings` on any configured OpenAI-compatible provider, reusing existing `api_key` + `base_url`. Activated when `embedder.provider` matches a named provider. Unknown provider → startup error.
+- **`MiniLMEmbedder`** (default): local `all-MiniLM-L6-v2` via ONNX Runtime (384-dim, zero external dependency). Activated when `embedder.provider` is `"local"` or absent.
+- **`APIEmbedder`**: calls `POST /v1/embeddings` on any configured OpenAI-compatible provider, reusing existing `api_key` + `base_url`. Activated when `embedder.provider` matches a named provider. Unknown provider → startup error.
 
 Local default is a key differentiator vs. Bifrost/LiteLLM.
 
@@ -73,10 +73,10 @@ TTL implemented via `expires_at` timestamp + read-time filter + background clean
 
 ### Parameter Isolation (`params_hash`)
 
-SHA-256 of output-shaping parameters including `model`, `temperature`, `top_p`, `max_tokens`, `tools` (hashed), `response_format`, `stream`, and `endpoint_type` (for endpoint safety).  
-All KNN searches filter by this hash → prevents serving wrong-format / wrong-parameter responses.
+SHA-256 of output-shaping parameters including `model`, `temperature`, `top_p`, `max_tokens`, `tools` (xxhash64 per tool, then SHA-256 of combined seed), `response_format`, `stream`, `endpoint_type` (for endpoint safety), and `guardrails_hash`.  
+All KNN searches filter by this hash → prevents serving wrong-format / wrong-parameter / wrong-policy responses.
 
-**Future extension**: append `guardrails_hash` (or `execution_plan_hash`) once guardrails exist. Schema already supports it.
+`guardrails_hash` is a SHA-256 of all active guardrail rule names, types, and content (sorted for stability, with xxhash64 used per-component for speed). It is computed once at startup in `app.go` from `config.GuardrailsConfig`, stored in the Echo context under `core.guardrailsHashKey` (via `core.WithGuardrailsHash`) immediately after `PatchChatRequest`, and read by `semanticCacheMiddleware` when building `params_hash`. When guardrail policy changes, the hash changes and old cache entries become unreachable — no manual cache flush needed. Entries expire naturally via TTL.
 
 ### Conversation History Threshold
 
@@ -99,7 +99,6 @@ Bifrost's 0.80 is too aggressive for correctness-sensitive use cases.
 ### What is Explicitly Not Implemented (v1)
 
 - Streaming caching (skipped entirely — phase-2: chunk array storage + replay)  
-- Guardrails / ExecutionPlan hash computation (reserved in design)  
 - Cross-endpoint normalization (`/chat/completions` vs `/responses` vs pass-through) — `endpoint_type` in `params_hash` for safety → Future optimization: canonical response renderer to enable sharing  
 - Cache warming, manual purge, advanced eviction  
 - Prometheus metrics / observability (deferred — basic structured logging sufficient for v1)
