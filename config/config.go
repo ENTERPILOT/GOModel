@@ -54,6 +54,7 @@ type RawProviderConfig struct {
 	Type       string               `yaml:"type"`
 	APIKey     string               `yaml:"api_key"`
 	BaseURL    string               `yaml:"base_url"`
+	APIVersion string               `yaml:"api_version"`
 	Models     []string             `yaml:"models"`
 	Resilience *RawResilienceConfig `yaml:"resilience"`
 }

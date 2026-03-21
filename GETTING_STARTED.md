@@ -196,6 +196,7 @@ Provider credentials:
 | `GROQ_BASE_URL`      | Groq (custom endpoint)                        |
 | `AZURE_API_KEY`      | Azure OpenAI                                  |
 | `AZURE_API_BASE`     | Azure OpenAI deployment base URL              |
+| `AZURE_API_VERSION`  | Azure OpenAI API version override (default: `2024-10-21`) |
 | `OLLAMA_BASE_URL`    | Ollama (default: `http://localhost:11434/v1`) |
 
 
@@ -219,6 +220,9 @@ Ollama requires no API key. Even with no YAML and no `OLLAMA_BASE_URL` set, an O
 
 **Azure requires both key and base URL.**
 `AZURE_API_KEY` alone is not enough for auto-discovery. Set `AZURE_API_BASE` to the Azure deployment endpoint as well, otherwise the provider is ignored.
+
+**Azure ships with a pinned API version by default.**
+If you do not set `AZURE_API_VERSION`, the gateway sends `api-version=2024-10-21`. Override it only when you need a different Azure API version.
 
 **Partial YAML fields leave the rest at defaults.**
 YAML is unmarshalled onto the struct that was already populated by built-in defaults. Only fields that appear in the file are written. Omitting `max_backoff` from `resilience.retry` leaves it at `30s`; you do not need to repeat defaults you are happy with.

@@ -16,7 +16,7 @@ func clearProviderEnvVars(t *testing.T) {
 		"XAI_API_KEY", "XAI_BASE_URL",
 		"GROQ_API_KEY", "GROQ_BASE_URL",
 		"OPENROUTER_API_KEY", "OPENROUTER_BASE_URL",
-		"AZURE_API_KEY", "AZURE_API_BASE",
+		"AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION",
 		"OLLAMA_API_KEY", "OLLAMA_BASE_URL",
 	} {
 		t.Setenv(key, "")

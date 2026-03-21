@@ -13,6 +13,7 @@ type ProviderConfig struct {
 	Type       string
 	APIKey     string
 	BaseURL    string
+	APIVersion string
 	Models     []string
 	Resilience config.ResilienceConfig
 }
@@ -22,21 +23,22 @@ const openRouterDefaultBaseURL = "https://openrouter.ai/api/v1"
 // knownProviderEnvs maps well-known provider names to their environment variables.
 // This list is the authoritative source for provider auto-discovery from env vars.
 var knownProviderEnvs = []struct {
-	name         string
-	providerType string
-	apiKeyEnv    string
-	baseURLEnv   string
-	defaultBase  string
-	requireBase  bool
+	name          string
+	providerType  string
+	apiKeyEnv     string
+	baseURLEnv    string
+	apiVersionEnv string
+	defaultBase   string
+	requireBase   bool
 }{
-	{"openai", "openai", "OPENAI_API_KEY", "OPENAI_BASE_URL", "", false},
-	{"anthropic", "anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "", false},
-	{"gemini", "gemini", "GEMINI_API_KEY", "GEMINI_BASE_URL", "", false},
-	{"xai", "xai", "XAI_API_KEY", "XAI_BASE_URL", "", false},
-	{"groq", "groq", "GROQ_API_KEY", "GROQ_BASE_URL", "", false},
-	{"openrouter", "openai", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", openRouterDefaultBaseURL, false},
-	{"azure", "openai", "AZURE_API_KEY", "AZURE_API_BASE", "", true},
-	{"ollama", "ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "", false},
+	{"openai", "openai", "OPENAI_API_KEY", "OPENAI_BASE_URL", "", "", false},
+	{"anthropic", "anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "", "", false},
+	{"gemini", "gemini", "GEMINI_API_KEY", "GEMINI_BASE_URL", "", "", false},
+	{"xai", "xai", "XAI_API_KEY", "XAI_BASE_URL", "", "", false},
+	{"groq", "groq", "GROQ_API_KEY", "GROQ_BASE_URL", "", "", false},
+	{"openrouter", "openai", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "", openRouterDefaultBaseURL, false},
+	{"azure", "azure", "AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION", "", true},
+	{"ollama", "ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "", "", false},
 }
 
 // resolveProviders applies env var overrides to the raw YAML provider map, filters
@@ -59,6 +61,7 @@ func applyProviderEnvVars(raw map[string]config.RawProviderConfig) map[string]co
 	for _, kp := range knownProviderEnvs {
 		apiKey := os.Getenv(kp.apiKeyEnv)
 		explicitBaseURL := os.Getenv(kp.baseURLEnv)
+		apiVersion := os.Getenv(kp.apiVersionEnv)
 		baseURL := explicitBaseURL
 		if baseURL == "" && apiKey != "" && kp.defaultBase != "" {
 			baseURL = kp.defaultBase
@@ -78,15 +81,19 @@ func applyProviderEnvVars(raw map[string]config.RawProviderConfig) map[string]co
 			} else if existing.BaseURL == "" && apiKey != "" && kp.defaultBase != "" {
 				existing.BaseURL = kp.defaultBase
 			}
+			if apiVersion != "" {
+				existing.APIVersion = apiVersion
+			}
 			result[kp.name] = existing
 		} else {
 			if kp.requireBase && explicitBaseURL == "" {
 				continue
 			}
 			result[kp.name] = config.RawProviderConfig{
-				Type:    kp.providerType,
-				APIKey:  apiKey,
-				BaseURL: baseURL,
+				Type:       kp.providerType,
+				APIKey:     apiKey,
+				BaseURL:    baseURL,
+				APIVersion: apiVersion,
 			}
 		}
 	}
@@ -130,6 +137,7 @@ func buildProviderConfig(raw config.RawProviderConfig, global config.ResilienceC
 		Type:       raw.Type,
 		APIKey:     raw.APIKey,
 		BaseURL:    raw.BaseURL,
+		APIVersion: raw.APIVersion,
 		Models:     raw.Models,
 		Resilience: global,
 	}

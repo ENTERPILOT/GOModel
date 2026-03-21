@@ -319,11 +319,27 @@ func TestApplyProviderEnvVars_DiscoversAzureFromExplicitEnvVars(t *testing.T) {
 	if p.APIKey != "sk-azure" {
 		t.Errorf("APIKey = %q, want sk-azure", p.APIKey)
 	}
-	if p.Type != "openai" {
-		t.Errorf("Type = %q, want openai", p.Type)
+	if p.Type != "azure" {
+		t.Errorf("Type = %q, want azure", p.Type)
 	}
 	if p.BaseURL != "https://example-resource.openai.azure.com/openai/deployments/gpt-4o" {
 		t.Errorf("BaseURL = %q, want Azure API base", p.BaseURL)
+	}
+}
+
+func TestApplyProviderEnvVars_AzureAPIVersionEnvWins(t *testing.T) {
+	t.Setenv("AZURE_API_KEY", "sk-azure")
+	t.Setenv("AZURE_API_BASE", "https://example-resource.openai.azure.com/openai/deployments/gpt-4o")
+	t.Setenv("AZURE_API_VERSION", "2025-04-01-preview")
+
+	got := applyProviderEnvVars(map[string]config.RawProviderConfig{})
+
+	p, exists := got["azure"]
+	if !exists {
+		t.Fatal("expected azure to be discovered from env vars")
+	}
+	if p.APIVersion != "2025-04-01-preview" {
+		t.Errorf("APIVersion = %q, want 2025-04-01-preview", p.APIVersion)
 	}
 }
 
