@@ -8,9 +8,9 @@ import (
 )
 
 // ptr helpers
-func intPtr(v int) *int               { return &v }
+func intPtr(v int) *int                     { return &v }
 func durPtr(v time.Duration) *time.Duration { return &v }
-func f64Ptr(v float64) *float64       { return &v }
+func f64Ptr(v float64) *float64             { return &v }
 
 var globalRetry = config.RetryConfig{
 	MaxRetries:     3,
@@ -283,6 +283,57 @@ func TestApplyProviderEnvVars_DiscoversFromBaseURL(t *testing.T) {
 	}
 	if p.BaseURL != "http://localhost:11434/v1" {
 		t.Errorf("BaseURL = %q, want http://localhost:11434/v1", p.BaseURL)
+	}
+}
+
+func TestApplyProviderEnvVars_DiscoversOpenRouterFromAPIKey(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "sk-openrouter")
+
+	got := applyProviderEnvVars(map[string]config.RawProviderConfig{})
+
+	p, exists := got["openrouter"]
+	if !exists {
+		t.Fatal("expected openrouter to be discovered from env var")
+	}
+	if p.APIKey != "sk-openrouter" {
+		t.Errorf("APIKey = %q, want sk-openrouter", p.APIKey)
+	}
+	if p.Type != "openai" {
+		t.Errorf("Type = %q, want openai", p.Type)
+	}
+	if p.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("BaseURL = %q, want https://openrouter.ai/api/v1", p.BaseURL)
+	}
+}
+
+func TestApplyProviderEnvVars_DiscoversAzureFromExplicitEnvVars(t *testing.T) {
+	t.Setenv("AZURE_API_KEY", "sk-azure")
+	t.Setenv("AZURE_API_BASE", "https://example-resource.openai.azure.com/openai/deployments/gpt-4o")
+
+	got := applyProviderEnvVars(map[string]config.RawProviderConfig{})
+
+	p, exists := got["azure"]
+	if !exists {
+		t.Fatal("expected azure to be discovered from env vars")
+	}
+	if p.APIKey != "sk-azure" {
+		t.Errorf("APIKey = %q, want sk-azure", p.APIKey)
+	}
+	if p.Type != "openai" {
+		t.Errorf("Type = %q, want openai", p.Type)
+	}
+	if p.BaseURL != "https://example-resource.openai.azure.com/openai/deployments/gpt-4o" {
+		t.Errorf("BaseURL = %q, want Azure API base", p.BaseURL)
+	}
+}
+
+func TestApplyProviderEnvVars_DoesNotDiscoverAzureWithoutBaseURL(t *testing.T) {
+	t.Setenv("AZURE_API_KEY", "sk-azure")
+
+	got := applyProviderEnvVars(map[string]config.RawProviderConfig{})
+
+	if _, exists := got["azure"]; exists {
+		t.Fatal("expected azure not to be discovered without AZURE_API_BASE")
 	}
 }
 

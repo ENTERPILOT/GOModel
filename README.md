@@ -30,7 +30,10 @@ docker run --rm -p 8080:8080 \
   -e ANTHROPIC_API_KEY="your-anthropic-key" \
   -e GEMINI_API_KEY="your-gemini-key" \
   -e GROQ_API_KEY="your-groq-key" \
+  -e OPENROUTER_API_KEY="your-openrouter-key" \
   -e XAI_API_KEY="your-xai-key" \
+  -e AZURE_API_KEY="your-azure-key" \
+  -e AZURE_API_BASE="https://your-resource.openai.azure.com/openai/deployments/your-deployment" \
   -e OLLAMA_BASE_URL="http://host.docker.internal:11434/v1" \
   enterpilot/gomodel
 ```
@@ -60,7 +63,9 @@ Example model identifiers are illustrative and subject to change; consult provid
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
 | Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| OpenRouter | `OPENROUTER_API_KEY` | `google/gemini-2.5-flash` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | xAI (Grok) | `XAI_API_KEY` | `grok-2` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Azure OpenAI | `AZURE_API_KEY` + `AZURE_API_BASE` | `gpt-4o` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Ollama | `OLLAMA_BASE_URL` | `llama3.2` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 ✅ Supported  ❌ Unsupported

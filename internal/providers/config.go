@@ -17,6 +17,8 @@ type ProviderConfig struct {
 	Resilience config.ResilienceConfig
 }
 
+const openRouterDefaultBaseURL = "https://openrouter.ai/api/v1"
+
 // knownProviderEnvs maps well-known provider names to their environment variables.
 // This list is the authoritative source for provider auto-discovery from env vars.
 var knownProviderEnvs = []struct {
@@ -24,13 +26,17 @@ var knownProviderEnvs = []struct {
 	providerType string
 	apiKeyEnv    string
 	baseURLEnv   string
+	defaultBase  string
+	requireBase  bool
 }{
-	{"openai", "openai", "OPENAI_API_KEY", "OPENAI_BASE_URL"},
-	{"anthropic", "anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL"},
-	{"gemini", "gemini", "GEMINI_API_KEY", "GEMINI_BASE_URL"},
-	{"xai", "xai", "XAI_API_KEY", "XAI_BASE_URL"},
-	{"groq", "groq", "GROQ_API_KEY", "GROQ_BASE_URL"},
-	{"ollama", "ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL"},
+	{"openai", "openai", "OPENAI_API_KEY", "OPENAI_BASE_URL", "", false},
+	{"anthropic", "anthropic", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "", false},
+	{"gemini", "gemini", "GEMINI_API_KEY", "GEMINI_BASE_URL", "", false},
+	{"xai", "xai", "XAI_API_KEY", "XAI_BASE_URL", "", false},
+	{"groq", "groq", "GROQ_API_KEY", "GROQ_BASE_URL", "", false},
+	{"openrouter", "openai", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", openRouterDefaultBaseURL, false},
+	{"azure", "openai", "AZURE_API_KEY", "AZURE_API_BASE", "", true},
+	{"ollama", "ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "", false},
 }
 
 // resolveProviders applies env var overrides to the raw YAML provider map, filters
@@ -52,7 +58,11 @@ func applyProviderEnvVars(raw map[string]config.RawProviderConfig) map[string]co
 
 	for _, kp := range knownProviderEnvs {
 		apiKey := os.Getenv(kp.apiKeyEnv)
-		baseURL := os.Getenv(kp.baseURLEnv)
+		explicitBaseURL := os.Getenv(kp.baseURLEnv)
+		baseURL := explicitBaseURL
+		if baseURL == "" && apiKey != "" && kp.defaultBase != "" {
+			baseURL = kp.defaultBase
+		}
 
 		if apiKey == "" && baseURL == "" {
 			continue
@@ -63,11 +73,16 @@ func applyProviderEnvVars(raw map[string]config.RawProviderConfig) map[string]co
 			if apiKey != "" {
 				existing.APIKey = apiKey
 			}
-			if baseURL != "" {
+			if explicitBaseURL != "" {
 				existing.BaseURL = baseURL
+			} else if existing.BaseURL == "" && apiKey != "" && kp.defaultBase != "" {
+				existing.BaseURL = kp.defaultBase
 			}
 			result[kp.name] = existing
 		} else {
+			if kp.requireBase && explicitBaseURL == "" {
+				continue
+			}
 			result[kp.name] = config.RawProviderConfig{
 				Type:    kp.providerType,
 				APIKey:  apiKey,
@@ -86,6 +101,9 @@ func filterEmptyProviders(raw map[string]config.RawProviderConfig) map[string]co
 	for name, p := range raw {
 		if p.Type == "ollama" {
 			result[name] = p
+			continue
+		}
+		if name == "azure" && strings.TrimSpace(p.BaseURL) == "" {
 			continue
 		}
 		if p.APIKey != "" && !strings.Contains(p.APIKey, "${") {
