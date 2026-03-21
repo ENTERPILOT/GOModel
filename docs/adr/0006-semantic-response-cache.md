@@ -58,7 +58,7 @@ Local default is a key differentiator vs. Bifrost/LiteLLM.
 
 | Type                   | Notes                                       |
 | ---------------------- | ------------------------------------------- |
-| `sqlite-vec`(default) | Embedded, CGO-free, file-based. Zero infra. |
+| `sqlite-vec` (default) | Embedded, CGO-free, file-based. Zero infra. |
 | `qdrant`               | External Qdrant (first external backend)    |
 | `pgvector`             | For PostgreSQL users                        |
 
@@ -73,7 +73,7 @@ TTL implemented via `expires_at` timestamp + read-time filter + background clean
 
 ### Parameter Isolation (`params_hash`)
 
-SHA-256 of output-shaping parameters including `model`, `temperature`, `top_p`, `max_tokens`, `tools` (xxhash64 per tool, then SHA-256 of combined seed), `response_format`, `stream`, `endpoint_type` (for endpoint safety), and `guardrails_hash`.  
+SHA-256 of output-shaping parameters including `model`, `temperature`, `top_p`, `max_tokens`, `tools` (xxhash64 per tool, then SHA-256 of combined seed), `response_format`, `stream`, `endpointPath` (the raw URL path, for endpoint safety), and `guardrails_hash`.  
 All KNN searches filter by this hash → prevents serving wrong-format / wrong-parameter / wrong-policy responses.
 
 `guardrails_hash` is a SHA-256 of all active guardrail rule names, types, and content (sorted for stability, with xxhash64 used per-component for speed). It is computed once at startup in `app.go` from `config.GuardrailsConfig`, stored in the Echo context under `core.guardrailsHashKey` (via `core.WithGuardrailsHash`) immediately after `PatchChatRequest`, and read by `semanticCacheMiddleware` when building `params_hash`. When guardrail policy changes, the hash changes and old cache entries become unreachable — no manual cache flush needed. Entries expire naturally via TTL.
@@ -99,7 +99,8 @@ Bifrost's 0.80 is too aggressive for correctness-sensitive use cases.
 ### What is Explicitly Not Implemented (v1)
 
 - Streaming caching (skipped entirely — phase-2: chunk array storage + replay)  
-- Cross-endpoint normalization (`/chat/completions` vs `/responses` vs pass-through) — `endpoint_type` in `params_hash` for safety → Future optimization: canonical response renderer to enable sharing  
+- Cross-endpoint normalization (`/chat/completions` vs `/responses` vs pass-through) — `endpointPath` in `params_hash` for safety → Future optimization: canonical response renderer to enable sharing  
+- `cache_by_model` / `cache_by_provider` opt-out flags — both layers always include `model` and provider identity in their cache keys (`params_hash` for semantic, `SHA-256(path + ExecutionPlan + body)` for exact). Disabling either safely requires shared flag semantics across both layers; deferred to a future `ResponseCacheConfig`-level enhancement  
 - Cache warming, manual purge, advanced eviction  
 - Prometheus metrics / observability (deferred — basic structured logging sufficient for v1)
 
