@@ -146,12 +146,13 @@ func handleError(c *echo.Context, err error) error {
 		return c.JSON(gatewayErr.HTTPStatusCode(), gatewayErr.ToJSON())
 	}
 
-	return c.JSON(http.StatusInternalServerError, map[string]any{
-		"error": map[string]any{
-			"type":    "internal_error",
-			"message": "an unexpected error occurred",
-		},
-	})
+	fallback := &core.GatewayError{
+		Type:       "internal_error",
+		Message:    "an unexpected error occurred",
+		StatusCode: http.StatusInternalServerError,
+		Err:        err,
+	}
+	return c.JSON(fallback.HTTPStatusCode(), fallback.ToJSON())
 }
 
 // UsageSummary handles GET /admin/api/v1/usage/summary
