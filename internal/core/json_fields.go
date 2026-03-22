@@ -24,7 +24,6 @@ func CloneRawJSON(raw json.RawMessage) json.RawMessage {
 	return append(json.RawMessage(nil), raw...)
 }
 
-// CloneRawJSONMap returns a detached copy of a raw JSON field map.
 // CloneUnknownJSONFields returns a detached copy of a raw unknown-field object.
 func CloneUnknownJSONFields(fields UnknownJSONFields) UnknownJSONFields {
 	return UnknownJSONFields{raw: CloneRawJSON(fields.raw)}
@@ -50,7 +49,7 @@ func UnknownJSONFieldsFromMap(fields map[string]json.RawMessage) UnknownJSONFiel
 		}
 		keyBody, err := json.Marshal(key)
 		if err != nil {
-			continue
+			panic(fmt.Sprintf("core: marshal unknown JSON field key %q: %v", key, err))
 		}
 		buf.Write(keyBody)
 		buf.WriteByte(':')
@@ -66,6 +65,8 @@ func UnknownJSONFieldsFromMap(fields map[string]json.RawMessage) UnknownJSONFiel
 }
 
 // Lookup returns the raw JSON value for key or nil when absent.
+// It scans the stored object on demand so single-lookups stay allocation-light,
+// but repeated lookups on the same value are linear in the raw JSON size.
 func (fields UnknownJSONFields) Lookup(key string) json.RawMessage {
 	if len(fields.raw) == 0 {
 		return nil

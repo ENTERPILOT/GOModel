@@ -154,6 +154,9 @@ func (m *simpleCacheMiddleware) enqueueWrite(job cacheWriteJob) {
 		m.mu.RUnlock()
 		return
 	}
+	// Hold the read lock across Add+send so Close cannot observe this write as
+	// untracked. If the non-blocking send misses, roll back the Add before
+	// releasing the lock and logging the dropped write.
 	m.wg.Add(1)
 	select {
 	case m.jobs <- job:
@@ -220,7 +223,7 @@ func isStreamingRequestGJSON(path string, body []byte) bool {
 	// encoding/json on duplicate keys, but the cache hot path favors the cheaper
 	// first-match check because duplicate stream fields are not expected.
 	result := gjson.GetBytes(body, "stream")
-	if !result.Exists() || result.Type != gjson.True && result.Type != gjson.False {
+	if !result.Exists() || (result.Type != gjson.True && result.Type != gjson.False) {
 		return false
 	}
 	return result.Bool()
