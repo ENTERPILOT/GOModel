@@ -128,7 +128,7 @@ func TestResponsesRequestMarshalJSON_PreservesInput(t *testing.T) {
 
 	input, ok := inputRaw.([]any)
 	if !ok || len(input) != 1 {
-		t.Fatalf("decoded input = %#v, want []interface{} len=1", inputRaw)
+		t.Fatalf("decoded input = %#v, want []any len=1", inputRaw)
 	}
 
 	firstMsg, ok := input[0].(map[string]any)
@@ -145,7 +145,7 @@ func TestResponsesRequestMarshalJSON_PreservesInput(t *testing.T) {
 	}
 	content, ok := contentRaw.([]any)
 	if !ok || len(content) != 1 {
-		t.Fatalf("first input content = %#v, want []interface{} len=1", contentRaw)
+		t.Fatalf("first input content = %#v, want []any len=1", contentRaw)
 	}
 
 	firstPart, ok := content[0].(map[string]any)
@@ -216,7 +216,7 @@ func TestResponsesRequestMarshalJSON_PreservesTypedInputElementContent(t *testin
 
 	input, ok := decoded["input"].([]any)
 	if !ok || len(input) != 1 {
-		t.Fatalf("decoded input = %#v, want []interface{} len=1", decoded["input"])
+		t.Fatalf("decoded input = %#v, want []any len=1", decoded["input"])
 	}
 
 	first, ok := input[0].(map[string]any)
