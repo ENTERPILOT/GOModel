@@ -1017,6 +1017,62 @@ func TestListModels_InvalidCategory(t *testing.T) {
 	}
 }
 
+func TestListModels_IncludesSelectorAndProviderName(t *testing.T) {
+	registry := providers.NewModelRegistry()
+	openAI := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-3.5-turbo", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}
+	openRouter := &handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "openai/gpt-3.5-turbo", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}
+	registry.RegisterProviderWithNameAndType(openAI, "openai", "openai")
+	registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openrouter")
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("failed to initialize registry: %v", err)
+	}
+
+	h := NewHandler(nil, registry)
+	c, rec := newHandlerContext("/admin/api/v1/models")
+
+	if err := h.ListModels(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var models []providers.ModelWithProvider
+	if err := json.Unmarshal(rec.Body.Bytes(), &models); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(models))
+	}
+
+	if models[0].Selector != "openai/gpt-3.5-turbo" {
+		t.Fatalf("models[0].Selector = %q, want %q", models[0].Selector, "openai/gpt-3.5-turbo")
+	}
+	if models[0].ProviderName != "openai" {
+		t.Fatalf("models[0].ProviderName = %q, want %q", models[0].ProviderName, "openai")
+	}
+	if models[1].Selector != "openrouter/openai/gpt-3.5-turbo" {
+		t.Fatalf("models[1].Selector = %q, want %q", models[1].Selector, "openrouter/openai/gpt-3.5-turbo")
+	}
+	if models[1].ProviderName != "openrouter" {
+		t.Fatalf("models[1].ProviderName = %q, want %q", models[1].ProviderName, "openrouter")
+	}
+}
+
 // --- ListCategories handler tests ---
 
 func TestListCategories_NilRegistry(t *testing.T) {
