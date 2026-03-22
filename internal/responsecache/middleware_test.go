@@ -339,6 +339,61 @@ func TestSimpleCacheMiddleware_BypassesCacheWhenBodyWasNotCaptured(t *testing.T)
 	}
 }
 
+func TestSimpleCacheMiddleware_BodyReadErrorReturnsGatewayError(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
+	e := echo.New()
+
+	handler := mw.Middleware()(func(c *echo.Context) error {
+		t.Fatal("handler should not be called when request body read fails")
+		return nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Body = explodingCacheReadCloser{}
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler(c)
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("handler error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+		t.Fatalf("gateway error type = %q, want %q", gatewayErr.Type, core.ErrorTypeInvalidRequest)
+	}
+}
+
+func TestRequestBodyForCache_BodyNotCapturedTakesPrecedenceOverEmptySnapshotBody(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	frame := core.NewRequestSnapshot(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		[]byte{},
+		true,
+		"",
+		nil,
+	)
+	req = req.WithContext(core.WithRequestSnapshot(req.Context(), frame))
+
+	body, cacheable, err := requestBodyForCache(req)
+	if err != nil {
+		t.Fatalf("requestBodyForCache() error = %v", err)
+	}
+	if cacheable {
+		t.Fatalf("requestBodyForCache() cacheable = true, want false (body=%q)", body)
+	}
+	if body != nil {
+		t.Fatalf("requestBodyForCache() body = %q, want nil", body)
+	}
+}
+
 func TestIsStreamingRequest(t *testing.T) {
 	tests := []struct {
 		name string

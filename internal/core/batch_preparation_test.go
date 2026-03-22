@@ -38,8 +38,14 @@ func TestCloneBatchRequestDeepCopiesNestedFields(t *testing.T) {
 	cloned.Requests[0].CustomID = "chat-2"
 	cloned.Requests[0].Body[10] = 'X'
 	itemExtra := cloned.Requests[0].ExtraFields.Lookup("x_item")
+	if len(itemExtra) <= 9 {
+		t.Fatalf("cloned item extra too short: %q", itemExtra)
+	}
 	itemExtra[9] = 'f'
 	topExtra := cloned.ExtraFields.Lookup("x_top")
+	if len(topExtra) <= 9 {
+		t.Fatalf("cloned top extra too short: %q", topExtra)
+	}
 	topExtra[9] = 'f'
 
 	if got := original.Metadata["provider"]; got != "openai" {

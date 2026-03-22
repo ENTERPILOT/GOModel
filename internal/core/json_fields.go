@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 )
@@ -53,7 +54,12 @@ func UnknownJSONFieldsFromMap(fields map[string]json.RawMessage) UnknownJSONFiel
 		}
 		buf.Write(keyBody)
 		buf.WriteByte(':')
-		buf.Write(CloneRawJSON(fields[key]))
+		rawValue := CloneRawJSON(fields[key])
+		if len(rawValue) == 0 {
+			buf.WriteString("null")
+			continue
+		}
+		buf.Write(rawValue)
 	}
 	buf.WriteByte('}')
 	return UnknownJSONFields{raw: buf.Bytes()}
@@ -133,13 +139,27 @@ func mergeUnknownJSONObject(baseBody, extraBody []byte) ([]byte, error) {
 		return CloneRawJSON(extraBody), nil
 	}
 
-	merged := make([]byte, 0, len(baseBody)+len(extraBody)-1)
+	totalCap, err := mergedJSONObjectCap(len(baseBody), len(extraBody))
+	if err != nil {
+		return nil, err
+	}
+	merged := make([]byte, 0, totalCap)
 	merged = append(merged, baseBody[:len(baseBody)-1]...)
 	if !bytes.Equal(extraBody, []byte("{}")) {
 		merged = append(merged, ',')
 		merged = append(merged, extraBody[1:]...)
 	}
 	return merged, nil
+}
+
+func mergedJSONObjectCap(baseLen, extraLen int) (int, error) {
+	if extraLen <= 0 {
+		return 0, fmt.Errorf("unknown JSON fields are empty")
+	}
+	if baseLen > math.MaxInt-(extraLen-1) {
+		return 0, fmt.Errorf("combined JSON object too large")
+	}
+	return baseLen + extraLen - 1, nil
 }
 
 func readJSONObjectKey(dec *json.Decoder) (string, bool) {
@@ -205,8 +225,22 @@ func extractUnknownJSONFieldsObjectByScan(data []byte, knownFields ...string) (U
 		}
 
 		i = skipJSONWhitespace(data, valueEnd)
-		if i < len(data) && data[i] == ',' {
+		if i >= len(data) {
+			return UnknownJSONFields{}, fmt.Errorf("unterminated JSON object")
+		}
+		switch data[i] {
+		case ',':
 			i = skipJSONWhitespace(data, i+1)
+			if i >= len(data) {
+				return UnknownJSONFields{}, fmt.Errorf("unterminated JSON object")
+			}
+			if data[i] == '}' {
+				return UnknownJSONFields{}, fmt.Errorf("unexpected trailing comma in JSON object")
+			}
+		case '}':
+			// The next loop iteration will terminate cleanly on the closing brace.
+		default:
+			return UnknownJSONFields{}, fmt.Errorf("expected ',' or '}' after object value")
 		}
 	}
 
@@ -233,11 +267,18 @@ func scanJSONValue(data []byte, start int) (int, error) {
 		for i < len(data) {
 			switch data[i] {
 			case ',', '}', ']':
-				return i, nil
+				goto validateLiteral
 			case ' ', '\n', '\r', '\t':
-				return i, nil
+				goto validateLiteral
 			}
 			i++
+		}
+	validateLiteral:
+		if i == start {
+			return 0, fmt.Errorf("expected JSON literal")
+		}
+		if err := validateJSONLiteral(data[start:i]); err != nil {
+			return 0, err
 		}
 		return i, nil
 	}
@@ -267,8 +308,22 @@ func scanJSONObject(data []byte, start int) (int, error) {
 			return 0, err
 		}
 		i = skipJSONWhitespace(data, valueEnd)
-		if i < len(data) && data[i] == ',' {
-			i++
+		if i >= len(data) {
+			return 0, fmt.Errorf("unterminated JSON object")
+		}
+		switch data[i] {
+		case ',':
+			i = skipJSONWhitespace(data, i+1)
+			if i >= len(data) {
+				return 0, fmt.Errorf("unterminated JSON object")
+			}
+			if data[i] == '}' {
+				return 0, fmt.Errorf("unexpected trailing comma in JSON object")
+			}
+		case '}':
+			return i + 1, nil
+		default:
+			return 0, fmt.Errorf("expected ',' or '}' after object value")
 		}
 	}
 	return 0, fmt.Errorf("unterminated JSON object")
@@ -289,11 +344,38 @@ func scanJSONArray(data []byte, start int) (int, error) {
 			return 0, err
 		}
 		i = skipJSONWhitespace(data, valueEnd)
-		if i < len(data) && data[i] == ',' {
-			i++
+		if i >= len(data) {
+			return 0, fmt.Errorf("unterminated JSON array")
+		}
+		switch data[i] {
+		case ',':
+			i = skipJSONWhitespace(data, i+1)
+			if i >= len(data) {
+				return 0, fmt.Errorf("unterminated JSON array")
+			}
+			if data[i] == ']' {
+				return 0, fmt.Errorf("unexpected trailing comma in JSON array")
+			}
+		case ']':
+			return i + 1, nil
+		default:
+			return 0, fmt.Errorf("expected ',' or ']' after array element")
 		}
 	}
 	return 0, fmt.Errorf("unterminated JSON array")
+}
+
+func validateJSONLiteral(raw []byte) error {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return fmt.Errorf("invalid JSON literal: %w", err)
+	}
+	switch value.(type) {
+	case nil, bool, float64:
+		return nil
+	default:
+		return fmt.Errorf("invalid JSON literal")
+	}
 }
 
 func scanJSONString(data []byte, start int) (int, error) {
