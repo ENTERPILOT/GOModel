@@ -190,6 +190,8 @@ Provider credentials:
 | `GEMINI_BASE_URL`    | Gemini (custom endpoint)                      |
 | `OPENROUTER_API_KEY` | OpenRouter (default base URL: `https://openrouter.ai/api/v1`) |
 | `OPENROUTER_BASE_URL` | OpenRouter (custom endpoint override)        |
+| `OPENROUTER_SITE_URL` | OpenRouter attribution URL override (default: `https://gomodel.enterpilot.io`) |
+| `OPENROUTER_APP_NAME` | OpenRouter attribution title override (default: `GOModel`) |
 | `XAI_API_KEY`        | xAI / Grok                                    |
 | `XAI_BASE_URL`       | xAI (custom endpoint)                         |
 | `GROQ_API_KEY`       | Groq                                          |
@@ -223,6 +225,9 @@ Ollama requires no API key. Even with no YAML and no `OLLAMA_BASE_URL` set, an O
 
 **Azure ships with a pinned API version by default.**
 If you do not set `AZURE_API_VERSION`, the gateway sends `api-version=2024-10-21`. Override it only when you need a different Azure API version.
+
+**OpenRouter gets GOModel attribution headers by default.**
+When the `openrouter` provider is used, the gateway adds `HTTP-Referer` and `X-OpenRouter-Title` unless the request already provides them. Override the defaults with `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME`.
 
 **Partial YAML fields leave the rest at defaults.**
 YAML is unmarshalled onto the struct that was already populated by built-in defaults. Only fields that appear in the file are written. Omitting `max_backoff` from `resilience.retry` leaves it at `30s`; you do not need to repeat defaults you are happy with.

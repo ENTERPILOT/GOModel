@@ -1,8 +1,10 @@
 package azure
 
 import (
+	"context"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"gomodel/internal/core"
 	"gomodel/internal/llmclient"
@@ -43,6 +45,92 @@ func NewWithHTTPClient(apiKey string, httpClient *http.Client, hooks llmclient.H
 	})
 	p.SetRequestMutator(p.mutateRequest)
 	return p
+}
+
+func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	var resp core.ModelsResponse
+	if err := p.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/openai/models",
+	}, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+func (p *Provider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("batch request is required", nil)
+	}
+	var resp core.BatchResponse
+	if err := p.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/openai/batches",
+		Body:     req,
+	}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+func (p *Provider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	if err := p.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: "/openai/batches/" + url.PathEscape(id),
+	}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
+}
+
+func (p *Provider) ListBatches(ctx context.Context, limit int, after string) (*core.BatchListResponse, error) {
+	values := url.Values{}
+	if limit > 0 {
+		values.Set("limit", strconv.Itoa(limit))
+	}
+	if after != "" {
+		values.Set("after", after)
+	}
+
+	endpoint := "/openai/batches"
+	if encoded := values.Encode(); encoded != "" {
+		endpoint += "?" + encoded
+	}
+
+	var resp core.BatchListResponse
+	if err := p.Do(ctx, llmclient.Request{
+		Method:   http.MethodGet,
+		Endpoint: endpoint,
+	}, &resp); err != nil {
+		return nil, err
+	}
+	for i := range resp.Data {
+		if resp.Data[i].ProviderBatchID == "" {
+			resp.Data[i].ProviderBatchID = resp.Data[i].ID
+		}
+	}
+	return &resp, nil
+}
+
+func (p *Provider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
+	var resp core.BatchResponse
+	if err := p.Do(ctx, llmclient.Request{
+		Method:   http.MethodPost,
+		Endpoint: "/openai/batches/" + url.PathEscape(id) + "/cancel",
+	}, &resp); err != nil {
+		return nil, err
+	}
+	if resp.ProviderBatchID == "" {
+		resp.ProviderBatchID = resp.ID
+	}
+	return &resp, nil
 }
 
 func (p *Provider) SetAPIVersion(version string) {

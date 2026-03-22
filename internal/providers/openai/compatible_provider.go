@@ -83,17 +83,24 @@ func (p *CompatibleProvider) prepareRequest(req llmclient.Request) llmclient.Req
 	return req
 }
 
+func (p *CompatibleProvider) Do(ctx context.Context, req llmclient.Request, result interface{}) error {
+	return p.client.Do(ctx, p.prepareRequest(req), result)
+}
+
 func (p *CompatibleProvider) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("chat request is required", nil)
+	}
 	var resp core.ChatResponse
 	body, err := chatRequestBody(req)
 	if err != nil {
 		return nil, err
 	}
-	err = p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err = p.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/chat/completions",
 		Body:     body,
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +111,9 @@ func (p *CompatibleProvider) ChatCompletion(ctx context.Context, req *core.ChatR
 }
 
 func (p *CompatibleProvider) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("chat request is required", nil)
+	}
 	streamReq := req.WithStreaming()
 	body, err := chatRequestBody(streamReq)
 	if err != nil {
@@ -118,10 +128,10 @@ func (p *CompatibleProvider) StreamChatCompletion(ctx context.Context, req *core
 
 func (p *CompatibleProvider) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
 	var resp core.ModelsResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodGet,
 		Endpoint: "/models",
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -129,12 +139,15 @@ func (p *CompatibleProvider) ListModels(ctx context.Context) (*core.ModelsRespon
 }
 
 func (p *CompatibleProvider) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("responses request is required", nil)
+	}
 	var resp core.ResponsesResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/responses",
 		Body:     req,
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -145,6 +158,9 @@ func (p *CompatibleProvider) Responses(ctx context.Context, req *core.ResponsesR
 }
 
 func (p *CompatibleProvider) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("responses request is required", nil)
+	}
 	stream, err := p.client.DoStream(ctx, p.prepareRequest(llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/responses",
@@ -157,12 +173,15 @@ func (p *CompatibleProvider) StreamResponses(ctx context.Context, req *core.Resp
 }
 
 func (p *CompatibleProvider) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("embedding request is required", nil)
+	}
 	var resp core.EmbeddingResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/embeddings",
 		Body:     req,
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -195,12 +214,15 @@ func (p *CompatibleProvider) Passthrough(ctx context.Context, req *core.Passthro
 }
 
 func (p *CompatibleProvider) CreateBatch(ctx context.Context, req *core.BatchRequest) (*core.BatchResponse, error) {
+	if req == nil {
+		return nil, core.NewInvalidRequestError("batch request is required", nil)
+	}
 	var resp core.BatchResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/batches",
 		Body:     req,
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -212,10 +234,10 @@ func (p *CompatibleProvider) CreateBatch(ctx context.Context, req *core.BatchReq
 
 func (p *CompatibleProvider) GetBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
 	var resp core.BatchResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodGet,
 		Endpoint: "/batches/" + url.PathEscape(id),
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -239,10 +261,10 @@ func (p *CompatibleProvider) ListBatches(ctx context.Context, limit int, after s
 	}
 
 	var resp core.BatchListResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodGet,
 		Endpoint: endpoint,
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}
@@ -256,10 +278,10 @@ func (p *CompatibleProvider) ListBatches(ctx context.Context, limit int, after s
 
 func (p *CompatibleProvider) CancelBatch(ctx context.Context, id string) (*core.BatchResponse, error) {
 	var resp core.BatchResponse
-	err := p.client.Do(ctx, p.prepareRequest(llmclient.Request{
+	err := p.Do(ctx, llmclient.Request{
 		Method:   http.MethodPost,
 		Endpoint: "/batches/" + url.PathEscape(id) + "/cancel",
-	}), &resp)
+	}, &resp)
 	if err != nil {
 		return nil, err
 	}

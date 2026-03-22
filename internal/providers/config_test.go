@@ -298,8 +298,8 @@ func TestApplyProviderEnvVars_DiscoversOpenRouterFromAPIKey(t *testing.T) {
 	if p.APIKey != "sk-openrouter" {
 		t.Errorf("APIKey = %q, want sk-openrouter", p.APIKey)
 	}
-	if p.Type != "openai" {
-		t.Errorf("Type = %q, want openai", p.Type)
+	if p.Type != "openrouter" {
+		t.Errorf("Type = %q, want openrouter", p.Type)
 	}
 	if p.BaseURL != "https://openrouter.ai/api/v1" {
 		t.Errorf("BaseURL = %q, want https://openrouter.ai/api/v1", p.BaseURL)

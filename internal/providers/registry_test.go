@@ -353,7 +353,7 @@ func TestModelRegistry(t *testing.T) {
 				},
 			},
 		}
-		registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openai")
+		registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openrouter")
 		if err := registry.Initialize(context.Background()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -395,7 +395,7 @@ func TestModelRegistry(t *testing.T) {
 			},
 		}
 		registry.RegisterProviderWithNameAndType(google, "google", "gemini")
-		registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openai")
+		registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openrouter")
 		if err := registry.Initialize(context.Background()); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -650,7 +650,7 @@ func TestListPublicModels_UsesConfiguredProviderNamesAndIncludesDuplicates(t *te
 	}
 
 	registry.RegisterProviderWithNameAndType(openAI, "openai", "openai")
-	registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openai")
+	registry.RegisterProviderWithNameAndType(openRouter, "openrouter", "openrouter")
 	registry.RegisterProviderWithNameAndType(azure, "azure-openai", "openai")
 	if err := registry.Initialize(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)

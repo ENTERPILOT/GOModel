@@ -136,6 +136,8 @@ Set these to automatically register providers. No YAML configuration required.
 
 Most providers can use a custom base URL via `<PROVIDER>_BASE_URL` (for example `OPENAI_BASE_URL`). OpenRouter defaults to `https://openrouter.ai/api/v1` and can be overridden with `OPENROUTER_BASE_URL`. Azure uses `AZURE_API_BASE` for its deployment base URL and accepts an optional `AZURE_API_VERSION` override; otherwise it defaults to `2024-10-21`.
 
+For OpenRouter, GOModel also sends default attribution headers unless the request already sets them. Override those defaults with `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME`.
+
 ### 2. `.env` File
 
 GOModel automatically loads a `.env` file from the working directory at startup. This is convenient for local development.

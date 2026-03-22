@@ -36,7 +36,7 @@ var knownProviderEnvs = []struct {
 	{"gemini", "gemini", "GEMINI_API_KEY", "GEMINI_BASE_URL", "", "", false},
 	{"xai", "xai", "XAI_API_KEY", "XAI_BASE_URL", "", "", false},
 	{"groq", "groq", "GROQ_API_KEY", "GROQ_BASE_URL", "", "", false},
-	{"openrouter", "openai", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "", openRouterDefaultBaseURL, false},
+	{"openrouter", "openrouter", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "", openRouterDefaultBaseURL, false},
 	{"azure", "azure", "AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION", "", true},
 	{"ollama", "ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "", "", false},
 }

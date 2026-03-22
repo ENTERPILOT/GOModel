@@ -36,6 +36,81 @@ func TestNew_ReturnsProvider(t *testing.T) {
 	}
 }
 
+func TestNilRequests_ReturnInvalidRequestError(t *testing.T) {
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{
+			name: "chat completion",
+			call: func() error {
+				_, err := provider.ChatCompletion(context.Background(), nil)
+				return err
+			},
+		},
+		{
+			name: "stream chat completion",
+			call: func() error {
+				_, err := provider.StreamChatCompletion(context.Background(), nil)
+				return err
+			},
+		},
+		{
+			name: "responses",
+			call: func() error {
+				_, err := provider.Responses(context.Background(), nil)
+				return err
+			},
+		},
+		{
+			name: "stream responses",
+			call: func() error {
+				_, err := provider.StreamResponses(context.Background(), nil)
+				return err
+			},
+		},
+		{
+			name: "embeddings",
+			call: func() error {
+				_, err := provider.Embeddings(context.Background(), nil)
+				return err
+			},
+		},
+		{
+			name: "create batch",
+			call: func() error {
+				_, err := provider.CreateBatch(context.Background(), nil)
+				return err
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("unexpected panic: %v", r)
+				}
+			}()
+
+			err := tt.call()
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			gatewayErr, ok := err.(*core.GatewayError)
+			if !ok {
+				t.Fatalf("error type = %T, want *core.GatewayError", err)
+			}
+			if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+				t.Fatalf("error type = %q, want %q", gatewayErr.Type, core.ErrorTypeInvalidRequest)
+			}
+		})
+	}
+}
+
 func TestChatCompletion(t *testing.T) {
 	tests := []struct {
 		name          string
