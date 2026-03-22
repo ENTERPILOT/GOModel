@@ -5,6 +5,14 @@ import (
 	"testing"
 )
 
+var benchmarkSemanticSelectorBody = []byte(`{
+	"model":"gpt-5-mini",
+	"provider":"openai",
+	"stream":true,
+	"messages":[{"role":"user","content":"hello"}],
+	"response_format":{"type":"json_schema"}
+}`)
+
 func TestDeriveWhiteBoxPrompt_OpenAICompat(t *testing.T) {
 	frame := NewRequestSnapshot(
 		"POST",
@@ -280,5 +288,53 @@ func TestDeriveWhiteBoxPrompt_BatchResultsMetadata(t *testing.T) {
 	}
 	if req.BatchID != "batch_123" {
 		t.Fatalf("BatchMetadata.BatchID = %q, want batch_123", req.BatchID)
+	}
+}
+
+func TestDeriveSnapshotSelectorHintsGJSON_MatchesStdlibSemantics(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "valid selector fields", body: `{"provider":"openai","model":"gpt-5-mini","stream":true}`},
+		{name: "missing selector fields", body: `{"messages":[{"role":"user","content":"hi"}]}`},
+		{name: "null selector fields", body: `{"provider":null,"model":null,"stream":null}`},
+		{name: "invalid json", body: `not json`},
+		{name: "array root", body: `[]`},
+		{name: "numeric model", body: `{"model":123}`},
+		{name: "numeric provider", body: `{"provider":123}`},
+		{name: "string stream", body: `{"stream":"true"}`},
+		{name: "mixed valid and invalid", body: `{"model":"gpt-5-mini","provider":"openai","stream":"true"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			wantModel, wantProvider, wantStream, wantParsed := deriveSnapshotSelectorHintsStdlib([]byte(tt.body))
+			gotModel, gotProvider, gotStream, gotParsed := deriveSnapshotSelectorHintsGJSON([]byte(tt.body))
+
+			if wantModel != gotModel || wantProvider != gotProvider || wantStream != gotStream || wantParsed != gotParsed {
+				t.Fatalf("gjson mismatch: want (%q, %q, %v, %v), got (%q, %q, %v, %v)", wantModel, wantProvider, wantStream, wantParsed, gotModel, gotProvider, gotStream, gotParsed)
+			}
+		})
+	}
+}
+
+func BenchmarkDeriveSnapshotSelectorHintsStdlib(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		model, provider, stream, parsed := deriveSnapshotSelectorHintsStdlib(benchmarkSemanticSelectorBody)
+		if !parsed || model != "gpt-5-mini" || provider != "openai" || !stream {
+			b.Fatalf("unexpected selector hints: parsed=%v model=%q provider=%q stream=%v", parsed, model, provider, stream)
+		}
+	}
+}
+
+func BenchmarkDeriveSnapshotSelectorHintsGJSON(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		model, provider, stream, parsed := deriveSnapshotSelectorHintsGJSON(benchmarkSemanticSelectorBody)
+		if !parsed || model != "gpt-5-mini" || provider != "openai" || !stream {
+			b.Fatalf("unexpected selector hints: parsed=%v model=%q provider=%q stream=%v", parsed, model, provider, stream)
+		}
 	}
 }

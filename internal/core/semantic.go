@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"github.com/tidwall/gjson"
 )
 
 // RouteHints holds minimal routing-relevant request hints derived from the
@@ -247,28 +249,24 @@ func DeriveWhiteBoxPrompt(snapshot *RequestSnapshot) *WhiteBoxPrompt {
 		return env
 	}
 
-	var selectors struct {
-		Model    string `json:"model"`
-		Provider string `json:"provider"`
-		Stream   bool   `json:"stream"`
-	}
-	if err := json.Unmarshal(trimmed, &selectors); err != nil {
+	model, provider, stream, parsed := deriveSnapshotSelectorHintsGJSON(trimmed)
+	if !parsed {
 		return env
 	}
 	env.JSONBodyParsed = true
 
-	env.RouteHints.Model = selectors.Model
+	env.RouteHints.Model = model
 	if env.RouteHints.Provider == "" {
-		env.RouteHints.Provider = selectors.Provider
+		env.RouteHints.Provider = provider
 	}
-	env.StreamRequested = selectors.Stream
+	env.StreamRequested = stream
 	if passthrough := env.CachedPassthroughRouteInfo(); passthrough != nil {
 		cloned := *passthrough
 		if cloned.Provider == "" {
-			cloned.Provider = selectors.Provider
+			cloned.Provider = provider
 		}
-		if selectors.Model != "" {
-			cloned.Model = selectors.Model
+		if model != "" {
+			cloned.Model = model
 		}
 		CachePassthroughRouteInfo(env, &cloned)
 	}
@@ -303,6 +301,67 @@ func derivePassthroughRouteInfoFromTransport(snapshot *RequestSnapshot) *Passthr
 		return nil
 	}
 	return info
+}
+
+func deriveSnapshotSelectorHintsStdlib(body []byte) (model, provider string, stream, parsed bool) {
+	var selectors struct {
+		Model    string `json:"model"`
+		Provider string `json:"provider"`
+		Stream   bool   `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &selectors); err != nil {
+		return "", "", false, false
+	}
+	return selectors.Model, selectors.Provider, selectors.Stream, true
+}
+
+func deriveSnapshotSelectorHintsGJSON(body []byte) (model, provider string, stream, parsed bool) {
+	if !gjson.ValidBytes(body) {
+		return "", "", false, false
+	}
+
+	root := gjson.ParseBytes(body)
+	if !root.IsObject() {
+		return "", "", false, false
+	}
+
+	modelResult := root.Get("model")
+	if !snapshotSelectorStringAllowed(modelResult) {
+		return "", "", false, false
+	}
+	providerResult := root.Get("provider")
+	if !snapshotSelectorStringAllowed(providerResult) {
+		return "", "", false, false
+	}
+	streamResult := root.Get("stream")
+	if !snapshotSelectorBoolAllowed(streamResult) {
+		return "", "", false, false
+	}
+
+	if modelResult.Type == gjson.String {
+		model = modelResult.String()
+	}
+	if providerResult.Type == gjson.String {
+		provider = providerResult.String()
+	}
+	if streamResult.Type == gjson.True || streamResult.Type == gjson.False {
+		stream = streamResult.Bool()
+	}
+	return model, provider, stream, true
+}
+
+func snapshotSelectorStringAllowed(result gjson.Result) bool {
+	if !result.Exists() {
+		return true
+	}
+	return result.Type == gjson.String || result.Type == gjson.Null
+}
+
+func snapshotSelectorBoolAllowed(result gjson.Result) bool {
+	if !result.Exists() {
+		return true
+	}
+	return result.Type == gjson.True || result.Type == gjson.False || result.Type == gjson.Null
 }
 
 // DeriveFileRouteInfoFromTransport derives sparse file route info from transport metadata.
