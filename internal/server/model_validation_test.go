@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -799,16 +800,6 @@ func TestSelectorHintsFromJSONGJSON_MatchesStdlibSemantics(t *testing.T) {
 	}
 }
 
-func BenchmarkSelectorHintsFromJSONStdlib(b *testing.B) {
-	b.ReportAllocs()
-	for b.Loop() {
-		model, provider, parsed := selectorHintsFromJSONStdlib(benchmarkSelectorValidationBody)
-		if !parsed || model != "gpt-4o-mini" || provider != "openai" {
-			b.Fatalf("unexpected selector hints: parsed=%v model=%q provider=%q", parsed, model, provider)
-		}
-	}
-}
-
 func BenchmarkSelectorHintsFromJSONGJSON(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
@@ -817,6 +808,17 @@ func BenchmarkSelectorHintsFromJSONGJSON(b *testing.B) {
 			b.Fatalf("unexpected selector hints: parsed=%v model=%q provider=%q", parsed, model, provider)
 		}
 	}
+}
+
+func selectorHintsFromJSONStdlib(body []byte) (model, provider string, parsed bool) {
+	var peek struct {
+		Model    string `json:"model"`
+		Provider string `json:"provider"`
+	}
+	if err := json.Unmarshal(body, &peek); err != nil {
+		return "", "", false
+	}
+	return peek.Model, peek.Provider, true
 }
 
 func TestModelValidation_ResolvesQualifiedMaskingAliasBeforeProviderParsing(t *testing.T) {

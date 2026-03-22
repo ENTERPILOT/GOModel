@@ -1,6 +1,7 @@
 package core
 
 import (
+	"encoding/json"
 	"net/http"
 	"testing"
 )
@@ -319,16 +320,6 @@ func TestDeriveSnapshotSelectorHintsGJSON_MatchesStdlibSemantics(t *testing.T) {
 	}
 }
 
-func BenchmarkDeriveSnapshotSelectorHintsStdlib(b *testing.B) {
-	b.ReportAllocs()
-	for b.Loop() {
-		model, provider, stream, parsed := deriveSnapshotSelectorHintsStdlib(benchmarkSemanticSelectorBody)
-		if !parsed || model != "gpt-5-mini" || provider != "openai" || !stream {
-			b.Fatalf("unexpected selector hints: parsed=%v model=%q provider=%q stream=%v", parsed, model, provider, stream)
-		}
-	}
-}
-
 func BenchmarkDeriveSnapshotSelectorHintsGJSON(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
@@ -337,4 +328,16 @@ func BenchmarkDeriveSnapshotSelectorHintsGJSON(b *testing.B) {
 			b.Fatalf("unexpected selector hints: parsed=%v model=%q provider=%q stream=%v", parsed, model, provider, stream)
 		}
 	}
+}
+
+func deriveSnapshotSelectorHintsStdlib(body []byte) (model, provider string, stream, parsed bool) {
+	var selectors struct {
+		Model    string `json:"model"`
+		Provider string `json:"provider"`
+		Stream   bool   `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &selectors); err != nil {
+		return "", "", false, false
+	}
+	return selectors.Model, selectors.Provider, selectors.Stream, true
 }

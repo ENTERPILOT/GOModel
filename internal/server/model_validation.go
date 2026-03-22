@@ -1,7 +1,6 @@
 package server
 
 import (
-	"encoding/json"
 	"strings"
 
 	"github.com/labstack/echo/v5"
@@ -145,17 +144,6 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 
 func cachedCanonicalSelectorHints(env *core.WhiteBoxPrompt) (model, provider string, ok bool) {
 	return env.CanonicalSelectorFromCachedRequest()
-}
-
-func selectorHintsFromJSONStdlib(body []byte) (model, provider string, parsed bool) {
-	var peek struct {
-		Model    string `json:"model"`
-		Provider string `json:"provider"`
-	}
-	if err := json.Unmarshal(body, &peek); err != nil {
-		return "", "", false
-	}
-	return peek.Model, peek.Provider, true
 }
 
 func selectorHintsFromJSONGJSON(body []byte) (model, provider string, parsed bool) {

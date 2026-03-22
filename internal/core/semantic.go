@@ -2,7 +2,6 @@ package core
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
@@ -301,18 +300,6 @@ func derivePassthroughRouteInfoFromTransport(snapshot *RequestSnapshot) *Passthr
 		return nil
 	}
 	return info
-}
-
-func deriveSnapshotSelectorHintsStdlib(body []byte) (model, provider string, stream, parsed bool) {
-	var selectors struct {
-		Model    string `json:"model"`
-		Provider string `json:"provider"`
-		Stream   bool   `json:"stream"`
-	}
-	if err := json.Unmarshal(body, &selectors); err != nil {
-		return "", "", false, false
-	}
-	return selectors.Model, selectors.Provider, selectors.Stream, true
 }
 
 func deriveSnapshotSelectorHintsGJSON(body []byte) (model, provider string, stream, parsed bool) {
