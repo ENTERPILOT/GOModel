@@ -317,9 +317,8 @@ func joinedSuffix(prefix, data []byte, n int) []byte {
 	}
 
 	needPrefix := min(n-len(data), len(prefix))
-
-	result := make([]byte, needPrefix+len(data))
-	copy(result, prefix[len(prefix)-needPrefix:])
-	copy(result[needPrefix:], data)
+	result := make([]byte, 0, n)
+	result = append(result, prefix[len(prefix)-needPrefix:]...)
+	result = append(result, data...)
 	return result
 }
