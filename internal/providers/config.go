@@ -39,6 +39,7 @@ var knownProviderEnvs = []struct {
 	{"groq", "groq", "GROQ_API_KEY", "GROQ_BASE_URL", "", "", false},
 	{"openrouter", "openrouter", "OPENROUTER_API_KEY", "OPENROUTER_BASE_URL", "", openRouterDefaultBaseURL, false},
 	{"azure", "azure", "AZURE_API_KEY", "AZURE_API_BASE", "AZURE_API_VERSION", "", true},
+	{"oracle", "oracle", "ORACLE_API_KEY", "ORACLE_BASE_URL", "", "", true},
 	{"ollama", "ollama", "OLLAMA_API_KEY", "OLLAMA_BASE_URL", "", "", false},
 }
 
@@ -125,7 +126,7 @@ func filterEmptyProviders(raw map[string]config.RawProviderConfig) map[string]co
 			result[name] = p
 			continue
 		}
-		if p.Type == "azure" && strings.TrimSpace(p.BaseURL) == "" {
+		if providerTypeRequiresBaseURL(p.Type) && strings.TrimSpace(p.BaseURL) == "" {
 			continue
 		}
 		if p.APIKey != "" && !strings.Contains(p.APIKey, "${") {
@@ -133,6 +134,15 @@ func filterEmptyProviders(raw map[string]config.RawProviderConfig) map[string]co
 		}
 	}
 	return result
+}
+
+func providerTypeRequiresBaseURL(providerType string) bool {
+	switch strings.TrimSpace(providerType) {
+	case "azure", "oracle":
+		return true
+	default:
+		return false
+	}
 }
 
 // buildProviderConfigs merges each raw provider config with the global ResilienceConfig,

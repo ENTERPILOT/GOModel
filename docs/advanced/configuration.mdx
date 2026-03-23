@@ -132,9 +132,11 @@ Set these to automatically register providers. No YAML configuration required.
 | `XAI_API_KEY`       | xAI (Grok)                 |
 | `GROQ_API_KEY`      | Groq                       |
 | `AZURE_API_KEY`     | Azure OpenAI (`AZURE_API_BASE` also required) |
+| `ORACLE_API_KEY`    | Oracle (`ORACLE_BASE_URL` also required) |
 | `OLLAMA_BASE_URL`   | Ollama (no API key needed) |
 
-Most providers can use a custom base URL via `<PROVIDER>_BASE_URL` (for example `OPENAI_BASE_URL`). OpenRouter defaults to `https://openrouter.ai/api/v1` and can be overridden with `OPENROUTER_BASE_URL`. Azure uses `AZURE_API_BASE` for its deployment base URL and accepts an optional `AZURE_API_VERSION` override; otherwise it defaults to `2024-10-21`.
+Most providers can use a custom base URL via `<PROVIDER>_BASE_URL` (for example `OPENAI_BASE_URL`). OpenRouter defaults to `https://openrouter.ai/api/v1` and can be overridden with `OPENROUTER_BASE_URL`. Azure uses `AZURE_API_BASE` for its deployment base URL and accepts an optional `AZURE_API_VERSION` override; otherwise it defaults to `2024-10-21`. Oracle requires `ORACLE_BASE_URL` because its OpenAI-compatible endpoint is region-specific.
+When using Oracle, `models:` also acts as a fallback inventory if the upstream endpoint does not expose a usable `/models` response.
 
 For OpenRouter, GOModel also sends default attribution headers unless the request already sets them. Override those defaults with `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME`.
 
@@ -249,6 +251,15 @@ providers:
     base_url: "https://my-resource.openai.azure.com/openai/deployments/gpt-4"
     api_key: "..."
     api_version: "2024-10-21"
+
+  # Add Oracle's OpenAI-compatible endpoint
+  oracle:
+    type: oracle
+    base_url: "https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
+    api_key: "..."
+    models:
+      - openai.gpt-oss-120b
+      - xai.grok-3
 
   # Restrict to specific models
   gemini:

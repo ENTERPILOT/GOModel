@@ -14,6 +14,7 @@ import (
 // ProviderOptions bundles runtime settings passed from the factory to provider constructors.
 type ProviderOptions struct {
 	Hooks      llmclient.Hooks
+	Models     []string
 	Resilience config.ResilienceConfig
 }
 
@@ -83,6 +84,7 @@ func (f *ProviderFactory) Create(cfg ProviderConfig) (core.Provider, error) {
 
 	opts := ProviderOptions{
 		Hooks:      hooks,
+		Models:     cfg.Models,
 		Resilience: cfg.Resilience,
 	}
 

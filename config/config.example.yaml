@@ -159,6 +159,15 @@ providers:
   #   api_key: "${AZURE_API_KEY}"
   #   api_version: "2024-10-21"
 
+  # Example: Oracle OpenAI-compatible endpoint
+  # oracle:
+  #   type: "oracle"
+  #   base_url: "${ORACLE_BASE_URL}"
+  #   api_key: "${ORACLE_API_KEY}"
+  #   models:
+  #     - openai.gpt-oss-120b
+  #     - xai.grok-3
+
   # Example: DeepSeek (OpenAI-compatible)
   # deepseek:
   #   type: "openai"

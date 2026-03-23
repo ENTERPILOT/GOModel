@@ -424,3 +424,34 @@ func TestProviderFactory_Create_PassesResilienceConfig(t *testing.T) {
 		t.Errorf("JitterFactor = %f, want 0.5", r.JitterFactor)
 	}
 }
+
+func TestProviderFactory_Create_PassesConfiguredModels(t *testing.T) {
+	factory := NewProviderFactory()
+
+	var receivedOpts ProviderOptions
+	factory.Add(Registration{
+		Type: "test",
+		New: func(apiKey string, opts ProviderOptions) core.Provider {
+			receivedOpts = opts
+			return &factoryMockProvider{}
+		},
+	})
+
+	cfg := ProviderConfig{
+		Type:   "test",
+		APIKey: "test-key",
+		Models: []string{"model-a", "model-b"},
+	}
+
+	_, err := factory.Create(cfg)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(receivedOpts.Models) != 2 {
+		t.Fatalf("len(receivedOpts.Models) = %d, want 2", len(receivedOpts.Models))
+	}
+	if receivedOpts.Models[0] != "model-a" || receivedOpts.Models[1] != "model-b" {
+		t.Fatalf("receivedOpts.Models = %v, want [model-a model-b]", receivedOpts.Models)
+	}
+}

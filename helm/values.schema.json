@@ -178,6 +178,14 @@
             "apiKey": { "type": "string" },
             "baseUrl": { "type": "string" }
           }
+        },
+        "oracle": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "apiKey": { "type": "string" },
+            "baseUrl": { "type": "string" }
+          }
         }
       }
     },

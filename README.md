@@ -39,6 +39,8 @@ docker run --rm -p 8080:8080 \
   -e AZURE_API_KEY="your-azure-key" \
   -e AZURE_API_BASE="https://your-resource.openai.azure.com/openai/deployments/your-deployment" \
   -e AZURE_API_VERSION="2024-10-21" \
+  -e ORACLE_API_KEY="your-oracle-key" \
+  -e ORACLE_BASE_URL="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1" \
   -e OLLAMA_BASE_URL="http://host.docker.internal:11434/v1" \
   enterpilot/gomodel
 ```
@@ -71,6 +73,7 @@ Example model identifiers are illustrative and subject to change; consult provid
 | OpenRouter | `OPENROUTER_API_KEY` | `google/gemini-2.5-flash` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | xAI (Grok) | `XAI_API_KEY` | `grok-2` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | Azure OpenAI | `AZURE_API_KEY` + `AZURE_API_BASE` (`AZURE_API_VERSION` optional) | `gpt-4o` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Oracle | `ORACLE_API_KEY` + `ORACLE_BASE_URL` | `openai.gpt-oss-120b` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Ollama | `OLLAMA_BASE_URL` | `llama3.2` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 ✅ Supported  ❌ Unsupported
