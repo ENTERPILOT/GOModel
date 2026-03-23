@@ -8,6 +8,10 @@
 
 A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
 
+<a href="docs/dashboard.gif">
+  <img src="docs/dashboard.gif" alt="Animated GOModel AI gateway dashboard showing usage analytics, token tracking, and estimated cost monitoring" width="100%">
+</a>
+
 ## Quick Start - Deploy the AI Gateway
 
 **Step 1:** Start GOModel
