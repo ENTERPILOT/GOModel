@@ -56,20 +56,20 @@ func TestForwardProxyMITMAnthropicJSONUsageAndAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("client.Do error: %v", err)
 	}
-	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("ReadAll error: %v", err)
 	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
 	if !strings.Contains(string(body), `"id":"msg_123"`) {
 		t.Fatalf("unexpected response body: %s", body)
 	}
 
-	if len(proxyAudit.entries) != 1 {
-		t.Fatalf("audit entries = %d, want 1", len(proxyAudit.entries))
-	}
-	auditEntry := proxyAudit.entries[0]
+	auditEntries := waitForAuditEntries(t, proxyAudit, 1)
+	auditEntry := auditEntries[0]
 	if auditEntry.Provider != "anthropic" {
 		t.Fatalf("Provider = %q, want anthropic", auditEntry.Provider)
 	}
@@ -83,10 +83,8 @@ func TestForwardProxyMITMAnthropicJSONUsageAndAudit(t *testing.T) {
 		t.Fatal("expected request and response bodies to be captured")
 	}
 
-	if len(proxyUsage.entries) != 1 {
-		t.Fatalf("usage entries = %d, want 1", len(proxyUsage.entries))
-	}
-	usageEntry := proxyUsage.entries[0]
+	usageEntries := waitForUsageEntries(t, proxyUsage, 1)
+	usageEntry := usageEntries[0]
 	if usageEntry.Provider != "anthropic" {
 		t.Fatalf("Provider = %q, want anthropic", usageEntry.Provider)
 	}
@@ -142,20 +140,20 @@ data: [DONE]
 	if err != nil {
 		t.Fatalf("client.Do error: %v", err)
 	}
-	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("ReadAll error: %v", err)
 	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("Close error: %v", err)
+	}
 	if !strings.Contains(string(body), "message_start") {
 		t.Fatalf("unexpected streamed body: %s", body)
 	}
 
-	if len(proxyAudit.entries) != 1 {
-		t.Fatalf("audit entries = %d, want 1", len(proxyAudit.entries))
-	}
-	auditEntry := proxyAudit.entries[0]
+	auditEntries := waitForAuditEntries(t, proxyAudit, 1)
+	auditEntry := auditEntries[0]
 	if auditEntry.Data == nil {
 		t.Fatal("Data = nil")
 	}
@@ -181,12 +179,42 @@ data: [DONE]
 		}
 	}
 
-	if len(proxyUsage.entries) != 1 {
-		t.Fatalf("usage entries = %d, want 1", len(proxyUsage.entries))
-	}
-	usageEntry := proxyUsage.entries[0]
+	usageEntries := waitForUsageEntries(t, proxyUsage, 1)
+	usageEntry := usageEntries[0]
 	if usageEntry.InputTokens != 10 || usageEntry.OutputTokens != 2 || usageEntry.TotalTokens != 12 {
 		t.Fatalf("unexpected usage entry: %+v", usageEntry)
+	}
+}
+
+func waitForAuditEntries(t *testing.T, logger *capturingAuditLogger, want int) []*auditlog.LogEntry {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		entries := logger.Entries()
+		if len(entries) == want {
+			return entries
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("audit entries = %d, want %d", len(entries), want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForUsageEntries(t *testing.T, logger *collectingUsageLogger, want int) []*usage.UsageEntry {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		entries := logger.Entries()
+		if len(entries) == want {
+			return entries
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("usage entries = %d, want %d", len(entries), want)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
