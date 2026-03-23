@@ -159,3 +159,10 @@ func TestNormalizeConfiguredModels(t *testing.T) {
 		t.Fatalf("got = %v, want [openai.gpt-oss-120b xai.grok-3]", got)
 	}
 }
+
+func TestNormalizeConfiguredModels_AllEmpty(t *testing.T) {
+	got := normalizeConfiguredModels([]string{"", "   ", ""})
+	if got != nil {
+		t.Fatalf("got = %v, want nil", got)
+	}
+}

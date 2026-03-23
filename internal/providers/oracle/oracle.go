@@ -3,6 +3,7 @@ package oracle
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -65,6 +66,12 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 			return nil, err
 		}
 		return resp, nil
+	}
+	if err != nil {
+		slog.Warn("oracle upstream ListModels failed, using configured models fallback",
+			"error", err,
+			"configured_models", len(p.configuredModels),
+		)
 	}
 
 	byID := make(map[string]core.Model, len(p.configuredModels))

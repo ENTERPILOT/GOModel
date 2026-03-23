@@ -20,6 +20,8 @@ import (
 	"time"
 )
 
+const oracleDefaultModel = "openai.gpt-oss-120b"
+
 // Provider configurations
 var providerConfigs = map[string]struct {
 	baseURL     string
@@ -200,11 +202,12 @@ func main() {
 	if eConfig.requestBody != nil {
 		reqBody := eConfig.requestBody
 
-		// Override model if specified
+		// Oracle's OpenAI-compatible endpoint expects OCI-hosted model IDs,
+		// so use a provider-specific default instead of the generic gpt-4o-mini fixture.
 		if *model != "" {
 			reqBody["model"] = *model
 		} else if *provider == "oracle" {
-			reqBody["model"] = "openai.gpt-oss-120b"
+			reqBody["model"] = oracleDefaultModel
 		}
 
 		// Adjust request for different providers

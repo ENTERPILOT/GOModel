@@ -25,4 +25,4 @@ Use explicit registration in main.go:
 
 ### Negative
 
-- Slightly more boilerplate in main.go (6 explicit Register calls)
+- Slightly more boilerplate in main.go (9 explicit registration calls)
