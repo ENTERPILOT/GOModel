@@ -12,6 +12,12 @@ if [[ "${RUN_BENCHMARK:-0}" == "1" ]]; then
     bash "$RAW_BENCH_DIR/run-benchmark.sh"
 fi
 
+if [[ ! -d "$RESULTS_DIR" ]]; then
+    echo "Results directory not found: $RESULTS_DIR" >&2
+    echo "Run with RUN_BENCHMARK=1 or set RESULTS_DIR to an existing benchmark result directory." >&2
+    exit 1
+fi
+
 echo "Generating normalized benchmark artifacts..."
 CMD=(
     python3

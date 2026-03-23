@@ -42,16 +42,16 @@ python3 -m pip install matplotlib numpy
 
 ## Quick start
 
-Generate normalized JSON and charts from the existing March 23 result set:
-
-```bash
-bash docs/2026-03-23_benchmark_scripts/run.sh
-```
-
-Rerun the raw benchmark first, then regenerate the artifacts:
+Run the raw benchmark and generate normalized artifacts:
 
 ```bash
 RUN_BENCHMARK=1 bash docs/2026-03-23_benchmark_scripts/run.sh
+```
+
+If you already have a benchmark result directory, point the wrapper at it:
+
+```bash
+RESULTS_DIR=/path/to/results bash docs/2026-03-23_benchmark_scripts/run.sh
 ```
 
 Copy the generated chart assets into the sibling Enterpilot blog repo:
@@ -76,6 +76,7 @@ By default, generated artifacts land in `docs/2026-03-23_benchmark_scripts/outpu
 
 - The raw benchmark runner lives in `docs/2026-03-23_benchmark_scripts/gateway-comparison/run-benchmark.sh`.
 - The normalization step exists because raw shell summaries are easy to drift or
-  misparse; the parser in this directory is covered by unit tests.
+  misparse; the parser in this directory is covered by unit tests with inline
+  sample fixtures, so the repo does not need to carry benchmark result dumps.
 - These results are a point-in-time localhost benchmark, not a universal claim
   about every deployment shape.
