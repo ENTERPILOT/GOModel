@@ -31,6 +31,14 @@ func TestRequestModelResolutionRequestedQualifiedModel(t *testing.T) {
 			},
 			want: "openai/gpt-4o",
 		},
+		{
+			name: "explicit provider preserves raw slash model",
+			in: &RequestModelResolution{
+				RequestedModel:    "openai/gpt-oss-120b",
+				RequestedProvider: "groq",
+			},
+			want: "groq/openai/gpt-oss-120b",
+		},
 	}
 
 	for _, tt := range tests {

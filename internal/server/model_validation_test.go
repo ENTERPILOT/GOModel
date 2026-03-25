@@ -44,7 +44,10 @@ func (p *modelCountingValidationProvider) ModelCount() int {
 }
 
 func TestModelValidation(t *testing.T) {
-	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini", "text-embedding-3-small"}}
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini", "text-embedding-3-small", "openai/gpt-oss-120b"},
+		providerTypes:   map[string]string{"groq/openai/gpt-oss-120b": "groq"},
+	}
 
 	tests := []struct {
 		name           string
@@ -139,13 +142,12 @@ func TestModelValidation(t *testing.T) {
 			handlerCalled:  false,
 		},
 		{
-			name:           "provider field conflict returns 400",
+			name:           "provider field keeps slash model raw",
 			method:         http.MethodPost,
 			path:           "/v1/chat/completions",
-			body:           `{"provider":"anthropic","model":"openai/gpt-4o-mini","messages":[{"role":"user","content":"hi"}]}`,
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "conflicts",
-			handlerCalled:  false,
+			body:           `{"provider":"groq","model":"openai/gpt-oss-120b","messages":[{"role":"user","content":"hi"}]}`,
+			expectedStatus: http.StatusOK,
+			handlerCalled:  true,
 		},
 		{
 			name:           "non-model path skips validation",
