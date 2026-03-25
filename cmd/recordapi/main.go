@@ -20,9 +20,12 @@ import (
 	"time"
 )
 
+const oracleDefaultModel = "openai.gpt-oss-120b"
+
 // Provider configurations
 var providerConfigs = map[string]struct {
 	baseURL     string
+	baseURLEnv  string
 	envKey      string
 	authHeader  string
 	contentType string
@@ -54,6 +57,12 @@ var providerConfigs = map[string]struct {
 	"xai": {
 		baseURL:     "https://api.x.ai",
 		envKey:      "XAI_API_KEY",
+		authHeader:  "Authorization",
+		contentType: "application/json",
+	},
+	"oracle": {
+		baseURLEnv:  "ORACLE_BASE_URL",
+		envKey:      "ORACLE_API_KEY",
 		authHeader:  "Authorization",
 		contentType: "application/json",
 	},
@@ -127,6 +136,9 @@ var providerCapabilities = map[string]map[string]bool{
 	"xai": {
 		"responses": true,
 	},
+	"oracle": {
+		"responses": true,
+	},
 }
 
 func endpointRequiresResponsesCapability(endpoint string) bool {
@@ -142,7 +154,7 @@ func providerSupportsResponses(provider string) bool {
 }
 
 func main() {
-	provider := flag.String("provider", "openai", "Provider to test (openai, anthropic, gemini, groq, xai)")
+	provider := flag.String("provider", "openai", "Provider to test (openai, anthropic, gemini, groq, xai, oracle)")
 	endpoint := flag.String("endpoint", "chat", "Endpoint to test (chat, chat_stream, models, responses, responses_stream)")
 	output := flag.String("output", "", "Output file path (required)")
 	model := flag.String("model", "", "Override model in request")
@@ -158,6 +170,15 @@ func main() {
 	if !ok {
 		fmt.Fprintf(os.Stderr, "Error: unknown provider %q\n", *provider)
 		os.Exit(1)
+	}
+
+	baseURL := pConfig.baseURL
+	if pConfig.baseURLEnv != "" {
+		baseURL = os.Getenv(pConfig.baseURLEnv)
+		if baseURL == "" {
+			fmt.Fprintf(os.Stderr, "Error: %s environment variable is required\n", pConfig.baseURLEnv)
+			os.Exit(1)
+		}
 	}
 
 	eConfig, ok := endpointConfigs[*endpoint]
@@ -181,9 +202,12 @@ func main() {
 	if eConfig.requestBody != nil {
 		reqBody := eConfig.requestBody
 
-		// Override model if specified
+		// Oracle's OpenAI-compatible endpoint expects OCI-hosted model IDs,
+		// so use a provider-specific default instead of the generic gpt-4o-mini fixture.
 		if *model != "" {
 			reqBody["model"] = *model
+		} else if *provider == "oracle" {
+			reqBody["model"] = oracleDefaultModel
 		}
 
 		// Adjust request for different providers
@@ -200,7 +224,7 @@ func main() {
 	}
 
 	// Build URL
-	url := pConfig.baseURL + eConfig.path
+	url := baseURL + eConfig.path
 
 	// Create request
 	req, err := http.NewRequest(eConfig.method, url, bodyReader)

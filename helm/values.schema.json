@@ -53,6 +53,62 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "providers": {
+            "properties": {
+              "oracle": {
+                "properties": { "enabled": { "const": true } }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "providers": {
+            "properties": {
+              "oracle": {
+                "properties": {
+                  "baseUrl": { "minLength": 1 }
+                },
+                "required": ["baseUrl"]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "providers": {
+            "properties": {
+              "oracle": {
+                "properties": {
+                  "apiKey": { "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "providers": {
+            "properties": {
+              "oracle": {
+                "properties": {
+                  "baseUrl": { "minLength": 1 }
+                },
+                "required": ["baseUrl"]
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "anyOf": [
@@ -117,6 +173,20 @@
           }
         }
       }
+    },
+    {
+      "properties": {
+        "providers": {
+          "properties": {
+            "oracle": {
+              "properties": {
+                "apiKey": { "minLength": 1 },
+                "baseUrl": { "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "properties": {
@@ -172,6 +242,14 @@
           }
         },
         "xai": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "apiKey": { "type": "string" },
+            "baseUrl": { "type": "string" }
+          }
+        },
+        "oracle": {
           "type": "object",
           "properties": {
             "enabled": { "type": "boolean" },

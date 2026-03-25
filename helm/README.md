@@ -1,6 +1,6 @@
 # GOModel Helm Chart
 
-High-performance AI gateway for multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI).
+High-performance AI gateway for multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Oracle).
 
 ## Prerequisites
 
@@ -59,6 +59,8 @@ helm install gomodel ./helm \
 | `providers.gemini.enabled` | Enable Gemini | `false` |
 | `providers.groq.enabled` | Enable Groq | `false` |
 | `providers.xai.enabled` | Enable xAI | `false` |
+| `providers.oracle.enabled` | Enable Oracle | `false` |
+| `providers.oracle.baseUrl` | Oracle OpenAI-compatible base URL mapped to `ORACLE_BASE_URL`; required when Oracle is enabled | `""` |
 | `cache.type` | Cache type (local/redis) | `"redis"` |
 | `redis.enabled` | Deploy Redis subchart | `true` |
 | `metrics.enabled` | Enable Prometheus metrics | `true` |
@@ -81,7 +83,11 @@ stringData:
   OPENAI_API_KEY: "sk-..."
   ANTHROPIC_API_KEY: "sk-ant-..."
   GEMINI_API_KEY: "..."
+  ORACLE_API_KEY: "..."
 ```
+
+Oracle also requires a base URL in values. The chart maps `providers.oracle.baseUrl`
+to the container env var `ORACLE_BASE_URL`.
 
 Then reference it (use `enabled=true` when using existingSecret since apiKey isn't set directly):
 
@@ -89,6 +95,15 @@ Then reference it (use `enabled=true` when using existingSecret since apiKey isn
 helm install gomodel ./helm \
   --set providers.existingSecret="llm-api-keys" \
   --set providers.openai.enabled=true
+```
+
+Example Oracle setup with an existing secret:
+
+```bash
+helm install gomodel ./helm \
+  --set providers.existingSecret="llm-api-keys" \
+  --set providers.oracle.enabled=true \
+  --set providers.oracle.baseUrl="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
 ```
 
 ### Ingress Example
