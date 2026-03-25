@@ -9,7 +9,7 @@ type RequestModelResolution struct {
 	AliasApplied     bool
 }
 
-// RequestedQualifiedModel reconstructs the raw requested selector.
+// RequestedQualifiedModel returns the canonical requested selector.
 func (r *RequestModelResolution) RequestedQualifiedModel() string {
 	if r == nil {
 		return ""
