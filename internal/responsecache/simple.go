@@ -138,15 +138,7 @@ func (m *simpleCacheMiddleware) StoreAfter(c *echo.Context, body []byte, next fu
 	}
 	if capture.status == http.StatusOK && capture.body.Len() > 0 {
 		data := bytes.Clone(capture.body.Bytes())
-		m.wg.Add(1)
-		go func() {
-			defer m.wg.Done()
-			storeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			if err := m.store.Set(storeCtx, key, data, m.ttl); err != nil {
-				slog.Warn("response cache write failed", "key", key, "err", err)
-			}
-		}()
+		m.enqueueWrite(cacheWriteJob{key: key, data: data})
 	}
 	return nil
 }

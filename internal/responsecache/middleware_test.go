@@ -277,14 +277,14 @@ func TestSimpleCacheMiddleware_UsesCapturedSnapshotBodyWithoutReadingLiveBody(t 
 	if rec1.Code != http.StatusOK {
 		t.Fatalf("first request: got status %d", rec1.Code)
 	}
-	mw.inner.wg.Wait()
+	mw.simple.wg.Wait()
 
 	rec2 := httptest.NewRecorder()
 	e.ServeHTTP(rec2, makeRequest())
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("second request: got status %d", rec2.Code)
 	}
-	if rec2.Header().Get("X-Cache") != "HIT" {
+	if rec2.Header().Get("X-Cache") != "HIT (exact)" {
 		t.Fatalf("expected cache hit from snapshot body, got X-Cache=%q", rec2.Header().Get("X-Cache"))
 	}
 	if callCount != 1 {
