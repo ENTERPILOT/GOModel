@@ -123,6 +123,16 @@ func TestListModels_ReturnsActionableErrorWhenUpstreamFailsWithoutConfiguredMode
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
+	gatewayErr, ok := err.(*core.GatewayError)
+	if !ok {
+		t.Fatalf("error type = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeProvider {
+		t.Fatalf("gatewayErr.Type = %q, want %q", gatewayErr.Type, core.ErrorTypeProvider)
+	}
+	if gatewayErr.Provider != "oracle" {
+		t.Fatalf("gatewayErr.Provider = %q, want oracle", gatewayErr.Provider)
+	}
 	if !strings.Contains(err.Error(), "configure providers.<name>.models") {
 		t.Fatalf("err = %q, want mention of providers.<name>.models", err)
 	}
