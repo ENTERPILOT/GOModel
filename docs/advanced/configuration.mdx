@@ -270,6 +270,17 @@ providers:
       - gemini-1.5-pro
 ```
 
+<Note>
+  For Oracle, prefer YAML configuration over env-only auto-discovery. Oracle
+  inference can work even when the upstream `/models` endpoint is unavailable,
+  so setting `models:` gives GoModel a reliable fallback inventory. See the
+  [Oracle guide](/guides/oracle) for the required OCI policy and a tested
+  configuration. Automatic model discovery is not yet a reliable, validated
+  path for this provider: GoModel can try Oracle's OpenAI-compatible `/models`
+  endpoint, but Oracle may not return a usable inventory there. OCI-native
+  Oracle model discovery is not integrated yet.
+</Note>
+
 ### Ollama (Local Models)
 
 Ollama does not require an API key. Set the base URL to enable it:

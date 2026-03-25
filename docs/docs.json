@@ -19,6 +19,7 @@
                 "group": "Guides",
                 "pages": [
                     "guides/openclaw",
+                    "guides/oracle",
                     "guides/claude-code",
                     "guides/codex",
                     "guides/opencode-and-other-agents"

@@ -2,6 +2,7 @@ package oracle
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -63,7 +64,10 @@ func (p *Provider) ListModels(ctx context.Context) (*core.ModelsResponse, error)
 	resp, err := p.compat.ListModels(ctx)
 	if len(p.configuredModels) == 0 {
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf(
+				"oracle ListModels failed: %w; configure providers.<name>.models to use Oracle when upstream /models is unavailable",
+				err,
+			)
 		}
 		return resp, nil
 	}

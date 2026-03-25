@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"gomodel/internal/core"
@@ -108,6 +109,22 @@ func TestListModels_ReturnsUpstreamInventoryWhenNoConfiguredModels(t *testing.T)
 	}
 	if len(resp.Data) != 1 || resp.Data[0].ID != "openai.gpt-oss-120b" {
 		t.Fatalf("unexpected models response: %+v", resp.Data)
+	}
+}
+
+func TestListModels_ReturnsActionableErrorWhenUpstreamFailsWithoutConfiguredModels(t *testing.T) {
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
+	provider := NewWithHTTPClient("oracle-key", server.Client(), llmclient.Hooks{}, nil)
+	provider.SetBaseURL(server.URL)
+
+	_, err := provider.ListModels(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "configure providers.<name>.models") {
+		t.Fatalf("err = %q, want mention of providers.<name>.models", err)
 	}
 }
 
