@@ -85,7 +85,7 @@ func UnknownJSONFieldsFromMap(fields map[string]json.RawMessage) UnknownJSONFiel
 	}
 	sort.Strings(keys)
 
-	buf := bytes.NewBuffer(make([]byte, 0, len(keys)*16))
+	var buf bytes.Buffer
 	buf.WriteByte('{')
 	for i, key := range keys {
 		if i > 0 {

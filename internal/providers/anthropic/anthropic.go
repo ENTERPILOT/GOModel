@@ -998,20 +998,6 @@ func extractTextContent(blocks []anthropicContent) string {
 	return sb.String()
 }
 
-// extractThinkingContent returns the concatenated thinking text from all "thinking" content blocks.
-func extractThinkingContent(blocks []anthropicContent) string {
-	var sb strings.Builder
-	for _, b := range blocks {
-		if b.Type == "thinking" && b.Thinking != "" {
-			if sb.Len() > 0 {
-				sb.WriteString("\n\n")
-			}
-			sb.WriteString(b.Thinking)
-		}
-	}
-	return sb.String()
-}
-
 // extractToolCalls maps Anthropic "tool_use" content blocks to OpenAI-compatible tool calls.
 func extractToolCalls(blocks []anthropicContent) []core.ToolCall {
 	out := make([]core.ToolCall, 0)
