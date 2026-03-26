@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -16,7 +15,7 @@ type mongoStorage struct {
 }
 
 // NewMongoDB creates a new MongoDB storage connection.
-func NewMongoDB(ctx context.Context, cfg MongoDBConfig) (Storage, error) {
+func NewMongoDB(ctx context.Context, cfg MongoDBConfig) (MongoDBStorage, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("MongoDB URL is required")
 	}
@@ -49,22 +48,6 @@ func NewMongoDB(ctx context.Context, cfg MongoDBConfig) (Storage, error) {
 		client:   client,
 		database: database,
 	}, nil
-}
-
-func (s *mongoStorage) Type() string {
-	return TypeMongoDB
-}
-
-func (s *mongoStorage) SQLiteDB() *sql.DB {
-	return nil
-}
-
-func (s *mongoStorage) PostgreSQLPool() any {
-	return nil
-}
-
-func (s *mongoStorage) MongoDatabase() any {
-	return s.database
 }
 
 func (s *mongoStorage) Close() error {

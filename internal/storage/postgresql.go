@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"math"
 
@@ -16,7 +15,7 @@ type postgresStorage struct {
 
 // NewPostgreSQL creates a new PostgreSQL storage connection.
 // It creates a connection pool for efficient connection reuse.
-func NewPostgreSQL(ctx context.Context, cfg PostgreSQLConfig) (Storage, error) {
+func NewPostgreSQL(ctx context.Context, cfg PostgreSQLConfig) (PostgreSQLStorage, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("PostgreSQL URL is required")
 	}
@@ -48,22 +47,6 @@ func NewPostgreSQL(ctx context.Context, cfg PostgreSQLConfig) (Storage, error) {
 	}
 
 	return &postgresStorage{pool: pool}, nil
-}
-
-func (s *postgresStorage) Type() string {
-	return TypePostgreSQL
-}
-
-func (s *postgresStorage) SQLiteDB() *sql.DB {
-	return nil
-}
-
-func (s *postgresStorage) PostgreSQLPool() any {
-	return s.pool
-}
-
-func (s *postgresStorage) MongoDatabase() any {
-	return nil
 }
 
 func (s *postgresStorage) Close() error {

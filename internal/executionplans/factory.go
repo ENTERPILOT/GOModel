@@ -7,9 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-	"go.mongodb.org/mongo-driver/v2/mongo"
-
 	"gomodel/config"
 	"gomodel/internal/storage"
 )
@@ -59,7 +56,7 @@ func New(ctx context.Context, cfg *config.Config, compiler Compiler, refreshInte
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
-	storeConn, err := storage.New(ctx, buildStorageConfig(cfg))
+	storeConn, err := storage.New(ctx, cfg.Storage.BackendConfig())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
 	}
@@ -97,59 +94,15 @@ func newResult(ctx context.Context, storeConn storage.Storage, compiler Compiler
 	}, nil
 }
 
-func buildStorageConfig(cfg *config.Config) storage.Config {
-	storageCfg := storage.Config{
-		Type: cfg.Storage.Type,
-		SQLite: storage.SQLiteConfig{
-			Path: cfg.Storage.SQLite.Path,
-		},
-		PostgreSQL: storage.PostgreSQLConfig{
-			URL:      cfg.Storage.PostgreSQL.URL,
-			MaxConns: cfg.Storage.PostgreSQL.MaxConns,
-		},
-		MongoDB: storage.MongoDBConfig{
-			URL:      cfg.Storage.MongoDB.URL,
-			Database: cfg.Storage.MongoDB.Database,
-		},
-	}
-
-	if storageCfg.Type == "" {
-		storageCfg.Type = storage.TypeSQLite
-	}
-	if storageCfg.SQLite.Path == "" {
-		storageCfg.SQLite.Path = storage.DefaultSQLitePath
-	}
-	if storageCfg.MongoDB.Database == "" {
-		storageCfg.MongoDB.Database = "gomodel"
-	}
-	return storageCfg
-}
-
 func createStore(ctx context.Context, store storage.Storage) (Store, error) {
-	switch store.Type() {
-	case storage.TypeSQLite:
-		return NewSQLiteStore(store.SQLiteDB())
-	case storage.TypePostgreSQL:
-		pool := store.PostgreSQLPool()
-		if pool == nil {
-			return nil, fmt.Errorf("PostgreSQL pool is nil")
-		}
-		pgxPool, ok := pool.(*pgxpool.Pool)
-		if !ok {
-			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
-		}
-		return NewPostgreSQLStore(ctx, pgxPool)
-	case storage.TypeMongoDB:
-		db := store.MongoDatabase()
-		if db == nil {
-			return nil, fmt.Errorf("MongoDB database is nil")
-		}
-		mongoDB, ok := db.(*mongo.Database)
-		if !ok {
-			return nil, fmt.Errorf("invalid MongoDB database type: %T", db)
-		}
-		return NewMongoDBStore(mongoDB)
+	switch store := store.(type) {
+	case storage.SQLiteStorage:
+		return NewSQLiteStore(store.DB())
+	case storage.PostgreSQLStorage:
+		return NewPostgreSQLStore(ctx, store.Pool())
+	case storage.MongoDBStorage:
+		return NewMongoDBStore(store.Database())
 	default:
-		return nil, fmt.Errorf("unknown storage type: %s", store.Type())
+		return nil, fmt.Errorf("unsupported storage backend %T", store)
 	}
 }

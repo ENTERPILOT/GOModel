@@ -16,7 +16,7 @@ func TestSQLiteConcurrentWriteSafety(t *testing.T) {
 	}
 	defer store.Close()
 
-	db := store.SQLiteDB()
+	db := store.DB()
 
 	// Create two tables to simulate audit log and usage tracking writing concurrently.
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS test_audit (id TEXT PRIMARY KEY, data TEXT)`)

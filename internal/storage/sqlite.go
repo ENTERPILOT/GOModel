@@ -16,7 +16,7 @@ type sqliteStorage struct {
 
 // NewSQLite creates a new SQLite storage connection.
 // It enables WAL mode for better concurrent read/write performance.
-func NewSQLite(cfg SQLiteConfig) (Storage, error) {
+func NewSQLite(cfg SQLiteConfig) (SQLiteStorage, error) {
 	if cfg.Path == "" {
 		cfg.Path = DefaultSQLitePath
 	}
@@ -57,20 +57,8 @@ func NewSQLite(cfg SQLiteConfig) (Storage, error) {
 	return &sqliteStorage{db: db}, nil
 }
 
-func (s *sqliteStorage) Type() string {
-	return TypeSQLite
-}
-
-func (s *sqliteStorage) SQLiteDB() *sql.DB {
+func (s *sqliteStorage) DB() *sql.DB {
 	return s.db
-}
-
-func (s *sqliteStorage) PostgreSQLPool() any {
-	return nil
-}
-
-func (s *sqliteStorage) MongoDatabase() any {
-	return nil
 }
 
 func (s *sqliteStorage) Close() error {

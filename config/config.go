@@ -261,6 +261,34 @@ type MongoDBStorageConfig struct {
 	Database string `yaml:"database" env:"MONGODB_DATABASE"`
 }
 
+// BackendConfig converts the application storage config into the internal storage config.
+func (c StorageConfig) BackendConfig() storage.Config {
+	cfg := storage.Config{
+		Type: c.Type,
+		SQLite: storage.SQLiteConfig{
+			Path: c.SQLite.Path,
+		},
+		PostgreSQL: storage.PostgreSQLConfig{
+			URL:      c.PostgreSQL.URL,
+			MaxConns: c.PostgreSQL.MaxConns,
+		},
+		MongoDB: storage.MongoDBConfig{
+			URL:      c.MongoDB.URL,
+			Database: c.MongoDB.Database,
+		},
+	}
+	if cfg.Type == "" {
+		cfg.Type = storage.TypeSQLite
+	}
+	if cfg.SQLite.Path == "" {
+		cfg.SQLite.Path = storage.DefaultSQLitePath
+	}
+	if cfg.MongoDB.Database == "" {
+		cfg.MongoDB.Database = "gomodel"
+	}
+	return cfg
+}
+
 // CacheConfig holds model and response cache configuration.
 type CacheConfig struct {
 	Model    ModelCacheConfig    `yaml:"model"`
