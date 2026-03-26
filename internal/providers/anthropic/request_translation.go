@@ -204,18 +204,43 @@ func buildAnthropicMessageContent(msg core.Message) (any, error) {
 		}, nil
 	}
 
+	reasoningBlocks, err := extractAnthropicReasoningBlocksFromExtraFields(msg.ExtraFields)
+	if err != nil {
+		return nil, err
+	}
+
 	content, err := convertMessageContentToAnthropic(msg.Content)
 	if err != nil {
 		return nil, err
 	}
 	if len(msg.ToolCalls) == 0 {
-		return content, nil
+		if len(reasoningBlocks) == 0 {
+			return content, nil
+		}
+		blocks := make([]anthropicContentBlock, 0, len(reasoningBlocks)+1)
+		blocks = append(blocks, reasoningBlocks...)
+		switch c := content.(type) {
+		case string:
+			if strings.TrimSpace(c) != "" {
+				blocks = append(blocks, anthropicContentBlock{
+					Type: "text",
+					Text: c,
+				})
+			}
+		case []anthropicContentBlock:
+			blocks = append(blocks, c...)
+		}
+		if len(blocks) == 0 {
+			return "", nil
+		}
+		return blocks, nil
 	}
 	if len(msg.ToolCalls) > maxToolCallsPerMessage {
 		return nil, core.NewInvalidRequestError("too many tool calls in message", nil)
 	}
 
-	blocks := make([]anthropicContentBlock, 0, len(msg.ToolCalls)+1)
+	blocks := make([]anthropicContentBlock, 0, len(reasoningBlocks)+len(msg.ToolCalls)+1)
+	blocks = append(blocks, reasoningBlocks...)
 	switch c := content.(type) {
 	case string:
 		if strings.TrimSpace(c) != "" {

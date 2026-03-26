@@ -146,6 +146,144 @@ func cloneStringAnyMap(src map[string]any) map[string]any {
 	return dst
 }
 
+type responsesReasoningDetail struct {
+	Type      string `json:"type"`
+	Text      string `json:"text"`
+	Signature string `json:"signature,omitempty"`
+}
+
+func buildResponsesReasoningExtraFields(content any) (core.UnknownJSONFields, error) {
+	details, err := parseResponsesReasoningDetails(content)
+	if err != nil {
+		return core.UnknownJSONFields{}, err
+	}
+	if len(details) == 0 {
+		return core.UnknownJSONFields{}, nil
+	}
+
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return core.UnknownJSONFields{}, err
+	}
+	return core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+		"reasoning_details": raw,
+	}), nil
+}
+
+func mergeResponsesReasoningExtraFields(base core.UnknownJSONFields, content any) (core.UnknownJSONFields, error) {
+	reasoningExtras, err := buildResponsesReasoningExtraFields(content)
+	if err != nil {
+		return core.UnknownJSONFields{}, err
+	}
+	return core.MergeUnknownJSONFields(base, reasoningExtras), nil
+}
+
+func parseResponsesReasoningDetails(content any) ([]responsesReasoningDetail, error) {
+	switch typed := content.(type) {
+	case []core.ResponsesContentItem:
+		details := make([]responsesReasoningDetail, 0, len(typed))
+		for _, part := range typed {
+			if part.Type != "reasoning_text" {
+				return nil, fmt.Errorf("reasoning content items must have type reasoning_text")
+			}
+			if strings.TrimSpace(part.Text) == "" {
+				continue
+			}
+			details = append(details, responsesReasoningDetail{
+				Type:      "reasoning_text",
+				Text:      part.Text,
+				Signature: strings.TrimSpace(part.Signature),
+			})
+		}
+		return details, nil
+	case []map[string]any:
+		items := make([]any, 0, len(typed))
+		for _, item := range typed {
+			items = append(items, item)
+		}
+		return parseResponsesReasoningDetails(items)
+	case []any:
+		details := make([]responsesReasoningDetail, 0, len(typed))
+		for _, item := range typed {
+			part, ok := item.(map[string]any)
+			if !ok {
+				return nil, fmt.Errorf("reasoning content items must be objects")
+			}
+			partType, _ := part["type"].(string)
+			if partType != "reasoning_text" {
+				return nil, fmt.Errorf("reasoning content items must have type reasoning_text")
+			}
+			text, _ := part["text"].(string)
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			signature, _ := part["signature"].(string)
+			details = append(details, responsesReasoningDetail{
+				Type:      "reasoning_text",
+				Text:      text,
+				Signature: strings.TrimSpace(signature),
+			})
+		}
+		return details, nil
+	case nil:
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("reasoning content must be an array")
+	}
+}
+
+func reasoningDetailsFromUnknownFields(fields core.UnknownJSONFields) []responsesReasoningDetail {
+	raw := fields.Lookup("reasoning_details")
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var details []responsesReasoningDetail
+	if err := json.Unmarshal(raw, &details); err != nil {
+		return nil
+	}
+	return details
+}
+
+func buildReasoningUnknownFields(details []responsesReasoningDetail) core.UnknownJSONFields {
+	if len(details) == 0 {
+		return core.UnknownJSONFields{}
+	}
+
+	raw, err := json.Marshal(details)
+	if err != nil {
+		return core.UnknownJSONFields{}
+	}
+	return core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+		"reasoning_details": raw,
+	})
+}
+
+func assistantMessageContainsOnlyReasoning(msg core.Message) bool {
+	if msg.Role != "assistant" || len(msg.ToolCalls) != 0 {
+		return false
+	}
+	if core.HasStructuredContent(msg.Content) {
+		return false
+	}
+	if core.ExtractTextContent(msg.Content) != "" {
+		return false
+	}
+	return len(reasoningDetailsFromUnknownFields(msg.ExtraFields)) > 0
+}
+
+func mergeReasoningOnlyAssistantMessage(dst *core.Message, src core.Message) {
+	details := append(reasoningDetailsFromUnknownFields(dst.ExtraFields), reasoningDetailsFromUnknownFields(src.ExtraFields)...)
+	dst.ExtraFields = core.MergeUnknownJSONFields(dst.ExtraFields, src.ExtraFields, buildReasoningUnknownFields(details))
+}
+
+func mergeReasoningIntoAssistantMessage(dst *core.Message, src core.Message) {
+	details := reasoningDetailsFromUnknownFields(dst.ExtraFields)
+	merged := cloneResponsesMessage(src)
+	merged.ExtraFields = core.MergeUnknownJSONFields(dst.ExtraFields, src.ExtraFields, buildReasoningUnknownFields(details))
+	*dst = merged
+}
+
 // ConvertResponsesInputToMessages converts a Responses API input payload into Chat API messages.
 func ConvertResponsesInputToMessages(input any) ([]core.Message, error) {
 	switch in := input.(type) {
@@ -191,6 +329,23 @@ func convertResponsesInputItems(items []any) ([]core.Message, error) {
 		}
 
 		if msg.Role == "assistant" {
+			if itemType == "reasoning" {
+				if pendingAssistant == nil {
+					assistant := cloneResponsesMessage(msg)
+					pendingAssistant = &assistant
+				} else if assistantMessageContainsOnlyReasoning(*pendingAssistant) {
+					mergeReasoningOnlyAssistantMessage(pendingAssistant, msg)
+				} else {
+					flushPendingAssistant()
+					assistant := cloneResponsesMessage(msg)
+					pendingAssistant = &assistant
+				}
+				continue
+			}
+			if pendingAssistant != nil && assistantMessageContainsOnlyReasoning(*pendingAssistant) {
+				mergeReasoningIntoAssistantMessage(pendingAssistant, msg)
+				continue
+			}
 			if itemType == "message" {
 				flushPendingAssistant()
 			}
@@ -268,6 +423,17 @@ func convertResponsesInputElement(item core.ResponsesInputElement, index int) (c
 			Content:     content,
 			ExtraFields: core.CloneUnknownJSONFields(item.ExtraFields),
 		}, "function_call_output", nil
+	case "reasoning":
+		reasoningExtras, err := mergeResponsesReasoningExtraFields(core.CloneUnknownJSONFields(item.ExtraFields), item.Content)
+		if err != nil {
+			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: reasoning.content must be an array of reasoning_text items", index), err)
+		}
+		return core.Message{
+			Role:        "assistant",
+			Content:     "",
+			ContentNull: true,
+			ExtraFields: reasoningExtras,
+		}, "reasoning", nil
 	default: // message (type="" or "message")
 		role := strings.TrimSpace(item.Role)
 		if role == "" {
@@ -329,6 +495,20 @@ func convertResponsesInputMap(item map[string]any, index int) (core.Message, str
 			Content:     content,
 			ExtraFields: core.UnknownJSONFieldsFromMap(rawJSONMapFromUnknownKeys(item, "type", "call_id", "status", "output")),
 		}, "function_call_output", nil
+	case "reasoning":
+		reasoningExtras, err := mergeResponsesReasoningExtraFields(
+			core.UnknownJSONFieldsFromMap(rawJSONMapFromUnknownKeys(item, "type", "status", "content")),
+			item["content"],
+		)
+		if err != nil {
+			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: reasoning.content must be an array of reasoning_text items", index), err)
+		}
+		return core.Message{
+			Role:        "assistant",
+			Content:     "",
+			ContentNull: true,
+			ExtraFields: reasoningExtras,
+		}, "reasoning", nil
 	}
 
 	role, _ := item["role"].(string)

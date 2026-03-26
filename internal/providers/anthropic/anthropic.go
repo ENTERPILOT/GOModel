@@ -255,6 +255,8 @@ type anthropicMessage struct {
 type anthropicContentBlock struct {
 	Type      string                  `json:"type"`
 	Text      string                  `json:"text,omitempty"`
+	Thinking  string                  `json:"thinking,omitempty"`
+	Signature string                  `json:"signature,omitempty"`
 	ID        string                  `json:"id,omitempty"`
 	Name      string                  `json:"name,omitempty"`
 	Input     any                     `json:"input,omitempty"`
@@ -401,7 +403,7 @@ func normalizeEffort(effort string) string {
 // convertFromAnthropicResponse converts Anthropic response to core.ChatResponse
 func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 	content := extractTextContent(resp.Content)
-	thinking := extractThinkingContent(resp.Content)
+	reasoningDetails := extractAnthropicReasoningDetails(resp.Content)
 	toolCalls := extractToolCalls(resp.Content)
 
 	finishReason := normalizeAnthropicStopReason(resp.StopReason)
@@ -426,14 +428,8 @@ func convertFromAnthropicResponse(resp *anthropicResponse) *core.ChatResponse {
 		ToolCalls: toolCalls,
 	}
 
-	// Surface thinking content as reasoning_content (OpenAI-compatible format).
-	if thinking != "" {
-		raw, err := json.Marshal(thinking)
-		if err == nil {
-			msg.ExtraFields = core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
-				"reasoning_content": raw,
-			})
-		}
+	if extraFields := buildAnthropicReasoningExtraFields(reasoningDetails); !extraFields.IsEmpty() {
+		msg.ExtraFields = extraFields
 	}
 
 	return &core.ChatResponse{
@@ -495,18 +491,19 @@ func (p *Provider) StreamChatCompletion(ctx context.Context, req *core.ChatReque
 
 // streamConverter wraps an Anthropic stream and converts it to OpenAI format
 type streamConverter struct {
-	reader            *bufio.Reader
-	body              io.ReadCloser
-	model             string
-	msgID             string
-	nextToolCallIndex int
-	toolCalls         map[int]*streamToolCallState
-	thinkingBlocks    map[int]bool // tracks which content block indices are thinking blocks
-	usage             anthropicUsage
-	hasUsage          bool
-	buffer            []byte
-	closed            bool
-	emittedToolCalls  bool
+	reader                  *bufio.Reader
+	body                    io.ReadCloser
+	model                   string
+	emitReasoningSignatures bool
+	msgID                   string
+	nextToolCallIndex       int
+	toolCalls               map[int]*streamToolCallState
+	thinkingBlocks          map[int]bool // tracks which content block indices are thinking blocks
+	usage                   anthropicUsage
+	hasUsage                bool
+	buffer                  []byte
+	closed                  bool
+	emittedToolCalls        bool
 }
 
 type streamToolCallState struct {
@@ -520,12 +517,13 @@ type streamToolCallState struct {
 
 func newStreamConverter(body io.ReadCloser, model string) *streamConverter {
 	return &streamConverter{
-		reader:         bufio.NewReader(body),
-		body:           body,
-		model:          model,
-		toolCalls:      make(map[int]*streamToolCallState),
-		thinkingBlocks: make(map[int]bool),
-		buffer:         make([]byte, 0, 1024),
+		reader:                  bufio.NewReader(body),
+		body:                    body,
+		model:                   model,
+		emitReasoningSignatures: anthropicThinkingSignaturesCompatEnabled(),
+		toolCalls:               make(map[int]*streamToolCallState),
+		thinkingBlocks:          make(map[int]bool),
+		buffer:                  make([]byte, 0, 1024),
 	}
 }
 
@@ -798,13 +796,21 @@ func (sc *streamConverter) convertEvent(event *anthropicStreamEvent) string {
 		switch event.Delta.Type {
 		case "thinking_delta":
 			if sc.thinkingBlocks[event.Index] && event.Delta.Thinking != "" {
-				return sc.formatChatChunk(map[string]any{
+				delta := map[string]any{
 					"reasoning_content": event.Delta.Thinking,
-				}, nil, nil)
+				}
+				if sc.emitReasoningSignatures {
+					delta["reasoning_index"] = event.Index
+				}
+				return sc.formatChatChunk(delta, nil, nil)
 			}
 		case "signature_delta":
-			// Signature deltas are internal to Anthropic's thinking protocol;
-			// no OpenAI-compatible equivalent to emit.
+			if sc.emitReasoningSignatures && sc.thinkingBlocks[event.Index] && event.Delta.Signature != "" {
+				return sc.formatChatChunk(map[string]any{
+					"reasoning_signature": event.Delta.Signature,
+					"reasoning_index":     event.Index,
+				}, nil, nil)
+			}
 			return ""
 		case "text_delta":
 			if event.Delta.Text != "" {
@@ -1020,6 +1026,7 @@ func extractToolCalls(blocks []anthropicContent) []core.ToolCall {
 // convertAnthropicResponseToResponses converts an Anthropic response to ResponsesResponse
 func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) *core.ResponsesResponse {
 	content := extractTextContent(resp.Content)
+	reasoningDetails := extractAnthropicReasoningDetails(resp.Content)
 	toolCalls := extractToolCalls(resp.Content)
 
 	msg := core.Message{
@@ -1031,6 +1038,9 @@ func convertAnthropicResponseToResponses(resp *anthropicResponse, model string) 
 		Content:   msg.Content,
 		ToolCalls: msg.ToolCalls,
 	})
+	if reasoningItem := buildAnthropicResponsesReasoningItem(reasoningDetails); reasoningItem != nil {
+		output = append([]core.ResponsesOutputItem{*reasoningItem}, output...)
+	}
 
 	return &core.ResponsesResponse{
 		ID:        resp.ID,
@@ -1468,32 +1478,49 @@ func (p *Provider) StreamResponses(ctx context.Context, req *core.ResponsesReque
 
 // responsesStreamConverter wraps an Anthropic stream and converts it to Responses API format
 type responsesStreamConverter struct {
-	reader          *bufio.Reader
-	body            io.ReadCloser
-	model           string
-	responseID      string
-	output          *providers.ResponsesOutputEventState
-	nextOutputIndex int
-	toolCalls       map[int]*providers.ResponsesOutputToolCallState
-	thinkingBlocks  map[int]bool // tracks which content block indices are thinking blocks
-	buffer          []byte
-	closed          bool
-	sentDone        bool
-	usage           anthropicUsage
-	hasUsage        bool
+	reader                  *bufio.Reader
+	body                    io.ReadCloser
+	model                   string
+	responseID              string
+	output                  *providers.ResponsesOutputEventState
+	nextOutputIndex         int
+	assistantOutputIndex    int
+	toolCalls               map[int]*providers.ResponsesOutputToolCallState
+	thinkingContentIndices  map[int]int
+	reasoning               *responsesReasoningState
+	emitReasoningSignatures bool
+	buffer                  []byte
+	closed                  bool
+	sentDone                bool
+	usage                   anthropicUsage
+	hasUsage                bool
+}
+
+type responsesReasoningState struct {
+	ItemID      string
+	OutputIndex int
+	Started     bool
+	Done        bool
+	Blocks      []responsesReasoningBlockState
+}
+
+type responsesReasoningBlockState struct {
+	Text      strings.Builder
+	Signature string
 }
 
 func newResponsesStreamConverter(body io.ReadCloser, model string) *responsesStreamConverter {
 	responseID := "resp_" + uuid.New().String()
 	return &responsesStreamConverter{
-		reader:         bufio.NewReader(body),
-		body:           body,
-		model:          model,
-		responseID:     responseID,
-		output:         providers.NewResponsesOutputEventState(responseID),
-		toolCalls:      make(map[int]*providers.ResponsesOutputToolCallState),
-		thinkingBlocks: make(map[int]bool),
-		buffer:         make([]byte, 0, 1024),
+		reader:                  bufio.NewReader(body),
+		body:                    body,
+		model:                   model,
+		responseID:              responseID,
+		output:                  providers.NewResponsesOutputEventState(responseID),
+		toolCalls:               make(map[int]*providers.ResponsesOutputToolCallState),
+		thinkingContentIndices:  make(map[int]int),
+		emitReasoningSignatures: anthropicThinkingSignaturesCompatEnabled(),
+		buffer:                  make([]byte, 0, 1024),
 	}
 }
 
@@ -1517,7 +1544,7 @@ func (sc *responsesStreamConverter) Read(p []byte) (n int, err error) {
 				// Send final done event and [DONE] message
 				if !sc.sentDone {
 					sc.sentDone = true
-					prefix := sc.output.CompleteAssistantOutput(0)
+					prefix := sc.completeReasoningOutputIfNeeded() + sc.output.CompleteAssistantOutput(sc.assistantOutputIndex)
 					responseData := map[string]any{
 						"id":         sc.responseID,
 						"object":     "response",
@@ -1579,6 +1606,7 @@ func (sc *responsesStreamConverter) reserveAssistantMessageOutput() {
 		return
 	}
 	sc.output.ReserveAssistant()
+	sc.assistantOutputIndex = sc.nextOutputIndex
 	sc.nextOutputIndex++
 }
 
@@ -1598,6 +1626,124 @@ func (sc *responsesStreamConverter) newResponsesToolCallState(contentBlock *anth
 	}
 
 	return state
+}
+
+func (sc *responsesStreamConverter) ensureResponsesReasoningState() *responsesReasoningState {
+	if sc.reasoning != nil {
+		return sc.reasoning
+	}
+	sc.reasoning = &responsesReasoningState{
+		ItemID:      "rs_" + uuid.New().String(),
+		OutputIndex: sc.nextOutputIndex,
+	}
+	sc.nextOutputIndex++
+	return sc.reasoning
+}
+
+func (sc *responsesStreamConverter) startReasoningOutput() string {
+	state := sc.ensureResponsesReasoningState()
+	if state.Started {
+		return ""
+	}
+	state.Started = true
+	return sc.output.WriteEvent("response.output_item.added", map[string]any{
+		"type": "response.output_item.added",
+		"item": map[string]any{
+			"id":     state.ItemID,
+			"type":   "reasoning",
+			"status": "in_progress",
+		},
+		"output_index": state.OutputIndex,
+	})
+}
+
+func (sc *responsesStreamConverter) reasoningContentIndex(anthropicIndex int) int {
+	if contentIndex, ok := sc.thinkingContentIndices[anthropicIndex]; ok {
+		return contentIndex
+	}
+	state := sc.ensureResponsesReasoningState()
+	contentIndex := len(state.Blocks)
+	state.Blocks = append(state.Blocks, responsesReasoningBlockState{})
+	sc.thinkingContentIndices[anthropicIndex] = contentIndex
+	return contentIndex
+}
+
+func (sc *responsesStreamConverter) appendReasoningText(anthropicIndex int, text string) {
+	if text == "" {
+		return
+	}
+	state := sc.ensureResponsesReasoningState()
+	contentIndex := sc.reasoningContentIndex(anthropicIndex)
+	if contentIndex >= len(state.Blocks) {
+		return
+	}
+	_, _ = state.Blocks[contentIndex].Text.WriteString(text)
+}
+
+func (sc *responsesStreamConverter) setReasoningSignature(anthropicIndex int, signature string) {
+	if signature == "" {
+		return
+	}
+	state := sc.ensureResponsesReasoningState()
+	contentIndex := sc.reasoningContentIndex(anthropicIndex)
+	if contentIndex >= len(state.Blocks) {
+		return
+	}
+	state.Blocks[contentIndex].Signature = signature
+}
+
+func (sc *responsesStreamConverter) reasoningTextDoneEvent(anthropicIndex int) string {
+	state := sc.reasoning
+	if state == nil {
+		return ""
+	}
+	contentIndex, ok := sc.thinkingContentIndices[anthropicIndex]
+	if !ok || contentIndex >= len(state.Blocks) {
+		return ""
+	}
+	block := state.Blocks[contentIndex]
+	payload := map[string]any{
+		"type":          "response.reasoning_text.done",
+		"item_id":       state.ItemID,
+		"output_index":  state.OutputIndex,
+		"content_index": contentIndex,
+		"text":          block.Text.String(),
+	}
+	if sc.emitReasoningSignatures && strings.TrimSpace(block.Signature) != "" {
+		payload["signature"] = block.Signature
+	}
+	return sc.output.WriteEvent("response.reasoning_text.done", payload)
+}
+
+func (sc *responsesStreamConverter) completeReasoningOutputIfNeeded() string {
+	state := sc.reasoning
+	if state == nil || !state.Started || state.Done {
+		return ""
+	}
+
+	content := make([]map[string]any, 0, len(state.Blocks))
+	for _, block := range state.Blocks {
+		part := map[string]any{
+			"type": "reasoning_text",
+			"text": block.Text.String(),
+		}
+		if sc.emitReasoningSignatures && strings.TrimSpace(block.Signature) != "" {
+			part["signature"] = block.Signature
+		}
+		content = append(content, part)
+	}
+
+	state.Done = true
+	return sc.output.WriteEvent("response.output_item.done", map[string]any{
+		"type": "response.output_item.done",
+		"item": map[string]any{
+			"id":      state.ItemID,
+			"type":    "reasoning",
+			"status":  "completed",
+			"content": content,
+		},
+		"output_index": state.OutputIndex,
+	})
 }
 
 func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) string {
@@ -1632,19 +1778,23 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 
 	case "content_block_start":
 		if event.ContentBlock != nil && event.ContentBlock.Type == "thinking" {
-			sc.thinkingBlocks[event.Index] = true
-			return ""
+			if !sc.emitReasoningSignatures {
+				return ""
+			}
+			sc.reasoningContentIndex(event.Index)
+			return sc.startReasoningOutput()
 		}
 		if event.ContentBlock != nil && event.ContentBlock.Type == "tool_use" {
+			prefix := sc.completeReasoningOutputIfNeeded()
 			if sc.output.AssistantStarted() && !sc.output.AssistantDone() {
-				prefix := sc.output.CompleteAssistantOutput(0)
+				prefix += sc.output.CompleteAssistantOutput(sc.assistantOutputIndex)
 				state := sc.newResponsesToolCallState(event.ContentBlock)
 				sc.toolCalls[event.Index] = state
 				return prefix + sc.output.StartToolCall(state, true)
 			}
 			state := sc.newResponsesToolCallState(event.ContentBlock)
 			sc.toolCalls[event.Index] = state
-			return sc.output.StartToolCall(state, true)
+			return prefix + sc.output.StartToolCall(state, true)
 		}
 		return ""
 
@@ -1654,14 +1804,30 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		}
 
 		switch event.Delta.Type {
-		case "thinking_delta", "signature_delta":
-			// Thinking and signature deltas are part of Anthropic's extended thinking;
-			// the Responses API format does not have a direct equivalent, so skip them.
+		case "thinking_delta":
+			if !sc.emitReasoningSignatures || event.Delta.Thinking == "" {
+				return ""
+			}
+			prefix := sc.startReasoningOutput()
+			sc.appendReasoningText(event.Index, event.Delta.Thinking)
+			contentIndex := sc.reasoningContentIndex(event.Index)
+			return prefix + sc.output.WriteEvent("response.reasoning_text.delta", map[string]any{
+				"type":          "response.reasoning_text.delta",
+				"item_id":       sc.reasoning.ItemID,
+				"output_index":  sc.reasoning.OutputIndex,
+				"content_index": contentIndex,
+				"delta":         event.Delta.Thinking,
+			})
+		case "signature_delta":
+			if !sc.emitReasoningSignatures || event.Delta.Signature == "" {
+				return ""
+			}
+			sc.setReasoningSignature(event.Index, event.Delta.Signature)
 			return ""
 		case "text_delta":
 			if event.Delta.Text != "" {
 				sc.reserveAssistantMessageOutput()
-				prefix := sc.output.StartAssistantOutput(0)
+				prefix := sc.completeReasoningOutputIfNeeded() + sc.output.StartAssistantOutput(sc.assistantOutputIndex)
 				sc.output.AppendAssistantText(event.Delta.Text)
 				deltaEvent := map[string]any{
 					"type":  "response.output_text.delta",
@@ -1697,6 +1863,11 @@ func (sc *responsesStreamConverter) convertEvent(event *anthropicStreamEvent) st
 		return ""
 
 	case "content_block_stop":
+		if sc.emitReasoningSignatures {
+			if _, ok := sc.thinkingContentIndices[event.Index]; ok {
+				return sc.reasoningTextDoneEvent(event.Index)
+			}
+		}
 		state := sc.toolCalls[event.Index]
 		return sc.output.CompleteToolCall(state, true)
 

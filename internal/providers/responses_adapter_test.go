@@ -422,6 +422,217 @@ func TestConvertResponsesRequestToChat_DoesNotMergeAssistantMessagesWithExtraFie
 	}
 }
 
+func TestConvertResponsesRequestToChat_MergesReasoningItemIntoFollowingAssistantMessage(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []core.ResponsesInputElement{
+			{
+				Type: "reasoning",
+				Content: []any{
+					map[string]any{
+						"type":      "reasoning_text",
+						"text":      "Let me think.",
+						"signature": "sig_123",
+					},
+				},
+				Status: "completed",
+			},
+			{
+				Type:    "message",
+				Role:    "assistant",
+				Content: "Hello",
+				Status:  "completed",
+			},
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(chatReq.Messages))
+	}
+	if got := core.ExtractTextContent(chatReq.Messages[0].Content); got != "Hello" {
+		t.Fatalf("Messages[0].Content = %q, want Hello", got)
+	}
+
+	raw := chatReq.Messages[0].ExtraFields.Lookup("reasoning_details")
+	if len(raw) == 0 {
+		t.Fatal("reasoning_details missing from merged assistant message")
+	}
+
+	var details []map[string]any
+	if err := json.Unmarshal(raw, &details); err != nil {
+		t.Fatalf("json.Unmarshal(reasoning_details) error = %v", err)
+	}
+	if len(details) != 1 {
+		t.Fatalf("len(reasoning_details) = %d, want 1", len(details))
+	}
+	if details[0]["signature"] != "sig_123" {
+		t.Fatalf("reasoning_details[0].signature = %#v, want sig_123", details[0]["signature"])
+	}
+}
+
+func TestConvertResponsesRequestToChat_DoesNotReplaceMultimodalAssistantAfterReasoningMerge(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []any{
+			map[string]any{
+				"type":   "reasoning",
+				"status": "completed",
+				"content": []map[string]any{
+					{
+						"type":      "reasoning_text",
+						"text":      "Let me inspect the image.",
+						"signature": "sig_123",
+					},
+				},
+				"x_trace": map[string]any{"attempt": 1},
+			},
+			map[string]any{
+				"type":   "message",
+				"role":   "assistant",
+				"status": "completed",
+				"content": []map[string]any{
+					{
+						"type":      "input_image",
+						"image_url": map[string]any{"url": "https://example.com/image.png"},
+					},
+				},
+			},
+			map[string]any{
+				"type":   "message",
+				"role":   "assistant",
+				"status": "completed",
+				"content": []map[string]any{
+					{"type": "output_text", "text": "Here is the follow-up."},
+				},
+			},
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 2 {
+		t.Fatalf("len(Messages) = %d, want 2", len(chatReq.Messages))
+	}
+
+	firstParts, ok := chatReq.Messages[0].Content.([]core.ContentPart)
+	if !ok {
+		t.Fatalf("Messages[0].Content type = %T, want []core.ContentPart", chatReq.Messages[0].Content)
+	}
+	if len(firstParts) != 1 || firstParts[0].ImageURL == nil || firstParts[0].ImageURL.URL != "https://example.com/image.png" {
+		t.Fatalf("unexpected first assistant content: %+v", firstParts)
+	}
+	if chatReq.Messages[0].ExtraFields.Lookup("reasoning_details") == nil {
+		t.Fatal("first assistant lost reasoning_details")
+	}
+	if chatReq.Messages[0].ExtraFields.Lookup("x_trace") == nil {
+		t.Fatal("first assistant lost reasoning extra fields")
+	}
+
+	if got := core.ExtractTextContent(chatReq.Messages[1].Content); got != "Here is the follow-up." {
+		t.Fatalf("Messages[1].Content = %q, want follow-up text", got)
+	}
+}
+
+func TestConvertResponsesRequestToChat_RejectsNonReasoningTextParts(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+	}{
+		{
+			name: "map payload",
+			input: []any{
+				map[string]any{
+					"type": "reasoning",
+					"content": []map[string]any{
+						{"type": "output_text", "text": "bad"},
+					},
+				},
+			},
+		},
+		{
+			name: "typed payload",
+			input: []core.ResponsesInputElement{
+				{
+					Type: "reasoning",
+					Content: []core.ResponsesContentItem{
+						{Type: "output_text", Text: "bad"},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ConvertResponsesRequestToChat(&core.ResponsesRequest{
+				Model: "test-model",
+				Input: tt.input,
+			})
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), "reasoning.content must be an array of reasoning_text items") {
+				t.Fatalf("error = %v, want reasoning validation error", err)
+			}
+		})
+	}
+}
+
+func TestConvertResponsesRequestToChat_PreservesReasoningExtrasWhenMerged(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []core.ResponsesInputElement{
+			{
+				Type: "reasoning",
+				Content: []core.ResponsesContentItem{
+					{
+						Type:      "reasoning_text",
+						Text:      "Let me think.",
+						Signature: "sig_123",
+					},
+				},
+				ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+					"x_trace": json.RawMessage(`{"attempt":2}`),
+				}),
+			},
+			{
+				Type:    "message",
+				Role:    "assistant",
+				Content: "Hello",
+				ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+					"x_assistant": json.RawMessage(`true`),
+				}),
+			},
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(chatReq.Messages))
+	}
+	if got := core.ExtractTextContent(chatReq.Messages[0].Content); got != "Hello" {
+		t.Fatalf("Messages[0].Content = %q, want Hello", got)
+	}
+	if chatReq.Messages[0].ExtraFields.Lookup("reasoning_details") == nil {
+		t.Fatal("reasoning_details missing after merge")
+	}
+	if chatReq.Messages[0].ExtraFields.Lookup("x_trace") == nil {
+		t.Fatal("typed reasoning extra missing after merge")
+	}
+	if chatReq.Messages[0].ExtraFields.Lookup("x_assistant") == nil {
+		t.Fatal("assistant extra missing after reasoning merge")
+	}
+}
+
 func TestConvertResponsesRequestToChat_RejectsWhitespaceOnlyMediaFields(t *testing.T) {
 	tests := []struct {
 		name  string
