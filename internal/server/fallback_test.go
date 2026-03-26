@@ -124,7 +124,7 @@ func TestChatCompletion_FallsBackToAlternateModel(t *testing.T) {
 		},
 	}
 
-	handler := newHandler(provider, nil, nil, nil, nil, fallbackResolverStub{
+	handler := newHandler(provider, nil, nil, nil, nil, nil, fallbackResolverStub{
 		selectors: []core.ModelSelector{{Provider: "azure", Model: "gpt-4o"}},
 	}, nil)
 
@@ -165,7 +165,7 @@ func TestChatCompletion_DoesNotFallbackOnNonAvailabilityError(t *testing.T) {
 		},
 	}
 
-	handler := newHandler(provider, nil, nil, nil, nil, fallbackResolverStub{
+	handler := newHandler(provider, nil, nil, nil, nil, nil, fallbackResolverStub{
 		selectors: []core.ModelSelector{{Provider: "azure", Model: "gpt-4o"}},
 	}, nil)
 
@@ -216,7 +216,7 @@ func TestResponses_FallsBackToAlternateModel(t *testing.T) {
 		},
 	}
 
-	handler := newHandler(provider, nil, nil, nil, nil, fallbackResolverStub{
+	handler := newHandler(provider, nil, nil, nil, nil, nil, fallbackResolverStub{
 		selectors: []core.ModelSelector{{Provider: "azure", Model: "gpt-4o"}},
 	}, nil)
 
@@ -260,7 +260,7 @@ func TestEmbeddings_DoesNotFallback(t *testing.T) {
 		},
 	}
 
-	handler := newHandler(provider, nil, nil, nil, nil, fallbackResolverStub{
+	handler := newHandler(provider, nil, nil, nil, nil, nil, fallbackResolverStub{
 		selectors: []core.ModelSelector{{Provider: "azure", Model: "text-embedding-3-small"}},
 	}, nil)
 

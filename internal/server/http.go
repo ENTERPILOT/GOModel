@@ -43,6 +43,7 @@ type Config struct {
 	UsageLogger                  usage.LoggerInterface                  // Optional: Usage logger for token tracking
 	PricingResolver              usage.PricingResolver                  // Optional: Resolves pricing for cost calculation
 	ModelResolver                RequestModelResolver                   // Optional: explicit model resolver used during request planning
+	ExecutionPolicyResolver      RequestExecutionPolicyResolver         // Optional: persisted execution-plan resolver used during request planning
 	FallbackResolver             RequestFallbackResolver                // Optional: translated-route fallback resolver
 	TranslatedRequestPatcher     TranslatedRequestPatcher               // Optional: request patcher for translated routes after planning
 	BatchRequestPreparer         BatchRequestPreparer                   // Optional: batch request preparer before native provider submission
@@ -78,15 +79,17 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	}
 
 	var modelResolver RequestModelResolver
+	var executionPolicyResolver RequestExecutionPolicyResolver
 	var fallbackResolver RequestFallbackResolver
 	var translatedRequestPatcher TranslatedRequestPatcher
 	if cfg != nil {
 		modelResolver = cfg.ModelResolver
+		executionPolicyResolver = cfg.ExecutionPolicyResolver
 		fallbackResolver = cfg.FallbackResolver
 		translatedRequestPatcher = cfg.TranslatedRequestPatcher
 	}
 
-	handler := newHandler(provider, auditLogger, usageLogger, pricingResolver, modelResolver, fallbackResolver, translatedRequestPatcher)
+	handler := newHandler(provider, auditLogger, usageLogger, pricingResolver, modelResolver, executionPolicyResolver, fallbackResolver, translatedRequestPatcher)
 	if cfg != nil {
 		handler.batchRequestPreparer = cfg.BatchRequestPreparer
 		handler.exposedModelLister = cfg.ExposedModelLister
@@ -196,22 +199,27 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	// Ingress capture (before auth/audit/model validation so they can consume shared raw request state)
 	e.Use(RequestSnapshotCapture())
 
-	// Audit logging middleware (before authentication to capture all requests)
+	if cfg != nil && len(cfg.PassthroughSemanticEnrichers) > 0 {
+		e.Use(PassthroughSemanticEnrichment(cfg.PassthroughSemanticEnrichers, passthroughV1PrefixNormalizationEnabled(cfg)))
+	}
+
+	// Audit logging runs before request planning so early planning/validation
+	// failures are still logged. The middleware defers request capture and
+	// dynamically gates response capture on the final resolved execution plan, so
+	// Audit=false still suppresses per-request capture work.
 	if cfg != nil && cfg.AuditLogger != nil && cfg.AuditLogger.Config().Enabled {
 		e.Use(auditlog.Middleware(cfg.AuditLogger))
 	}
+
+	// Request planning resolves the request-scoped execution plan before auth and
+	// handler execution. This keeps rejected model requests loggable and lets
+	// downstream stages consume a shared policy decision.
+	e.Use(ExecutionPlanningWithResolverAndPolicy(provider, modelResolver, executionPolicyResolver))
 
 	// Authentication (skips public paths)
 	if cfg != nil && cfg.MasterKey != "" {
 		e.Use(AuthMiddleware(cfg.MasterKey, authSkipPaths))
 	}
-
-	if cfg != nil && len(cfg.PassthroughSemanticEnrichers) > 0 {
-		e.Use(PassthroughSemanticEnrichment(cfg.PassthroughSemanticEnrichers, passthroughV1PrefixNormalizationEnabled(cfg)))
-	}
-
-	// Request planning (skips non-model paths via IsModelInteractionPath)
-	e.Use(ExecutionPlanningWithResolver(provider, modelResolver))
 
 	// Public routes
 	e.GET("/health", handler.Health)

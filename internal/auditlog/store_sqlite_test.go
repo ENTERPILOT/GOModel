@@ -274,3 +274,68 @@ func TestSQLiteStore_WriteBatch_PersistsAliasFields(t *testing.T) {
 		t.Fatal("AliasUsed = false, want true")
 	}
 }
+
+func TestSQLiteReader_AllowsNullExecutionPlanVersionID(t *testing.T) {
+	db := createTestDB(t)
+	defer db.Close()
+
+	store, err := NewSQLiteStore(db, 0)
+	if err != nil {
+		t.Fatalf("failed to create store: %v", err)
+	}
+	defer store.Close()
+
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	if _, err := db.Exec(`
+		INSERT INTO audit_logs (
+			id, timestamp, duration_ns, model, resolved_model, provider, alias_used, execution_plan_version_id,
+			status_code, request_id, client_ip, method, path, stream, error_type, data
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		"null-plan-version",
+		now,
+		0,
+		"gpt-4",
+		"",
+		"openai",
+		0,
+		nil,
+		200,
+		"req-1",
+		"127.0.0.1",
+		"POST",
+		"/v1/chat/completions",
+		0,
+		"",
+		nil,
+	); err != nil {
+		t.Fatalf("failed to insert audit log row: %v", err)
+	}
+
+	reader, err := NewSQLiteReader(db)
+	if err != nil {
+		t.Fatalf("failed to create reader: %v", err)
+	}
+
+	entry, err := reader.GetLogByID(context.Background(), "null-plan-version")
+	if err != nil {
+		t.Fatalf("GetLogByID failed: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("expected log entry, got nil")
+	}
+	if entry.ExecutionPlanVersionID != "" {
+		t.Fatalf("ExecutionPlanVersionID = %q, want empty", entry.ExecutionPlanVersionID)
+	}
+
+	logs, err := reader.GetLogs(context.Background(), LogQueryParams{Limit: 10})
+	if err != nil {
+		t.Fatalf("GetLogs failed: %v", err)
+	}
+	if len(logs.Entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(logs.Entries))
+	}
+	if logs.Entries[0].ExecutionPlanVersionID != "" {
+		t.Fatalf("list ExecutionPlanVersionID = %q, want empty", logs.Entries[0].ExecutionPlanVersionID)
+	}
+}

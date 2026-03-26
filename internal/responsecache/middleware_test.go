@@ -70,11 +70,33 @@ func (s *concurrentTrackingStore) Close() error {
 	return nil
 }
 
+func installResolvedExecutionPlan(e *echo.Echo, providerType, model string) {
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			desc := core.DescribeEndpoint(c.Request().Method, c.Request().URL.Path)
+			ctx := core.WithExecutionPlan(c.Request().Context(), &core.ExecutionPlan{
+				Endpoint:     desc,
+				Mode:         core.ExecutionModeTranslated,
+				Capabilities: core.CapabilitiesForEndpoint(desc),
+				ProviderType: providerType,
+				Resolution: &core.RequestModelResolution{
+					Requested:        core.NewRequestedModelSelector(model, providerType),
+					ResolvedSelector: core.ModelSelector{Provider: providerType, Model: model},
+					ProviderType:     providerType,
+				},
+			})
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	})
+}
+
 func TestSimpleCacheMiddleware_CacheHit(t *testing.T) {
 	store := cache.NewMapStore()
 	defer store.Close()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
 	e := echo.New()
+	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"result": "cached"})
@@ -116,6 +138,7 @@ func TestSimpleCacheMiddleware_DifferentBodyDifferentKey(t *testing.T) {
 	defer store.Close()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
 	e := echo.New()
+	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"msg": c.Request().URL.Path})
@@ -241,11 +264,65 @@ func TestSimpleCacheMiddleware_SkipsPartialTranslatedPlan(t *testing.T) {
 	}
 }
 
+func TestSimpleCacheMiddleware_SkipsWhenExecutionPlanDisablesCache(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
+	e := echo.New()
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			desc := core.DescribeEndpoint(c.Request().Method, c.Request().URL.Path)
+			ctx := core.WithExecutionPlan(c.Request().Context(), &core.ExecutionPlan{
+				Endpoint:     desc,
+				Mode:         core.ExecutionModeTranslated,
+				Capabilities: core.CapabilitiesForEndpoint(desc),
+				Resolution: &core.RequestModelResolution{
+					ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+					ProviderType:     "openai",
+				},
+				Policy: &core.ResolvedExecutionPolicy{
+					VersionID: "plan-cache-off",
+					Features: core.ExecutionFeatures{
+						Cache:      false,
+						Audit:      true,
+						Usage:      true,
+						Guardrails: true,
+					},
+				},
+			})
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	})
+	e.Use(mw.Middleware())
+	callCount := 0
+	e.POST("/v1/chat/completions", func(c *echo.Context) error {
+		callCount++
+		return c.JSON(http.StatusOK, map[string]string{"n": "1"})
+	})
+
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
+	for range 2 {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Header().Get("X-Cache") != "" {
+			t.Fatalf("cache-disabled plan should bypass cache, got X-Cache=%q", rec.Header().Get("X-Cache"))
+		}
+	}
+
+	if callCount != 2 {
+		t.Fatalf("cache-disabled plan should bypass cache, handler called %d times", callCount)
+	}
+}
+
 func TestSimpleCacheMiddleware_UsesCapturedSnapshotBodyWithoutReadingLiveBody(t *testing.T) {
 	store := cache.NewMapStore()
 	defer store.Close()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
 	e := echo.New()
+	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	callCount := 0
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
@@ -336,6 +413,38 @@ func TestSimpleCacheMiddleware_BypassesCacheWhenBodyWasNotCaptured(t *testing.T)
 
 	if callCount != 2 {
 		t.Fatalf("expected uncaptured-body requests to bypass cache, handler called %d times", callCount)
+	}
+}
+
+func TestSimpleCacheMiddleware_BypassesCacheWithoutExecutionPlan(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
+	e := echo.New()
+	e.Use(mw.Middleware())
+
+	callCount := 0
+	e.POST("/v1/chat/completions", func(c *echo.Context) error {
+		callCount++
+		return c.JSON(http.StatusOK, map[string]string{"result": "ok"})
+	})
+
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
+	for i := range 2 {
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("request %d: got status %d", i+1, rec.Code)
+		}
+		if got := rec.Header().Get("X-Cache"); got != "" {
+			t.Fatalf("expected nil-plan request to bypass cache, got X-Cache=%q", got)
+		}
+	}
+
+	if callCount != 2 {
+		t.Fatalf("expected nil-plan requests to bypass cache, handler called %d times", callCount)
 	}
 }
 
@@ -552,6 +661,7 @@ func TestSimpleCacheMiddleware_CloseWaitsForPendingWrites(t *testing.T) {
 	store := cache.NewMapStore()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
 	e := echo.New()
+	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"result": "ok"})
@@ -578,6 +688,7 @@ func TestSimpleCacheMiddleware_LimitsConcurrentCacheWrites(t *testing.T) {
 	store := newConcurrentTrackingStore()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
 	e := echo.New()
+	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"result": "ok"})

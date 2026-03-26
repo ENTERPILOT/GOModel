@@ -244,11 +244,19 @@ func (s *passthroughService) proxyPassthroughResponse(c *echo.Context, providerT
 	if isSSEContentType(resp.Headers) {
 		auditlog.MarkEntryAsStreaming(c, true)
 		auditlog.EnrichEntryWithStream(c, true)
+		plan := core.GetExecutionPlan(c.Request().Context())
+		auditEnabled := s.logger != nil && s.logger.Config().Enabled && (plan == nil || plan.AuditEnabled())
 
 		entry := auditlog.GetStreamEntryFromContext(c)
+		if auditEnabled && entry != nil {
+			auditlog.PopulateRequestData(entry, c.Request(), s.logger.Config())
+		}
 		streamEntry := auditlog.CreateStreamEntry(entry)
 		if streamEntry != nil {
 			streamEntry.StatusCode = resp.StatusCode
+		}
+		if auditEnabled && streamEntry != nil && s.logger.Config().LogHeaders {
+			auditlog.PopulateResponseHeaders(streamEntry, c.Response().Header())
 		}
 
 		requestID := requestIDFromContextOrHeader(c.Request())
@@ -261,13 +269,15 @@ func (s *passthroughService) proxyPassthroughResponse(c *echo.Context, providerT
 		if info != nil {
 			model = strings.TrimSpace(info.Model)
 		}
-		model = resolvedModelFromPlan(core.GetExecutionPlan(c.Request().Context()), model)
+		model = resolvedModelFromPlan(plan, model)
 
 		observers := make([]streaming.Observer, 0, 2)
-		if observer := auditlog.NewStreamLogObserver(s.logger, streamEntry, auditPath); observer != nil {
-			observers = append(observers, observer)
+		if auditEnabled && streamEntry != nil {
+			if observer := auditlog.NewStreamLogObserver(s.logger, streamEntry, auditPath); observer != nil {
+				observers = append(observers, observer)
+			}
 		}
-		if s.usageLogger != nil && s.usageLogger.Config().Enabled {
+		if s.usageLogger != nil && s.usageLogger.Config().Enabled && (plan == nil || plan.UsageEnabled()) {
 			if observer := usage.NewStreamUsageObserver(s.usageLogger, model, providerType, requestID, usagePath, s.pricingResolver); observer != nil {
 				observers = append(observers, observer)
 			}

@@ -19,6 +19,7 @@ type Handler struct {
 	provider                     core.RoutableProvider
 	modelResolver                RequestModelResolver
 	fallbackResolver             RequestFallbackResolver
+	executionPolicyResolver      RequestExecutionPolicyResolver
 	translatedRequestPatcher     TranslatedRequestPatcher
 	batchRequestPreparer         BatchRequestPreparer
 	exposedModelLister           ExposedModelLister
@@ -37,7 +38,7 @@ type Handler struct {
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
 func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface, pricingResolver usage.PricingResolver) *Handler {
-	return newHandler(provider, logger, usageLogger, pricingResolver, nil, nil, nil)
+	return newHandler(provider, logger, usageLogger, pricingResolver, nil, nil, nil, nil)
 }
 
 func newHandler(
@@ -46,6 +47,7 @@ func newHandler(
 	usageLogger usage.LoggerInterface,
 	pricingResolver usage.PricingResolver,
 	modelResolver RequestModelResolver,
+	executionPolicyResolver RequestExecutionPolicyResolver,
 	fallbackResolver RequestFallbackResolver,
 	translatedRequestPatcher TranslatedRequestPatcher,
 ) *Handler {
@@ -53,6 +55,7 @@ func newHandler(
 		provider:                     provider,
 		modelResolver:                modelResolver,
 		fallbackResolver:             fallbackResolver,
+		executionPolicyResolver:      executionPolicyResolver,
 		translatedRequestPatcher:     translatedRequestPatcher,
 		logger:                       logger,
 		usageLogger:                  usageLogger,
@@ -77,6 +80,7 @@ func (h *Handler) translatedInference() *translatedInferenceService {
 		s := &translatedInferenceService{
 			provider:                 h.provider,
 			modelResolver:            h.modelResolver,
+			executionPolicyResolver:  h.executionPolicyResolver,
 			fallbackResolver:         h.fallbackResolver,
 			translatedRequestPatcher: h.translatedRequestPatcher,
 			logger:                   h.logger,
@@ -95,6 +99,7 @@ func (h *Handler) nativeBatch() *nativeBatchService {
 	return &nativeBatchService{
 		provider:                             h.provider,
 		modelResolver:                        h.modelResolver,
+		executionPolicyResolver:              h.executionPolicyResolver,
 		batchRequestPreparer:                 h.batchRequestPreparer,
 		batchStore:                           h.batchStore,
 		loadBatch:                            h.loadBatch,

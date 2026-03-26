@@ -26,64 +26,96 @@ var batchResultsPending404Providers = map[string]struct{}{
 	"anthropic": {},
 }
 
-func determineBatchProviderType(provider core.RoutableProvider, resolver RequestModelResolver, req *core.BatchRequest) (string, error) {
+type batchExecutionSelection struct {
+	providerType string
+	selector     core.ExecutionPlanSelector
+}
+
+func determineBatchExecutionSelection(provider core.RoutableProvider, resolver RequestModelResolver, req *core.BatchRequest) (batchExecutionSelection, error) {
 	if provider == nil {
-		return "", core.NewInvalidRequestError("provider is not configured", nil)
+		return batchExecutionSelection{}, core.NewInvalidRequestError("provider is not configured", nil)
 	}
 
 	if strings.TrimSpace(req.InputFileID) != "" {
 		if req.Metadata == nil {
-			return "", core.NewInvalidRequestError("metadata.provider is required for input_file_id batches", nil)
+			return batchExecutionSelection{}, core.NewInvalidRequestError("metadata.provider is required for input_file_id batches", nil)
 		}
 		providerType := strings.TrimSpace(req.Metadata["provider"])
 		if providerType == "" {
-			return "", core.NewInvalidRequestError("metadata.provider is required for input_file_id batches", nil)
+			return batchExecutionSelection{}, core.NewInvalidRequestError("metadata.provider is required for input_file_id batches", nil)
 		}
-		return providerType, nil
+		return batchExecutionSelection{
+			providerType: providerType,
+			selector:     core.NewExecutionPlanSelector(providerType, ""),
+		}, nil
 	}
 
 	if len(req.Requests) == 0 {
-		return "", core.NewInvalidRequestError("requests is required and must not be empty", nil)
+		return batchExecutionSelection{}, core.NewInvalidRequestError("requests is required and must not be empty", nil)
 	}
 
-	var providerType string
+	var (
+		providerType   string
+		commonModel    string
+		hasCommonModel = true
+	)
 	resolver = effectiveRequestModelResolver(provider, resolver)
 	for i, item := range req.Requests {
 		requested, err := core.BatchItemRequestedModelSelector(req.Endpoint, item)
 		if err != nil {
-			return "", core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
+			return batchExecutionSelection{}, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
 		}
-		selector, err := requested.Normalize()
+		resolvedSelector, err := requested.Normalize()
 		if err != nil {
-			return "", core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
+			return batchExecutionSelection{}, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
 		}
 		if resolver != nil {
-			selector, _, err = resolver.ResolveModel(requested)
+			resolvedSelector, _, err = resolver.ResolveModel(requested)
 			if err != nil {
-				return "", core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
+				return batchExecutionSelection{}, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: %s", i, err.Error()), err)
 			}
 		}
-		model := selector.QualifiedModel()
+		model := resolvedSelector.QualifiedModel()
 		if model == "" {
-			return "", core.NewInvalidRequestError(fmt.Sprintf("batch item %d: model is required", i), nil)
+			return batchExecutionSelection{}, core.NewInvalidRequestError(fmt.Sprintf("batch item %d: model is required", i), nil)
 		}
 		if !provider.Supports(model) {
-			return "", core.NewInvalidRequestError("unsupported model: "+model, nil)
+			return batchExecutionSelection{}, core.NewInvalidRequestError("unsupported model: "+model, nil)
 		}
 		itemProvider := provider.GetProviderType(model)
 		if providerType == "" {
 			providerType = itemProvider
+		} else if providerType != itemProvider {
+			return batchExecutionSelection{}, core.NewInvalidRequestError("native batch supports a single provider per batch; split mixed-provider requests", nil)
+		}
+
+		if !hasCommonModel {
 			continue
 		}
-		if providerType != itemProvider {
-			return "", core.NewInvalidRequestError("native batch supports a single provider per batch; split mixed-provider requests", nil)
+		resolvedModel := strings.TrimSpace(resolvedSelector.Model)
+		if resolvedModel == "" {
+			hasCommonModel = false
+			continue
+		}
+		if commonModel == "" {
+			commonModel = resolvedModel
+			continue
+		}
+		if commonModel != resolvedModel {
+			hasCommonModel = false
 		}
 	}
 
 	if providerType == "" {
-		return "", core.NewInvalidRequestError("unable to resolve provider for batch", nil)
+		return batchExecutionSelection{}, core.NewInvalidRequestError("unable to resolve provider for batch", nil)
 	}
-	return providerType, nil
+	if !hasCommonModel {
+		commonModel = ""
+	}
+	return batchExecutionSelection{
+		providerType: providerType,
+		selector:     core.NewExecutionPlanSelector(providerType, commonModel),
+	}, nil
 }
 
 func mergeBatchRequestEndpointHints(left, right map[string]string) map[string]string {
@@ -132,6 +164,9 @@ func (h *Handler) loadBatch(c *echo.Context, id string) (*batchstore.StoredBatch
 
 func (h *Handler) logBatchUsageFromBatchResults(stored *batchstore.StoredBatch, result *core.BatchResultsResponse, fallbackRequestID string) bool {
 	if h.usageLogger == nil || !h.usageLogger.Config().Enabled || stored == nil || stored.Batch == nil || result == nil || len(result.Data) == 0 {
+		return false
+	}
+	if !stored.EffectiveUsageEnabled() {
 		return false
 	}
 	if stored.UsageLoggedAt != nil {
