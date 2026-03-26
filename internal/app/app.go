@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -665,6 +666,7 @@ func effectiveSystemPromptMode(mode string) string {
 }
 
 func defaultExecutionPlanInput(cfg *config.Config) executionplans.CreateInput {
+	fallbackEnabled := fallbackFeatureEnabledGlobally(cfg)
 	payload := executionplans.Payload{
 		SchemaVersion: 1,
 		Features: executionplans.FeatureFlags{
@@ -672,6 +674,7 @@ func defaultExecutionPlanInput(cfg *config.Config) executionplans.CreateInput {
 			Audit:      cfg.Logging.Enabled,
 			Usage:      cfg.Usage.Enabled,
 			Guardrails: cfg.Guardrails.Enabled && len(cfg.Guardrails.Rules) > 0,
+			Fallback:   &fallbackEnabled,
 		},
 	}
 	if payload.Features.Guardrails {
@@ -702,6 +705,7 @@ func runtimeExecutionFeatureCaps(cfg *config.Config) core.ExecutionFeatures {
 		Audit:      cfg.Logging.Enabled,
 		Usage:      cfg.Usage.Enabled,
 		Guardrails: cfg.Guardrails.Enabled,
+		Fallback:   fallbackFeatureEnabledGlobally(cfg),
 	}
 }
 
@@ -714,6 +718,30 @@ func executionPlanRefreshInterval(cfg *config.Config) time.Duration {
 
 func responseCacheConfigured(cfg config.ResponseCacheConfig) bool {
 	return (cfg.Simple.Redis != nil && cfg.Simple.Redis.URL != "") || config.SemanticCacheActive(&cfg.Semantic)
+}
+
+func fallbackFeatureEnabledGlobally(cfg *config.Config) bool {
+	if cfg == nil {
+		return false
+	}
+	if fallbackModeEnabled(cfg.Fallback.DefaultMode) {
+		return true
+	}
+	for _, override := range cfg.Fallback.Overrides {
+		if fallbackModeEnabled(override.Mode) {
+			return true
+		}
+	}
+	return false
+}
+
+func fallbackModeEnabled(mode config.FallbackMode) bool {
+	switch strings.ToLower(strings.TrimSpace(string(mode))) {
+	case string(config.FallbackModeAuto), string(config.FallbackModeManual):
+		return true
+	default:
+		return false
+	}
 }
 
 func firstSharedStorage(candidates ...storage.Storage) storage.Storage {

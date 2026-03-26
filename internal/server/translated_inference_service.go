@@ -517,7 +517,7 @@ func (s *translatedInferenceService) shouldEnforceReturningUsageData() bool {
 }
 
 func (s *translatedInferenceService) fallbackSelectors(plan *core.ExecutionPlan) []core.ModelSelector {
-	if s.fallbackResolver == nil || plan == nil || plan.Resolution == nil {
+	if s.fallbackResolver == nil || plan == nil || plan.Resolution == nil || !plan.FallbackEnabled() {
 		return nil
 	}
 	return s.fallbackResolver.ResolveFallbacks(plan.Resolution, plan.Endpoint.Operation)

@@ -27,7 +27,7 @@ func NewCompilerWithFeatureCaps(registry *guardrails.Registry, featureCaps core.
 }
 
 func (c *compiler) Compile(version Version) (*CompiledPlan, error) {
-	features := core.ExecutionFeatures(version.Payload.Features).ApplyUpperBound(c.featureCaps)
+	features := version.Payload.Features.runtimeFeatures().ApplyUpperBound(c.featureCaps)
 	policy := &core.ResolvedExecutionPolicy{
 		VersionID:      version.ID,
 		Version:        version.Version,

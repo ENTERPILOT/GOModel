@@ -25,3 +25,16 @@ func TestNormalizeScope_RejectsColonDelimitedFields(t *testing.T) {
 		})
 	}
 }
+
+func TestFeatureFlagsRuntimeFeatures_FallbackDefaultsToTrue(t *testing.T) {
+	features := FeatureFlags{
+		Cache:      true,
+		Audit:      true,
+		Usage:      true,
+		Guardrails: false,
+	}.runtimeFeatures()
+
+	if !features.Fallback {
+		t.Fatal("runtimeFeatures().Fallback = false, want true")
+	}
+}

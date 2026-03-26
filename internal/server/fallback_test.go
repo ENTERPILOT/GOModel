@@ -186,6 +186,62 @@ func TestChatCompletion_DoesNotFallbackOnNonAvailabilityError(t *testing.T) {
 	}
 }
 
+func TestChatCompletion_DoesNotFallbackWhenExecutionPolicyDisablesFallback(t *testing.T) {
+	provider := &fallbackProvider{
+		chatResponses: map[string]*core.ChatResponse{
+			"azure/gpt-4o": {
+				ID:       "chatcmpl-fallback",
+				Object:   "chat.completion",
+				Model:    "gpt-4o",
+				Provider: "azure",
+				Choices: []core.Choice{{
+					Index:        0,
+					Message:      core.ResponseMessage{Role: "assistant", Content: "fallback ok"},
+					FinishReason: "stop",
+				}},
+			},
+		},
+		chatErrors: map[string]error{
+			"gpt-4o": core.NewProviderError("openai", http.StatusServiceUnavailable, "model temporarily unavailable", nil),
+		},
+		supportedModels: map[string]string{
+			"gpt-4o":       "openai",
+			"azure/gpt-4o": "azure",
+		},
+	}
+
+	handler := newHandler(provider, nil, nil, nil, nil, requestExecutionPolicyResolverFunc(func(core.ExecutionPlanSelector) (*core.ResolvedExecutionPolicy, error) {
+		return &core.ResolvedExecutionPolicy{
+			VersionID: "plan-fallback-off",
+			Features: core.ExecutionFeatures{
+				Cache:      true,
+				Audit:      true,
+				Usage:      true,
+				Guardrails: true,
+				Fallback:   false,
+			},
+		}, nil
+	}), fallbackResolverStub{
+		selectors: []core.ModelSelector{{Provider: "azure", Model: "gpt-4o"}},
+	}, nil)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := handler.ChatCompletion(c); err != nil {
+		t.Fatalf("handler.ChatCompletion() error = %v", err)
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d body=%s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+	if len(provider.chatCalls) != 1 || provider.chatCalls[0] != "gpt-4o" {
+		t.Fatalf("chat calls = %v, want only the primary model", provider.chatCalls)
+	}
+}
+
 func TestResponses_FallsBackToAlternateModel(t *testing.T) {
 	provider := &fallbackProvider{
 		responsesResponses: map[string]*core.ResponsesResponse{

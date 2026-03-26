@@ -44,7 +44,7 @@ func clearAllConfigEnvVars(t *testing.T) {
 		"USAGE_ENABLED", "ENFORCE_RETURNING_USAGE_DATA",
 		"USAGE_BUFFER_SIZE", "USAGE_FLUSH_INTERVAL", "USAGE_RETENTION_DAYS",
 		"GUARDRAILS_ENABLED", "ENABLE_GUARDRAILS_FOR_BATCH_PROCESSING",
-		"FALLBACK_DEFAULT_MODE", "FALLBACK_MANUAL_RULES_PATH",
+		"FEATURE_FALLBACK_MODE", "FALLBACK_MANUAL_RULES_PATH",
 		"HTTP_TIMEOUT", "HTTP_RESPONSE_HEADER_TIMEOUT",
 		"EXECUTION_PLAN_REFRESH_INTERVAL",
 	} {
@@ -348,6 +348,21 @@ fallback:
 
 		if _, err := Load(); err == nil {
 			t.Fatal("expected Load() to fail for empty fallback override mode")
+		}
+	})
+}
+
+func TestLoad_FeatureFallbackModeEnvOverridesFallbackDefaultMode(t *testing.T) {
+	clearAllConfigEnvVars(t)
+	t.Setenv("FEATURE_FALLBACK_MODE", "auto")
+
+	withTempDir(t, func(_ string) {
+		result, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+		if result.Config.Fallback.DefaultMode != FallbackModeAuto {
+			t.Fatalf("Fallback.DefaultMode = %q, want %q", result.Config.Fallback.DefaultMode, FallbackModeAuto)
 		}
 	})
 }

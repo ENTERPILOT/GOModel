@@ -121,7 +121,7 @@ type FallbackModelOverride struct {
 type FallbackConfig struct {
 	// DefaultMode controls the fallback behavior when no per-model override exists.
 	// Supported values: "auto", "manual", "off". Default: "off".
-	DefaultMode FallbackMode `yaml:"default_mode" env:"FALLBACK_DEFAULT_MODE"`
+	DefaultMode FallbackMode `yaml:"default_mode" env:"FEATURE_FALLBACK_MODE"`
 
 	// ManualRulesPath points to a JSON file that maps source model selectors to
 	// ordered fallback model selector lists. Empty disables manual rules.
