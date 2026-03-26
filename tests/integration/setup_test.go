@@ -149,6 +149,8 @@ func resetIntegrationStorage(t *testing.T, dbType string) {
 		resetPostgreSQLStorage(t)
 	case "mongodb":
 		resetMongoDBStorage(t)
+	default:
+		t.Fatalf("unknown db type: %s", dbType)
 	}
 }
 

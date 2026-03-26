@@ -44,6 +44,10 @@ func Middleware(logger LoggerInterface) echo.MiddlewareFunc {
 				return next(c)
 			}
 
+			// This only short-circuits when an upstream component has already
+			// populated the context with an Audit=false execution plan before next(c).
+			// In the common path planning happens later, so the real gating occurs
+			// after next(c) once the final plan has been resolved.
 			if !auditEnabledForContext(c.Request().Context()) {
 				return next(c)
 			}
