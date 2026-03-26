@@ -196,6 +196,45 @@ func TestServiceSupportsQualifiedAliasNames(t *testing.T) {
 	}
 }
 
+func TestServiceResolveAliasWithExplicitProviderAndSlashModel(t *testing.T) {
+	catalog := newTestCatalog()
+	catalog.add(
+		"groq/openai/gpt-oss-120b",
+		"groq",
+		core.Model{ID: "openai/gpt-oss-120b", Object: "model", OwnedBy: "groq"},
+	)
+
+	service, err := NewService(newMemoryStore(Alias{
+		Name:           "smart",
+		TargetModel:    "openai/gpt-oss-120b",
+		TargetProvider: "groq",
+		Enabled:        true,
+	}), catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	resolution, ok, err := service.Resolve("smart", "")
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if !ok {
+		t.Fatal("Resolve() ok = false, want true")
+	}
+	if got := resolution.Resolved.Model; got != "openai/gpt-oss-120b" {
+		t.Fatalf("resolved model = %q, want openai/gpt-oss-120b", got)
+	}
+	if got := resolution.Resolved.Provider; got != "groq" {
+		t.Fatalf("resolved provider = %q, want groq", got)
+	}
+	if got := resolution.Resolved.QualifiedModel(); got != "groq/openai/gpt-oss-120b" {
+		t.Fatalf("resolved selector = %q, want groq/openai/gpt-oss-120b", got)
+	}
+}
+
 func TestServiceUpsertRejectsQualifiedAliasChainsAndSelfTargets(t *testing.T) {
 	catalog := newTestCatalog()
 	catalog.add("gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})

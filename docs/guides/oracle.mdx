@@ -1,0 +1,151 @@
+---
+title: "Using GoModel with Oracle Generative AI"
+description: "Configure Oracle's OpenAI-compatible Generative AI endpoint in GoModel, including the required OCI policy and model fallback."
+---
+
+GoModel works with Oracle Generative AI through Oracle's OpenAI-compatible
+endpoint.
+
+Flow:
+
+`Client -> GoModel -> Oracle Generative AI`
+
+## Before you start
+
+- Create an Oracle Generative AI API key.
+- Add an OCI IAM policy for `generativeaiapikey`.
+- Choose a supported Oracle region and model.
+- Prefer YAML configuration for Oracle so you can set `models:`.
+
+## 1. Add the OCI policy
+
+For a simple test setup, this tenancy-level policy is enough:
+
+```text
+Allow any-user to use generative-ai-family in tenancy where ALL {request.principal.type='generativeaiapikey'}
+```
+
+This allows Oracle Generative AI bearer API keys to call the inference APIs.
+
+For production, narrow this policy to a specific compartment, API key, or model
+instead of leaving it tenancy-wide.
+
+## 2. Set the Oracle endpoint and API key
+
+Use Oracle's OpenAI-compatible inference base URL for your region. For Chicago:
+
+```bash
+export ORACLE_BASE_URL="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1"
+export ORACLE_API_KEY="..."
+```
+
+## 3. Configure Oracle in GoModel
+
+Use a YAML provider block and set `models:` explicitly:
+
+```yaml
+providers:
+  oracle:
+    type: oracle
+    base_url: "${ORACLE_BASE_URL}"
+    api_key: "${ORACLE_API_KEY}"
+    models:
+      - openai.gpt-oss-120b
+```
+
+Why `models:` matters:
+
+- Oracle inference works through `chat/completions` and `responses`
+- Oracle's `/models` endpoint may not be available for this API-key flow
+- GoModel can fall back to the configured model list when `/models` is
+  unavailable
+
+For Oracle, YAML is the recommended path. Environment-only auto-discovery is
+not enough if you need the configured-model fallback.
+
+## Current status
+
+What is integrated today:
+
+- Oracle's OpenAI-compatible inference endpoints
+- manual model configuration through `models:`
+- GoModel `/v1/models` from the configured-model fallback
+
+What is not yet validated as reliable:
+
+- Oracle's OpenAI-compatible `/models` endpoint for automatic model discovery
+
+What is not integrated yet:
+
+- native Oracle model auto-discovery through OCI APIs
+- automatic population of the Oracle model inventory without `models:`
+
+If Oracle later exposes a reliable `/models` endpoint for this API-key flow, or
+GoModel adds a separate OCI-native discovery path, this manual `models:`
+requirement can be relaxed.
+
+## 4. Start GoModel
+
+```bash
+go run ./cmd/gomodel
+```
+
+## 5. Verify the model registry
+
+```bash
+curl -s http://localhost:8080/v1/models
+```
+
+Expected result:
+
+- a `200 OK`
+- an Oracle-owned model such as `oracle/openai.gpt-oss-120b`
+
+## 6. Verify Responses
+
+```bash
+curl -s http://localhost:8080/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai.gpt-oss-120b",
+    "input": "Reply with the single word ok."
+  }'
+```
+
+Expected result:
+
+- a `200 OK`
+- final output text containing `ok`
+
+## 7. Verify Chat Completions
+
+```bash
+curl -s http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "openai.gpt-oss-120b",
+    "messages": [{"role": "user", "content": "Reply with the single word ok."}],
+    "max_tokens": 80
+  }'
+```
+
+Use a high enough `max_tokens` budget. Some Oracle-backed reasoning models can
+spend short completions on reasoning content before emitting final assistant
+text.
+
+## Troubleshooting
+
+- `404 Authorization failed or requested resource not found`
+  Usually means the Generative AI API key policy is missing, the region is
+  wrong, or the model is not available to the account.
+- `model registry has no models`
+  Add `models:` to the Oracle provider config so GoModel can use the fallback.
+- OCI CLI works but Oracle bearer requests fail
+  These are different auth flows. OCI CLI uses API signing keys; Oracle
+  Generative AI inference uses the Generative AI bearer API key.
+
+## References
+
+- Oracle API keys overview: https://docs.oracle.com/en-us/iaas/Content/generative-ai/api-keys.htm
+- Oracle API key permissions: https://docs.oracle.com/en-us/iaas/Content/generative-ai/add-api-permission.htm
+- Oracle OpenAI-compatible endpoint: https://docs.oracle.com/en-us/iaas/Content/generative-ai/oci-openai.htm

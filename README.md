@@ -6,7 +6,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/enterpilot/gomodel)](https://hub.docker.com/r/enterpilot/gomodel)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/ENTERPILOT/GOModel)](https://github.com/ENTERPILOT/GOModel/blob/main/go.mod)
 
-A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for multiple AI model providers, full-observability and more.
+A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for OpenAI, Anthropic, Gemini, xAI, Groq, OpenRouter, Azure OpenAI, Oracle, Ollama, and more.
 
 <a href="docs/dashboard.gif">
   <img src="docs/dashboard.gif" alt="Animated GOModel AI gateway dashboard showing usage analytics, token tracking, and estimated cost monitoring" width="100%">
@@ -37,8 +37,10 @@ docker run --rm -p 8080:8080 \
   -e OPENROUTER_API_KEY="your-openrouter-key" \
   -e XAI_API_KEY="your-xai-key" \
   -e AZURE_API_KEY="your-azure-key" \
-  -e AZURE_API_BASE="https://your-resource.openai.azure.com/openai/deployments/your-deployment" \
+  -e AZURE_BASE_URL="https://your-resource.openai.azure.com/openai/deployments/your-deployment" \
   -e AZURE_API_VERSION="2024-10-21" \
+  -e ORACLE_API_KEY="your-oracle-key" \
+  -e ORACLE_BASE_URL="https://inference.generativeai.us-chicago-1.oci.oraclecloud.com/20231130/actions/v1" \
   -e OLLAMA_BASE_URL="http://host.docker.internal:11434/v1" \
   enterpilot/gomodel
 ```
@@ -70,7 +72,8 @@ Example model identifiers are illustrative and subject to change; consult provid
 | Groq | `GROQ_API_KEY` | `llama-3.3-70b-versatile` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | OpenRouter | `OPENROUTER_API_KEY` | `google/gemini-2.5-flash` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | xAI (Grok) | `XAI_API_KEY` | `grok-2` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Azure OpenAI | `AZURE_API_KEY` + `AZURE_API_BASE` (`AZURE_API_VERSION` optional) | `gpt-4o` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Azure OpenAI | `AZURE_API_KEY` + `AZURE_BASE_URL` (`AZURE_API_VERSION` optional) | `gpt-4o` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Oracle | `ORACLE_API_KEY` + `ORACLE_BASE_URL` | `openai.gpt-oss-120b` | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Ollama | `OLLAMA_BASE_URL` | `llama3.2` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 
 ✅ Supported  ❌ Unsupported
@@ -183,6 +186,42 @@ Key settings:
 
 ---
 
+## Response Caching
+
+GOModel has a two-layer response cache that reduces LLM API costs and latency for repeated or semantically similar requests.
+
+### Layer 1 — Exact-match cache
+
+Hashes the full request body (path + `ExecutionPlan` + body) and returns a stored response on byte-identical requests. Sub-millisecond lookup. Activate by pointing it at Redis:
+
+```yaml
+# config/config.yaml
+cache:
+  response:
+    simple:
+      redis:
+        url: redis://localhost:6379
+        ttl: 3600   # seconds; default 3600
+```
+
+Or via environment variables: `REDIS_URL`, `REDIS_KEY_RESPONSES`, `REDIS_TTL_RESPONSES`.
+
+Responses served from this layer carry `X-Cache: HIT (exact)`.
+
+### Layer 2 — Semantic cache *(coming soon)*
+
+Embeds the last user message with `all-MiniLM-L6-v2` (local ONNX, zero external dependency) and performs a KNN vector search. Semantically equivalent queries — e.g. *"What's the capital of France?"* vs *"Which city is France's capital?"* — return the same cached response without an upstream LLM call.
+
+Expected hit rates: ~60–70% in high-repetition workloads vs. ~18% for exact-match alone.
+
+Responses served from this layer carry `X-Cache: HIT (semantic)`.
+
+Supported vector backends: `sqlite-vec` (default, embedded), `pgvector`, `qdrant`.
+
+Both cache layers run **after** guardrail/execution-plan patching so they always see the final prompt. Use `Cache-Control: no-cache` or `Cache-Control: no-store` to bypass caching per-request.
+
+---
+
 See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 ---
@@ -204,6 +243,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 | Area | Status | Notes |
 | ---- | :----: | ----- |
+| Semantic response cache | 🚧 | Exact-match Redis cache is live. Semantic (vector KNN) layer with local `all-MiniLM-L6-v2` embedder is in progress — see [ADR-0006](docs/adr/0006-semantic-response-cache.md). |
 | Billing management | 🚧 | Usage and pricing primitives exist, but billing workflows are not complete. |
 | Budget management | 🚧 | Gateway-level budget enforcement and policy controls are not implemented yet. |
 | Guardrails depth | 🚧 | The system prompt guardrail is available today; broader guardrail types are still to come. |

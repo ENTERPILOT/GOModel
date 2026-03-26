@@ -1224,7 +1224,7 @@ func TestChatCompletion_ResolvesQualifiedMaskingAliasBeforeHandlerRouting(t *tes
 		},
 	}
 
-	provider := aliases.NewProvider(inner, service)
+	provider := aliases.NewProviderWithOptions(inner, service, aliases.Options{})
 
 	e := echo.New()
 	handler := NewHandler(provider, nil, nil, nil)
