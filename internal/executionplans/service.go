@@ -214,11 +214,13 @@ func (s *Service) StartBackgroundRefresh(interval time.Duration) func() {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
-				if err := s.Refresh(refreshCtx); err != nil {
-					slog.Warn("execution plan refresh failed", "error", err)
-				}
-				refreshCancel()
+				func() {
+					refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
+					defer refreshCancel()
+					if err := s.Refresh(refreshCtx); err != nil {
+						slog.Warn("execution plan refresh failed", "error", err)
+					}
+				}()
 			}
 		}
 	}()

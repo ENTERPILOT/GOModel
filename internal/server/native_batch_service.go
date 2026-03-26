@@ -46,11 +46,12 @@ func (s *nativeBatchService) Batches(c *echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("batch routing is not supported by the current provider router", nil))
 	}
 
-	providerType, err := determineBatchProviderType(s.provider, s.modelResolver, req)
+	selection, err := determineBatchExecutionSelection(s.provider, s.modelResolver, req)
 	if err != nil {
 		return handleError(c, err)
 	}
-	plan, err := s.storeExecutionPlanForBatch(c, req, providerType)
+	providerType := selection.providerType
+	plan, err := s.storeExecutionPlanForBatch(c, selection)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -152,24 +153,16 @@ func (s *nativeBatchService) rollbackPreparedBatch(ctx context.Context, provider
 	s.cancelUpstreamBatch(ctx, providerType, providerBatchID)
 }
 
-func (s *nativeBatchService) storeExecutionPlanForBatch(
-	c *echo.Context,
-	req *core.BatchRequest,
-	providerType string,
-) (*core.ExecutionPlan, error) {
+func (s *nativeBatchService) storeExecutionPlanForBatch(c *echo.Context, selection batchExecutionSelection) (*core.ExecutionPlan, error) {
 	plan := cloneCurrentExecutionPlan(c)
 	if plan == nil {
 		return nil, nil
 	}
 	plan.Mode = core.ExecutionModeNativeBatch
-	plan.ProviderType = strings.TrimSpace(providerType)
+	plan.ProviderType = strings.TrimSpace(selection.providerType)
 
 	if s.executionPolicyResolver != nil {
-		selector, err := determineBatchExecutionSelector(s.provider, s.modelResolver, req, providerType)
-		if err != nil {
-			return nil, err
-		}
-		if err := applyExecutionPolicy(plan, s.executionPolicyResolver, selector); err != nil {
+		if err := applyExecutionPolicy(plan, s.executionPolicyResolver, selection.selector); err != nil {
 			return nil, err
 		}
 	}

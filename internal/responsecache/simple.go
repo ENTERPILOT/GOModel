@@ -194,7 +194,7 @@ func (m *simpleCacheMiddleware) enqueueWrite(job cacheWriteJob) {
 
 func shouldSkipCacheForExecutionPlan(plan *core.ExecutionPlan) bool {
 	if plan == nil {
-		return false
+		return true
 	}
 	if !plan.CacheEnabled() {
 		return true

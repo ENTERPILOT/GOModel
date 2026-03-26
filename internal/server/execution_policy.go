@@ -1,6 +1,9 @@
 package server
 
 import (
+	"errors"
+	"net/http"
+
 	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/core"
@@ -17,10 +20,20 @@ func applyExecutionPolicy(plan *core.ExecutionPlan, resolver RequestExecutionPol
 	}
 	policy, err := resolver.Match(selector)
 	if err != nil {
-		return err
+		return normalizeExecutionPolicyError(err)
 	}
 	plan.Policy = policy
 	return nil
+}
+
+func normalizeExecutionPolicyError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if gatewayErr, ok := errors.AsType[*core.GatewayError](err); ok {
+		return gatewayErr
+	}
+	return core.NewProviderError("", http.StatusInternalServerError, "failed to resolve execution policy", err)
 }
 
 func cloneCurrentExecutionPlan(c *echo.Context) *core.ExecutionPlan {

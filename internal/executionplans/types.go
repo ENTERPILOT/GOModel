@@ -67,6 +67,9 @@ func normalizeScope(scope Scope) (Scope, string, error) {
 	if scope.Provider == "" && scope.Model != "" {
 		return Scope{}, "", newValidationError("scope_model requires scope_provider", nil)
 	}
+	if strings.Contains(scope.Provider, ":") || strings.Contains(scope.Model, ":") {
+		return Scope{}, "", newValidationError("scope fields cannot contain ':'", nil)
+	}
 	return scope, scopeKey(scope), nil
 }
 

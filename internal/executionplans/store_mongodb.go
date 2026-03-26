@@ -103,54 +103,74 @@ func (s *MongoDBStore) Create(ctx context.Context, input CreateInput) (*Version,
 		return nil, err
 	}
 
-	var latest struct {
-		Version int `bson:"version"`
+	session, err := s.collection.Database().Client().StartSession()
+	if err != nil {
+		return nil, fmt.Errorf("start execution plan session: %w", err)
 	}
-	findOpts := options.FindOne().SetSort(bson.D{{Key: "version", Value: -1}})
-	err = s.collection.FindOne(ctx, bson.D{{Key: "scope_key", Value: scopeKey}}, findOpts).Decode(&latest)
-	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
-		return nil, fmt.Errorf("load latest execution plan version: %w", err)
-	}
+	defer session.EndSession(ctx)
 
-	if input.Activate {
-		if _, err := s.collection.UpdateMany(ctx,
-			bson.D{{Key: "scope_key", Value: scopeKey}, {Key: "active", Value: true}},
-			bson.D{{Key: "$set", Value: bson.D{{Key: "active", Value: false}}}},
-		); err != nil {
-			return nil, fmt.Errorf("deactivate current execution plan version: %w", err)
+	result, err := session.WithTransaction(ctx, func(sessionCtx context.Context) (any, error) {
+		var latest struct {
+			Version int `bson:"version"`
 		}
+		findOpts := options.FindOne().SetSort(bson.D{{Key: "version", Value: -1}})
+		err := s.collection.FindOne(sessionCtx, bson.D{{Key: "scope_key", Value: scopeKey}}, findOpts).Decode(&latest)
+		if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, fmt.Errorf("load latest execution plan version: %w", err)
+		}
+
+		if input.Activate {
+			if _, err := s.collection.UpdateMany(sessionCtx,
+				bson.D{{Key: "scope_key", Value: scopeKey}, {Key: "active", Value: true}},
+				bson.D{{Key: "$set", Value: bson.D{{Key: "active", Value: false}}}},
+			); err != nil {
+				return nil, fmt.Errorf("deactivate current execution plan version: %w", err)
+			}
+		}
+
+		now := time.Now().UTC()
+		version := &Version{
+			ID:          uuid.NewString(),
+			Scope:       input.Scope,
+			ScopeKey:    scopeKey,
+			Version:     latest.Version + 1,
+			Active:      input.Activate,
+			Name:        input.Name,
+			Description: input.Description,
+			Payload:     input.Payload,
+			PlanHash:    planHash,
+			CreatedAt:   now,
+		}
+
+		if _, err := s.collection.InsertOne(sessionCtx, mongoVersionDocument{
+			ID:            version.ID,
+			ScopeProvider: version.Scope.Provider,
+			ScopeModel:    version.Scope.Model,
+			ScopeKey:      version.ScopeKey,
+			Version:       version.Version,
+			Active:        version.Active,
+			Name:          version.Name,
+			Description:   version.Description,
+			PlanPayload:   version.Payload,
+			PlanHash:      version.PlanHash,
+			CreatedAt:     version.CreatedAt,
+		}); err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				return nil, fmt.Errorf("insert execution plan version: duplicate key: %w", err)
+			}
+			return nil, fmt.Errorf("insert execution plan version: %w", err)
+		}
+
+		return version, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	now := time.Now().UTC()
-	version := &Version{
-		ID:          uuid.NewString(),
-		Scope:       input.Scope,
-		ScopeKey:    scopeKey,
-		Version:     latest.Version + 1,
-		Active:      input.Activate,
-		Name:        input.Name,
-		Description: input.Description,
-		Payload:     input.Payload,
-		PlanHash:    planHash,
-		CreatedAt:   now,
+	version, ok := result.(*Version)
+	if !ok {
+		return nil, fmt.Errorf("unexpected execution plan transaction result: %T", result)
 	}
-
-	if _, err := s.collection.InsertOne(ctx, mongoVersionDocument{
-		ID:            version.ID,
-		ScopeProvider: version.Scope.Provider,
-		ScopeModel:    version.Scope.Model,
-		ScopeKey:      version.ScopeKey,
-		Version:       version.Version,
-		Active:        version.Active,
-		Name:          version.Name,
-		Description:   version.Description,
-		PlanPayload:   version.Payload,
-		PlanHash:      version.PlanHash,
-		CreatedAt:     version.CreatedAt,
-	}); err != nil {
-		return nil, fmt.Errorf("insert execution plan version: %w", err)
-	}
-
 	return version, nil
 }
 

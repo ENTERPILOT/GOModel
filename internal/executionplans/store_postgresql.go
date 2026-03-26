@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -95,6 +96,21 @@ func (s *PostgreSQLStore) Create(ctx context.Context, input CreateInput) (*Versi
 		return nil, err
 	}
 
+	var lastErr error
+	for range 5 {
+		version, err := s.createVersion(ctx, input, scopeKey, planHash)
+		if err == nil {
+			return version, nil
+		}
+		if !isPostgreSQLUniqueViolation(err) {
+			return nil, err
+		}
+		lastErr = err
+	}
+	return nil, fmt.Errorf("insert execution plan version after concurrent retries: %w", lastErr)
+}
+
+func (s *PostgreSQLStore) createVersion(ctx context.Context, input CreateInput, scopeKey, planHash string) (*Version, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin execution plan transaction: %w", err)
@@ -212,4 +228,9 @@ func nullIfEmpty(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func isPostgreSQLUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

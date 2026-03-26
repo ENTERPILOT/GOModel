@@ -93,10 +93,14 @@ func (r *PostgreSQLReader) GetLogs(ctx context.Context, params LogQueryParams) (
 	for rows.Next() {
 		var e LogEntry
 		var dataJSON *string
+		var executionPlanVersionID *string
 
-		if err := rows.Scan(&e.ID, &e.Timestamp, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &e.AliasUsed, &e.ExecutionPlanVersionID, &e.StatusCode,
+		if err := rows.Scan(&e.ID, &e.Timestamp, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &e.AliasUsed, &executionPlanVersionID, &e.StatusCode,
 			&e.RequestID, &e.ClientIP, &e.Method, &e.Path, &e.Stream, &e.ErrorType, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan audit log row: %w", err)
+		}
+		if executionPlanVersionID != nil {
+			e.ExecutionPlanVersionID = *executionPlanVersionID
 		}
 
 		if dataJSON != nil && *dataJSON != "" {
@@ -209,10 +213,14 @@ func scanPostgreSQLLogEntry(rows interface {
 }) (*LogEntry, error) {
 	var e LogEntry
 	var dataJSON *string
+	var executionPlanVersionID *string
 
-	if err := rows.Scan(&e.ID, &e.Timestamp, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &e.AliasUsed, &e.ExecutionPlanVersionID, &e.StatusCode,
+	if err := rows.Scan(&e.ID, &e.Timestamp, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &e.AliasUsed, &executionPlanVersionID, &e.StatusCode,
 		&e.RequestID, &e.ClientIP, &e.Method, &e.Path, &e.Stream, &e.ErrorType, &dataJSON); err != nil {
 		return nil, fmt.Errorf("failed to scan audit log row: %w", err)
+	}
+	if executionPlanVersionID != nil {
+		e.ExecutionPlanVersionID = *executionPlanVersionID
 	}
 
 	if dataJSON != nil && *dataJSON != "" {

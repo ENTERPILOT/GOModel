@@ -91,16 +91,26 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (*Version, 
 		return nil, err
 	}
 
-	tx, err := s.db.BeginTx(ctx, nil)
+	conn, err := s.db.Conn(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin execution plan transaction: %w", err)
+		return nil, fmt.Errorf("acquire execution plan connection: %w", err)
 	}
 	defer func() {
-		_ = tx.Rollback()
+		_ = conn.Close()
+	}()
+	if _, err := conn.ExecContext(ctx, `BEGIN IMMEDIATE`); err != nil {
+		return nil, fmt.Errorf("begin execution plan transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if committed {
+			return
+		}
+		_, _ = conn.ExecContext(context.Background(), `ROLLBACK`)
 	}()
 
 	var nextVersion int
-	if err := tx.QueryRowContext(ctx,
+	if err := conn.QueryRowContext(ctx,
 		`SELECT COALESCE(MAX(version), 0) + 1 FROM execution_plan_versions WHERE scope_key = ?`,
 		scopeKey,
 	).Scan(&nextVersion); err != nil {
@@ -108,7 +118,7 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (*Version, 
 	}
 
 	if input.Activate {
-		if _, err := tx.ExecContext(ctx,
+		if _, err := conn.ExecContext(ctx,
 			`UPDATE execution_plan_versions SET active = 0 WHERE scope_key = ? AND active = 1`,
 			scopeKey,
 		); err != nil {
@@ -135,7 +145,7 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (*Version, 
 		CreatedAt:   now,
 	}
 
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := conn.ExecContext(ctx, `
 		INSERT INTO execution_plan_versions (
 			id, scope_provider, scope_model, scope_key, version, active, name, description, plan_payload, plan_hash, created_at
 		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -155,9 +165,10 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (*Version, 
 		return nil, fmt.Errorf("insert execution plan version: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
+	if _, err := conn.ExecContext(ctx, `COMMIT`); err != nil {
 		return nil, fmt.Errorf("commit execution plan version: %w", err)
 	}
+	committed = true
 	return version, nil
 }
 

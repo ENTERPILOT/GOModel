@@ -94,8 +94,9 @@ func (r *SQLiteReader) GetLogs(ctx context.Context, params LogQueryParams) (*Log
 		var aliasUsedInt int
 		var streamInt int
 		var dataJSON *string
+		var executionPlanVersionID sql.NullString
 
-		if err := rows.Scan(&e.ID, &ts, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &aliasUsedInt, &e.ExecutionPlanVersionID, &e.StatusCode,
+		if err := rows.Scan(&e.ID, &ts, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &aliasUsedInt, &executionPlanVersionID, &e.StatusCode,
 			&e.RequestID, &e.ClientIP, &e.Method, &e.Path, &streamInt, &e.ErrorType, &dataJSON); err != nil {
 			return nil, fmt.Errorf("failed to scan audit log row: %w", err)
 		}
@@ -103,6 +104,9 @@ func (r *SQLiteReader) GetLogs(ctx context.Context, params LogQueryParams) (*Log
 		e.AliasUsed = aliasUsedInt == 1
 		e.Stream = streamInt == 1
 		e.Timestamp = parseSQLTimestamp(ts, e.ID)
+		if executionPlanVersionID.Valid {
+			e.ExecutionPlanVersionID = executionPlanVersionID.String
+		}
 
 		if dataJSON != nil && *dataJSON != "" {
 			var data LogData
@@ -301,8 +305,9 @@ func scanSQLiteLogEntry(rows *sql.Rows) (*LogEntry, error) {
 	var aliasUsedInt int
 	var streamInt int
 	var dataJSON *string
+	var executionPlanVersionID sql.NullString
 
-	if err := rows.Scan(&e.ID, &ts, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &aliasUsedInt, &e.ExecutionPlanVersionID, &e.StatusCode,
+	if err := rows.Scan(&e.ID, &ts, &e.DurationNs, &e.Model, &e.ResolvedModel, &e.Provider, &aliasUsedInt, &executionPlanVersionID, &e.StatusCode,
 		&e.RequestID, &e.ClientIP, &e.Method, &e.Path, &streamInt, &e.ErrorType, &dataJSON); err != nil {
 		return nil, fmt.Errorf("failed to scan audit log row: %w", err)
 	}
@@ -310,6 +315,9 @@ func scanSQLiteLogEntry(rows *sql.Rows) (*LogEntry, error) {
 	e.AliasUsed = aliasUsedInt == 1
 	e.Stream = streamInt == 1
 	e.Timestamp = parseSQLTimestamp(ts, e.ID)
+	if executionPlanVersionID.Valid {
+		e.ExecutionPlanVersionID = executionPlanVersionID.String
+	}
 
 	if dataJSON != nil && *dataJSON != "" {
 		var data LogData

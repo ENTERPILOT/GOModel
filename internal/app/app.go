@@ -185,10 +185,11 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	var executionPlanResult *executionplans.Result
 	sharedExecutionPlanStorage := firstSharedStorage(auditResult.Storage, usageResult.Storage, batchResult.Storage, aliasResult.Storage)
 	executionPlanCompiler := executionplans.NewCompilerWithFeatureCaps(guardrailRegistry, featureCaps)
+	refreshInterval := executionPlanRefreshInterval(appCfg)
 	if sharedExecutionPlanStorage != nil {
-		executionPlanResult, err = executionplans.NewWithSharedStorage(ctx, sharedExecutionPlanStorage, executionPlanCompiler, time.Minute)
+		executionPlanResult, err = executionplans.NewWithSharedStorage(ctx, sharedExecutionPlanStorage, executionPlanCompiler, refreshInterval)
 	} else {
-		executionPlanResult, err = executionplans.New(ctx, appCfg, executionPlanCompiler, time.Minute)
+		executionPlanResult, err = executionplans.New(ctx, appCfg, executionPlanCompiler, refreshInterval)
 	}
 	if err != nil {
 		closeErr := errors.Join(app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
@@ -700,6 +701,13 @@ func runtimeExecutionFeatureCaps(cfg *config.Config) core.ExecutionFeatures {
 		Usage:      cfg.Usage.Enabled,
 		Guardrails: cfg.Guardrails.Enabled,
 	}
+}
+
+func executionPlanRefreshInterval(cfg *config.Config) time.Duration {
+	if cfg == nil || cfg.ExecutionPlans.RefreshInterval <= 0 {
+		return time.Minute
+	}
+	return cfg.ExecutionPlans.RefreshInterval
 }
 
 func responseCacheConfigured(cfg config.ResponseCacheConfig) bool {

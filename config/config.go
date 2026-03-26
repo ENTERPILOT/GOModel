@@ -28,16 +28,17 @@ var bodySizeLimitRegex = regexp.MustCompile(`(?i)^(\d+)([KMG])?B?$`)
 
 // Config holds the application configuration.
 type Config struct {
-	Server     ServerConfig     `yaml:"server"`
-	Cache      CacheConfig      `yaml:"cache"`
-	Storage    StorageConfig    `yaml:"storage"`
-	Logging    LogConfig        `yaml:"logging"`
-	Usage      UsageConfig      `yaml:"usage"`
-	Metrics    MetricsConfig    `yaml:"metrics"`
-	HTTP       HTTPConfig       `yaml:"http"`
-	Admin      AdminConfig      `yaml:"admin"`
-	Guardrails GuardrailsConfig `yaml:"guardrails"`
-	Resilience ResilienceConfig `yaml:"resilience"`
+	Server         ServerConfig         `yaml:"server"`
+	Cache          CacheConfig          `yaml:"cache"`
+	Storage        StorageConfig        `yaml:"storage"`
+	Logging        LogConfig            `yaml:"logging"`
+	Usage          UsageConfig          `yaml:"usage"`
+	Metrics        MetricsConfig        `yaml:"metrics"`
+	HTTP           HTTPConfig           `yaml:"http"`
+	Admin          AdminConfig          `yaml:"admin"`
+	Guardrails     GuardrailsConfig     `yaml:"guardrails"`
+	ExecutionPlans ExecutionPlansConfig `yaml:"execution_plans"`
+	Resilience     ResilienceConfig     `yaml:"resilience"`
 }
 
 // LoadResult is returned by Load and bundles the application config with the raw
@@ -155,6 +156,13 @@ type HTTPConfig struct {
 
 	// ResponseHeaderTimeout is the time to wait for response headers in seconds (default: 600)
 	ResponseHeaderTimeout int `yaml:"response_header_timeout" env:"HTTP_RESPONSE_HEADER_TIMEOUT"`
+}
+
+// ExecutionPlansConfig holds runtime refresh behavior for persisted execution plans.
+type ExecutionPlansConfig struct {
+	// RefreshInterval controls how often the in-memory execution-plan snapshot
+	// is refreshed from storage. Default: 1m.
+	RefreshInterval time.Duration `yaml:"refresh_interval" env:"EXECUTION_PLAN_REFRESH_INTERVAL"`
 }
 
 // LogConfig holds audit logging configuration
@@ -565,6 +573,9 @@ func buildDefaultConfig() *Config {
 		HTTP: HTTPConfig{
 			Timeout:               600,
 			ResponseHeaderTimeout: 600,
+		},
+		ExecutionPlans: ExecutionPlansConfig{
+			RefreshInterval: time.Minute,
 		},
 		Resilience: ResilienceConfig{
 			Retry:          DefaultRetryConfig(),

@@ -637,7 +637,12 @@ func TestMiddleware_StoresExecutionPlanVersionID(t *testing.T) {
 		ProviderType: "openai",
 		Policy: &core.ResolvedExecutionPolicy{
 			VersionID: "plan-version-123",
-			Features:  core.DefaultExecutionFeatures(),
+			Features: core.ExecutionFeatures{
+				Cache:      true,
+				Audit:      true,
+				Usage:      true,
+				Guardrails: true,
+			},
 		},
 		Resolution: &core.RequestModelResolution{
 			Requested:        core.NewRequestedModelSelector("gpt-5-nano", ""),
