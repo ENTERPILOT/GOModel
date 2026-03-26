@@ -190,6 +190,18 @@ func parseToolCallArguments(arguments string) (any, error) {
 func buildAnthropicMessageContent(msg core.Message) (any, error) {
 	const maxToolCallsPerMessage = 1024
 
+	if hasAnthropicReasoningCompatFields(msg.ExtraFields) {
+		if msg.Role != "assistant" {
+			return nil, core.NewInvalidRequestError("anthropic reasoning compatibility fields are only supported on assistant messages", nil)
+		}
+	}
+	if hasAnthropicBreakingReasoningCompatFields(msg.ExtraFields) && !anthropicThinkingSignaturesCompatEnabled() {
+		return nil, core.NewInvalidRequestError(
+			"anthropic reasoning compatibility fields require "+openAICompatBreakingAnthropicThinkingSignaturesEnv+" to be enabled",
+			nil,
+		)
+	}
+
 	if msg.Role == "tool" {
 		toolUseID := strings.TrimSpace(msg.ToolCallID)
 		if toolUseID == "" {

@@ -487,6 +487,78 @@ func TestConvertResponsesRequestToChat_RejectsAnthropicReasoningCompatFieldsByDe
 	}
 }
 
+func TestConvertResponsesRequestToChatWithAnthropicCompat_RejectsInvalidMessageReasoningCompatFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       any
+		wantMessage string
+	}{
+		{
+			name: "typed assistant invalid reasoning_details",
+			input: []core.ResponsesInputElement{
+				{
+					Type:    "message",
+					Role:    "assistant",
+					Content: "Hello",
+					ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+						"reasoning_details": json.RawMessage(`[{"type":"output_text","text":"bad"}]`),
+					}),
+				},
+			},
+			wantMessage: "message.reasoning_details must be an array of reasoning_text objects",
+		},
+		{
+			name: "map assistant missing reasoning_signature",
+			input: []any{
+				map[string]any{
+					"type":              "message",
+					"role":              "assistant",
+					"content":           "Hello",
+					"reasoning_content": "Let me think.",
+				},
+			},
+			wantMessage: "message.reasoning_content requires message.reasoning_signature",
+		},
+		{
+			name: "typed non-assistant reasoning fields",
+			input: []core.ResponsesInputElement{
+				{
+					Type:    "message",
+					Role:    "user",
+					Content: "Hello",
+					ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+						"reasoning_details": json.RawMessage(`[{"type":"reasoning_text","text":"Let me think.","signature":"sig_123"}]`),
+					}),
+				},
+			},
+			wantMessage: "anthropic reasoning compatibility fields are only supported on assistant messages",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := convertResponsesRequestToChatWithAnthropicCompat(&core.ResponsesRequest{
+				Model: "test-model",
+				Input: tt.input,
+			})
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			var gatewayErr *core.GatewayError
+			if !errors.As(err, &gatewayErr) {
+				t.Fatalf("error = %T, want *core.GatewayError", err)
+			}
+			if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+				t.Fatalf("GatewayError.Type = %q, want %q", gatewayErr.Type, core.ErrorTypeInvalidRequest)
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("error = %v, want substring %q", err, tt.wantMessage)
+			}
+		})
+	}
+}
+
 func TestConvertResponsesRequestToChatWithAnthropicCompat_MergesReasoningItemIntoFollowingAssistantMessage(t *testing.T) {
 	req := &core.ResponsesRequest{
 		Model: "test-model",
@@ -800,6 +872,55 @@ func TestConvertResponsesRequestToChatWithAnthropicCompat_PreservesReasoningExtr
 	}
 	if chatReq.Messages[0].ExtraFields.Lookup("x_assistant") == nil {
 		t.Fatal("assistant extra missing after reasoning merge")
+	}
+}
+
+func TestConvertResponsesRequestToChatWithAnthropicCompat_MergesToolCallsAfterReasoningIntoSameAssistantTurn(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []core.ResponsesInputElement{
+			{
+				Type: "reasoning",
+				Content: []core.ResponsesContentItem{
+					{
+						Type:      "reasoning_text",
+						Text:      "Let me think.",
+						Signature: "sig_123",
+					},
+				},
+			},
+			{
+				Type:    "message",
+				Role:    "assistant",
+				Content: "Hello",
+			},
+			{
+				Type:      "function_call",
+				CallID:    "call_123",
+				Name:      "lookup_weather",
+				Arguments: `{"city":"Warsaw"}`,
+			},
+		},
+	}
+
+	chatReq, err := convertResponsesRequestToChatWithAnthropicCompat(req)
+	if err != nil {
+		t.Fatalf("convertResponsesRequestToChatWithAnthropicCompat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(chatReq.Messages))
+	}
+	if got := core.ExtractTextContent(chatReq.Messages[0].Content); got != "Hello" {
+		t.Fatalf("Messages[0].Content = %q, want Hello", got)
+	}
+	if len(chatReq.Messages[0].ToolCalls) != 1 {
+		t.Fatalf("len(Messages[0].ToolCalls) = %d, want 1", len(chatReq.Messages[0].ToolCalls))
+	}
+	if chatReq.Messages[0].ToolCalls[0].Function.Name != "lookup_weather" {
+		t.Fatalf("ToolCalls[0].Function.Name = %q, want lookup_weather", chatReq.Messages[0].ToolCalls[0].Function.Name)
+	}
+	if chatReq.Messages[0].ExtraFields.Lookup("reasoning_details") == nil {
+		t.Fatal("reasoning_details missing after tool-call merge")
 	}
 }
 

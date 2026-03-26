@@ -467,11 +467,8 @@ func convertResponsesInputElement(item core.ResponsesInputElement, index int, op
 		if role == "" {
 			return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
 		}
-		if !opts.PreserveAnthropicReasoningCompat && containsAnthropicReasoningCompatFields(item.ExtraFields) {
-			return core.Message{}, "", core.NewInvalidRequestError(
-				fmt.Sprintf("invalid responses input item at index %d: anthropic reasoning compatibility fields require provider-specific reasoning compatibility", index),
-				nil,
-			)
+		if err := validateResponsesMessageAnthropicReasoningCompat(index, role, item.ExtraFields, opts); err != nil {
+			return core.Message{}, "", err
 		}
 		content, ok := ConvertResponsesContentToChatContent(item.Content)
 		if !ok {
@@ -557,11 +554,8 @@ func convertResponsesInputMap(item map[string]any, index int, opts ResponsesToCh
 		return core.Message{}, "", core.NewInvalidRequestError(fmt.Sprintf("invalid responses input item at index %d: role is required", index), nil)
 	}
 	extraFields := core.UnknownJSONFieldsFromMap(rawJSONMapFromUnknownKeys(item, "type", "role", "status", "content"))
-	if !opts.PreserveAnthropicReasoningCompat && containsAnthropicReasoningCompatFields(extraFields) {
-		return core.Message{}, "", core.NewInvalidRequestError(
-			fmt.Sprintf("invalid responses input item at index %d: anthropic reasoning compatibility fields require provider-specific reasoning compatibility", index),
-			nil,
-		)
+	if err := validateResponsesMessageAnthropicReasoningCompat(index, role, extraFields, opts); err != nil {
+		return core.Message{}, "", err
 	}
 
 	content, ok := ConvertResponsesContentToChatContent(item["content"])
@@ -584,6 +578,126 @@ func containsAnthropicReasoningCompatFields(fields core.UnknownJSONFields) bool 
 	return false
 }
 
+func validateResponsesMessageAnthropicReasoningCompat(index int, role string, fields core.UnknownJSONFields, opts ResponsesToChatOptions) error {
+	if !containsAnthropicReasoningCompatFields(fields) {
+		return nil
+	}
+	if !opts.PreserveAnthropicReasoningCompat {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: anthropic reasoning compatibility fields require provider-specific reasoning compatibility", index),
+			nil,
+		)
+	}
+	if role != "assistant" {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: anthropic reasoning compatibility fields are only supported on assistant messages", index),
+			nil,
+		)
+	}
+	return validateAnthropicReasoningCompatPayload(index, fields)
+}
+
+func validateAnthropicReasoningCompatPayload(index int, fields core.UnknownJSONFields) error {
+	if raw := fields.Lookup("reasoning_details"); len(raw) > 0 {
+		details, err := parseAnthropicReasoningCompatDetails(raw)
+		if err != nil {
+			return core.NewInvalidRequestError(
+				fmt.Sprintf("invalid responses input item at index %d: message.reasoning_details must be an array of reasoning_text objects", index),
+				err,
+			)
+		}
+		if len(details) == 0 {
+			return core.NewInvalidRequestError(
+				fmt.Sprintf("invalid responses input item at index %d: message.reasoning_details must contain at least one non-empty reasoning_text object", index),
+				nil,
+			)
+		}
+		return nil
+	}
+
+	reasoningContentRaw := fields.Lookup("reasoning_content")
+	reasoningSignatureRaw := fields.Lookup("reasoning_signature")
+	if len(reasoningContentRaw) == 0 && len(reasoningSignatureRaw) == 0 {
+		return nil
+	}
+	if len(reasoningContentRaw) == 0 {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: message.reasoning_signature requires message.reasoning_content", index),
+			nil,
+		)
+	}
+	if len(reasoningSignatureRaw) == 0 {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: message.reasoning_content requires message.reasoning_signature", index),
+			nil,
+		)
+	}
+
+	var reasoningContent string
+	if err := json.Unmarshal(reasoningContentRaw, &reasoningContent); err != nil {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: message.reasoning_content must be a string", index),
+			err,
+		)
+	}
+
+	var reasoningSignature string
+	if err := json.Unmarshal(reasoningSignatureRaw, &reasoningSignature); err != nil {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: message.reasoning_signature must be a string", index),
+			err,
+		)
+	}
+
+	if strings.TrimSpace(reasoningContent) == "" {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: message.reasoning_content must be a non-empty string", index),
+			nil,
+		)
+	}
+	if strings.TrimSpace(reasoningSignature) == "" {
+		return core.NewInvalidRequestError(
+			fmt.Sprintf("invalid responses input item at index %d: message.reasoning_signature must be a non-empty string", index),
+			nil,
+		)
+	}
+
+	return nil
+}
+
+func parseAnthropicReasoningCompatDetails(raw json.RawMessage) ([]responsesReasoningDetail, error) {
+	var details []responsesReasoningDetail
+	if err := json.Unmarshal(raw, &details); err != nil {
+		return nil, err
+	}
+
+	normalized := make([]responsesReasoningDetail, 0, len(details))
+	for _, detail := range details {
+		if strings.TrimSpace(detail.Text) == "" {
+			continue
+		}
+
+		detailType := strings.TrimSpace(detail.Type)
+		if detailType == "" {
+			detailType = "reasoning_text"
+		}
+		if detailType != "reasoning_text" && detailType != "thinking" {
+			return nil, fmt.Errorf("unsupported reasoning_details type %q", detailType)
+		}
+
+		normalized = append(normalized, responsesReasoningDetail{
+			Type:      "reasoning_text",
+			Text:      detail.Text,
+			Signature: strings.TrimSpace(detail.Signature),
+		})
+	}
+
+	if len(normalized) == 0 {
+		return nil, nil
+	}
+	return normalized, nil
+}
+
 func cloneResponsesMessage(msg core.Message) core.Message {
 	cloned := msg
 	if len(msg.ToolCalls) > 0 {
@@ -604,13 +718,16 @@ func cloneResponsesMessage(msg core.Message) core.Message {
 }
 
 func canMergeAssistantMessages(current, next core.Message) bool {
+	if isAssistantToolCallOnlyMessage(next) {
+		return next.ExtraFields.IsEmpty()
+	}
 	if !current.ExtraFields.IsEmpty() || !next.ExtraFields.IsEmpty() {
 		return false
 	}
 	if !core.HasStructuredContent(current.Content) && !core.HasStructuredContent(next.Content) {
 		return true
 	}
-	return isAssistantToolCallOnlyMessage(next)
+	return false
 }
 
 func mergeAssistantMessage(dst *core.Message, src core.Message) {

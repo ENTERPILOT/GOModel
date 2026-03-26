@@ -37,6 +37,24 @@ func anthropicThinkingSignaturesCompatEnabled() bool {
 	}
 }
 
+func hasAnthropicReasoningCompatFields(fields core.UnknownJSONFields) bool {
+	for _, key := range []string{"reasoning_details", "reasoning_content", "reasoning_signature"} {
+		if len(fields.Lookup(key)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnthropicBreakingReasoningCompatFields(fields core.UnknownJSONFields) bool {
+	for _, key := range []string{"reasoning_details", "reasoning_signature"} {
+		if len(fields.Lookup(key)) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 func extractAnthropicReasoningDetails(blocks []anthropicContent) []openAIReasoningDetail {
 	details := make([]openAIReasoningDetail, 0, len(blocks))
 	for _, block := range blocks {

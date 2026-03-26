@@ -4174,6 +4174,87 @@ func TestConvertToAnthropicRequest_PreservesReasoningDetailsBehindFeatureFlag(t 
 	}
 }
 
+func TestConvertToAnthropicRequest_RejectsReasoningCompatFieldsOutsideAssistantTurnOrWithoutFlag(t *testing.T) {
+	tests := []struct {
+		name        string
+		flagValue   string
+		role        string
+		wantMessage string
+	}{
+		{
+			name:        "assistant turn requires flag",
+			flagValue:   "",
+			role:        "assistant",
+			wantMessage: "anthropic reasoning compatibility fields require " + openAICompatBreakingAnthropicThinkingSignaturesEnv + " to be enabled",
+		},
+		{
+			name:        "user turn unsupported",
+			flagValue:   "true",
+			role:        "user",
+			wantMessage: "anthropic reasoning compatibility fields are only supported on assistant messages",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(openAICompatBreakingAnthropicThinkingSignaturesEnv, tt.flagValue)
+
+			_, err := convertToAnthropicRequest(&core.ChatRequest{
+				Model: "claude-sonnet-4-5-20250929",
+				Messages: []core.Message{
+					{
+						Role:    tt.role,
+						Content: "Hello",
+						ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+							"reasoning_details": json.RawMessage(`[{"type":"reasoning_text","text":"Let me think.","signature":"sig_123"}]`),
+						}),
+					},
+				},
+			})
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			var gatewayErr *core.GatewayError
+			if !errors.As(err, &gatewayErr) {
+				t.Fatalf("error = %T, want *core.GatewayError", err)
+			}
+			if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+				t.Fatalf("GatewayError.Type = %q, want %q", gatewayErr.Type, core.ErrorTypeInvalidRequest)
+			}
+			if !strings.Contains(err.Error(), tt.wantMessage) {
+				t.Fatalf("error = %v, want substring %q", err, tt.wantMessage)
+			}
+		})
+	}
+}
+
+func TestConvertToAnthropicRequest_AllowsReplayedReasoningContentWhenFeatureFlagDisabled(t *testing.T) {
+	t.Setenv(openAICompatBreakingAnthropicThinkingSignaturesEnv, "")
+
+	result, err := convertToAnthropicRequest(&core.ChatRequest{
+		Model: "claude-sonnet-4-5-20250929",
+		Messages: []core.Message{
+			{
+				Role:    "assistant",
+				Content: "Hello",
+				ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+					"reasoning_content": json.RawMessage(`"Let me think."`),
+				}),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("convertToAnthropicRequest() error = %v", err)
+	}
+	if len(result.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(result.Messages))
+	}
+	if got, ok := result.Messages[0].Content.(string); !ok || got != "Hello" {
+		t.Fatalf("content = %#v, want plain text Hello", result.Messages[0].Content)
+	}
+}
+
 func TestConvertResponsesRequestToAnthropic_PreservesReasoningItemsBehindFeatureFlag(t *testing.T) {
 	t.Setenv(openAICompatBreakingAnthropicThinkingSignaturesEnv, "true")
 
