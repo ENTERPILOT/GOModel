@@ -94,7 +94,7 @@ func TestSimpleCacheMiddleware_CacheHit(t *testing.T) {
 	}
 
 	// Wait for the tracked background write to complete before the second request.
-	mw.inner.wg.Wait()
+	mw.simple.wg.Wait()
 
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
 	req2.Header.Set("Content-Type", "application/json")
@@ -103,8 +103,8 @@ func TestSimpleCacheMiddleware_CacheHit(t *testing.T) {
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("second request: got status %d", rec2.Code)
 	}
-	if rec2.Header().Get("X-Cache") != "HIT" {
-		t.Fatalf("second request should have X-Cache=HIT, got %s", rec2.Header().Get("X-Cache"))
+	if rec2.Header().Get("X-Cache") != "HIT (exact)" {
+		t.Fatalf("second request should have X-Cache=HIT (exact), got %s", rec2.Header().Get("X-Cache"))
 	}
 	if !bytes.Contains(rec2.Body.Bytes(), []byte("cached")) {
 		t.Fatalf("cached response body missing expected content: %s", rec2.Body.String())
@@ -277,14 +277,14 @@ func TestSimpleCacheMiddleware_UsesCapturedSnapshotBodyWithoutReadingLiveBody(t 
 	if rec1.Code != http.StatusOK {
 		t.Fatalf("first request: got status %d", rec1.Code)
 	}
-	mw.inner.wg.Wait()
+	mw.simple.wg.Wait()
 
 	rec2 := httptest.NewRecorder()
 	e.ServeHTTP(rec2, makeRequest())
 	if rec2.Code != http.StatusOK {
 		t.Fatalf("second request: got status %d", rec2.Code)
 	}
-	if rec2.Header().Get("X-Cache") != "HIT" {
+	if rec2.Header().Get("X-Cache") != "HIT (exact)" {
 		t.Fatalf("expected cache hit from snapshot body, got X-Cache=%q", rec2.Header().Get("X-Cache"))
 	}
 	if callCount != 1 {

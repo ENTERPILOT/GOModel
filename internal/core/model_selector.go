@@ -26,8 +26,10 @@ func (s ModelSelector) QualifiedModel() string {
 //   - model only: "gpt-4o"
 //   - model with prefix: "openai/gpt-4o"
 //   - explicit provider field: provider="openai", model="gpt-4o"
+//   - explicit provider with raw slash model: provider="groq", model="openai/gpt-oss-120b"
 //
-// If provider is present in both places, values must match.
+// When provider is explicit, it is authoritative. A matching leading
+// "provider/" prefix on the model is stripped once as redundant qualification.
 func ParseModelSelector(model, provider string) (ModelSelector, error) {
 	model = strings.TrimSpace(model)
 	provider = strings.TrimSpace(provider)
@@ -36,17 +38,13 @@ func ParseModelSelector(model, provider string) (ModelSelector, error) {
 		return ModelSelector{}, fmt.Errorf("model is required")
 	}
 
-	parts := strings.SplitN(model, "/", 2)
-	if len(parts) == 2 {
-		prefix := strings.TrimSpace(parts[0])
-		rest := strings.TrimSpace(parts[1])
-		if prefix != "" && rest != "" {
-			if provider != "" && provider != prefix {
-				return ModelSelector{}, fmt.Errorf("provider field %q conflicts with model prefix %q", provider, prefix)
-			}
-			provider = prefix
+	if provider != "" {
+		if prefix, rest, ok := splitQualifiedModel(model); ok && prefix == provider {
 			model = rest
 		}
+	} else if prefix, rest, ok := splitQualifiedModel(model); ok {
+		provider = prefix
+		model = rest
 	}
 
 	if model == "" {
@@ -57,4 +55,17 @@ func ParseModelSelector(model, provider string) (ModelSelector, error) {
 		Model:    model,
 		Provider: provider,
 	}, nil
+}
+
+func splitQualifiedModel(model string) (prefix, rest string, ok bool) {
+	parts := strings.SplitN(model, "/", 2)
+	if len(parts) != 2 {
+		return "", "", false
+	}
+	prefix = strings.TrimSpace(parts[0])
+	rest = strings.TrimSpace(parts[1])
+	if prefix == "" || rest == "" {
+		return "", "", false
+	}
+	return prefix, rest, true
 }

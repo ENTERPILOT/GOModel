@@ -194,6 +194,8 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	batchRequestPreparer := server.ComposeBatchRequestPreparers(providerAsNativeFileRouter(provider), batchRequestPreparers...)
 
+	guardrailsHash := computeGuardrailsHashFromConfig(appCfg.Guardrails)
+
 	// Create server
 	allowPassthroughV1Alias := appCfg.Server.AllowPassthroughV1Alias
 	serverCfg := &server.Config{
@@ -207,6 +209,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		PricingResolver:              providerResult.Registry,
 		ModelResolver:                app.aliases.Service,
 		TranslatedRequestPatcher:     translatedRequestPatcher,
+		GuardrailsHash:               guardrailsHash,
 		BatchRequestPreparer:         batchRequestPreparer,
 		ExposedModelLister:           app.aliases.Service,
 		PassthroughSemanticEnrichers: cfg.Factory.PassthroughSemanticEnrichers(),
@@ -254,7 +257,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		slog.Info("provider passthrough disabled")
 	}
 
-	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response)
+	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response, cfg.AppConfig.RawProviders)
 	if err != nil {
 		var (
 			aliasCloseErr error
@@ -572,4 +575,24 @@ func buildGuardrail(rule config.GuardrailRuleConfig) (guardrails.Guardrail, erro
 	default:
 		return nil, fmt.Errorf("unknown guardrail type: %q", rule.Type)
 	}
+}
+
+// computeGuardrailsHashFromConfig computes a stable hash of all configured guardrail rules.
+// The hash is stored in the Echo context post-patch so the semantic cache can include it
+// in params_hash, ensuring automatic cache invalidation when guardrail policy changes.
+func computeGuardrailsHashFromConfig(cfg config.GuardrailsConfig) string {
+	if !cfg.Enabled || len(cfg.Rules) == 0 {
+		return ""
+	}
+	rules := make([]responsecache.GuardrailRuleDescriptor, len(cfg.Rules))
+	for i, r := range cfg.Rules {
+		rules[i] = responsecache.GuardrailRuleDescriptor{
+			Name:    r.Name,
+			Type:    r.Type,
+			Order:   r.Order,
+			Mode:    r.SystemPrompt.Mode,
+			Content: r.SystemPrompt.Content,
+		}
+	}
+	return responsecache.ComputeGuardrailsHash(rules)
 }

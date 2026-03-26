@@ -4,7 +4,7 @@ Guidance for AI models (like Claude) working with this codebase.
 
 ## Project Overview
 
-**GOModel** is a high-performance AI gateway in Go that routes requests to multiple AI model providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). LiteLLM killer.
+**GOModel** is a high-performance AI gateway in Go that routes requests to multiple AI model providers (OpenAI, Anthropic, Gemini, Groq, xAI, Oracle, Ollama). LiteLLM killer.
 
 **Go:** 1.26.1
 **Repo:** https://github.com/ENTERPILOT/GOModel
@@ -111,4 +111,4 @@ Full reference: `.env.template` and `config/config.yaml`
 - **Resilience:** Configured via `config/config.yaml` — global `resilience.retry.*` and `resilience.circuit_breaker.*` defaults with optional per-provider overrides under `providers.<name>.resilience.retry.*` and `providers.<name>.resilience.circuit_breaker.*`. Retry defaults: `max_retries` (3), `initial_backoff` (1s), `max_backoff` (30s), `backoff_factor` (2.0), `jitter_factor` (0.1). Circuit breaker defaults: `failure_threshold` (5), `success_threshold` (2), `timeout` (30s)
 - **Metrics:** `METRICS_ENABLED` (false), `METRICS_ENDPOINT` (/metrics)
 - **Guardrails:** Configured via `config/config.yaml` only (except `GUARDRAILS_ENABLED` env var)
-- **Providers:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `OLLAMA_BASE_URL`
+- **Providers:** `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `GROQ_API_KEY`, `ORACLE_API_KEY` (Oracle API key), `ORACLE_BASE_URL` (Oracle OpenAI-compatible base URL), `OLLAMA_BASE_URL`

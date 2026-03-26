@@ -482,25 +482,30 @@ func TestRouterChatCompletion_PrefixedModelSelector(t *testing.T) {
 	}
 }
 
-func TestRouterChatCompletion_ProviderConflict(t *testing.T) {
+func TestRouterChatCompletion_ExplicitProviderKeepsSlashModelRaw(t *testing.T) {
+	groqResp := &core.ChatResponse{ID: "groq", Model: "openai/gpt-oss-120b"}
+	groq := &mockProvider{name: "groq", chatResponse: groqResp}
+
 	lookup := newMockLookup()
-	lookup.addModel("openai/gpt-4o", &mockProvider{}, "openai")
+	lookup.addModel("groq/openai/gpt-oss-120b", groq, "groq")
 
 	router, _ := NewRouter(lookup)
 
-	_, err := router.ChatCompletion(context.Background(), &core.ChatRequest{
-		Model:    "openai/gpt-4o",
-		Provider: "anthropic",
+	resp, err := router.ChatCompletion(context.Background(), &core.ChatRequest{
+		Model:    "openai/gpt-oss-120b",
+		Provider: "groq",
 	})
-	if err == nil {
-		t.Fatal("expected provider conflict error")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	var gwErr *core.GatewayError
-	if !errors.As(err, &gwErr) {
-		t.Fatalf("expected GatewayError, got %T: %v", err, err)
+	if resp.ID != "groq" {
+		t.Fatalf("expected groq provider response, got %q", resp.ID)
 	}
-	if gwErr.HTTPStatusCode() != http.StatusBadRequest {
-		t.Fatalf("expected 400 status, got %d", gwErr.HTTPStatusCode())
+	if groq.lastChatReq == nil || groq.lastChatReq.Model != "openai/gpt-oss-120b" {
+		t.Fatalf("expected upstream model to keep raw slash ID, got %#v", groq.lastChatReq)
+	}
+	if groq.lastChatReq.Provider != "" {
+		t.Fatalf("expected provider field to be stripped upstream, got %q", groq.lastChatReq.Provider)
 	}
 }
 
