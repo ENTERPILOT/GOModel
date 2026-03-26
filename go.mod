@@ -16,7 +16,7 @@ require (
 	github.com/prometheus/client_golang v1.23.2
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/stretchr/testify v1.11.1
-	github.com/swaggo/echo-swagger v1.5.0
+	github.com/swaggo/echo-swagger v1.5.2
 	github.com/swaggo/swag v1.16.6
 	github.com/testcontainers/testcontainers-go v0.41.0
 	github.com/testcontainers/testcontainers-go/modules/mongodb v0.41.0
@@ -70,8 +70,11 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/klauspost/compress v1.18.4 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/labstack/echo/v4 v4.9.0 // indirect
+	github.com/labstack/gommon v0.3.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
+	github.com/mattn/go-colorable v0.1.11 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
@@ -111,6 +114,8 @@ require (
 	github.com/tklauser/go-sysconf v0.3.16 // indirect
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/urfave/cli/v2 v2.27.5 // indirect
+	github.com/valyala/bytebufferpool v1.0.0 // indirect
+	github.com/valyala/fasttemplate v1.2.1 // indirect
 	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/xdg-go/scram v1.2.0 // indirect
 	github.com/xdg-go/stringprep v1.0.4 // indirect
@@ -128,6 +133,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.48.0 // indirect
 	golang.org/x/mod v0.33.0 // indirect
+	golang.org/x/net v0.50.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
