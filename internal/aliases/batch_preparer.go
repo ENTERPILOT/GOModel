@@ -51,7 +51,6 @@ type aliasModelProviderTypeChecker interface {
 }
 
 func resolveAliasModel(service *Service, requested core.RequestedModelSelector) (core.ModelSelector, bool, error) {
-	requested = core.NewRequestedModelSelector(requested.Model, requested.ProviderHint)
 	if service == nil {
 		selector, err := requested.Normalize()
 		return selector, false, err
@@ -60,7 +59,6 @@ func resolveAliasModel(service *Service, requested core.RequestedModelSelector) 
 }
 
 func resolveAliasRequestSelector(service *Service, requested core.RequestedModelSelector) (core.ModelSelector, error) {
-	requested = core.NewRequestedModelSelector(requested.Model, requested.ProviderHint)
 	selector, changed, err := resolveAliasModel(service, requested)
 	if err != nil {
 		return core.ModelSelector{}, err
