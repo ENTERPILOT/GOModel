@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"strings"
@@ -577,10 +578,115 @@ func TestConvertResponsesRequestToChat_RejectsNonReasoningTextParts(t *testing.T
 			if err == nil {
 				t.Fatal("expected error, got nil")
 			}
+			var gatewayErr *core.GatewayError
+			if !errors.As(err, &gatewayErr) {
+				t.Fatalf("error = %T, want *core.GatewayError", err)
+			}
+			if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+				t.Fatalf("GatewayError.Type = %q, want %q", gatewayErr.Type, core.ErrorTypeInvalidRequest)
+			}
 			if !strings.Contains(err.Error(), "reasoning.content must be an array of reasoning_text items") {
 				t.Fatalf("error = %v, want reasoning validation error", err)
 			}
 		})
+	}
+}
+
+func TestConvertResponsesRequestToChat_RejectsEmptyReasoningPayload(t *testing.T) {
+	tests := []struct {
+		name  string
+		input any
+	}{
+		{
+			name: "empty array",
+			input: []any{
+				map[string]any{
+					"type":    "reasoning",
+					"content": []map[string]any{},
+				},
+			},
+		},
+		{
+			name: "whitespace-only reasoning text",
+			input: []any{
+				map[string]any{
+					"type": "reasoning",
+					"content": []map[string]any{
+						{"type": "reasoning_text", "text": "   "},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ConvertResponsesRequestToChat(&core.ResponsesRequest{
+				Model: "test-model",
+				Input: tt.input,
+			})
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+
+			var gatewayErr *core.GatewayError
+			if !errors.As(err, &gatewayErr) {
+				t.Fatalf("error = %T, want *core.GatewayError", err)
+			}
+			if gatewayErr.Type != core.ErrorTypeInvalidRequest {
+				t.Fatalf("GatewayError.Type = %q, want %q", gatewayErr.Type, core.ErrorTypeInvalidRequest)
+			}
+		})
+	}
+}
+
+func TestConvertResponsesRequestToChat_MergesReasoningDetailsFromPendingAndAssistantExtras(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "test-model",
+		Input: []core.ResponsesInputElement{
+			{
+				Type: "reasoning",
+				Content: []core.ResponsesContentItem{
+					{
+						Type:      "reasoning_text",
+						Text:      "First thought.",
+						Signature: "sig_first",
+					},
+				},
+			},
+			{
+				Type:    "message",
+				Role:    "assistant",
+				Content: "Hello",
+				ExtraFields: core.UnknownJSONFieldsFromMap(map[string]json.RawMessage{
+					"reasoning_details": json.RawMessage(`[{"type":"reasoning_text","text":"Second thought.","signature":"sig_second"}]`),
+				}),
+			},
+		},
+	}
+
+	chatReq, err := ConvertResponsesRequestToChat(req)
+	if err != nil {
+		t.Fatalf("ConvertResponsesRequestToChat() error = %v", err)
+	}
+	if len(chatReq.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d, want 1", len(chatReq.Messages))
+	}
+
+	raw := chatReq.Messages[0].ExtraFields.Lookup("reasoning_details")
+	if len(raw) == 0 {
+		t.Fatal("reasoning_details missing after merge")
+	}
+
+	var details []map[string]any
+	if err := json.Unmarshal(raw, &details); err != nil {
+		t.Fatalf("json.Unmarshal(reasoning_details) error = %v", err)
+	}
+	if len(details) != 2 {
+		t.Fatalf("len(reasoning_details) = %d, want 2", len(details))
+	}
+	if details[0]["signature"] != "sig_first" || details[1]["signature"] != "sig_second" {
+		t.Fatalf("reasoning_details = %+v, want both signatures preserved", details)
 	}
 }
 

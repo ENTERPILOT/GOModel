@@ -128,13 +128,22 @@ func extractAnthropicReasoningBlocksFromExtraFields(fields core.UnknownJSONField
 		if err != nil {
 			return nil, core.NewInvalidRequestError("message.reasoning_details must be an array of reasoning_text objects", err)
 		}
+		if len(details) == 0 {
+			return nil, core.NewInvalidRequestError("message.reasoning_details must contain at least one non-empty reasoning_text object", nil)
+		}
 		return openAIReasoningDetailsToAnthropicBlocks(details), nil
 	}
 
 	reasoningContentRaw := fields.Lookup("reasoning_content")
 	reasoningSignatureRaw := fields.Lookup("reasoning_signature")
-	if len(reasoningContentRaw) == 0 || len(reasoningSignatureRaw) == 0 {
+	if len(reasoningContentRaw) == 0 && len(reasoningSignatureRaw) == 0 {
 		return nil, nil
+	}
+	if len(reasoningContentRaw) == 0 {
+		return nil, core.NewInvalidRequestError("message.reasoning_signature requires message.reasoning_content", nil)
+	}
+	if len(reasoningSignatureRaw) == 0 {
+		return nil, core.NewInvalidRequestError("message.reasoning_content requires message.reasoning_signature", nil)
 	}
 
 	var reasoningContent string
@@ -147,8 +156,11 @@ func extractAnthropicReasoningBlocksFromExtraFields(fields core.UnknownJSONField
 		return nil, core.NewInvalidRequestError("message.reasoning_signature must be a string", err)
 	}
 
-	if strings.TrimSpace(reasoningContent) == "" || strings.TrimSpace(reasoningSignature) == "" {
-		return nil, nil
+	if strings.TrimSpace(reasoningContent) == "" {
+		return nil, core.NewInvalidRequestError("message.reasoning_content must be a non-empty string", nil)
+	}
+	if strings.TrimSpace(reasoningSignature) == "" {
+		return nil, core.NewInvalidRequestError("message.reasoning_signature must be a non-empty string", nil)
 	}
 
 	return []anthropicContentBlock{{

@@ -175,6 +175,9 @@ func mergeResponsesReasoningExtraFields(base core.UnknownJSONFields, content any
 	if err != nil {
 		return core.UnknownJSONFields{}, err
 	}
+	if reasoningExtras.IsEmpty() {
+		return core.UnknownJSONFields{}, fmt.Errorf("reasoning content must include at least one non-empty reasoning_text item")
+	}
 	return core.MergeUnknownJSONFields(base, reasoningExtras), nil
 }
 
@@ -278,7 +281,7 @@ func mergeReasoningOnlyAssistantMessage(dst *core.Message, src core.Message) {
 }
 
 func mergeReasoningIntoAssistantMessage(dst *core.Message, src core.Message) {
-	details := reasoningDetailsFromUnknownFields(dst.ExtraFields)
+	details := append(reasoningDetailsFromUnknownFields(dst.ExtraFields), reasoningDetailsFromUnknownFields(src.ExtraFields)...)
 	merged := cloneResponsesMessage(src)
 	merged.ExtraFields = core.MergeUnknownJSONFields(dst.ExtraFields, src.ExtraFields, buildReasoningUnknownFields(details))
 	*dst = merged
