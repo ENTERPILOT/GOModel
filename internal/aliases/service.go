@@ -122,7 +122,6 @@ func (s *Service) Resolve(model, provider string) (Resolution, bool, error) {
 }
 
 func (s *Service) resolveRequested(requested core.RequestedModelSelector) (Resolution, bool, error) {
-	requested = core.NewRequestedModelSelector(requested.Model, requested.ProviderHint)
 	if !requested.ExplicitProvider {
 		if resolution, ok := s.resolveAlias(requested.Model); ok {
 			return resolution, true, nil
@@ -136,10 +135,10 @@ func (s *Service) resolveRequested(requested core.RequestedModelSelector) (Resol
 	return Resolution{Requested: selector, Resolved: selector}, false, nil
 }
 
-// ResolveModel resolves raw model/provider inputs and returns the concrete
-// selector chosen for execution. This allows alias policy to be consumed as an
-// explicit planning dependency without requiring the provider chain itself to
-// own alias behavior.
+// ResolveModel resolves a requested selector and returns the concrete selector
+// chosen for execution. This allows alias policy to be consumed as an explicit
+// planning dependency without requiring the provider chain itself to own alias
+// behavior.
 func (s *Service) ResolveModel(requested core.RequestedModelSelector) (core.ModelSelector, bool, error) {
 	resolution, changed, err := s.resolveRequested(requested)
 	if err != nil {
