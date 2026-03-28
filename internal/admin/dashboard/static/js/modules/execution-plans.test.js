@@ -125,6 +125,49 @@ test('openExecutionPlanCreate hydrates features and guardrails via shared normal
     );
 });
 
+test('editing a cloned workflow preserves retired provider and model options', () => {
+    const module = createExecutionPlansModule();
+    module.models = [
+        { provider_type: 'openai', model: { id: 'gpt-5' } }
+    ];
+    module.scrollExecutionPlanFormIntoView = () => {};
+
+    module.openExecutionPlanCreate({
+        scope: {
+            scope_provider: 'anthropic',
+            scope_model: 'claude-retired'
+        },
+        name: 'Retired workflow',
+        description: 'Cloned from an older deployment',
+        plan_payload: {
+            features: {
+                cache: true,
+                audit: true,
+                usage: true,
+                guardrails: false
+            },
+            guardrails: []
+        }
+    });
+
+    assert.equal(
+        JSON.stringify(module.executionPlanProviderOptions()),
+        JSON.stringify(['anthropic', 'openai'])
+    );
+    assert.equal(
+        JSON.stringify(module.executionPlanModelOptions('anthropic')),
+        JSON.stringify(['claude-retired'])
+    );
+    assert.equal(module.validateExecutionPlanRequest(module.buildExecutionPlanRequest()), '');
+
+    const invalidPayload = module.buildExecutionPlanRequest();
+    invalidPayload.scope_model = 'different-retired-model';
+    assert.equal(
+        module.validateExecutionPlanRequest(invalidPayload),
+        'Choose a registered model for the selected provider.'
+    );
+});
+
 test('buildExecutionPlanRequest preserves blank guardrail steps as invalid so validation rejects them', () => {
     const module = createExecutionPlansModule();
     module.models = [

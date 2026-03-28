@@ -11,6 +11,10 @@
             executionPlanSubmitting: false,
             executionPlanDeactivatingID: '',
             executionPlanFormError: '',
+            executionPlanHydratedScope: {
+                scope_provider: '',
+                scope_model: ''
+            },
             guardrailRefs: [],
             executionPlanForm: {
                 scope_provider: '',
@@ -73,7 +77,12 @@
 
             executionPlanProviderOptions() {
                 const options = new Set();
-                this.models.forEach((model) => {
+                const preservedProvider = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_provider || '').trim();
+                if (preservedProvider) {
+                    options.add(preservedProvider);
+                }
+                const models = Array.isArray(this.models) ? this.models : [];
+                models.forEach((model) => {
                     const providerType = String(model && model.provider_type || '').trim();
                     if (providerType) {
                         options.add(providerType);
@@ -85,7 +94,13 @@
             executionPlanModelOptions(providerType) {
                 const wantedProvider = String(providerType || '').trim();
                 const options = new Set();
-                this.models.forEach((model) => {
+                const preservedProvider = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_provider || '').trim();
+                const preservedModel = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_model || '').trim();
+                if (wantedProvider && wantedProvider === preservedProvider && preservedModel) {
+                    options.add(preservedModel);
+                }
+                const models = Array.isArray(this.models) ? this.models : [];
+                models.forEach((model) => {
                     if (wantedProvider && String(model && model.provider_type || '').trim() !== wantedProvider) {
                         return;
                     }
@@ -193,11 +208,19 @@
                 this.executionPlanNotice = '';
 
                 if (!plan) {
+                    this.executionPlanHydratedScope = {
+                        scope_provider: '',
+                        scope_model: ''
+                    };
                     this.executionPlanForm = this.defaultExecutionPlanForm();
                     this.scrollExecutionPlanFormIntoView();
                     return;
                 }
 
+                this.executionPlanHydratedScope = {
+                    scope_provider: String(plan.scope && plan.scope.scope_provider || '').trim(),
+                    scope_model: String(plan.scope && plan.scope.scope_model || '').trim()
+                };
                 const features = this.executionPlanSourceFeatures(plan);
                 const guardrails = this.executionPlanSourceGuardrails(plan);
                 this.executionPlanForm = {
@@ -223,6 +246,10 @@
                 this.executionPlanFormOpen = false;
                 this.executionPlanSubmitting = false;
                 this.executionPlanFormError = '';
+                this.executionPlanHydratedScope = {
+                    scope_provider: '',
+                    scope_model: ''
+                };
                 this.executionPlanForm = this.defaultExecutionPlanForm();
             },
 
@@ -292,9 +319,12 @@
             },
 
             validateExecutionPlanRequest(payload) {
+                const preservedProvider = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_provider || '').trim();
+                const preservedModel = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_model || '').trim();
+
                 if (payload.scope_provider) {
                     const providers = this.executionPlanProviderOptions();
-                    if (!providers.includes(payload.scope_provider)) {
+                    if (!providers.includes(payload.scope_provider) && payload.scope_provider !== preservedProvider) {
                         return 'Choose a registered provider.';
                     }
                 }
@@ -303,7 +333,8 @@
                 }
                 if (payload.scope_model) {
                     const models = this.executionPlanModelOptions(payload.scope_provider);
-                    if (!models.includes(payload.scope_model)) {
+                    const isPreservedModel = payload.scope_provider === preservedProvider && payload.scope_model === preservedModel;
+                    if (!models.includes(payload.scope_model) && !isPreservedModel) {
                         return 'Choose a registered model for the selected provider.';
                     }
                 }

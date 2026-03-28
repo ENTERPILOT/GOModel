@@ -181,6 +181,19 @@ func (c *previewEmptyCompiler) Compile(version Version) (*CompiledPlan, error) {
 	return c.delegate.Compile(version)
 }
 
+type versionFailingCompiler struct {
+	delegate Compiler
+	version  string
+	err      error
+}
+
+func (c *versionFailingCompiler) Compile(version Version) (*CompiledPlan, error) {
+	if version.ID == c.version {
+		return nil, c.err
+	}
+	return c.delegate.Compile(version)
+}
+
 type contextCancelingStore struct {
 	staticStore
 	cancelOnCreate     context.CancelFunc
@@ -431,6 +444,73 @@ func TestServiceListViews_IncludesEffectiveFeatures(t *testing.T) {
 	}
 	if views[0].EffectiveFeatures.Guardrails {
 		t.Fatal("EffectiveFeatures.Guardrails = true, want false")
+	}
+}
+
+func TestServiceListViews_AnnotatesCompileFailuresPerRow(t *testing.T) {
+	store := &staticStore{
+		versions: []Version{
+			{
+				ID:       "global-v1",
+				Scope:    Scope{},
+				ScopeKey: "global",
+				Version:  1,
+				Active:   true,
+				Name:     "global",
+				Payload: Payload{
+					SchemaVersion: 1,
+					Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+				},
+			},
+			{
+				ID:       "provider-v1",
+				Scope:    Scope{Provider: "openai"},
+				ScopeKey: "provider:openai",
+				Version:  1,
+				Active:   true,
+				Name:     "broken-provider",
+				Payload: Payload{
+					SchemaVersion: 1,
+					Features:      FeatureFlags{Cache: false, Audit: true, Usage: true, Guardrails: false},
+				},
+			},
+		},
+	}
+	service, err := NewService(store, &versionFailingCompiler{
+		delegate: NewCompiler(nil),
+		version:  "provider-v1",
+		err:      errors.New("compile failed for provider-v1"),
+	})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	views, err := service.ListViews(context.Background())
+	if err != nil {
+		t.Fatalf("ListViews() error = %v, want nil", err)
+	}
+	if len(views) != 2 {
+		t.Fatalf("len(views) = %d, want 2", len(views))
+	}
+
+	if views[0].ID != "global-v1" {
+		t.Fatalf("views[0].ID = %q, want global-v1", views[0].ID)
+	}
+	if views[0].CompileError != "" {
+		t.Fatalf("views[0].CompileError = %q, want empty", views[0].CompileError)
+	}
+
+	if views[1].ID != "provider-v1" {
+		t.Fatalf("views[1].ID = %q, want provider-v1", views[1].ID)
+	}
+	if views[1].CompileError != "compile execution plan \"provider-v1\": compile failed for provider-v1" {
+		t.Fatalf("views[1].CompileError = %q, want wrapped compile failure", views[1].CompileError)
+	}
+	if views[1].ScopeType != "provider" {
+		t.Fatalf("views[1].ScopeType = %q, want provider", views[1].ScopeType)
+	}
+	if views[1].ScopeDisplay != "openai" {
+		t.Fatalf("views[1].ScopeDisplay = %q, want openai", views[1].ScopeDisplay)
 	}
 }
 

@@ -255,14 +255,16 @@ func (s *Service) ListViews(ctx context.Context) ([]View, error) {
 	for _, version := range versions {
 		view, err := s.viewForVersion(version)
 		if err != nil {
-			return nil, err
+			slog.Warn("execution plan view build failed", "version_id", strings.TrimSpace(version.ID), "error", err)
+			views = append(views, viewWithError(version, err))
+			continue
 		}
 		views = append(views, view)
 	}
 
 	sort.SliceStable(views, func(i, j int) bool {
 		left, right := views[i], views[j]
-		if leftSpecificity, rightSpecificity := scopeSpecificity(left.Scope), scopeSpecificity(right.Scope); leftSpecificity != rightSpecificity {
+		if leftSpecificity, rightSpecificity := viewScopeSpecificity(left.ScopeType), viewScopeSpecificity(right.ScopeType); leftSpecificity != rightSpecificity {
 			return leftSpecificity < rightSpecificity
 		}
 		if left.ScopeDisplay != right.ScopeDisplay {
@@ -429,6 +431,48 @@ func (s *Service) viewForVersion(version Version) (View, error) {
 	}, nil
 }
 
+func viewWithError(version Version, err error) View {
+	scope := Scope{
+		Provider: strings.TrimSpace(version.Scope.Provider),
+		Model:    strings.TrimSpace(version.Scope.Model),
+	}
+	version.Scope = scope
+
+	return View{
+		Version:      version,
+		ScopeType:    rawScopeType(scope),
+		ScopeDisplay: rawScopeDisplay(scope),
+		CompileError: err.Error(),
+	}
+}
+
+func rawScopeType(scope Scope) string {
+	switch {
+	case strings.TrimSpace(scope.Provider) == "" && strings.TrimSpace(scope.Model) == "":
+		return "global"
+	case strings.TrimSpace(scope.Provider) != "" && strings.TrimSpace(scope.Model) == "":
+		return "provider"
+	default:
+		return "provider_model"
+	}
+}
+
+func rawScopeDisplay(scope Scope) string {
+	provider := strings.TrimSpace(scope.Provider)
+	model := strings.TrimSpace(scope.Model)
+
+	switch {
+	case provider == "" && model == "":
+		return "global"
+	case provider != "" && model == "":
+		return provider
+	case provider == "" && model != "":
+		return model
+	default:
+		return provider + "/" + model
+	}
+}
+
 func scopeType(scope Scope) string {
 	switch {
 	case strings.TrimSpace(scope.Provider) == "":
@@ -453,6 +497,17 @@ func scopeDisplay(scope Scope) string {
 
 func scopeSpecificity(scope Scope) int {
 	switch scopeType(scope) {
+	case "global":
+		return 0
+	case "provider":
+		return 1
+	default:
+		return 2
+	}
+}
+
+func viewScopeSpecificity(scopeType string) int {
+	switch strings.TrimSpace(scopeType) {
 	case "global":
 		return 0
 	case "provider":
