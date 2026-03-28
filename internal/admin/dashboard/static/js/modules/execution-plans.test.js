@@ -406,6 +406,44 @@ test('deactivateExecutionPlan ignores duplicate clicks while another deactivatio
     assert.equal(module.executionPlanDeactivatingID, 'workflow-1');
 });
 
+test('fetchExecutionPlans aborts hung requests and clears loading state', async () => {
+    let timeoutCleared = false;
+    class AbortControllerStub {
+        constructor() {
+            this.signal = { aborted: false };
+        }
+
+        abort() {
+            this.signal.aborted = true;
+        }
+    }
+
+    const module = createExecutionPlansModule({
+        AbortController: AbortControllerStub,
+        setTimeout(fn) {
+            fn();
+            return 42;
+        },
+        clearTimeout(id) {
+            assert.equal(id, 42);
+            timeoutCleared = true;
+        },
+        fetch(_url, options) {
+            assert.equal(options.headers.authorization, 'Bearer token');
+            assert.equal(options.signal.aborted, true);
+            return Promise.reject(Object.assign(new Error('timed out'), { name: 'AbortError' }));
+        }
+    });
+    module.headers = () => ({ authorization: 'Bearer token' });
+
+    await module.fetchExecutionPlans();
+
+    assert.equal(JSON.stringify(module.executionPlans), JSON.stringify([]));
+    assert.equal(module.executionPlanError, 'Loading workflows timed out.');
+    assert.equal(module.executionPlansLoading, false);
+    assert.equal(timeoutCleared, true);
+});
+
 test('submitExecutionPlanForm ignores duplicate submissions while a request is already in flight', async () => {
     let fetchCalled = false;
     const module = createExecutionPlansModule({

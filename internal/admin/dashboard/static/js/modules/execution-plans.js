@@ -379,8 +379,16 @@
             async fetchExecutionPlans() {
                 this.executionPlansLoading = true;
                 this.executionPlanError = '';
+                const controller = typeof AbortController === 'function' ? new AbortController() : null;
+                const timeoutID = controller && typeof setTimeout === 'function'
+                    ? setTimeout(() => controller.abort(), 10000)
+                    : null;
                 try {
-                    const res = await fetch('/admin/api/v1/execution-plans', { headers: this.headers() });
+                    const request = { headers: this.headers() };
+                    if (controller) {
+                        request.signal = controller.signal;
+                    }
+                    const res = await fetch('/admin/api/v1/execution-plans', request);
                     if (res.status === 503) {
                         this.executionPlansAvailable = false;
                         this.executionPlans = [];
@@ -396,8 +404,13 @@
                 } catch (e) {
                     console.error('Failed to fetch workflows:', e);
                     this.executionPlans = [];
-                    this.executionPlanError = 'Unable to load workflows.';
+                    this.executionPlanError = e && e.name === 'AbortError'
+                        ? 'Loading workflows timed out.'
+                        : 'Unable to load workflows.';
                 } finally {
+                    if (timeoutID !== null && typeof clearTimeout === 'function') {
+                        clearTimeout(timeoutID);
+                    }
                     this.executionPlansLoading = false;
                 }
             },

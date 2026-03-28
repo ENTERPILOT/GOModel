@@ -495,17 +495,6 @@ func scopeDisplay(scope Scope) string {
 	}
 }
 
-func scopeSpecificity(scope Scope) int {
-	switch scopeType(scope) {
-	case "global":
-		return 0
-	case "provider":
-		return 1
-	default:
-		return 2
-	}
-}
-
 func viewScopeSpecificity(scopeType string) int {
 	switch strings.TrimSpace(scopeType) {
 	case "global":

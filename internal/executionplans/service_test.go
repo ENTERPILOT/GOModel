@@ -27,8 +27,8 @@ func (s *staticStore) ListActive(context.Context) ([]Version, error) {
 func (s *staticStore) Get(_ context.Context, id string) (*Version, error) {
 	for _, version := range s.versions {
 		if version.ID == id {
-			copy := version
-			return &copy, nil
+			versionCopy := version
+			return &versionCopy, nil
 		}
 	}
 	return nil, ErrNotFound
@@ -95,8 +95,8 @@ func (s *concurrentStore) Get(_ context.Context, id string) (*Version, error) {
 
 	for _, version := range s.versions {
 		if version.ID == id {
-			copy := version
-			return &copy, nil
+			versionCopy := version
+			return &versionCopy, nil
 		}
 	}
 	return nil, ErrNotFound
