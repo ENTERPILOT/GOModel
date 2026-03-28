@@ -25,3 +25,57 @@ func TestNormalizeScope_RejectsColonDelimitedFields(t *testing.T) {
 		})
 	}
 }
+
+func TestFeatureFlagsRuntimeFeatures_FallbackDefaultsToTrue(t *testing.T) {
+	features := FeatureFlags{
+		Cache:      true,
+		Audit:      true,
+		Usage:      true,
+		Guardrails: false,
+	}.runtimeFeatures()
+
+	if !features.Fallback {
+		t.Fatal("runtimeFeatures().Fallback = false, want true")
+	}
+}
+
+func TestNormalizePayload_CanonicalizesFallbackForStablePlanHash(t *testing.T) {
+	explicitTrue := true
+
+	implicitPayload, implicitHash, err := normalizePayload(Payload{
+		SchemaVersion: 1,
+		Features: FeatureFlags{
+			Cache:      true,
+			Audit:      true,
+			Usage:      true,
+			Guardrails: false,
+		},
+	})
+	if err != nil {
+		t.Fatalf("normalizePayload() error = %v", err)
+	}
+
+	explicitPayload, explicitHash, err := normalizePayload(Payload{
+		SchemaVersion: 1,
+		Features: FeatureFlags{
+			Cache:      true,
+			Audit:      true,
+			Usage:      true,
+			Guardrails: false,
+			Fallback:   &explicitTrue,
+		},
+	})
+	if err != nil {
+		t.Fatalf("normalizePayload() error = %v", err)
+	}
+
+	if implicitPayload.Features.Fallback == nil || !*implicitPayload.Features.Fallback {
+		t.Fatalf("implicit payload fallback = %v, want explicit true", implicitPayload.Features.Fallback)
+	}
+	if explicitPayload.Features.Fallback == nil || !*explicitPayload.Features.Fallback {
+		t.Fatalf("explicit payload fallback = %v, want explicit true", explicitPayload.Features.Fallback)
+	}
+	if implicitHash != explicitHash {
+		t.Fatalf("plan hash mismatch: implicit=%q explicit=%q", implicitHash, explicitHash)
+	}
+}

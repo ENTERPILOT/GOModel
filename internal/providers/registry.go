@@ -21,8 +21,10 @@ import (
 
 // ModelInfo holds information about a model and its provider
 type ModelInfo struct {
-	Model    core.Model
-	Provider core.Provider
+	Model        core.Model
+	Provider     core.Provider
+	ProviderName string
+	ProviderType string
 }
 
 // ModelRegistry manages the mapping of models to their providers.
@@ -154,8 +156,10 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 
 		for _, model := range resp.Data {
 			info := &ModelInfo{
-				Model:    model,
-				Provider: provider,
+				Model:        model,
+				Provider:     provider,
+				ProviderName: providerName,
+				ProviderType: providerTypes[provider],
 			}
 			newModelsByProvider[providerName][model.ID] = info
 
@@ -187,8 +191,7 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 	list := r.modelList
 	r.mu.RUnlock()
 	if list != nil {
-		accessor := &registryAccessor{models: newModels, providerTypes: r.snapshotProviderTypes()}
-		modeldata.Enrich(accessor, list)
+		enrichProviderModelMaps(list, providerTypes, newModelsByProvider, nil)
 	}
 
 	// Atomically swap the models map and invalidate sorted caches
@@ -241,8 +244,10 @@ func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 	// Build lookup maps from configured providers.
 	r.mu.RLock()
 	nameToProvider := make(map[string]core.Provider, len(r.providerNames))
+	nameToProviderType := make(map[string]string, len(r.providerNames))
 	for provider, pName := range r.providerNames {
 		nameToProvider[pName] = provider
+		nameToProviderType[pName] = r.providerTypes[provider]
 	}
 	r.mu.RUnlock()
 
@@ -255,6 +260,10 @@ func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 			// Provider not configured, skip all its models
 			continue
 		}
+		providerType := strings.TrimSpace(nameToProviderType[providerName])
+		if providerType == "" {
+			providerType = strings.TrimSpace(cachedProv.ProviderType)
+		}
 		providerModels := make(map[string]*ModelInfo, len(cachedProv.Models))
 		for _, cached := range cachedProv.Models {
 			info := &ModelInfo{
@@ -264,7 +273,9 @@ func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 					OwnedBy: cachedProv.OwnedBy,
 					Created: cached.Created,
 				},
-				Provider: provider,
+				Provider:     provider,
+				ProviderName: providerName,
+				ProviderType: providerType,
 			}
 			providerModels[cached.ID] = info
 			if _, exists := newModels[cached.ID]; !exists {
@@ -287,8 +298,7 @@ func (r *ModelRegistry) LoadFromCache(ctx context.Context) (int, error) {
 
 	// Enrich cached models with model list metadata
 	if list != nil {
-		accessor := &registryAccessor{models: newModels, providerTypes: r.snapshotProviderTypes()}
-		modeldata.Enrich(accessor, list)
+		enrichProviderModelMaps(list, r.snapshotProviderTypes(), newModelsByProvider, nil)
 	}
 
 	r.mu.Lock()
@@ -338,13 +348,18 @@ func (r *ModelRegistry) SaveToCache(ctx context.Context) error {
 		// Determine provider type and owned_by from any model in this provider group.
 		var pType, ownedBy string
 		for _, info := range models {
-			t, ok := providerTypes[info.Provider]
-			if !ok {
-				continue
+			if ownedBy == "" {
+				ownedBy = info.Model.OwnedBy
 			}
-			pType = t
-			ownedBy = info.Model.OwnedBy
-			break
+			if pType == "" {
+				pType = strings.TrimSpace(info.ProviderType)
+				if pType == "" {
+					pType = strings.TrimSpace(providerTypes[info.Provider])
+				}
+			}
+			if pType != "" && ownedBy != "" {
+				break
+			}
 		}
 		if pType == "" {
 			// No known provider type for this provider, skip entirely.
@@ -586,7 +601,7 @@ func (r *ModelRegistry) GetProviderType(model string) string {
 	if providerName != "" {
 		if providerModels, ok := r.modelsByProvider[providerName]; ok {
 			if info, exists := providerModels[modelID]; exists {
-				return r.providerTypes[info.Provider]
+				return info.ProviderType
 			}
 		}
 		if r.hasConfiguredProviderNameLocked(providerName) {
@@ -596,7 +611,7 @@ func (r *ModelRegistry) GetProviderType(model string) string {
 	}
 
 	if info, ok := r.models[model]; ok {
-		return r.providerTypes[info.Provider]
+		return info.ProviderType
 	}
 	return ""
 }
@@ -719,11 +734,15 @@ func (r *ModelRegistry) ListModelsWithProvider() []ModelWithProvider {
 	result := make([]ModelWithProvider, 0, total)
 	for providerName, providerModels := range r.modelsByProvider {
 		for modelID, info := range providerModels {
+			publicProviderName := providerName
+			if info.ProviderName != "" {
+				publicProviderName = info.ProviderName
+			}
 			result = append(result, ModelWithProvider{
 				Model:        info.Model,
-				ProviderType: r.providerTypes[info.Provider],
-				ProviderName: providerName,
-				Selector:     qualifyPublicModelID(providerName, modelID),
+				ProviderType: info.ProviderType,
+				ProviderName: publicProviderName,
+				Selector:     qualifyPublicModelID(publicProviderName, modelID),
 			})
 		}
 	}
@@ -776,16 +795,16 @@ func (r *ModelRegistry) ListModelsWithProviderByCategory(category core.ModelCate
 	}
 
 	result := make([]ModelWithProvider, 0)
-	for providerName, providerModels := range r.modelsByProvider {
+	for _, providerModels := range r.modelsByProvider {
 		for modelID, info := range providerModels {
 			if info.Model.Metadata == nil || !hasCategory(info.Model.Metadata.Categories, category) {
 				continue
 			}
 			result = append(result, ModelWithProvider{
 				Model:        info.Model,
-				ProviderType: r.providerTypes[info.Provider],
-				ProviderName: providerName,
-				Selector:     qualifyPublicModelID(providerName, modelID),
+				ProviderType: info.ProviderType,
+				ProviderName: info.ProviderName,
+				Selector:     qualifyPublicModelID(info.ProviderName, modelID),
 			})
 		}
 	}
@@ -893,14 +912,11 @@ func (r *ModelRegistry) EnrichModels() {
 	providerTypes := make(map[core.Provider]string, len(r.providerTypes))
 	maps.Copy(providerTypes, r.providerTypes)
 
-	accessor := &registryAccessor{models: r.models, providerTypes: providerTypes}
-	accessor.replacements = make(map[*ModelInfo]*ModelInfo, len(r.models))
-	modeldata.Enrich(accessor, r.modelList)
-	for _, providerModels := range r.modelsByProvider {
-		for modelID, info := range providerModels {
-			if replacement, ok := accessor.replacements[info]; ok {
-				providerModels[modelID] = replacement
-			}
+	replacements := make(map[*ModelInfo]*ModelInfo, len(r.models))
+	enrichProviderModelMaps(r.modelList, providerTypes, r.modelsByProvider, replacements)
+	for modelID, info := range r.models {
+		if replacement, ok := replacements[info]; ok {
+			r.models[modelID] = replacement
 		}
 	}
 	r.invalidateSortedCaches()
@@ -955,6 +971,28 @@ func (r *ModelRegistry) snapshotProviderTypes() map[core.Provider]string {
 	return m
 }
 
+func enrichProviderModelMaps(
+	list *modeldata.ModelList,
+	providerTypes map[core.Provider]string,
+	modelsByProvider map[string]map[string]*ModelInfo,
+	replacements map[*ModelInfo]*ModelInfo,
+) {
+	if list == nil {
+		return
+	}
+	for _, providerModels := range modelsByProvider {
+		if len(providerModels) == 0 {
+			continue
+		}
+		accessor := &registryAccessor{
+			models:        providerModels,
+			providerTypes: providerTypes,
+			replacements:  replacements,
+		}
+		modeldata.Enrich(accessor, list)
+	}
+}
+
 // registryAccessor implements modeldata.ModelInfoAccessor.
 // The models map may be either an unpublished snapshot (Initialize, LoadFromCache)
 // or the live registry map (EnrichModels, which uses replacements to preserve
@@ -978,7 +1016,10 @@ func (a *registryAccessor) GetProviderType(modelID string) string {
 	if !ok {
 		return ""
 	}
-	return a.providerTypes[info.Provider]
+	if providerType := strings.TrimSpace(info.ProviderType); providerType != "" {
+		return providerType
+	}
+	return strings.TrimSpace(a.providerTypes[info.Provider])
 }
 
 func (a *registryAccessor) SetMetadata(modelID string, meta *core.ModelMetadata) {

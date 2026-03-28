@@ -56,11 +56,13 @@ func TestCompilerCompile_Guardrails(t *testing.T) {
 }
 
 func TestCompilerCompile_AppliesProcessFeatureCaps(t *testing.T) {
+	fallbackEnabled := true
 	compiled, err := NewCompilerWithFeatureCaps(nil, core.ExecutionFeatures{
 		Cache:      false,
 		Audit:      true,
 		Usage:      false,
 		Guardrails: false,
+		Fallback:   false,
 	}).Compile(Version{
 		ID:      "plan-1",
 		Scope:   Scope{},
@@ -68,7 +70,7 @@ func TestCompilerCompile_AppliesProcessFeatureCaps(t *testing.T) {
 		Name:    "global",
 		Payload: Payload{
 			SchemaVersion: 1,
-			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: true},
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: true, Fallback: &fallbackEnabled},
 			Guardrails: []GuardrailStep{
 				{Ref: "policy-system", Step: 10},
 			},
@@ -92,10 +94,40 @@ func TestCompilerCompile_AppliesProcessFeatureCaps(t *testing.T) {
 	if compiled.Policy.Features.Guardrails {
 		t.Fatal("Policy.Features.Guardrails = true, want false")
 	}
+	if compiled.Policy.Features.Fallback {
+		t.Fatal("Policy.Features.Fallback = true, want false")
+	}
 	if compiled.Pipeline != nil {
 		t.Fatal("compiled pipeline is not nil")
 	}
 	if compiled.Policy.GuardrailsHash != "" {
 		t.Fatalf("compiled guardrails hash = %q, want empty", compiled.Policy.GuardrailsHash)
+	}
+}
+
+func TestCompilerCompile_DefaultsFallbackEnabledWhenUnset(t *testing.T) {
+	compiled, err := NewCompilerWithFeatureCaps(nil, core.DefaultExecutionFeatures()).Compile(Version{
+		ID:      "plan-1",
+		Scope:   Scope{},
+		Version: 1,
+		Name:    "global",
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features: FeatureFlags{
+				Cache:      true,
+				Audit:      true,
+				Usage:      true,
+				Guardrails: false,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Compile() error = %v", err)
+	}
+	if compiled == nil || compiled.Policy == nil {
+		t.Fatal("Compile() returned nil policy")
+	}
+	if !compiled.Policy.Features.Fallback {
+		t.Fatal("Policy.Features.Fallback = false, want true")
 	}
 }

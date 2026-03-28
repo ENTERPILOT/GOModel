@@ -89,6 +89,7 @@ type ExecutionFeatures struct {
 	Audit      bool
 	Usage      bool
 	Guardrails bool
+	Fallback   bool
 }
 
 // ApplyUpperBound returns features with process-level caps applied.
@@ -98,6 +99,7 @@ func (f ExecutionFeatures) ApplyUpperBound(caps ExecutionFeatures) ExecutionFeat
 		Audit:      f.Audit && caps.Audit,
 		Usage:      f.Usage && caps.Usage,
 		Guardrails: f.Guardrails && caps.Guardrails,
+		Fallback:   f.Fallback && caps.Fallback,
 	}
 }
 
@@ -109,6 +111,7 @@ func DefaultExecutionFeatures() ExecutionFeatures {
 		Audit:      true,
 		Usage:      true,
 		Guardrails: true,
+		Fallback:   true,
 	}
 }
 
@@ -181,6 +184,11 @@ func (p *ExecutionPlan) UsageEnabled() bool {
 // GuardrailsEnabled reports whether guardrail processing is enabled for the request.
 func (p *ExecutionPlan) GuardrailsEnabled() bool {
 	return p.featureEnabled(func(features ExecutionFeatures) bool { return features.Guardrails })
+}
+
+// FallbackEnabled reports whether translated-route fallback is enabled for the request.
+func (p *ExecutionPlan) FallbackEnabled() bool {
+	return p.featureEnabled(func(features ExecutionFeatures) bool { return features.Fallback })
 }
 
 // GuardrailsHash returns the matched plan's guardrails hash.
