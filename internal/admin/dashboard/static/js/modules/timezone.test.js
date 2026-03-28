@@ -75,3 +75,49 @@ test('timeZoneOptionLabel includes the IANA name and UTC offset', () => {
         'Europe/Warsaw (UTC+01:00)'
     );
 });
+
+test('dateKeyInTimeZone reuses timezone support checks and formatters for repeated calls', () => {
+    let formatterConstructions = 0;
+
+    function FakeDateTimeFormat(_locale, options = {}) {
+        formatterConstructions++;
+        this.options = options;
+    }
+
+    FakeDateTimeFormat.prototype.format = function() {
+        return 'ok';
+    };
+
+    FakeDateTimeFormat.prototype.formatToParts = function() {
+        if (this.options.timeZoneName === 'longOffset') {
+            return [{ type: 'timeZoneName', value: 'GMT+01:00' }];
+        }
+
+        return [
+            { type: 'year', value: '2026' },
+            { type: 'literal', value: '-' },
+            { type: 'month', value: '01' },
+            { type: 'literal', value: '-' },
+            { type: 'day', value: '16' }
+        ];
+    };
+
+    FakeDateTimeFormat.prototype.resolvedOptions = function() {
+        return { timeZone: 'Europe/Warsaw' };
+    };
+
+    const module = createTimezoneModule({
+        Intl: {
+            DateTimeFormat: FakeDateTimeFormat
+        }
+    });
+
+    for (let i = 0; i < 5; i++) {
+        assert.equal(
+            module.dateKeyInTimeZone(new Date('2026-01-15T23:30:00Z'), 'Europe/Warsaw'),
+            '2026-01-16'
+        );
+    }
+
+    assert.equal(formatterConstructions, 2);
+});

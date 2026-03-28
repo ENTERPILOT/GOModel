@@ -1,6 +1,8 @@
 (function(global) {
     const DEFAULT_TIMEZONE = 'UTC';
     const TIMEZONE_STORAGE_KEY = 'gomodel_timezone_override';
+    const formatterCache = new Map();
+    const supportedTimeZoneCache = new Map();
 
     function pad(value) {
         return String(value).padStart(2, '0');
@@ -8,6 +10,18 @@
 
     function browserStorage() {
         return global.localStorage || null;
+    }
+
+    function formatterCacheKey(locale, options) {
+        return locale + '|' + JSON.stringify(options);
+    }
+
+    function getCachedFormatter(locale, options) {
+        const cacheKey = formatterCacheKey(locale, options);
+        if (!formatterCache.has(cacheKey)) {
+            formatterCache.set(cacheKey, new Intl.DateTimeFormat(locale, options));
+        }
+        return formatterCache.get(cacheKey);
     }
 
     function dashboardTimezoneModule() {
@@ -39,10 +53,15 @@
                 if (!zone) {
                     return false;
                 }
+                if (supportedTimeZoneCache.has(zone)) {
+                    return supportedTimeZoneCache.get(zone);
+                }
                 try {
-                    new Intl.DateTimeFormat('en-US', { timeZone: zone }).format(new Date());
+                    getCachedFormatter('en-US', { timeZone: zone }).format(new Date());
+                    supportedTimeZoneCache.set(zone, true);
                     return true;
                 } catch (_) {
+                    supportedTimeZoneCache.set(zone, false);
                     return false;
                 }
             },
@@ -64,7 +83,7 @@
 
             dateKeyInTimeZone(date, timeZone) {
                 const zone = this.isSupportedTimeZone(timeZone) ? timeZone : DEFAULT_TIMEZONE;
-                const parts = new Intl.DateTimeFormat('en-CA', {
+                const parts = getCachedFormatter('en-CA', {
                     timeZone: zone,
                     year: 'numeric',
                     month: '2-digit',
@@ -128,7 +147,7 @@
             timeZoneOffsetLabel(zone, now) {
                 const timeZone = this.isSupportedTimeZone(zone) ? zone : DEFAULT_TIMEZONE;
                 try {
-                    const parts = new Intl.DateTimeFormat('en-US', {
+                    const parts = getCachedFormatter('en-US', {
                         timeZone: timeZone,
                         hour: '2-digit',
                         minute: '2-digit',
