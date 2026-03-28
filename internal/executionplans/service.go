@@ -187,7 +187,9 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (*Version, erro
 	if err != nil {
 		return nil, fmt.Errorf("create execution plan: %w", err)
 	}
-	if err := s.refreshLocked(ctx); err != nil {
+	refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer refreshCancel()
+	if err := s.refreshLocked(refreshCtx); err != nil {
 		return nil, fmt.Errorf("refresh execution plans: %w", err)
 	}
 	return version, nil
@@ -234,7 +236,9 @@ func (s *Service) Deactivate(ctx context.Context, id string) error {
 		}
 		return fmt.Errorf("deactivate execution plan %q: %w", version.ID, err)
 	}
-	if err := s.refreshLocked(ctx); err != nil {
+	refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer refreshCancel()
+	if err := s.refreshLocked(refreshCtx); err != nil {
 		return fmt.Errorf("refresh execution plans: %w", err)
 	}
 	return nil
@@ -393,8 +397,12 @@ func (s *Service) validateCreateCandidate(input CreateInput, scopeKey, planHash 
 		PlanHash:    planHash,
 		CreatedAt:   time.Unix(0, 0).UTC(),
 	}
-	if _, err := s.compiler.Compile(version); err != nil {
+	compiled, err := s.compiler.Compile(version)
+	if err != nil {
 		return newValidationError(err.Error(), err)
+	}
+	if compiled == nil || compiled.Policy == nil {
+		return newValidationError("compiled plan is empty or missing policy", nil)
 	}
 	return nil
 }

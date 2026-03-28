@@ -220,6 +220,19 @@ func TestExecutionPlansEndpointsReturn503WhenServiceUnavailable(t *testing.T) {
 	if listRec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("list status = %d, want 503", listRec.Code)
 	}
+	listEnvelope := decodeExecutionPlanErrorEnvelope(t, listRec.Body.Bytes())
+	if listEnvelope.Error.Type != "invalid_request_error" {
+		t.Fatalf("list error type = %q, want invalid_request_error", listEnvelope.Error.Type)
+	}
+	if listEnvelope.Error.Message != "execution plans feature is unavailable" {
+		t.Fatalf("list error message = %q, want execution plans feature is unavailable", listEnvelope.Error.Message)
+	}
+	if listEnvelope.Error.Param != nil {
+		t.Fatalf("list error param = %v, want nil", *listEnvelope.Error.Param)
+	}
+	if listEnvelope.Error.Code == nil || *listEnvelope.Error.Code != "feature_unavailable" {
+		t.Fatalf("list error code = %v, want feature_unavailable", listEnvelope.Error.Code)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/admin/api/v1/execution-plans", bytes.NewBufferString(`{}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -230,6 +243,19 @@ func TestExecutionPlansEndpointsReturn503WhenServiceUnavailable(t *testing.T) {
 	}
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("create status = %d, want 503", rec.Code)
+	}
+	createEnvelope := decodeExecutionPlanErrorEnvelope(t, rec.Body.Bytes())
+	if createEnvelope.Error.Type != "invalid_request_error" {
+		t.Fatalf("create error type = %q, want invalid_request_error", createEnvelope.Error.Type)
+	}
+	if createEnvelope.Error.Message != "execution plans feature is unavailable" {
+		t.Fatalf("create error message = %q, want execution plans feature is unavailable", createEnvelope.Error.Message)
+	}
+	if createEnvelope.Error.Param != nil {
+		t.Fatalf("create error param = %v, want nil", *createEnvelope.Error.Param)
+	}
+	if createEnvelope.Error.Code == nil || *createEnvelope.Error.Code != "feature_unavailable" {
+		t.Fatalf("create error code = %v, want feature_unavailable", createEnvelope.Error.Code)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/admin/api/v1/execution-plans/test-plan/deactivate", nil)
@@ -242,6 +268,19 @@ func TestExecutionPlansEndpointsReturn503WhenServiceUnavailable(t *testing.T) {
 	}
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("deactivate status = %d, want 503", rec.Code)
+	}
+	deactivateEnvelope := decodeExecutionPlanErrorEnvelope(t, rec.Body.Bytes())
+	if deactivateEnvelope.Error.Type != "invalid_request_error" {
+		t.Fatalf("deactivate error type = %q, want invalid_request_error", deactivateEnvelope.Error.Type)
+	}
+	if deactivateEnvelope.Error.Message != "execution plans feature is unavailable" {
+		t.Fatalf("deactivate error message = %q, want execution plans feature is unavailable", deactivateEnvelope.Error.Message)
+	}
+	if deactivateEnvelope.Error.Param != nil {
+		t.Fatalf("deactivate error param = %v, want nil", *deactivateEnvelope.Error.Param)
+	}
+	if deactivateEnvelope.Error.Code == nil || *deactivateEnvelope.Error.Code != "feature_unavailable" {
+		t.Fatalf("deactivate error code = %v, want feature_unavailable", deactivateEnvelope.Error.Code)
 	}
 }
 

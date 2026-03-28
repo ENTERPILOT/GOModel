@@ -198,7 +198,8 @@
                     return;
                 }
 
-                const features = plan && plan.plan_payload && plan.plan_payload.features ? plan.plan_payload.features : {};
+                const features = this.executionPlanSourceFeatures(plan);
+                const guardrails = this.executionPlanSourceGuardrails(plan);
                 this.executionPlanForm = {
                     scope_provider: String(plan.scope && plan.scope.scope_provider || ''),
                     scope_model: String(plan.scope && plan.scope.scope_model || ''),
@@ -210,7 +211,7 @@
                         usage: !!features.usage,
                         guardrails: !!features.guardrails
                     },
-                    guardrails: this.planGuardrails(plan).map((step) => ({
+                    guardrails: guardrails.map((step) => ({
                         ref: String(step && step.ref || ''),
                         step: Number.isFinite(step && step.step) ? step.step : 10
                     }))
@@ -259,10 +260,17 @@
                 const features = form.features || {};
 
                 const guardrails = !!features.guardrails
-                    ? (Array.isArray(form.guardrails) ? form.guardrails : []).map((step) => ({
-                        ref: String(step && step.ref || '').trim(),
-                        step: Number(step && step.step)
-                    }))
+                    ? (Array.isArray(form.guardrails) ? form.guardrails : []).map((step) => {
+                        const rawStep = step && step.step;
+                        const trimmedStep = rawStep === null || rawStep === undefined ? '' : String(rawStep).trim();
+                        const parsedStep = trimmedStep !== '' && Number.isFinite(Number(trimmedStep))
+                            ? Number(trimmedStep)
+                            : Number.NaN;
+                        return {
+                            ref: String(step && step.ref || '').trim(),
+                            step: parsedStep
+                        };
+                    })
                     : [];
 
                 return {
@@ -383,6 +391,9 @@
             },
 
             async submitExecutionPlanForm() {
+                if (this.executionPlanSubmitting) {
+                    return;
+                }
                 this.executionPlanFormError = '';
                 this.executionPlanNotice = '';
 

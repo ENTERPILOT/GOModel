@@ -77,6 +77,84 @@ test('buildExecutionPlanRequest emits provider-model payload and strips guardrai
     );
 });
 
+test('openExecutionPlanCreate hydrates features and guardrails via shared normalizers', () => {
+    const module = createExecutionPlansModule();
+    module.executionPlanSourceFeatures = () => ({
+        cache: false,
+        audit: false,
+        usage: true,
+        guardrails: true
+    });
+    module.executionPlanSourceGuardrails = () => ([
+        { ref: 'policy-system', step: 30 }
+    ]);
+    module.scrollExecutionPlanFormIntoView = () => {};
+
+    module.openExecutionPlanCreate({
+        scope: {
+            scope_provider: 'openai',
+            scope_model: 'gpt-5'
+        },
+        name: 'Hydrated workflow',
+        description: 'Uses helper normalization',
+        plan_payload: {
+            features: {
+                cache: true,
+                audit: true,
+                usage: false,
+                guardrails: false
+            },
+            guardrails: [
+                { ref: 'wrong-source', step: 10 }
+            ]
+        }
+    });
+
+    assert.equal(
+        JSON.stringify(module.executionPlanForm.features),
+        JSON.stringify({
+            cache: false,
+            audit: false,
+            usage: true,
+            guardrails: true
+        })
+    );
+    assert.equal(
+        JSON.stringify(module.executionPlanForm.guardrails),
+        JSON.stringify([{ ref: 'policy-system', step: 30 }])
+    );
+});
+
+test('buildExecutionPlanRequest preserves blank guardrail steps as invalid so validation rejects them', () => {
+    const module = createExecutionPlansModule();
+    module.models = [
+        { provider_type: 'openai', model: { id: 'gpt-5' } }
+    ];
+    module.executionPlanForm = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        name: 'OpenAI GPT-5',
+        description: 'Primary translated requests',
+        features: {
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: true
+        },
+        guardrails: [
+            { ref: 'policy-system', step: '   ' }
+        ]
+    };
+
+    const payload = module.buildExecutionPlanRequest();
+
+    assert.ok(Number.isNaN(payload.plan_payload.guardrails[0].step));
+    assert.equal(
+        module.validateExecutionPlanRequest(payload),
+        'Each guardrail step must use an integer step number.'
+    );
+});
+
 test('validateExecutionPlanRequest rejects duplicate guardrail refs', () => {
     const module = createExecutionPlansModule();
     const payload = {
@@ -228,4 +306,42 @@ test('deactivateExecutionPlan requires confirmation before posting', async () =>
 
     assert.equal(fetchCalled, false);
     assert.equal(module.executionPlanDeactivatingID, '');
+});
+
+test('submitExecutionPlanForm ignores duplicate submissions while a request is already in flight', async () => {
+    let fetchCalled = false;
+    const module = createExecutionPlansModule({
+        fetch() {
+            fetchCalled = true;
+            return Promise.resolve({
+                ok: true,
+                status: 201
+            });
+        }
+    });
+    module.models = [
+        { provider_type: 'openai', model: { id: 'gpt-5' } }
+    ];
+    module.executionPlanSubmitting = true;
+    module.executionPlanForm = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        name: 'OpenAI GPT-5',
+        description: 'Primary translated requests',
+        features: {
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: false
+        },
+        guardrails: []
+    };
+    module.headers = () => ({});
+    module.closeExecutionPlanForm = () => {};
+    module.fetchExecutionPlansPage = async () => {};
+
+    await module.submitExecutionPlanForm();
+
+    assert.equal(fetchCalled, false);
+    assert.equal(module.executionPlanSubmitting, true);
 });

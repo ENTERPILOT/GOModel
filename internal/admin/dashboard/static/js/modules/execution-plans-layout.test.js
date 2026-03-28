@@ -106,11 +106,11 @@ test('execution plan authoring inputs expose stable accessible names', () => {
     );
     assert.match(
         template,
-        /x-model="step\.ref"[^>]*aria-label="Guardrail reference"/
+        /x-model="step\.ref"[^>]*:aria-label="'Guardrail reference ' \+ \(index \+ 1\)"/
     );
     assert.match(
         template,
-        /x-model\.number="step\.step"[^>]*aria-label="Guardrail step"/
+        /x-model\.number="step\.step"[^>]*:aria-label="'Guardrail step ' \+ \(index \+ 1\)"/
     );
 });
 

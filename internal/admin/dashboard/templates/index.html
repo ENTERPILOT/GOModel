@@ -729,8 +729,8 @@
                     <div class="execution-plan-guardrail-list-editor" x-show="executionPlanForm.guardrails.length > 0">
                         <template x-for="(step, index) in executionPlanForm.guardrails" :key="'execution-plan-form-guardrail-' + index">
                             <div class="execution-plan-guardrail-row">
-                                <input type="text" class="filter-input execution-plan-input" list="execution-plan-guardrail-options" placeholder="Guardrail ref" x-model="step.ref" aria-label="Guardrail reference">
-                                <input type="number" class="filter-input execution-plan-step-input" min="0" step="10" placeholder="Step" x-model.number="step.step" aria-label="Guardrail step">
+                                <input type="text" class="filter-input execution-plan-input" list="execution-plan-guardrail-options" placeholder="Guardrail ref" x-model="step.ref" :aria-label="'Guardrail reference ' + (index + 1)">
+                                <input type="number" class="filter-input execution-plan-step-input" min="0" step="10" placeholder="Step" x-model.number="step.step" :aria-label="'Guardrail step ' + (index + 1)">
                                 <button type="button" class="table-action-btn table-action-btn-danger" @click="removeExecutionPlanGuardrailStep(index)">Remove</button>
                             </div>
                         </template>
