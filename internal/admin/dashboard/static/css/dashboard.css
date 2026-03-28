@@ -2668,30 +2668,96 @@ body.conversation-drawer-open {
     opacity: 0.28;
 }
 
-/* ─── Async connector ─── */
+/* ─── Async section ─── */
 
 /*
- * Async nodes live after Response in the same row, connected by a dashed
- * line — they fire after the response is returned to the client.
+ * Async nodes fire after the response is returned to the client.
+ * They drop below the main row via an L-turn from Response, then
+ * flow right-to-left: Audit Log on the right, Usage on the left.
  *
- * [AI] ──────→ [Response] - - → [Audit Log] - - → [Usage]
+ * [Client] ──→ [Cache?] ──── [AI] ──────── [Response]
+ *                                               │
+ *                                               │ (dashed drop)
+ *                                               │
+ *                         [Usage] ← ─ ─ [Audit Log]
  */
 
-/* Dashed connector for async nodes */
-.ep-conn-async {
+/* Container — full-width branch lane below the main row */
+.ep-async-section {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0;
+    min-width: 0;
+    padding-right: 20px;
+}
+
+/* L-turn connector: centered horizontal leg plus vertical rise back to Response */
+.ep-async-turn {
+    flex: 0 0 28px;
+    width: 28px;
+    position: relative; /* for arrowhead + vertical rise */
+    height: 2px;
     background: repeating-linear-gradient(
-        to right,
+        to left,
         color-mix(in srgb, var(--text-muted) 45%, var(--border)) 0,
         color-mix(in srgb, var(--text-muted) 45%, var(--border)) 5px,
         transparent 5px,
         transparent 9px
     );
-    width: 20px;
+}
+
+/* Left-pointing arrowhead at the end of the horizontal L-turn line */
+.ep-async-turn::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 7px;
+    height: 9px;
+    background: color-mix(in srgb, var(--text-muted) 40%, var(--border));
+    clip-path: polygon(100% 0, 0 50%, 100% 100%);
+}
+
+/* Vertical dashed rise that connects the inline turn back up to Response */
+.ep-async-turn::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: 1px;
+    height: 24px;
+    border-right: 2px dashed color-mix(in srgb, var(--text-muted) 40%, var(--border));
+}
+
+/* RTL async row — Audit Log right, Usage left */
+.ep-async-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    margin-right: 7px;
+}
+
+/* Dashed left-pointing connector between async nodes */
+.ep-conn-async {
+    background: repeating-linear-gradient(
+        to left,
+        color-mix(in srgb, var(--text-muted) 45%, var(--border)) 0,
+        color-mix(in srgb, var(--text-muted) 45%, var(--border)) 5px,
+        transparent 5px,
+        transparent 9px
+    );
+    width: 24px;
     flex-shrink: 0;
 }
 
+/* Left-pointing arrowhead (overrides ep-conn::after right-pointing default) */
 .ep-conn-async::after {
     background: color-mix(in srgb, var(--text-muted) 45%, var(--border));
+    left: -1px;
+    right: auto;
+    clip-path: polygon(100% 0, 0 50%, 100% 100%);
 }
 
 /* Async nodes — horizontal inline pills */
@@ -2746,4 +2812,19 @@ body.conversation-drawer-open {
 
 .ep-node-async-usage .ep-node-label {
     color: color-mix(in srgb, #60a5fa 75%, var(--text-muted));
+}
+
+/* "ASYNC" label inline on the right of the branch */
+.ep-async-label {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    opacity: 0.55;
+    white-space: nowrap;
+    flex-shrink: 0;
 }

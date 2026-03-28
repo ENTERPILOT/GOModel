@@ -813,7 +813,7 @@
                                     <span class="ep-node-sub" x-show="epAiSublabel(plan, null)" x-text="epAiSublabel(plan, null)"></span>
                                 </div>
 
-                                <!-- Right half: growing connector + Response + async nodes -->
+                                <!-- Right half: growing connector + Response -->
                                 <div class="ep-right">
                                     <div class="ep-conn ep-conn-grow"></div>
                                     <div class="ep-node ep-node-endpoint">
@@ -822,29 +822,34 @@
                                         </div>
                                         <span class="ep-node-label">Response</span>
                                     </div>
-
-                                    <!-- Async nodes — fire after response is returned -->
-                                    <div class="ep-step" x-show="epHasAudit(plan)">
-                                        <div class="ep-conn ep-conn-async"></div>
-                                        <div class="ep-node ep-node-async ep-node-async-audit">
-                                            <div class="ep-node-icon">
-                                                <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                                            </div>
-                                            <span class="ep-node-label">Audit Log</span>
-                                        </div>
-                                    </div>
-                                    <div class="ep-step" x-show="epHasUsage(plan)">
-                                        <div class="ep-conn ep-conn-async"></div>
-                                        <div class="ep-node ep-node-async ep-node-async-usage">
-                                            <div class="ep-node-icon">
-                                                <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-                                            </div>
-                                            <span class="ep-node-label">Usage</span>
-                                        </div>
-                                    </div>
                                 </div>
 
                             </div>
+
+                            <!-- Async section — inline row, branch turn, then label on the right -->
+                            <div class="ep-async-section" x-show="epHasAsync(plan)">
+                                <div class="ep-async-row">
+                                    <!-- Usage on the left (visual), Audit Log on the right -->
+                                    <div class="ep-node ep-node-async ep-node-async-usage" x-show="epHasUsage(plan)">
+                                        <div class="ep-node-icon">
+                                            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Usage</span>
+                                    </div>
+                                    <div class="ep-step" x-show="epHasUsage(plan) && epHasAudit(plan)">
+                                        <div class="ep-conn ep-conn-async"></div>
+                                    </div>
+                                    <div class="ep-node ep-node-async ep-node-async-audit" x-show="epHasAudit(plan)">
+                                        <div class="ep-node-icon">
+                                            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Audit Log</span>
+                                    </div>
+                                </div>
+                                <div class="ep-async-turn"></div>
+                                <span class="ep-async-label">Async</span>
+                            </div>
+
                         </div>
 
                         <div class="execution-plan-guardrails">
