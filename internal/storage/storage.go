@@ -7,6 +7,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 )
 
 // Type constants for storage backends
@@ -56,28 +59,57 @@ type MongoDBConfig struct {
 	Database string
 }
 
-// Storage provides a unified interface for database connections.
-// Implementations must be safe for concurrent use.
+// Storage manages the lifecycle of a shared storage backend.
 type Storage interface {
-	// Type returns the storage type ("sqlite", "postgresql", or "mongodb")
-	Type() string
-
-	// SQLiteDB returns the *sql.DB connection for SQLite.
-	// Returns nil if not using SQLite.
-	SQLiteDB() *sql.DB
-
-	// PostgreSQLPool returns the connection pool for PostgreSQL.
-	// Returns nil if not using PostgreSQL.
-	// The actual type is *pgxpool.Pool but we use interface{} to avoid import cycles.
-	PostgreSQLPool() any
-
-	// MongoDatabase returns the MongoDB database.
-	// Returns nil if not using MongoDB.
-	// The actual type is *mongo.Database but we use interface{} to avoid import cycles.
-	MongoDatabase() any
-
-	// Close releases all resources held by the storage.
 	Close() error
+}
+
+// SQLiteStorage exposes a SQLite database handle.
+type SQLiteStorage interface {
+	Storage
+	DB() *sql.DB
+}
+
+// PostgreSQLStorage exposes a PostgreSQL connection pool.
+type PostgreSQLStorage interface {
+	Storage
+	Pool() *pgxpool.Pool
+}
+
+// MongoDBStorage exposes a MongoDB database handle.
+type MongoDBStorage interface {
+	Storage
+	Database() *mongo.Database
+}
+
+// ResolveBackend dispatches to the callback matching the concrete storage backend.
+func ResolveBackend[T any](
+	store Storage,
+	sqlite func(*sql.DB) (T, error),
+	postgresql func(*pgxpool.Pool) (T, error),
+	mongodb func(*mongo.Database) (T, error),
+) (T, error) {
+	var zero T
+
+	switch store := store.(type) {
+	case SQLiteStorage:
+		if sqlite == nil {
+			return zero, fmt.Errorf("sqlite handler is nil")
+		}
+		return sqlite(store.DB())
+	case PostgreSQLStorage:
+		if postgresql == nil {
+			return zero, fmt.Errorf("postgresql handler is nil")
+		}
+		return postgresql(store.Pool())
+	case MongoDBStorage:
+		if mongodb == nil {
+			return zero, fmt.Errorf("mongodb handler is nil")
+		}
+		return mongodb(store.Database())
+	default:
+		return zero, fmt.Errorf("unsupported storage backend %T", store)
+	}
 }
 
 // New creates a new Storage based on the configuration.

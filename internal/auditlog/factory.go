@@ -2,6 +2,7 @@ package auditlog
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -55,7 +56,7 @@ func New(ctx context.Context, cfg *config.Config) (*Result, error) {
 	}
 
 	// Create storage configuration
-	storageCfg := buildStorageConfig(cfg)
+	storageCfg := cfg.Storage.BackendConfig()
 
 	// Create storage connection
 	store, err := storage.New(ctx, storageCfg)
@@ -79,68 +80,14 @@ func New(ctx context.Context, cfg *config.Config) (*Result, error) {
 	}, nil
 }
 
-// buildStorageConfig creates a storage.Config from the application config.
-func buildStorageConfig(cfg *config.Config) storage.Config {
-	storageCfg := storage.Config{
-		Type: cfg.Storage.Type,
-		SQLite: storage.SQLiteConfig{
-			Path: cfg.Storage.SQLite.Path,
-		},
-		PostgreSQL: storage.PostgreSQLConfig{
-			URL:      cfg.Storage.PostgreSQL.URL,
-			MaxConns: cfg.Storage.PostgreSQL.MaxConns,
-		},
-		MongoDB: storage.MongoDBConfig{
-			URL:      cfg.Storage.MongoDB.URL,
-			Database: cfg.Storage.MongoDB.Database,
-		},
-	}
-
-	// Apply defaults
-	if storageCfg.Type == "" {
-		storageCfg.Type = storage.TypeSQLite
-	}
-	if storageCfg.SQLite.Path == "" {
-		storageCfg.SQLite.Path = storage.DefaultSQLitePath
-	}
-	if storageCfg.MongoDB.Database == "" {
-		storageCfg.MongoDB.Database = "gomodel"
-	}
-
-	return storageCfg
-}
-
 // createLogStore creates the appropriate LogStore for the given storage backend.
 func createLogStore(store storage.Storage, retentionDays int) (LogStore, error) {
-	switch store.Type() {
-	case storage.TypeSQLite:
-		return NewSQLiteStore(store.SQLiteDB(), retentionDays)
-
-	case storage.TypePostgreSQL:
-		pool := store.PostgreSQLPool()
-		if pool == nil {
-			return nil, fmt.Errorf("PostgreSQL pool is nil")
-		}
-		pgxPool, ok := pool.(*pgxpool.Pool)
-		if !ok {
-			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
-		}
-		return NewPostgreSQLStore(pgxPool, retentionDays)
-
-	case storage.TypeMongoDB:
-		db := store.MongoDatabase()
-		if db == nil {
-			return nil, fmt.Errorf("MongoDB database is nil")
-		}
-		mongoDB, ok := db.(*mongo.Database)
-		if !ok {
-			return nil, fmt.Errorf("invalid MongoDB database type: %T", db)
-		}
-		return NewMongoDBStore(mongoDB, retentionDays)
-
-	default:
-		return nil, fmt.Errorf("unknown storage type: %s", store.Type())
-	}
+	return storage.ResolveBackend[LogStore](
+		store,
+		func(db *sql.DB) (LogStore, error) { return NewSQLiteStore(db, retentionDays) },
+		func(pool *pgxpool.Pool) (LogStore, error) { return NewPostgreSQLStore(pool, retentionDays) },
+		func(db *mongo.Database) (LogStore, error) { return NewMongoDBStore(db, retentionDays) },
+	)
 }
 
 // buildLoggerConfig creates an auditlog.Config from config.LogConfig.

@@ -18,6 +18,7 @@ import (
 type Handler struct {
 	provider                     core.RoutableProvider
 	modelResolver                RequestModelResolver
+	fallbackResolver             RequestFallbackResolver
 	executionPolicyResolver      RequestExecutionPolicyResolver
 	translatedRequestPatcher     TranslatedRequestPatcher
 	batchRequestPreparer         BatchRequestPreparer
@@ -37,7 +38,7 @@ type Handler struct {
 
 // NewHandler creates a new handler with the given routable provider (typically the Router)
 func NewHandler(provider core.RoutableProvider, logger auditlog.LoggerInterface, usageLogger usage.LoggerInterface, pricingResolver usage.PricingResolver) *Handler {
-	return newHandler(provider, logger, usageLogger, pricingResolver, nil, nil, nil)
+	return newHandler(provider, logger, usageLogger, pricingResolver, nil, nil, nil, nil)
 }
 
 func newHandler(
@@ -47,11 +48,13 @@ func newHandler(
 	pricingResolver usage.PricingResolver,
 	modelResolver RequestModelResolver,
 	executionPolicyResolver RequestExecutionPolicyResolver,
+	fallbackResolver RequestFallbackResolver,
 	translatedRequestPatcher TranslatedRequestPatcher,
 ) *Handler {
 	return &Handler{
 		provider:                     provider,
 		modelResolver:                modelResolver,
+		fallbackResolver:             fallbackResolver,
 		executionPolicyResolver:      executionPolicyResolver,
 		translatedRequestPatcher:     translatedRequestPatcher,
 		logger:                       logger,
@@ -78,6 +81,7 @@ func (h *Handler) translatedInference() *translatedInferenceService {
 			provider:                 h.provider,
 			modelResolver:            h.modelResolver,
 			executionPolicyResolver:  h.executionPolicyResolver,
+			fallbackResolver:         h.fallbackResolver,
 			translatedRequestPatcher: h.translatedRequestPatcher,
 			logger:                   h.logger,
 			usageLogger:              h.usageLogger,

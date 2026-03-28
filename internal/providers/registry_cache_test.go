@@ -203,6 +203,209 @@ func TestCacheFile(t *testing.T) {
 		}
 	})
 
+	t.Run("LoadFromCacheBackfillsMissingProviderTypeFromConfiguredProvider", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cacheFile := filepath.Join(tmpDir, "models.json")
+
+		modelCache := modelcache.ModelCache{
+			UpdatedAt: time.Now().UTC(),
+			Providers: map[string]modelcache.CachedProvider{
+				"openai-main": {
+					OwnedBy: "openai",
+					Models: []modelcache.CachedModel{
+						{ID: "gpt-4o"},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(modelCache)
+		if err := os.WriteFile(cacheFile, data, 0o644); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		registry := NewModelRegistry()
+		localCache := modelcache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
+
+		openaiMock := &registryMockProvider{name: "openai"}
+		registry.RegisterProviderWithNameAndType(openaiMock, "openai-main", "openai")
+
+		loaded, err := registry.LoadFromCache(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if loaded != 1 {
+			t.Fatalf("expected 1 model loaded, got %d", loaded)
+		}
+
+		models := registry.ListModelsWithProvider()
+		if len(models) != 1 {
+			t.Fatalf("expected 1 model with provider, got %d", len(models))
+		}
+		if models[0].ProviderType != "openai" {
+			t.Fatalf("ProviderType = %q, want %q", models[0].ProviderType, "openai")
+		}
+	})
+
+	t.Run("LoadFromCachePrefersConfiguredProviderTypeOverCachedValue", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cacheFile := filepath.Join(tmpDir, "models.json")
+
+		modelCache := modelcache.ModelCache{
+			UpdatedAt: time.Now().UTC(),
+			Providers: map[string]modelcache.CachedProvider{
+				"openai-main": {
+					ProviderType: "stale-type",
+					OwnedBy:      "openai",
+					Models: []modelcache.CachedModel{
+						{ID: "gpt-4o"},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(modelCache)
+		if err := os.WriteFile(cacheFile, data, 0o644); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		registry := NewModelRegistry()
+		localCache := modelcache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
+
+		openaiMock := &registryMockProvider{name: "openai"}
+		registry.RegisterProviderWithNameAndType(openaiMock, "openai-main", "openai")
+
+		loaded, err := registry.LoadFromCache(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if loaded != 1 {
+			t.Fatalf("expected 1 model loaded, got %d", loaded)
+		}
+
+		models := registry.ListModelsWithProvider()
+		if len(models) != 1 {
+			t.Fatalf("expected 1 model with provider, got %d", len(models))
+		}
+		if models[0].ProviderType != "openai" {
+			t.Fatalf("ProviderType = %q, want %q", models[0].ProviderType, "openai")
+		}
+	})
+
+	t.Run("LoadFromCacheUsesStoredProviderTypeForMetadataEnrichment", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cacheFile := filepath.Join(tmpDir, "models.json")
+
+		raw := []byte(`{
+			"version": 1,
+			"updated_at": "2025-01-01T00:00:00Z",
+			"providers": {
+				"openrouter": {"display_name": "OpenRouter", "api_type": "openai", "supported_modes": ["chat"]}
+			},
+			"models": {
+				"shared-model": {"display_name": "Shared Model", "modes": ["chat"]}
+			},
+			"provider_models": {
+				"openrouter/shared-model": {"model_ref": "shared-model", "enabled": true, "context_window": 222222}
+			}
+		}`)
+
+		modelCache := modelcache.ModelCache{
+			UpdatedAt:     time.Now().UTC(),
+			ModelListData: raw,
+			Providers: map[string]modelcache.CachedProvider{
+				"openrouter-main": {
+					ProviderType: "openrouter",
+					OwnedBy:      "openrouter",
+					Models: []modelcache.CachedModel{
+						{ID: "shared-model"},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(modelCache)
+		if err := os.WriteFile(cacheFile, data, 0o644); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		registry := NewModelRegistry()
+		localCache := modelcache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
+
+		openrouterMock := &registryMockProvider{name: "openrouter"}
+		registry.RegisterProviderWithNameAndType(openrouterMock, "openrouter-main", "")
+
+		loaded, err := registry.LoadFromCache(context.Background())
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if loaded != 1 {
+			t.Fatalf("expected 1 model loaded, got %d", loaded)
+		}
+
+		info := registry.GetModel("openrouter-main/shared-model")
+		if info == nil || info.Model.Metadata == nil {
+			t.Fatal("expected cached model metadata to be present")
+		}
+		if info.Model.Metadata.ContextWindow == nil || *info.Model.Metadata.ContextWindow != 222222 {
+			t.Fatalf("ContextWindow = %v, want 222222", info.Model.Metadata.ContextWindow)
+		}
+	})
+
+	t.Run("SaveToCachePrefersStoredProviderTypeOverConfiguredFallback", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		cacheFile := filepath.Join(tmpDir, "models.json")
+
+		modelCache := modelcache.ModelCache{
+			UpdatedAt: time.Now().UTC(),
+			Providers: map[string]modelcache.CachedProvider{
+				"openrouter-main": {
+					ProviderType: "openrouter",
+					OwnedBy:      "openrouter",
+					Models: []modelcache.CachedModel{
+						{ID: "shared-model"},
+					},
+				},
+			},
+		}
+		data, _ := json.Marshal(modelCache)
+		if err := os.WriteFile(cacheFile, data, 0o644); err != nil {
+			t.Fatalf("failed to write cache file: %v", err)
+		}
+
+		registry := NewModelRegistry()
+		localCache := modelcache.NewLocalCache(cacheFile)
+		registry.SetCache(localCache)
+
+		openrouterMock := &registryMockProvider{name: "openrouter"}
+		registry.RegisterProviderWithNameAndType(openrouterMock, "openrouter-main", "")
+
+		if _, err := registry.LoadFromCache(context.Background()); err != nil {
+			t.Fatalf("LoadFromCache() error = %v", err)
+		}
+		if err := registry.SaveToCache(context.Background()); err != nil {
+			t.Fatalf("SaveToCache() error = %v", err)
+		}
+
+		saved, err := os.ReadFile(cacheFile)
+		if err != nil {
+			t.Fatalf("failed to read cache file: %v", err)
+		}
+
+		var rewritten modelcache.ModelCache
+		if err := json.Unmarshal(saved, &rewritten); err != nil {
+			t.Fatalf("failed to unmarshal saved cache: %v", err)
+		}
+
+		provider, ok := rewritten.Providers["openrouter-main"]
+		if !ok {
+			t.Fatal("expected openrouter-main provider in saved cache")
+		}
+		if provider.ProviderType != "openrouter" {
+			t.Fatalf("ProviderType = %q, want %q", provider.ProviderType, "openrouter")
+		}
+	})
+
 	t.Run("LoadFromCacheSkipsUnconfiguredProviders", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		cacheFile := filepath.Join(tmpDir, "models.json")

@@ -696,6 +696,73 @@ func TestListModelsWithProvider_IncludesProviderType(t *testing.T) {
 	}
 }
 
+func TestInitialize_EnrichesAllProviderSpecificModels(t *testing.T) {
+	registry := NewModelRegistry()
+
+	openAI := &registryMockProvider{
+		name: "provider-openai",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "shared-model", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}
+	openRouter := &registryMockProvider{
+		name: "provider-openrouter",
+		modelsResponse: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "shared-model", Object: "model", OwnedBy: "openrouter"},
+			},
+		},
+	}
+
+	registry.RegisterProviderWithNameAndType(openAI, "openai-main", "openai")
+	registry.RegisterProviderWithNameAndType(openRouter, "openrouter-main", "openrouter")
+
+	raw := []byte(`{
+		"version": 1,
+		"updated_at": "2025-01-01T00:00:00Z",
+		"providers": {
+			"openai": {"display_name": "OpenAI", "api_type": "openai", "supported_modes": ["chat"]},
+			"openrouter": {"display_name": "OpenRouter", "api_type": "openai", "supported_modes": ["chat"]}
+		},
+		"models": {
+			"shared-model": {"display_name": "Shared Model", "modes": ["chat"]}
+		},
+		"provider_models": {
+			"openai/shared-model": {"model_ref": "shared-model", "enabled": true, "context_window": 111111},
+			"openrouter/shared-model": {"model_ref": "shared-model", "enabled": true, "context_window": 222222}
+		}
+	}`)
+	list, err := modeldata.Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	registry.SetModelList(list, raw)
+
+	if err := registry.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+
+	openAIInfo := registry.GetModel("openai-main/shared-model")
+	if openAIInfo == nil || openAIInfo.Model.Metadata == nil {
+		t.Fatal("expected openai-main/shared-model metadata to be present")
+	}
+	if openAIInfo.Model.Metadata.ContextWindow == nil || *openAIInfo.Model.Metadata.ContextWindow != 111111 {
+		t.Fatalf("openai context window = %v, want 111111", openAIInfo.Model.Metadata.ContextWindow)
+	}
+
+	openRouterInfo := registry.GetModel("openrouter-main/shared-model")
+	if openRouterInfo == nil || openRouterInfo.Model.Metadata == nil {
+		t.Fatal("expected openrouter-main/shared-model metadata to be present")
+	}
+	if openRouterInfo.Model.Metadata.ContextWindow == nil || *openRouterInfo.Model.Metadata.ContextWindow != 222222 {
+		t.Fatalf("openrouter context window = %v, want 222222", openRouterInfo.Model.Metadata.ContextWindow)
+	}
+}
+
 func TestListPublicModels_UsesConfiguredProviderNamesAndIncludesDuplicates(t *testing.T) {
 	registry := NewModelRegistry()
 
@@ -1127,6 +1194,43 @@ func TestListModelsWithProviderByCategory(t *testing.T) {
 			t.Fatalf("expected 0 video models, got %d", len(models))
 		}
 	})
+}
+
+func TestListModelsWithProviderByCategory_UsesStoredProviderMetadata(t *testing.T) {
+	registry := NewModelRegistry()
+	registry.modelsByProvider = map[string]map[string]*ModelInfo{
+		"internal-provider-key": {
+			"gpt-4o": {
+				Model: core.Model{
+					ID: "gpt-4o",
+					Metadata: &core.ModelMetadata{
+						Categories: []core.ModelCategory{core.CategoryTextGeneration},
+					},
+				},
+				ProviderName: "public-openai",
+				ProviderType: "openai",
+			},
+		},
+	}
+
+	allModels := registry.ListModelsWithProvider()
+	if len(allModels) != 1 {
+		t.Fatalf("expected 1 model from full listing, got %d", len(allModels))
+	}
+
+	filtered := registry.ListModelsWithProviderByCategory(core.CategoryTextGeneration)
+	if len(filtered) != 1 {
+		t.Fatalf("expected 1 model from category listing, got %d", len(filtered))
+	}
+	if filtered[0].ProviderName != allModels[0].ProviderName {
+		t.Fatalf("ProviderName = %q, want %q", filtered[0].ProviderName, allModels[0].ProviderName)
+	}
+	if filtered[0].ProviderType != allModels[0].ProviderType {
+		t.Fatalf("ProviderType = %q, want %q", filtered[0].ProviderType, allModels[0].ProviderType)
+	}
+	if filtered[0].Selector != "public-openai/gpt-4o" {
+		t.Fatalf("Selector = %q, want %q", filtered[0].Selector, "public-openai/gpt-4o")
+	}
 }
 
 func TestGetCategoryCounts_CountsProviderBackedModels(t *testing.T) {

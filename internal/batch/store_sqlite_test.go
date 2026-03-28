@@ -16,7 +16,7 @@ func TestSQLiteStoreLifecycle(t *testing.T) {
 	}
 	defer st.Close()
 
-	store, err := NewSQLiteStore(st.SQLiteDB())
+	store, err := NewSQLiteStore(st.DB())
 	if err != nil {
 		t.Fatalf("new sqlite batch store: %v", err)
 	}

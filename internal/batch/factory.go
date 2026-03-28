@@ -2,6 +2,7 @@ package batch
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -42,7 +43,7 @@ func New(ctx context.Context, cfg *config.Config) (*Result, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("config is required")
 	}
-	storageCfg := buildStorageConfig(cfg)
+	storageCfg := cfg.Storage.BackendConfig()
 	store, err := storage.New(ctx, storageCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create storage: %w", err)
@@ -74,59 +75,11 @@ func NewWithSharedStorage(ctx context.Context, shared storage.Storage) (*Result,
 	}, nil
 }
 
-func buildStorageConfig(cfg *config.Config) storage.Config {
-	storageCfg := storage.Config{
-		Type: cfg.Storage.Type,
-		SQLite: storage.SQLiteConfig{
-			Path: cfg.Storage.SQLite.Path,
-		},
-		PostgreSQL: storage.PostgreSQLConfig{
-			URL:      cfg.Storage.PostgreSQL.URL,
-			MaxConns: cfg.Storage.PostgreSQL.MaxConns,
-		},
-		MongoDB: storage.MongoDBConfig{
-			URL:      cfg.Storage.MongoDB.URL,
-			Database: cfg.Storage.MongoDB.Database,
-		},
-	}
-
-	if storageCfg.Type == "" {
-		storageCfg.Type = storage.TypeSQLite
-	}
-	if storageCfg.SQLite.Path == "" {
-		storageCfg.SQLite.Path = storage.DefaultSQLitePath
-	}
-	if storageCfg.MongoDB.Database == "" {
-		storageCfg.MongoDB.Database = "gomodel"
-	}
-	return storageCfg
-}
-
 func createStore(ctx context.Context, store storage.Storage) (Store, error) {
-	switch store.Type() {
-	case storage.TypeSQLite:
-		return NewSQLiteStore(store.SQLiteDB())
-	case storage.TypePostgreSQL:
-		pool := store.PostgreSQLPool()
-		if pool == nil {
-			return nil, fmt.Errorf("PostgreSQL pool is nil")
-		}
-		pgxPool, ok := pool.(*pgxpool.Pool)
-		if !ok {
-			return nil, fmt.Errorf("invalid PostgreSQL pool type: %T", pool)
-		}
-		return NewPostgreSQLStore(ctx, pgxPool)
-	case storage.TypeMongoDB:
-		db := store.MongoDatabase()
-		if db == nil {
-			return nil, fmt.Errorf("MongoDB database is nil")
-		}
-		mongoDB, ok := db.(*mongo.Database)
-		if !ok {
-			return nil, fmt.Errorf("invalid MongoDB database type: %T", db)
-		}
-		return NewMongoDBStore(mongoDB)
-	default:
-		return nil, fmt.Errorf("unknown storage type: %s", store.Type())
-	}
+	return storage.ResolveBackend[Store](
+		store,
+		func(db *sql.DB) (Store, error) { return NewSQLiteStore(db) },
+		func(pool *pgxpool.Pool) (Store, error) { return NewPostgreSQLStore(ctx, pool) },
+		func(db *mongo.Database) (Store, error) { return NewMongoDBStore(db) },
+	)
 }

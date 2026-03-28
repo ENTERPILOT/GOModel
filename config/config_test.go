@@ -3,7 +3,10 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 	"time"
 )
 
@@ -42,6 +45,7 @@ func clearAllConfigEnvVars(t *testing.T) {
 		"USAGE_ENABLED", "ENFORCE_RETURNING_USAGE_DATA",
 		"USAGE_BUFFER_SIZE", "USAGE_FLUSH_INTERVAL", "USAGE_RETENTION_DAYS",
 		"GUARDRAILS_ENABLED", "ENABLE_GUARDRAILS_FOR_BATCH_PROCESSING",
+		"FEATURE_FALLBACK_MODE", "FALLBACK_MANUAL_RULES_PATH",
 		"HTTP_TIMEOUT", "HTTP_RESPONSE_HEADER_TIMEOUT",
 		"EXECUTION_PLAN_REFRESH_INTERVAL",
 	} {
@@ -156,6 +160,9 @@ func TestBuildDefaultConfig(t *testing.T) {
 	if cfg.Guardrails.EnableForBatchProcessing {
 		t.Error("expected Guardrails.EnableForBatchProcessing=false")
 	}
+	if cfg.Fallback.DefaultMode != FallbackModeOff {
+		t.Errorf("expected Fallback.DefaultMode=off, got %q", cfg.Fallback.DefaultMode)
+	}
 
 	expectedRetry := DefaultRetryConfig()
 	if cfg.Resilience.Retry != expectedRetry {
@@ -250,6 +257,263 @@ logging:
 		}
 		if cfg.Storage.Type != "sqlite" {
 			t.Errorf("expected Storage.Type=sqlite (default), got %s", cfg.Storage.Type)
+		}
+	})
+}
+
+func TestLoad_FallbackManualRules(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		manualRulesPath := filepath.Join(dir, "fallback.json")
+		if err := os.WriteFile(manualRulesPath, []byte(`{
+			"gpt-4o": ["azure/gpt-4o", "gemini/gemini-2.5-pro"],
+			"claude-sonnet-4": ["openai/gpt-5-mini"]
+		}`), 0644); err != nil {
+			t.Fatalf("Failed to write fallback rules: %v", err)
+		}
+
+		type yamlConfig struct {
+			Fallback struct {
+				DefaultMode     string                       `yaml:"default_mode"`
+				ManualRulesPath string                       `yaml:"manual_rules_path"`
+				Overrides       map[string]map[string]string `yaml:"overrides"`
+			} `yaml:"fallback"`
+		}
+
+		yamlCfg := yamlConfig{}
+		yamlCfg.Fallback.DefaultMode = "auto"
+		yamlCfg.Fallback.ManualRulesPath = manualRulesPath
+		yamlCfg.Fallback.Overrides = map[string]map[string]string{
+			"gpt-4o": {"mode": "manual"},
+		}
+
+		yamlData, err := yaml.Marshal(yamlCfg)
+		if err != nil {
+			t.Fatalf("Failed to marshal config.yaml: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), yamlData, 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		result, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		cfg := result.Config
+		if cfg.Fallback.DefaultMode != FallbackModeAuto {
+			t.Fatalf("Fallback.DefaultMode = %q, want %q", cfg.Fallback.DefaultMode, FallbackModeAuto)
+		}
+		if cfg.Fallback.Overrides["gpt-4o"].Mode != FallbackModeManual {
+			t.Fatalf("Fallback.Overrides[gpt-4o].Mode = %q, want %q", cfg.Fallback.Overrides["gpt-4o"].Mode, FallbackModeManual)
+		}
+		got := cfg.Fallback.Manual["gpt-4o"]
+		want := []string{"azure/gpt-4o", "gemini/gemini-2.5-pro"}
+		if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+			t.Fatalf("Fallback.Manual[gpt-4o] = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestLoad_InvalidFallbackMode(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+fallback:
+  default_mode: invalid
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		if _, err := Load(); err == nil {
+			t.Fatal("expected Load() to fail for invalid fallback mode")
+		}
+	})
+}
+
+func TestLoad_EmptyFallbackOverrideMode(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+fallback:
+  overrides:
+    "gpt-4o": {}
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		if _, err := Load(); err == nil {
+			t.Fatal("expected Load() to fail for empty fallback override mode")
+		}
+	})
+}
+
+func TestLoad_ManualFallbackModeRequiresManualRulesPath(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+fallback:
+  default_mode: manual
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail when manual fallback mode has no manual rules path")
+		}
+		if !strings.Contains(err.Error(), "fallback.manual_rules_path must be set") {
+			t.Fatalf("Load() error = %v, want manual rules path validation", err)
+		}
+	})
+}
+
+func TestLoad_ManualFallbackOverrideRequiresManualRulesPath(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+fallback:
+  overrides:
+    "gpt-4o":
+      mode: manual
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail when manual fallback override has no manual rules path")
+		}
+		if !strings.Contains(err.Error(), "fallback.manual_rules_path must be set") {
+			t.Fatalf("Load() error = %v, want manual rules path validation", err)
+		}
+	})
+}
+
+func TestLoad_FallbackOverrideDuplicateKeyAfterTrim(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+fallback:
+  overrides:
+    "gpt-4o":
+      mode: manual
+    " gpt-4o ":
+      mode: auto
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		_, err := Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail for duplicate fallback override keys after trimming")
+		}
+		if !strings.Contains(err.Error(), `fallback.overrides: duplicate model key after trimming: "gpt-4o"`) {
+			t.Fatalf("Load() error = %v, want duplicate trimmed override key error", err)
+		}
+	})
+}
+
+func TestLoad_FallbackManualRulesDuplicateKeyAfterTrim(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		manualRulesPath := filepath.Join(dir, "fallback.json")
+		if err := os.WriteFile(manualRulesPath, []byte(`{
+			"gpt-4o": ["azure/gpt-4o"],
+			" gpt-4o ": ["gemini/gemini-2.5-pro"]
+		}`), 0644); err != nil {
+			t.Fatalf("Failed to write fallback rules: %v", err)
+		}
+
+		type yamlConfig struct {
+			Fallback struct {
+				ManualRulesPath string `yaml:"manual_rules_path"`
+			} `yaml:"fallback"`
+		}
+
+		yamlCfg := yamlConfig{}
+		yamlCfg.Fallback.ManualRulesPath = manualRulesPath
+		yamlData, err := yaml.Marshal(yamlCfg)
+		if err != nil {
+			t.Fatalf("Failed to marshal config.yaml: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), yamlData, 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		_, err = Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail for duplicate fallback manual rule keys after trimming")
+		}
+		if !strings.Contains(err.Error(), `fallback.manual_rules_path: duplicate manual rule key after trimming: "gpt-4o"`) {
+			t.Fatalf("Load() error = %v, want duplicate trimmed manual rule key error", err)
+		}
+	})
+}
+
+func TestLoad_FallbackManualRulesRejectsDuplicateRawJSONKeys(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		manualRulesPath := filepath.Join(dir, "fallback.json")
+		if err := os.WriteFile(manualRulesPath, []byte(`{
+			"gpt-4o": ["azure/gpt-4o"],
+			"gpt-4o": ["gemini/gemini-2.5-pro"]
+		}`), 0644); err != nil {
+			t.Fatalf("Failed to write fallback rules: %v", err)
+		}
+
+		type yamlConfig struct {
+			Fallback struct {
+				ManualRulesPath string `yaml:"manual_rules_path"`
+			} `yaml:"fallback"`
+		}
+
+		yamlCfg := yamlConfig{}
+		yamlCfg.Fallback.ManualRulesPath = manualRulesPath
+		yamlData, err := yaml.Marshal(yamlCfg)
+		if err != nil {
+			t.Fatalf("Failed to marshal config.yaml: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), yamlData, 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		_, err = Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail for duplicate raw JSON keys in fallback manual rules")
+		}
+		if !strings.Contains(err.Error(), `fallback.manual_rules_path: duplicate JSON key "gpt-4o"`) {
+			t.Fatalf("Load() error = %v, want duplicate raw JSON key error", err)
+		}
+	})
+}
+
+func TestLoad_FeatureFallbackModeEnvOverridesFallbackDefaultMode(t *testing.T) {
+	clearAllConfigEnvVars(t)
+	t.Setenv("FEATURE_FALLBACK_MODE", "auto")
+
+	withTempDir(t, func(_ string) {
+		result, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+		if result.Config.Fallback.DefaultMode != FallbackModeAuto {
+			t.Fatalf("Fallback.DefaultMode = %q, want %q", result.Config.Fallback.DefaultMode, FallbackModeAuto)
 		}
 	})
 }
@@ -355,10 +619,24 @@ func TestLoad_ConfigExample_UsesNestedModelCacheSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read config.example.yaml: %v", err)
 	}
+	fallbackExamplePath, err := filepath.Abs("fallback.example.json")
+	if err != nil {
+		t.Fatalf("Failed to resolve fallback.example.json path: %v", err)
+	}
+	fallbackExampleData, err := os.ReadFile(fallbackExamplePath)
+	if err != nil {
+		t.Fatalf("Failed to read fallback.example.json: %v", err)
+	}
 
 	withTempDir(t, func(dir string) {
-		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), exampleData, 0644); err != nil {
-			t.Fatalf("Failed to write config.yaml: %v", err)
+		if err := os.MkdirAll(filepath.Join(dir, "config"), 0755); err != nil {
+			t.Fatalf("Failed to create config directory: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config", "config.yaml"), exampleData, 0644); err != nil {
+			t.Fatalf("Failed to write config/config.yaml: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "config", "fallback.example.json"), fallbackExampleData, 0644); err != nil {
+			t.Fatalf("Failed to write fallback.example.json: %v", err)
 		}
 
 		result, err := Load()

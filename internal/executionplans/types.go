@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gomodel/internal/core"
 )
 
 const currentSchemaVersion = 1
@@ -26,10 +28,35 @@ type Payload struct {
 
 // FeatureFlags configures gateway-owned behaviors for a request.
 type FeatureFlags struct {
-	Cache      bool `json:"cache" bson:"cache"`
-	Audit      bool `json:"audit" bson:"audit"`
-	Usage      bool `json:"usage" bson:"usage"`
-	Guardrails bool `json:"guardrails" bson:"guardrails"`
+	Cache      bool  `json:"cache" bson:"cache"`
+	Audit      bool  `json:"audit" bson:"audit"`
+	Usage      bool  `json:"usage" bson:"usage"`
+	Guardrails bool  `json:"guardrails" bson:"guardrails"`
+	Fallback   *bool `json:"fallback,omitempty" bson:"fallback,omitempty"`
+}
+
+func (f FeatureFlags) canonicalize() FeatureFlags {
+	if f.Fallback != nil {
+		return f
+	}
+	fallbackEnabled := true
+	f.Fallback = &fallbackEnabled
+	return f
+}
+
+func (f FeatureFlags) runtimeFeatures() core.ExecutionFeatures {
+	f = f.canonicalize()
+	fallback := true
+	if f.Fallback != nil {
+		fallback = *f.Fallback
+	}
+	return core.ExecutionFeatures{
+		Cache:      f.Cache,
+		Audit:      f.Audit,
+		Usage:      f.Usage,
+		Guardrails: f.Guardrails,
+		Fallback:   fallback,
+	}
 }
 
 // GuardrailStep references one named guardrail and its execution step.
@@ -91,6 +118,7 @@ func normalizePayload(payload Payload) (Payload, string, error) {
 	if payload.SchemaVersion != currentSchemaVersion {
 		return Payload{}, "", newValidationError("unsupported schema_version", nil)
 	}
+	payload.Features = payload.Features.canonicalize()
 
 	type indexedGuardrail struct {
 		step  GuardrailStep
