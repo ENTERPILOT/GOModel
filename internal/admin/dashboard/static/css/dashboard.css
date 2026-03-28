@@ -2372,7 +2372,8 @@ body.conversation-drawer-open {
     flex-direction: column;
     gap: 0;
     padding: 18px 20px 20px;
-    border-radius: 16px;
+    margin-bottom: 12px;
+    border-radius: var(--radius);
     border: 1px solid var(--border);
     background: var(--bg);
 }
@@ -2462,7 +2463,7 @@ body.conversation-drawer-open {
     justify-content: center;
     gap: 5px;
     padding: 10px 14px;
-    border-radius: 12px;
+    border-radius: var(--radius);
     border: 1px solid var(--border);
     background: var(--bg-surface);
     min-width: 72px;
@@ -2476,7 +2477,7 @@ body.conversation-drawer-open {
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
+    border-radius: var(--radius);
     background: var(--bg);
     color: var(--text-muted);
 }
@@ -2516,7 +2517,7 @@ body.conversation-drawer-open {
     display: inline-flex;
     align-items: center;
     padding: 2px 7px;
-    border-radius: 999px;
+    border-radius: var(--radius);
     font-size: 9px;
     font-weight: 800;
     letter-spacing: 0.06em;
@@ -2532,23 +2533,25 @@ body.conversation-drawer-open {
 
 .ep-node-endpoint {
     flex-direction: row;
-    padding: 8px 16px;
-    border-radius: 999px;
+    padding: 10px 14px;
+    border-radius: var(--radius);
     min-width: auto;
     gap: 7px;
-    border-color: color-mix(in srgb, var(--border) 70%, transparent);
-    background: color-mix(in srgb, var(--bg-surface) 60%, var(--bg));
+    border-color: var(--border);
+    background: var(--bg-surface);
 }
 
-.ep-node-endpoint .ep-node-icon {
-    width: 20px;
-    height: 20px;
+.ep-node-icon-endpoint {
+    width: auto;
+    height: auto;
+    justify-content: flex-start;
+    padding: 0;
     background: transparent;
-    border-radius: 4px;
+    border-radius: var(--radius);
     color: var(--text-muted);
 }
 
-.ep-node-endpoint .ep-node-icon svg {
+.ep-node-icon-endpoint svg {
     width: 14px;
     height: 14px;
 }
@@ -2562,21 +2565,21 @@ body.conversation-drawer-open {
 /* ─── Guardrails node ─── */
 
 .ep-node-guardrails {
-    border-color: color-mix(in srgb, var(--warning) 46%, var(--border));
-    background: color-mix(in srgb, var(--warning) 8%, var(--bg-surface));
+    border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
 }
 
 .ep-node-guardrails .ep-node-icon {
-    background: color-mix(in srgb, var(--warning) 16%, var(--bg));
-    color: color-mix(in srgb, var(--warning) 90%, var(--text));
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+    color: var(--accent);
 }
 
 .ep-node-guardrails .ep-node-label {
-    color: color-mix(in srgb, var(--warning) 80%, var(--text));
+    color: var(--accent);
 }
 
 .ep-node-guardrails .ep-node-sub {
-    color: color-mix(in srgb, var(--warning) 60%, var(--text-muted));
+    color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
 }
 
 /* ─── Cache node ─── */
@@ -2648,14 +2651,14 @@ body.conversation-drawer-open {
 .ep-node-ai {
     min-width: 96px;
     padding: 12px 16px;
-    border-radius: 14px;
+    border-radius: var(--radius);
     gap: 6px;
 }
 
 .ep-node-ai .ep-node-icon {
     width: 32px;
     height: 32px;
-    border-radius: 10px;
+    border-radius: var(--radius);
 }
 
 .ep-node-ai .ep-node-icon svg {
@@ -2727,7 +2730,7 @@ body.conversation-drawer-open {
     position: absolute;
     right: 0;
     bottom: 1px;
-    height: 24px;
+    height: 16px;
     border-right: 2px dashed color-mix(in srgb, var(--text-muted) 40%, var(--border));
 }
 
@@ -2764,7 +2767,7 @@ body.conversation-drawer-open {
 .ep-node-async {
     flex-direction: row;
     padding: 7px 12px;
-    border-radius: 10px;
+    border-radius: var(--radius);
     border-style: dashed;
     min-width: auto;
     gap: 7px;
@@ -2773,7 +2776,7 @@ body.conversation-drawer-open {
 .ep-node-async .ep-node-icon {
     width: 20px;
     height: 20px;
-    border-radius: 5px;
+    border-radius: var(--radius);
 }
 
 .ep-node-async .ep-node-icon svg {
@@ -2787,31 +2790,31 @@ body.conversation-drawer-open {
 }
 
 .ep-node-async-audit {
-    border-color: color-mix(in srgb, var(--success) 40%, var(--border));
-    background: color-mix(in srgb, var(--success) 7%, var(--bg-surface));
+    border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
 }
 
 .ep-node-async-audit .ep-node-icon {
-    background: color-mix(in srgb, var(--success) 14%, var(--bg));
-    color: var(--success);
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+    color: var(--accent);
 }
 
 .ep-node-async-audit .ep-node-label {
-    color: color-mix(in srgb, var(--success) 75%, var(--text-muted));
+    color: var(--accent);
 }
 
 .ep-node-async-usage {
-    border-color: color-mix(in srgb, #60a5fa 40%, var(--border));
-    background: color-mix(in srgb, #60a5fa 7%, var(--bg-surface));
+    border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
 }
 
 .ep-node-async-usage .ep-node-icon {
-    background: color-mix(in srgb, #60a5fa 14%, var(--bg));
-    color: #60a5fa;
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+    color: var(--accent);
 }
 
 .ep-node-async-usage .ep-node-label {
-    color: color-mix(in srgb, #60a5fa 75%, var(--text-muted));
+    color: var(--accent);
 }
 
 /* "ASYNC" label inline on the right of the branch */

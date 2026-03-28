@@ -57,3 +57,87 @@ test('async label stays inline on the right side of the branch', () => {
     const asyncLabelRule = readCSSRule(css, '.ep-async-label');
     assert.doesNotMatch(asyncLabelRule, /position:\s*absolute/);
 });
+
+test('workflow nodes use endpoint and feature color groups consistently', () => {
+    const css = readFixture('../../css/dashboard.css');
+
+    const endpointRule = readCSSRule(css, '.ep-node-endpoint');
+    assert.match(endpointRule, /background:\s*var\(--bg-surface\)/);
+
+    const featureSelectors = [
+        '.ep-node-guardrails',
+        '.ep-node-async-audit',
+        '.ep-node-async-usage'
+    ];
+    for (const selector of featureSelectors) {
+        const rule = readCSSRule(css, selector);
+        assert.match(rule, /border-color:\s*color-mix\(in srgb, var\(--accent\) 46%, var\(--border\)\)/);
+        assert.match(rule, /background:\s*color-mix\(in srgb, var\(--accent\) 8%, var\(--bg-surface\)\)/);
+    }
+
+    const featureIconSelectors = [
+        '.ep-node-guardrails .ep-node-icon',
+        '.ep-node-async-audit .ep-node-icon',
+        '.ep-node-async-usage .ep-node-icon'
+    ];
+    for (const selector of featureIconSelectors) {
+        const rule = readCSSRule(css, selector);
+        assert.match(rule, /background:\s*color-mix\(in srgb, var\(--accent\) 16%, var\(--bg\)\)/);
+        assert.match(rule, /color:\s*var\(--accent\)/);
+    }
+
+    const featureLabelSelectors = [
+        '.ep-node-guardrails .ep-node-label',
+        '.ep-node-async-audit .ep-node-label',
+        '.ep-node-async-usage .ep-node-label'
+    ];
+    for (const selector of featureLabelSelectors) {
+        const rule = readCSSRule(css, selector);
+        assert.match(rule, /color:\s*var\(--accent\)/);
+    }
+});
+
+test('exec pipeline has bottom spacing so adjacent cards do not touch it', () => {
+    const css = readFixture('../../css/dashboard.css');
+    const pipelineRule = readCSSRule(css, '.exec-pipeline');
+
+    assert.match(pipelineRule, /margin-bottom:\s*\d+px/);
+});
+
+test('execution pipeline uses var(--radius) for chart-local corners', () => {
+    const css = readFixture('../../css/dashboard.css');
+
+    const radiusSelectors = [
+        '.exec-pipeline',
+        '.ep-node',
+        '.ep-node-icon',
+        '.ep-node-badge',
+        '.ep-node-endpoint',
+        '.ep-node-icon-endpoint',
+        '.ep-node-ai',
+        '.ep-node-ai .ep-node-icon',
+        '.ep-node-async',
+        '.ep-node-async .ep-node-icon'
+    ];
+
+    for (const selector of radiusSelectors) {
+        const rule = readCSSRule(css, selector);
+        assert.match(rule, /border-radius:\s*var\(--radius\)/);
+    }
+});
+
+test('endpoint pills use dedicated flush-left icons and tighter right padding', () => {
+    const template = readFixture('../../../templates/index.html');
+    const css = readFixture('../../css/dashboard.css');
+
+    assert.match(template, /class="ep-node-icon ep-node-icon-endpoint"/);
+
+    const endpointRule = readCSSRule(css, '.ep-node-endpoint');
+    assert.match(endpointRule, /padding:\s*10px 14px/);
+
+    const endpointIconRule = readCSSRule(css, '.ep-node-icon-endpoint');
+    assert.match(endpointIconRule, /width:\s*auto/);
+    assert.match(endpointIconRule, /height:\s*auto/);
+    assert.match(endpointIconRule, /justify-content:\s*flex-start/);
+    assert.match(endpointIconRule, /padding:\s*0/);
+});
