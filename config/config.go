@@ -4,6 +4,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"reflect"
@@ -785,9 +786,56 @@ func loadFallbackConfig(cfg *FallbackConfig) error {
 		return fmt.Errorf("fallback.manual_rules_path: failed to read %q: %w", path, err)
 	}
 
-	var decoded map[string][]string
-	if err := json.Unmarshal([]byte(expandString(string(raw))), &decoded); err != nil {
+	expanded := expandString(string(raw))
+	decoded := make(map[string][]string)
+	decoder := json.NewDecoder(strings.NewReader(expanded))
+
+	token, err := decoder.Token()
+	if err != nil {
 		return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: %w", path, err)
+	}
+	delim, ok := token.(json.Delim)
+	if !ok || delim != '{' {
+		return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: top-level JSON value must be an object", path)
+	}
+
+	seenKeys := make(map[string]struct{})
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: %w", path, err)
+		}
+		key, ok := token.(string)
+		if !ok {
+			return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: object key must be a string", path)
+		}
+		if _, exists := seenKeys[key]; exists {
+			return fmt.Errorf("fallback.manual_rules_path: duplicate JSON key %q in %q", key, path)
+		}
+		seenKeys[key] = struct{}{}
+
+		var models []string
+		if err := decoder.Decode(&models); err != nil {
+			return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: %w", path, err)
+		}
+		decoded[key] = models
+	}
+
+	token, err = decoder.Token()
+	if err != nil {
+		return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: %w", path, err)
+	}
+	delim, ok = token.(json.Delim)
+	if !ok || delim != '}' {
+		return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: top-level JSON value must be an object", path)
+	}
+
+	var trailing json.RawMessage
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err != nil {
+			return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: %w", path, err)
+		}
+		return fmt.Errorf("fallback.manual_rules_path: failed to parse %q: unexpected trailing JSON content", path)
 	}
 
 	manual := make(map[string][]string, len(decoded))

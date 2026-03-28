@@ -464,6 +464,45 @@ func TestLoad_FallbackManualRulesDuplicateKeyAfterTrim(t *testing.T) {
 	})
 }
 
+func TestLoad_FallbackManualRulesRejectsDuplicateRawJSONKeys(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		manualRulesPath := filepath.Join(dir, "fallback.json")
+		if err := os.WriteFile(manualRulesPath, []byte(`{
+			"gpt-4o": ["azure/gpt-4o"],
+			"gpt-4o": ["gemini/gemini-2.5-pro"]
+		}`), 0644); err != nil {
+			t.Fatalf("Failed to write fallback rules: %v", err)
+		}
+
+		type yamlConfig struct {
+			Fallback struct {
+				ManualRulesPath string `yaml:"manual_rules_path"`
+			} `yaml:"fallback"`
+		}
+
+		yamlCfg := yamlConfig{}
+		yamlCfg.Fallback.ManualRulesPath = manualRulesPath
+		yamlData, err := yaml.Marshal(yamlCfg)
+		if err != nil {
+			t.Fatalf("Failed to marshal config.yaml: %v", err)
+		}
+
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), yamlData, 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
+		_, err = Load()
+		if err == nil {
+			t.Fatal("expected Load() to fail for duplicate raw JSON keys in fallback manual rules")
+		}
+		if !strings.Contains(err.Error(), `fallback.manual_rules_path: duplicate JSON key "gpt-4o"`) {
+			t.Fatalf("Load() error = %v, want duplicate raw JSON key error", err)
+		}
+	})
+}
+
 func TestLoad_FeatureFallbackModeEnvOverridesFallbackDefaultMode(t *testing.T) {
 	clearAllConfigEnvVars(t)
 	t.Setenv("FEATURE_FALLBACK_MODE", "auto")

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -388,6 +389,19 @@ func TestResponses_FallsBackToAlternateModel(t *testing.T) {
 	}
 	if len(provider.responsesCalls) != 2 {
 		t.Fatalf("responses calls = %v, want 2 attempts", provider.responsesCalls)
+	}
+	if provider.responsesCalls[0] != "gpt-4o" || provider.responsesCalls[1] != "azure/gpt-4o" {
+		t.Fatalf("responses calls = %v, want [gpt-4o azure/gpt-4o]", provider.responsesCalls)
+	}
+	var resp core.ResponsesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response body is not valid JSON: %v body=%s", err, rec.Body.String())
+	}
+	if resp.ID != "resp-fallback" || resp.Provider != "azure" || resp.Model != "gpt-4o" || resp.Status != "completed" {
+		t.Fatalf("response = %+v, want fallback response metadata", resp)
+	}
+	if len(resp.Output) != 1 || len(resp.Output[0].Content) != 1 || resp.Output[0].Content[0].Text != "fallback response" {
+		t.Fatalf("response output = %+v, want fallback response content", resp.Output)
 	}
 	if !core.GetFallbackUsed(c.Request().Context()) {
 		t.Fatal("expected request context to be marked as fallback-used")
