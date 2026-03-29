@@ -136,12 +136,6 @@
                 };
             },
 
-            _updateChartInstance(chart, config) {
-                chart.data = config.data;
-                chart.options = config.options;
-                chart.update('none');
-            },
-
             fillMissingDays(daily) {
                 if (this.interval !== 'daily') {
                     return daily;
@@ -190,13 +184,9 @@
                     const outputData = filled.map((d) => d.output_tokens);
                     const config = this._overviewChartConfig(colors, labels, inputData, outputData);
 
-                    if (this.chart && this.chart.canvas === canvas) {
-                        this._updateChartInstance(this.chart, config);
-                        return;
-                    }
-
                     if (this.chart) {
                         this.chart.destroy();
+                        this.chart = null;
                     }
 
                     this.chart = new Chart(canvas, config);
@@ -275,13 +265,9 @@
                     const palette = this._barColors();
                     const config = this._barChartConfig(colors, labels, values, palette);
 
-                    if (this.usageBarChart && this.usageBarChart.canvas === canvas) {
-                        this._updateChartInstance(this.usageBarChart, config);
-                        return;
-                    }
-
                     if (this.usageBarChart) {
                         this.usageBarChart.destroy();
+                        this.usageBarChart = null;
                     }
 
                     this.usageBarChart = new Chart(canvas, config);

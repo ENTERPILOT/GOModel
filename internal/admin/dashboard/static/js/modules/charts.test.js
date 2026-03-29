@@ -71,7 +71,7 @@ function createChartsContext() {
     return { module, canvas };
 }
 
-test('renderChart reuses the existing overview chart instance on refresh', () => {
+test('renderChart recreates the overview chart instance on refresh', () => {
     FakeChart.instances = [];
     const { module } = createChartsContext();
     module.daily = [
@@ -89,16 +89,16 @@ test('renderChart reuses the existing overview chart instance on refresh', () =>
     ];
     module.renderChart();
 
-    assert.strictEqual(module.chart, firstChart);
-    assert.equal(FakeChart.instances.length, 1);
-    assert.equal(firstChart.destroyCalls, 0);
-    assert.equal(JSON.stringify(firstChart.data.labels), JSON.stringify(['2026-03-29']));
-    assert.equal(JSON.stringify(firstChart.data.datasets[0].data), JSON.stringify([8]));
-    assert.equal(JSON.stringify(firstChart.data.datasets[1].data), JSON.stringify([13]));
-    assert.equal(JSON.stringify(firstChart.updateCalls), JSON.stringify(['none']));
+    assert.notStrictEqual(module.chart, firstChart);
+    assert.equal(FakeChart.instances.length, 2);
+    assert.equal(firstChart.destroyCalls, 1);
+    assert.equal(JSON.stringify(module.chart.data.labels), JSON.stringify(['2026-03-29']));
+    assert.equal(JSON.stringify(module.chart.data.datasets[0].data), JSON.stringify([8]));
+    assert.equal(JSON.stringify(module.chart.data.datasets[1].data), JSON.stringify([13]));
+    assert.equal(JSON.stringify(firstChart.updateCalls), JSON.stringify([]));
 });
 
-test('renderBarChart reuses the existing usage bar chart instance on refresh', () => {
+test('renderBarChart recreates the usage bar chart instance on refresh', () => {
     FakeChart.instances = [];
     const { module } = createChartsContext();
     module.page = 'usage';
@@ -118,10 +118,10 @@ test('renderBarChart reuses the existing usage bar chart instance on refresh', (
     ];
     module.renderBarChart();
 
-    assert.strictEqual(module.usageBarChart, firstChart);
-    assert.equal(FakeChart.instances.length, 1);
-    assert.equal(firstChart.destroyCalls, 0);
-    assert.equal(JSON.stringify(firstChart.data.labels), JSON.stringify(['gpt-5']));
-    assert.equal(JSON.stringify(firstChart.data.datasets[0].data), JSON.stringify([55]));
-    assert.equal(JSON.stringify(firstChart.updateCalls), JSON.stringify(['none']));
+    assert.notStrictEqual(module.usageBarChart, firstChart);
+    assert.equal(FakeChart.instances.length, 2);
+    assert.equal(firstChart.destroyCalls, 1);
+    assert.equal(JSON.stringify(module.usageBarChart.data.labels), JSON.stringify(['gpt-5']));
+    assert.equal(JSON.stringify(module.usageBarChart.data.datasets[0].data), JSON.stringify([55]));
+    assert.equal(JSON.stringify(firstChart.updateCalls), JSON.stringify([]));
 });
