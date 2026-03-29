@@ -1010,7 +1010,7 @@
                             <div class="audit-entry-meta">
                                 <span class="mono" x-text="formatTimestamp(entry.timestamp)" :title="timestampTitle(entry.timestamp)"></span>
                                 <span class="mono" x-text="formatDurationNs(entry.duration_ns)"></span>
-                                <button class="audit-conversation-trigger"
+                                <button type="button" class="audit-conversation-trigger"
                                     x-show="canShowConversation(entry)"
                                     title="Open interactions"
                                     aria-label="Open interactions"

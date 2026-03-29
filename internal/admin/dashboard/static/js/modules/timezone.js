@@ -9,7 +9,11 @@
     }
 
     function browserStorage() {
-        return global.localStorage || null;
+        try {
+            return global.localStorage || null;
+        } catch (_) {
+            return null;
+        }
     }
 
     function formatterCacheKey(locale, options) {
@@ -73,7 +77,12 @@
                     return;
                 }
 
-                const saved = storage.getItem(TIMEZONE_STORAGE_KEY) || '';
+                let saved = '';
+                try {
+                    saved = storage.getItem(TIMEZONE_STORAGE_KEY) || '';
+                } catch (_) {
+                    saved = '';
+                }
                 this.timezoneOverride = this.isSupportedTimeZone(saved) ? saved : '';
             },
 
@@ -99,7 +108,7 @@
             },
 
             formatTimestampInTimeZone(ts, timeZone) {
-                if (!ts) {
+                if (ts === null || ts === undefined) {
                     return '-';
                 }
 
@@ -277,9 +286,17 @@
                 const storage = browserStorage();
                 if (storage) {
                     if (this.timezoneOverride && this.isSupportedTimeZone(this.timezoneOverride)) {
-                        storage.setItem(TIMEZONE_STORAGE_KEY, this.timezoneOverride);
+                        try {
+                            storage.setItem(TIMEZONE_STORAGE_KEY, this.timezoneOverride);
+                        } catch (_) {
+                            // Ignore storage failures and keep the in-memory override active.
+                        }
                     } else {
-                        storage.removeItem(TIMEZONE_STORAGE_KEY);
+                        try {
+                            storage.removeItem(TIMEZONE_STORAGE_KEY);
+                        } catch (_) {
+                            // Ignore storage failures and still clear the in-memory override.
+                        }
                         this.timezoneOverride = '';
                     }
                 }
@@ -293,7 +310,11 @@
             clearTimezoneOverride() {
                 const storage = browserStorage();
                 if (storage) {
-                    storage.removeItem(TIMEZONE_STORAGE_KEY);
+                    try {
+                        storage.removeItem(TIMEZONE_STORAGE_KEY);
+                    } catch (_) {
+                        // Ignore storage failures and still clear the in-memory override.
+                    }
                 }
                 this.timezoneOverride = '';
                 this.calendarMonth = this.startOfMonthDate(this.customEndDate || this.todayDate());

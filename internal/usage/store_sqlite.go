@@ -74,6 +74,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 	// Create indexes for common queries
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_usage_timestamp ON usage(timestamp)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_timestamp_normalized ON usage(REPLACE(timestamp, ' ', 'T'))",
 		"CREATE INDEX IF NOT EXISTS idx_usage_request_id ON usage(request_id)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_provider_id ON usage(provider_id)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model)",

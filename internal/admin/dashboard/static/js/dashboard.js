@@ -239,6 +239,13 @@ function dashboard() {
             }
         },
 
+        _isCurrentAbortableRequest(controllerKey, controller) {
+            if (!controller) {
+                return true;
+            }
+            return this[controllerKey] === controller && !controller.signal.aborted;
+        },
+
         _isAbortError(error) {
             return Boolean(error) && (error.name === 'AbortError' || error.code === 20);
         },
@@ -284,6 +291,7 @@ function dashboard() {
 
         async fetchModels() {
             const controller = this._startAbortableRequest('_modelsFetchController');
+            const isCurrentRequest = () => this._isCurrentAbortableRequest('_modelsFetchController', controller);
             const options = { headers: this.headers() };
             if (controller) {
                 options.signal = controller.signal;
@@ -295,19 +303,28 @@ function dashboard() {
                     url += '?category=' + encodeURIComponent(this.activeCategory);
                 }
                 const res = await fetch(url, options);
+                if (!isCurrentRequest()) {
+                    return;
+                }
                 if (!this.handleFetchResponse(res, 'models')) {
+                    if (!isCurrentRequest()) {
+                        return;
+                    }
                     this.models = [];
                     if (typeof this.syncDisplayModels === 'function') this.syncDisplayModels();
                     return;
                 }
                 const payload = await res.json();
-                if (controller && controller.signal.aborted) {
+                if (!isCurrentRequest()) {
                     return;
                 }
                 this.models = payload;
                 if (typeof this.syncDisplayModels === 'function') this.syncDisplayModels();
             } catch (e) {
                 if (this._isAbortError(e)) {
+                    return;
+                }
+                if (!isCurrentRequest()) {
                     return;
                 }
                 console.error('Failed to fetch models:', e);

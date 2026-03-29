@@ -23,4 +23,5 @@ test('dashboard templates expose a settings page and timezone context in activit
     assert.match(template, /x-text="calendarTimeZoneText\(\)"/);
     assert.match(template, /usage-ts[^>]*x-text="formatTimestamp\(entry\.timestamp\)"[^>]*:title="timestampTitle\(entry\.timestamp\)"/);
     assert.match(template, /audit-entry-meta[\s\S]*x-text="formatTimestamp\(entry\.timestamp\)"[\s\S]*:title="timestampTitle\(entry\.timestamp\)"/);
+    assert.match(template, /<button(?=[^>]*class="audit-conversation-trigger")(?=[^>]*type="button")[^>]*>/);
 });

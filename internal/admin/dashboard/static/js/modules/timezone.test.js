@@ -21,9 +21,8 @@ function createLocalStorage(seed = {}) {
 
 function loadTimezoneModuleFactory(overrides = {}) {
     const source = fs.readFileSync(path.join(__dirname, 'timezone.js'), 'utf8');
-    const window = {
-        localStorage: createLocalStorage(),
-        ...(overrides.window || {})
+    const window = overrides.window || {
+        localStorage: createLocalStorage()
     };
     const context = {
         console,
@@ -101,6 +100,56 @@ test('timestampTitle keeps the UTC timestamp without a duplicate prefix label', 
         module.timestampTitle('2026-01-15T23:30:00Z'),
         '2026-01-15 23:30:00 UTC'
     );
+});
+
+test('formatTimestampInTimeZone accepts a zero epoch timestamp', () => {
+    const module = createTimezoneModule();
+
+    assert.equal(
+        module.formatTimestampInTimeZone(0, 'UTC'),
+        '1970-01-01 00:00:00'
+    );
+});
+
+test('loadTimezonePreference ignores localStorage accessor failures', () => {
+    const window = {};
+    Object.defineProperty(window, 'localStorage', {
+        get() {
+            throw new Error('storage denied');
+        }
+    });
+
+    const module = createTimezoneModule({ window });
+    module.detectedTimezone = 'Europe/Warsaw';
+
+    assert.doesNotThrow(() => module.loadTimezonePreference());
+    assert.equal(module.timezoneOverride, '');
+});
+
+test('saveTimezoneOverride and clearTimezoneOverride ignore localStorage method failures', () => {
+    const module = createTimezoneModule({
+        window: {
+            localStorage: {
+                getItem() {
+                    return null;
+                },
+                setItem() {
+                    throw new Error('write denied');
+                },
+                removeItem() {
+                    throw new Error('remove denied');
+                }
+            }
+        }
+    });
+    module.refreshTimeZoneData = () => {};
+
+    module.timezoneOverride = 'Pacific/Chatham';
+    assert.doesNotThrow(() => module.saveTimezoneOverride());
+    assert.equal(module.timezoneOverride, 'Pacific/Chatham');
+
+    assert.doesNotThrow(() => module.clearTimezoneOverride());
+    assert.equal(module.timezoneOverride, '');
 });
 
 test('syncTimezoneOverrideSelectValue reapplies the saved override after options render', () => {

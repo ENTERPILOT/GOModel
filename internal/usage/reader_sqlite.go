@@ -160,16 +160,20 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 
 const sqliteTimestampBoundaryLayout = "2006-01-02T15:04:05"
 
+func sqliteTimestampExpr() string {
+	return "REPLACE(timestamp, ' ', 'T')"
+}
+
 // sqliteDateRangeConditions returns WHERE conditions and args for a date range.
-// Stored timestamps are RFC3339 UTC text with optional fractional seconds, so we
-// compare against second-precision prefixes to keep lexicographic ordering correct.
+// Stored timestamps may be RFC3339 UTC text or legacy space-separated offset text,
+// so we normalize them before comparing against second-precision boundaries.
 func sqliteDateRangeConditions(params UsageQueryParams) (conditions []string, args []any) {
 	if !params.StartDate.IsZero() {
-		conditions = append(conditions, "timestamp >= ?")
+		conditions = append(conditions, sqliteTimestampExpr()+" >= ?")
 		args = append(args, sqliteTimestampBoundary(params.StartDate))
 	}
 	if !params.EndDate.IsZero() {
-		conditions = append(conditions, "timestamp < ?")
+		conditions = append(conditions, sqliteTimestampExpr()+" < ?")
 		args = append(args, sqliteTimestampBoundary(usageEndExclusive(params)))
 	}
 	return conditions, args
@@ -185,28 +189,29 @@ func sqliteGroupExpr(interval string) string {
 
 func sqliteGroupExprWithOffset(interval string, offsetMinutes int) string {
 	modifier := sqliteOffsetModifier(offsetMinutes)
+	timestampExpr := sqliteTimestampExpr()
 
 	switch interval {
 	case "weekly":
 		if modifier == "" {
-			return `strftime('%G-W%V', timestamp)`
+			return fmt.Sprintf(`strftime('%%G-W%%V', %s)`, timestampExpr)
 		}
-		return fmt.Sprintf(`strftime('%%G-W%%V', timestamp, '%s')`, modifier)
+		return fmt.Sprintf(`strftime('%%G-W%%V', %s, '%s')`, timestampExpr, modifier)
 	case "monthly":
 		if modifier == "" {
-			return `strftime('%Y-%m', timestamp)`
+			return fmt.Sprintf(`strftime('%%Y-%%m', %s)`, timestampExpr)
 		}
-		return fmt.Sprintf(`strftime('%%Y-%%m', timestamp, '%s')`, modifier)
+		return fmt.Sprintf(`strftime('%%Y-%%m', %s, '%s')`, timestampExpr, modifier)
 	case "yearly":
 		if modifier == "" {
-			return `strftime('%Y', timestamp)`
+			return fmt.Sprintf(`strftime('%%Y', %s)`, timestampExpr)
 		}
-		return fmt.Sprintf(`strftime('%%Y', timestamp, '%s')`, modifier)
+		return fmt.Sprintf(`strftime('%%Y', %s, '%s')`, timestampExpr, modifier)
 	default:
 		if modifier == "" {
-			return `DATE(timestamp)`
+			return fmt.Sprintf(`DATE(%s)`, timestampExpr)
 		}
-		return fmt.Sprintf(`DATE(timestamp, '%s')`, modifier)
+		return fmt.Sprintf(`DATE(%s, '%s')`, timestampExpr, modifier)
 	}
 }
 
@@ -303,7 +308,9 @@ func (r *SQLiteReader) sqliteGroupExpr(ctx context.Context, params UsageQueryPar
 			continue
 		}
 
-		builder.WriteString(" WHEN timestamp < ? THEN ")
+		builder.WriteString(" WHEN ")
+		builder.WriteString(sqliteTimestampExpr())
+		builder.WriteString(" < ? THEN ")
 		builder.WriteString(expr)
 		args = append(args, sqliteTimestampBoundary(segment.Until))
 	}
@@ -318,7 +325,8 @@ func (r *SQLiteReader) sqliteGroupingRange(ctx context.Context, params UsageQuer
 	}
 
 	var minTS, maxTS sql.NullString
-	if err := r.db.QueryRowContext(ctx, `SELECT MIN(timestamp), MAX(timestamp) FROM usage`).Scan(&minTS, &maxTS); err != nil {
+	query := `SELECT MIN(` + sqliteTimestampExpr() + `), MAX(` + sqliteTimestampExpr() + `) FROM usage`
+	if err := r.db.QueryRowContext(ctx, query).Scan(&minTS, &maxTS); err != nil {
 		return time.Time{}, time.Time{}, false, fmt.Errorf("failed to determine sqlite usage range: %w", err)
 	}
 	if !minTS.Valid || !maxTS.Valid {
