@@ -24,16 +24,19 @@ import (
 
 // Handler serves admin API endpoints.
 type Handler struct {
-	usageReader usage.UsageReader
-	auditReader auditlog.Reader
-	registry    *providers.ModelRegistry
-	aliases     *aliases.Service
-	plans       *executionplans.Service
-	guardrails  *guardrails.Registry
+	usageReader   usage.UsageReader
+	auditReader   auditlog.Reader
+	registry      *providers.ModelRegistry
+	aliases       *aliases.Service
+	plans         *executionplans.Service
+	guardrails    *guardrails.Registry
+	runtimeConfig map[string]string
 }
 
 // Option configures the admin API handler.
 type Option func(*Handler)
+
+const DashboardConfigFeatureFallbackMode = "FEATURE_FALLBACK_MODE"
 
 // WithAuditReader enables audit log read endpoints.
 func WithAuditReader(reader auditlog.Reader) Option {
@@ -63,12 +66,20 @@ func WithGuardrailsRegistry(registry *guardrails.Registry) Option {
 	}
 }
 
+// WithDashboardRuntimeConfig enables the allowlisted dashboard runtime config endpoint.
+func WithDashboardRuntimeConfig(values map[string]string) Option {
+	return func(h *Handler) {
+		h.runtimeConfig = normalizeDashboardRuntimeConfig(values)
+	}
+}
+
 // NewHandler creates a new admin API handler.
 // usageReader may be nil if usage tracking is not available.
 func NewHandler(reader usage.UsageReader, registry *providers.ModelRegistry, options ...Option) *Handler {
 	h := &Handler{
-		usageReader: reader,
-		registry:    registry,
+		usageReader:   reader,
+		registry:      registry,
+		runtimeConfig: map[string]string{},
 	}
 
 	for _, opt := range options {
@@ -78,6 +89,30 @@ func NewHandler(reader usage.UsageReader, registry *providers.ModelRegistry, opt
 	}
 
 	return h
+}
+
+func normalizeDashboardRuntimeConfig(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return map[string]string{}
+	}
+
+	normalized := make(map[string]string, 1)
+	if value, ok := values[DashboardConfigFeatureFallbackMode]; ok {
+		normalized[DashboardConfigFeatureFallbackMode] = strings.TrimSpace(value)
+	}
+	return normalized
+}
+
+func cloneDashboardRuntimeConfig(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return map[string]string{}
+	}
+
+	cloned := make(map[string]string, len(values))
+	for key, value := range values {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 var validIntervals = map[string]bool{
@@ -524,6 +559,11 @@ func (h *Handler) ListCategories(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, h.registry.GetCategoryCounts())
+}
+
+// DashboardConfig handles GET /admin/api/v1/dashboard/config
+func (h *Handler) DashboardConfig(c *echo.Context) error {
+	return c.JSON(http.StatusOK, cloneDashboardRuntimeConfig(h.runtimeConfig))
 }
 
 type upsertAliasRequest struct {

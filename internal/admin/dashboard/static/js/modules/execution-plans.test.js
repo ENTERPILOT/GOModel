@@ -40,6 +40,9 @@ test('executionPlanProviderOptions returns unique sorted provider types', () => 
 
 test('buildExecutionPlanRequest emits provider-model payload and strips guardrails when disabled', () => {
     const module = createExecutionPlansModule();
+    module.executionPlanRuntimeConfig = {
+        FEATURE_FALLBACK_MODE: 'manual'
+    };
     module.executionPlanForm = {
         scope_provider: 'openai',
         scope_model: 'gpt-5',
@@ -49,7 +52,8 @@ test('buildExecutionPlanRequest emits provider-model payload and strips guardrai
             cache: true,
             audit: true,
             usage: true,
-            guardrails: false
+            guardrails: false,
+            fallback: false
         },
         guardrails: [
             { ref: 'policy-system', step: 10 }
@@ -69,7 +73,8 @@ test('buildExecutionPlanRequest emits provider-model payload and strips guardrai
                     cache: true,
                     audit: true,
                     usage: true,
-                    guardrails: false
+                    guardrails: false,
+                    fallback: false
                 },
                 guardrails: []
             }
@@ -83,7 +88,8 @@ test('openExecutionPlanCreate hydrates features and guardrails via shared normal
         cache: false,
         audit: false,
         usage: true,
-        guardrails: true
+        guardrails: true,
+        fallback: false
     });
     module.executionPlanSourceGuardrails = () => ([
         { ref: 'policy-system', step: 30 }
@@ -116,7 +122,8 @@ test('openExecutionPlanCreate hydrates features and guardrails via shared normal
             cache: false,
             audit: false,
             usage: true,
-            guardrails: true
+            guardrails: true,
+            fallback: false
         })
     );
     assert.equal(
@@ -144,7 +151,8 @@ test('editing a cloned workflow preserves retired provider and model options', (
                 cache: true,
                 audit: true,
                 usage: true,
-                guardrails: false
+                guardrails: false,
+                fallback: true
             },
             guardrails: []
         }
@@ -170,6 +178,9 @@ test('editing a cloned workflow preserves retired provider and model options', (
 
 test('buildExecutionPlanRequest preserves blank guardrail steps as invalid so validation rejects them', () => {
     const module = createExecutionPlansModule();
+    module.executionPlanRuntimeConfig = {
+        FEATURE_FALLBACK_MODE: 'manual'
+    };
     module.models = [
         { provider_type: 'openai', model: { id: 'gpt-5' } }
     ];
@@ -182,7 +193,8 @@ test('buildExecutionPlanRequest preserves blank guardrail steps as invalid so va
             cache: true,
             audit: true,
             usage: true,
-            guardrails: true
+            guardrails: true,
+            fallback: true
         },
         guardrails: [
             { ref: 'policy-system', step: '   ' }
@@ -195,6 +207,89 @@ test('buildExecutionPlanRequest preserves blank guardrail steps as invalid so va
     assert.equal(
         module.validateExecutionPlanRequest(payload),
         'Each guardrail step must use a non-negative integer step number.'
+    );
+});
+
+test('executionPlanSourceFeatures defaults fallback to true when omitted', () => {
+    const module = createExecutionPlansModule();
+
+    assert.equal(
+        JSON.stringify(module.executionPlanSourceFeatures({
+            plan_payload: {
+                features: {
+                    cache: true,
+                    audit: false,
+                    usage: true,
+                    guardrails: false
+                }
+            }
+        })),
+        JSON.stringify({
+            cache: true,
+            audit: false,
+            usage: true,
+            guardrails: false,
+            fallback: true
+        })
+    );
+});
+
+test('fetchExecutionPlanRuntimeConfig loads FEATURE_FALLBACK_MODE from the admin config endpoint', async () => {
+    const module = createExecutionPlansModule({
+        fetch(url, options) {
+            assert.equal(url, '/admin/api/v1/dashboard/config');
+            assert.equal(options.headers.authorization, 'Bearer token');
+            return Promise.resolve({
+                ok: true,
+                json: async () => ({
+                    FEATURE_FALLBACK_MODE: 'manual',
+                    UNRELATED_FLAG: 'ignored'
+                })
+            });
+        }
+    });
+    module.headers = () => ({ authorization: 'Bearer token' });
+    module.handleFetchResponse = () => true;
+
+    await module.fetchExecutionPlanRuntimeConfig();
+
+    assert.equal(
+        JSON.stringify(module.executionPlanRuntimeConfig),
+        JSON.stringify({
+            FEATURE_FALLBACK_MODE: 'manual'
+        })
+    );
+});
+
+test('buildExecutionPlanRequest preserves fallback state even when the control is hidden', () => {
+    const module = createExecutionPlansModule();
+    module.executionPlanRuntimeConfig = {
+        FEATURE_FALLBACK_MODE: 'off'
+    };
+    module.executionPlanForm = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        name: 'OpenAI GPT-5',
+        description: 'Preserve hidden fallback state',
+        features: {
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: false,
+            fallback: false
+        },
+        guardrails: []
+    };
+
+    assert.equal(
+        JSON.stringify(module.buildExecutionPlanRequest().plan_payload.features),
+        JSON.stringify({
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: false,
+            fallback: false
+        })
     );
 });
 

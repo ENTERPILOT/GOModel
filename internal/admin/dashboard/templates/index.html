@@ -711,6 +711,10 @@
                         <input type="checkbox" x-model="executionPlanForm.features.guardrails">
                         <span>Guardrails</span>
                     </label>
+                    <label class="execution-plan-feature-toggle" x-show="executionPlanFailoverVisible()">
+                        <input type="checkbox" x-model="executionPlanForm.features.fallback">
+                        <span>Failover</span>
+                    </label>
                 </div>
 
                 <div class="execution-plan-guardrail-editor" x-show="executionPlanForm.features.guardrails">
@@ -763,6 +767,7 @@
                         </div>
 
                         <p class="execution-plan-card-description" x-show="plan.description" x-text="plan.description"></p>
+                        <p class="alias-form-hint" x-show="executionPlanFailoverVisible()" x-text="'Failover: ' + executionPlanFallbackLabel(plan)"></p>
 
                         <!-- Execution Pipeline -->
                         <div class="exec-pipeline">

@@ -114,6 +114,19 @@ test('execution plan authoring inputs expose stable accessible names', () => {
     );
 });
 
+test('workflow failover controls are gated by the runtime FEATURE_FALLBACK_MODE flag', () => {
+    const template = readFixture('../../../templates/index.html');
+
+    assert.match(
+        template,
+        /x-show="executionPlanFailoverVisible\(\)"[\s\S]*x-model="executionPlanForm\.features\.fallback"/
+    );
+    assert.match(
+        template,
+        /x-show="executionPlanFailoverVisible\(\)"[\s\S]*x-text="'Failover: ' \+ executionPlanFallbackLabel\(plan\)"/
+    );
+});
+
 test('execution plan card actions expose plan-specific accessible names', () => {
     const template = readFixture('../../../templates/index.html');
 

@@ -280,6 +280,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			app.aliases.Service,
 			executionPlanResult.Service,
 			guardrailRegistry,
+			dashboardRuntimeConfig(appCfg),
 			adminCfg.UIEnabled,
 		)
 		if adminErr != nil {
@@ -569,6 +570,7 @@ func initAdmin(
 	aliasService *aliases.Service,
 	executionPlanService *executionplans.Service,
 	guardrailRegistry *guardrails.Registry,
+	runtimeConfig map[string]string,
 	uiEnabled bool,
 ) (*admin.Handler, *dashboard.Handler, error) {
 	// Find a storage connection for reading usage data
@@ -607,6 +609,7 @@ func initAdmin(
 		admin.WithAliases(aliasService),
 		admin.WithExecutionPlans(executionPlanService),
 		admin.WithGuardrailsRegistry(guardrailRegistry),
+		admin.WithDashboardRuntimeConfig(runtimeConfig),
 	)
 
 	var dashHandler *dashboard.Handler
@@ -716,6 +719,24 @@ func defaultExecutionPlanInput(cfg *config.Config) executionplans.CreateInput {
 		Description: "Bootstrapped from runtime configuration",
 		Payload:     payload,
 	}
+}
+
+func dashboardRuntimeConfig(cfg *config.Config) map[string]string {
+	return map[string]string{
+		admin.DashboardConfigFeatureFallbackMode: dashboardFallbackModeValue(cfg),
+	}
+}
+
+func dashboardFallbackModeValue(cfg *config.Config) string {
+	if cfg == nil {
+		return string(config.FallbackModeOff)
+	}
+
+	mode := strings.ToLower(strings.TrimSpace(string(cfg.Fallback.DefaultMode)))
+	if mode == "" {
+		return string(config.FallbackModeOff)
+	}
+	return mode
 }
 
 func runtimeExecutionFeatureCaps(cfg *config.Config) core.ExecutionFeatures {

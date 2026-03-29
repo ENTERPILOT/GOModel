@@ -4,6 +4,7 @@
             executionPlans: [],
             executionPlansAvailable: true,
             executionPlansLoading: false,
+            executionPlanRuntimeConfig: {},
             executionPlanError: '',
             executionPlanNotice: '',
             executionPlanFilter: '',
@@ -25,7 +26,8 @@
                     cache: true,
                     audit: true,
                     usage: true,
-                    guardrails: false
+                    guardrails: false,
+                    fallback: true
                 },
                 guardrails: []
             },
@@ -40,10 +42,29 @@
                         cache: true,
                         audit: true,
                         usage: true,
-                        guardrails: false
+                        guardrails: false,
+                        fallback: true
                     },
                     guardrails: []
                 };
+            },
+
+            executionPlanRuntimeConfigKeys() {
+                return ['FEATURE_FALLBACK_MODE'];
+            },
+
+            executionPlanRuntimeFlag(name) {
+                const value = this.executionPlanRuntimeConfig && this.executionPlanRuntimeConfig[name];
+                return String(value || '').trim().toLowerCase();
+            },
+
+            executionPlanFailoverVisible() {
+                const mode = this.executionPlanRuntimeFlag('FEATURE_FALLBACK_MODE');
+                return mode !== '' && mode !== 'off';
+            },
+
+            executionPlanFallbackLabel(source) {
+                return this.executionPlanSourceFeatures(source).fallback ? 'On' : 'Off';
             },
 
             defaultExecutionPlanGuardrailStep(step) {
@@ -145,7 +166,8 @@
                     cache: !!raw.cache,
                     audit: !!raw.audit,
                     usage: !!raw.usage,
-                    guardrails: !!raw.guardrails
+                    guardrails: !!raw.guardrails,
+                    fallback: raw.fallback !== false
                 };
             },
 
@@ -232,7 +254,8 @@
                         cache: !!features.cache,
                         audit: !!features.audit,
                         usage: !!features.usage,
-                        guardrails: !!features.guardrails
+                        guardrails: !!features.guardrails,
+                        fallback: !!features.fallback
                     },
                     guardrails: guardrails.map((step) => ({
                         ref: String(step && step.ref || ''),
@@ -300,7 +323,7 @@
                     })
                     : [];
 
-                return {
+                const payload = {
                     scope_provider: provider,
                     scope_model: model,
                     name: String(form.name || '').trim(),
@@ -311,11 +334,36 @@
                             cache: !!features.cache,
                             audit: !!features.audit,
                             usage: !!features.usage,
-                            guardrails: !!features.guardrails
+                            guardrails: !!features.guardrails,
+                            fallback: !!features.fallback
                         },
                         guardrails
                     }
                 };
+
+                return payload;
+            },
+
+            async fetchExecutionPlanRuntimeConfig() {
+                try {
+                    const res = await fetch('/admin/api/v1/dashboard/config', { headers: this.headers() });
+                    if (!this.handleFetchResponse(res, 'dashboard config')) {
+                        this.executionPlanRuntimeConfig = {};
+                        return;
+                    }
+                    const payload = await res.json();
+                    const next = {};
+                    const allowedKeys = this.executionPlanRuntimeConfigKeys();
+                    for (const key of allowedKeys) {
+                        if (payload && typeof payload === 'object' && !Array.isArray(payload) && payload[key] !== undefined && payload[key] !== null) {
+                            next[key] = String(payload[key]).trim();
+                        }
+                    }
+                    this.executionPlanRuntimeConfig = next;
+                } catch (e) {
+                    console.error('Failed to fetch dashboard config:', e);
+                    this.executionPlanRuntimeConfig = {};
+                }
             },
 
             validateExecutionPlanRequest(payload) {
@@ -431,7 +479,11 @@
             },
 
             async fetchExecutionPlansPage() {
-                await Promise.all([this.fetchExecutionPlans(), this.fetchExecutionPlanGuardrails()]);
+                await Promise.all([
+                    this.fetchExecutionPlanRuntimeConfig(),
+                    this.fetchExecutionPlans(),
+                    this.fetchExecutionPlanGuardrails()
+                ]);
             },
 
             async submitExecutionPlanForm() {

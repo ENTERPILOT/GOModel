@@ -163,6 +163,7 @@ func newExecutionPlanHandlerWithModelRegistry(t *testing.T, store executionplans
 }
 
 func TestListExecutionPlans(t *testing.T) {
+	fallbackDisabled := false
 	store := &executionPlanTestStore{
 		versions: []executionplans.Version{
 			{
@@ -174,7 +175,7 @@ func TestListExecutionPlans(t *testing.T) {
 				Name:     "global",
 				Payload: executionplans.Payload{
 					SchemaVersion: 1,
-					Features:      executionplans.FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+					Features:      executionplans.FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false, Fallback: &fallbackDisabled},
 				},
 				PlanHash: "hash-global",
 			},
@@ -204,8 +205,14 @@ func TestListExecutionPlans(t *testing.T) {
 	if body[0].ScopeDisplay != "global" {
 		t.Fatalf("scope display = %q, want global", body[0].ScopeDisplay)
 	}
+	if body[0].Payload.Features.Fallback == nil || *body[0].Payload.Features.Fallback {
+		t.Fatalf("payload fallback = %v, want explicit false", body[0].Payload.Features.Fallback)
+	}
 	if !body[0].EffectiveFeatures.Cache || !body[0].EffectiveFeatures.Audit || !body[0].EffectiveFeatures.Usage {
 		t.Fatalf("effective features = %+v, want cache/audit/usage enabled", body[0].EffectiveFeatures)
+	}
+	if body[0].EffectiveFeatures.Fallback {
+		t.Fatalf("effective features = %+v, want fallback disabled", body[0].EffectiveFeatures)
 	}
 }
 
@@ -334,7 +341,7 @@ func TestCreateExecutionPlan(t *testing.T) {
 		"description":"provider-model plan",
 		"plan_payload":{
 			"schema_version":1,
-			"features":{"cache":false,"audit":true,"usage":true,"guardrails":false},
+			"features":{"cache":false,"audit":true,"usage":true,"guardrails":false,"fallback":false},
 			"guardrails":[]
 		}
 	}`))
@@ -358,6 +365,9 @@ func TestCreateExecutionPlan(t *testing.T) {
 	}
 	if body.Name != "openai gpt-5" {
 		t.Fatalf("name = %q, want openai gpt-5", body.Name)
+	}
+	if body.Payload.Features.Fallback == nil || *body.Payload.Features.Fallback {
+		t.Fatalf("payload fallback = %v, want explicit false", body.Payload.Features.Fallback)
 	}
 
 	views, err := h.plans.ListViews(context.Background())
