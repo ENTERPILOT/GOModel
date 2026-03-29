@@ -2235,33 +2235,54 @@ body.conversation-drawer-open {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: 16px;
+    height: 16px;
+    padding: 0;
     border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-    border-radius: 999px;
-    background:
-        radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 62%),
-        color-mix(in srgb, var(--bg-surface-hover) 82%, var(--accent) 18%);
+    border-radius: 4px;
+    background: transparent;
     color: var(--accent);
-    box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 14%, transparent);
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease;
+    transition: color 0.18s ease, border-color 0.18s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .timezone-help-toggle:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 12px 28px color-mix(in srgb, var(--accent) 20%, transparent);
-}
-
-.timezone-help-toggle.is-open {
-    background: color-mix(in srgb, var(--accent) 18%, var(--bg-surface));
+    background: transparent;
+    border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
     color: var(--text);
 }
 
+.timezone-help-toggle:active {
+    background: transparent;
+}
+
+.timezone-help-toggle:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+    outline-offset: 2px;
+}
+
+.timezone-help-toggle.is-open {
+    color: var(--text);
+    background: transparent;
+}
+
 .timezone-help-toggle-icon {
-    font-size: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    padding-bottom: 1px;
+    font-size: 13px;
     font-weight: 700;
     line-height: 1;
+    transform: rotate(0deg);
+    transition: transform 0.52s cubic-bezier(0.22, 0.72, 0.12, 1);
+}
+
+.timezone-help-toggle.is-open .timezone-help-toggle-icon {
+    transform: rotate(540deg);
 }
 
 .settings-panel-copy {
@@ -2272,12 +2293,6 @@ body.conversation-drawer-open {
 
 .settings-panel-copy-collapsible {
     margin-top: 2px;
-    padding: 12px 14px;
-    border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
-    border-radius: 12px;
-    background:
-        linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 58%),
-        color-mix(in srgb, var(--bg-surface-hover) 78%, var(--accent) 8%);
 }
 
 .settings-form-grid {

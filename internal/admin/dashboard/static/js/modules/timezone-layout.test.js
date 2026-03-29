@@ -7,6 +7,13 @@ function readFixture(relativePath) {
     return fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
 }
 
+function readCSSRule(source, selector) {
+    const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = source.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, 'm'));
+    assert.ok(match, `Expected CSS rule for ${selector}`);
+    return match[1];
+}
+
 test('dashboard layout loads the timezone module before the main bootstrap', () => {
     const layout = readFixture('../../../templates/layout.html');
 
@@ -15,6 +22,7 @@ test('dashboard layout loads the timezone module before the main bootstrap', () 
 
 test('dashboard templates expose a settings page and timezone context in activity and log timestamps', () => {
     const template = readFixture('../../../templates/index.html');
+    const css = readFixture('../../css/dashboard.css');
 
     assert.match(template, /<div x-show="page==='settings'">[\s\S]*<h2>User Settings<\/h2>/);
     assert.match(template, /x-ref="timezoneOverrideSelect"/);
@@ -28,7 +36,8 @@ test('dashboard templates expose a settings page and timezone context in activit
     assert.match(template, /class="timezone-help-toggle"/);
     assert.match(template, /@click="timezoneHelpOpen = !timezoneHelpOpen"/);
     assert.match(template, /class="timezone-help-toggle-icon"/);
-    assert.match(template, /x-text="timezoneHelpOpen \? '−' : '\?'"/);
+    assert.match(template, /<span class="timezone-help-toggle-icon"[^>]*>\?<\/span>/);
+    assert.doesNotMatch(template, /x-text="timezoneHelpOpen \? '−' : '\?'"/);
     assert.match(template, /id="timezone-help-copy"/);
     assert.match(template, /x-show="timezoneHelpOpen"/);
     assert.match(template, /x-transition\.opacity\.duration\.200ms/);
@@ -42,4 +51,29 @@ test('dashboard templates expose a settings page and timezone context in activit
     assert.match(template, /:title="timestampTitle\(entry\.timestamp\)"/);
     assert.match(template, /class="audit-entry-meta"/);
     assert.match(template, /<button(?=[^>]*class="audit-conversation-trigger")(?=[^>]*type="button")[^>]*>/);
+
+    const toggleRule = readCSSRule(css, '.timezone-help-toggle');
+    assert.match(toggleRule, /width:\s*16px/);
+    assert.match(toggleRule, /height:\s*16px/);
+    assert.match(toggleRule, /border-radius:\s*4px/);
+    assert.match(toggleRule, /background:\s*transparent/);
+    assert.doesNotMatch(toggleRule, /box-shadow:/);
+
+    const toggleHoverRule = readCSSRule(css, '.timezone-help-toggle:hover');
+    assert.match(toggleHoverRule, /background:\s*transparent/);
+    assert.doesNotMatch(toggleHoverRule, /transform:/);
+
+    const toggleOpenRule = readCSSRule(css, '.timezone-help-toggle.is-open');
+    assert.match(toggleOpenRule, /background:\s*transparent/);
+
+    const iconRule = readCSSRule(css, '.timezone-help-toggle-icon');
+    assert.match(iconRule, /transform:\s*rotate\(0deg\)/);
+
+    const iconOpenRule = readCSSRule(css, '.timezone-help-toggle.is-open .timezone-help-toggle-icon');
+    assert.match(iconOpenRule, /transform:\s*rotate\(540deg\)/);
+
+    const copyRule = readCSSRule(css, '.settings-panel-copy-collapsible');
+    assert.doesNotMatch(copyRule, /border:/);
+    assert.doesNotMatch(copyRule, /background:/);
+    assert.doesNotMatch(copyRule, /padding:/);
 });
