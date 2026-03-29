@@ -158,29 +158,27 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 	}, nil
 }
 
-const sqliteTimestampBoundaryLayout = "2006-01-02T15:04:05"
-
-func sqliteTimestampExpr() string {
+func sqliteTimestampTextExpr() string {
 	return "REPLACE(timestamp, ' ', 'T')"
+}
+
+func sqliteTimestampEpochExpr() string {
+	return "unixepoch(" + sqliteTimestampTextExpr() + ")"
 }
 
 // sqliteDateRangeConditions returns WHERE conditions and args for a date range.
 // Stored timestamps may be RFC3339 UTC text or legacy space-separated offset text,
-// so we normalize them before comparing against second-precision boundaries.
+// so we normalize them and compare using epoch seconds to preserve absolute ordering.
 func sqliteDateRangeConditions(params UsageQueryParams) (conditions []string, args []any) {
 	if !params.StartDate.IsZero() {
-		conditions = append(conditions, sqliteTimestampExpr()+" >= ?")
-		args = append(args, sqliteTimestampBoundary(params.StartDate))
+		conditions = append(conditions, sqliteTimestampEpochExpr()+" >= ?")
+		args = append(args, params.StartDate.UTC().Unix())
 	}
 	if !params.EndDate.IsZero() {
-		conditions = append(conditions, sqliteTimestampExpr()+" < ?")
-		args = append(args, sqliteTimestampBoundary(usageEndExclusive(params)))
+		conditions = append(conditions, sqliteTimestampEpochExpr()+" < ?")
+		args = append(args, usageEndExclusive(params).UTC().Unix())
 	}
 	return conditions, args
-}
-
-func sqliteTimestampBoundary(t time.Time) string {
-	return t.UTC().Format(sqliteTimestampBoundaryLayout)
 }
 
 func sqliteGroupExpr(interval string) string {
@@ -189,7 +187,7 @@ func sqliteGroupExpr(interval string) string {
 
 func sqliteGroupExprWithOffset(interval string, offsetMinutes int) string {
 	modifier := sqliteOffsetModifier(offsetMinutes)
-	timestampExpr := sqliteTimestampExpr()
+	timestampExpr := sqliteTimestampTextExpr()
 
 	switch interval {
 	case "weekly":
@@ -309,10 +307,10 @@ func (r *SQLiteReader) sqliteGroupExpr(ctx context.Context, params UsageQueryPar
 		}
 
 		builder.WriteString(" WHEN ")
-		builder.WriteString(sqliteTimestampExpr())
+		builder.WriteString(sqliteTimestampEpochExpr())
 		builder.WriteString(" < ? THEN ")
 		builder.WriteString(expr)
-		args = append(args, sqliteTimestampBoundary(segment.Until))
+		args = append(args, segment.Until.UTC().Unix())
 	}
 	builder.WriteString(" END")
 
@@ -324,8 +322,8 @@ func (r *SQLiteReader) sqliteGroupingRange(ctx context.Context, params UsageQuer
 		return params.StartDate.UTC(), usageEndExclusive(params).UTC(), true, nil
 	}
 
-	var minTS, maxTS sql.NullString
-	query := `SELECT MIN(` + sqliteTimestampExpr() + `), MAX(` + sqliteTimestampExpr() + `) FROM usage`
+	var minTS, maxTS sql.NullInt64
+	query := `SELECT MIN(` + sqliteTimestampEpochExpr() + `), MAX(` + sqliteTimestampEpochExpr() + `) FROM usage`
 	if err := r.db.QueryRowContext(ctx, query).Scan(&minTS, &maxTS); err != nil {
 		return time.Time{}, time.Time{}, false, fmt.Errorf("failed to determine sqlite usage range: %w", err)
 	}
@@ -333,13 +331,9 @@ func (r *SQLiteReader) sqliteGroupingRange(ctx context.Context, params UsageQuer
 		return time.Time{}, time.Time{}, false, nil
 	}
 
-	start := parseUsageTimestamp(minTS.String)
-	end := parseUsageTimestamp(maxTS.String)
-	if start.IsZero() || end.IsZero() {
-		return time.Time{}, time.Time{}, false, nil
-	}
-
-	return start.UTC(), end.UTC().Add(time.Second), true, nil
+	start := time.Unix(minTS.Int64, 0).UTC()
+	end := time.Unix(maxTS.Int64, 0).UTC()
+	return start, end.Add(time.Second), true, nil
 }
 
 func sqliteTimeZoneSegments(startUTC time.Time, endUTC time.Time, location *time.Location) []sqliteTimeZoneSegment {

@@ -194,3 +194,19 @@ test('endpoint pills use dedicated flush-left icons and tighter right padding', 
     assert.match(endpointIconRule, /justify-content:\s*flex-start/);
     assert.match(endpointIconRule, /padding:\s*0/);
 });
+
+test('main content stays offset from the sidebar but centers on wide screens', () => {
+    const template = readFixture('../../../templates/layout.html');
+    const css = readFixture('../../css/dashboard.css');
+
+    assert.match(template, /<main class="content" :class="\{ 'content-collapsed': sidebarCollapsed \}">/);
+
+    const contentRule = readCSSRule(css, '.content');
+    assert.match(contentRule, /width:\s*min\(1200px,\s*calc\(100%\s*-\s*var\(--sidebar-width\)\)\)/);
+    assert.match(contentRule, /margin-left:\s*max\(var\(--sidebar-width\),\s*calc\(\(100%\s*-\s*min\(1200px,\s*calc\(100%\s*-\s*var\(--sidebar-width\)\)\)\)\s*\/\s*2\)\)/);
+    assert.match(contentRule, /margin-right:\s*auto/);
+
+    const collapsedRule = readCSSRule(css, '.content.content-collapsed');
+    assert.match(collapsedRule, /width:\s*min\(1200px,\s*calc\(100%\s*-\s*60px\)\)/);
+    assert.match(collapsedRule, /margin-left:\s*max\(60px,\s*calc\(\(100%\s*-\s*min\(1200px,\s*calc\(100%\s*-\s*60px\)\)\)\s*\/\s*2\)\)/);
+});
