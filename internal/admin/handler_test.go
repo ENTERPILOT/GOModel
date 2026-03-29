@@ -1140,6 +1140,32 @@ func TestListCategories_WithModels(t *testing.T) {
 	}
 }
 
+func TestDashboardConfig_ReturnsAllowlistedRuntimeFlags(t *testing.T) {
+	h := NewHandler(nil, nil, WithDashboardRuntimeConfig(map[string]string{
+		"FEATURE_FALLBACK_MODE": "auto",
+		"UNRELATED_FLAG":        "hidden",
+	}))
+	c, rec := newHandlerContext("/admin/api/v1/dashboard/config")
+
+	if err := h.DashboardConfig(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if got := body["FEATURE_FALLBACK_MODE"]; got != "auto" {
+		t.Fatalf("FEATURE_FALLBACK_MODE = %q, want auto", got)
+	}
+	if _, ok := body["UNRELATED_FLAG"]; ok {
+		t.Fatal("UNRELATED_FLAG should not be exposed")
+	}
+}
+
 // --- handleError tests ---
 
 func TestHandleError_GatewayErrors(t *testing.T) {
