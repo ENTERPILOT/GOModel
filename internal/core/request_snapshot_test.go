@@ -92,6 +92,9 @@ func TestNewRequestSnapshotWithOwnedBody_TakesOwnershipOfCapturedBytes(t *testin
 	if len(view) == 0 {
 		t.Fatal("captured body unexpectedly empty")
 	}
+	if got := snapshot.UserPath; got != "/team/a" {
+		t.Fatalf("UserPath = %q, want /team/a", got)
+	}
 	if &view[0] != &rawBody[0] {
 		t.Fatal("snapshot did not take ownership of the captured body bytes")
 	}

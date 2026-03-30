@@ -258,7 +258,7 @@ func (s *Service) Deactivate(ctx context.Context, id string) error {
 	version.Scope = scope
 	version.ScopeKey = scopeKey
 
-	if scope.Provider == "" && scope.Model == "" {
+	if scope.Provider == "" && scope.Model == "" && scope.UserPath == "" {
 		return newValidationError("cannot deactivate the global workflow", nil)
 	}
 	if !version.Active {
@@ -614,9 +614,9 @@ func viewScopeSpecificity(scopeType string) int {
 	case "global":
 		return 0
 	case "path":
-		return 1
-	case "provider":
 		return 2
+	case "provider":
+		return 1
 	case "provider_path":
 		return 3
 	case "provider_model":

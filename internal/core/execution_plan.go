@@ -84,8 +84,6 @@ func NewExecutionPlanSelector(provider, model string, userPath ...string) Execut
 	if len(userPath) > 0 {
 		if normalized, err := NormalizeUserPath(userPath[0]); err == nil {
 			selector.UserPath = normalized
-		} else {
-			selector.UserPath = strings.TrimSpace(userPath[0])
 		}
 	}
 	return selector

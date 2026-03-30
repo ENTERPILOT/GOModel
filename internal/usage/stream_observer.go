@@ -21,7 +21,9 @@ func NewStreamUsageObserver(logger LoggerInterface, model, provider, requestID, 
 	}
 	var normalizedUserPath string
 	if len(userPath) > 0 {
-		normalizedUserPath = userPath[0]
+		if normalized, err := core.NormalizeUserPath(userPath[0]); err == nil {
+			normalizedUserPath = normalized
+		}
 	}
 	return &StreamUsageObserver{
 		logger:          logger,

@@ -56,3 +56,15 @@ func TestUserPathAncestors(t *testing.T) {
 		}
 	}
 }
+
+func TestUserPathAncestors_Root(t *testing.T) {
+	t.Parallel()
+
+	got := UserPathAncestors("/")
+	if len(got) != 1 {
+		t.Fatalf("len(UserPathAncestors(\"/\")) = %d, want 1 (%v)", len(got), got)
+	}
+	if got[0] != "/" {
+		t.Fatalf("UserPathAncestors(\"/\")[0] = %q, want /", got[0])
+	}
+}

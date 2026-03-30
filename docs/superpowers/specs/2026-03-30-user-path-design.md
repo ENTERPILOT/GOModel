@@ -84,6 +84,9 @@ Admin filters on `user_path` are subtree filters:
 - filter `/team` matches `/team`
 - filter `/team` matches `/team/a`
 - filter `/team` does not match `/team-b`
+- filter `/` matches `/`
+- filter `/` matches the entire hierarchy, including descendants such as `/team`
+  and `/team/a`
 
 This applies to:
 
@@ -92,6 +95,15 @@ This applies to:
 - usage by model
 - usage log
 - audit log
+
+Applying `user_path=/` in admin filters therefore means "all users/paths" for
+those reports. SQL and MongoDB implementations must treat `/` as the full
+subtree, not only the exact root row.
+
+Examples:
+
+- admin filter `/team` returns `/team`, `/team/a`, `/team/a/user`
+- admin filter `/` returns `/`, `/team`, `/team/a`, `/team/a/user`
 
 ## Request Plumbing
 

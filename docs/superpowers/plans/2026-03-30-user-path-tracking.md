@@ -10,7 +10,7 @@
 
 ---
 
-### Task 1: Canonical User Path Core
+## Task 1: Canonical User Path Core
 
 **Files:**
 - Create: `internal/core/user_path.go`
@@ -42,7 +42,7 @@ func UserPathAncestors(path string) []string {}
 
 Run: `go test ./internal/core -run 'TestNormalizeUserPath|TestUserPathAncestors'`
 
-### Task 2: Execution Plan Path Scope
+## Task 2: Execution Plan Path Scope
 
 **Files:**
 - Modify: `internal/core/execution_plan.go`
@@ -67,7 +67,7 @@ Run: `go test ./internal/executionplans ./internal/admin -run 'ExecutionPlan|Nor
 
 Run: `go test ./internal/executionplans ./internal/admin -run 'ExecutionPlan|NormalizeScope'`
 
-### Task 3: Audit Log Persistence And Filtering
+## Task 3: Audit Log Persistence And Filtering
 
 **Files:**
 - Modify: `internal/auditlog/auditlog.go`
@@ -94,7 +94,7 @@ Run: `go test ./internal/auditlog ./internal/admin ./tests/integration -run 'Aud
 
 Run: `go test ./internal/auditlog ./internal/admin ./tests/integration -run 'Audit|user_path'`
 
-### Task 4: Usage Persistence And Filtering
+## Task 4: Usage Persistence And Filtering
 
 **Files:**
 - Modify: `internal/usage/usage.go`
@@ -123,7 +123,7 @@ Run: `go test ./internal/usage ./internal/admin ./tests/integration -run 'Usage|
 
 Run: `go test ./internal/usage ./internal/admin ./tests/integration -run 'Usage|user_path'`
 
-### Task 5: Dashboard Authoring And Filters
+## Task 5: Dashboard Authoring And Filters
 
 **Files:**
 - Modify: `internal/admin/dashboard/static/js/modules/execution-plans.js`
@@ -142,7 +142,7 @@ Run: `go test ./internal/admin/dashboard/...`
 
 Run: `go test ./internal/admin/dashboard/...`
 
-### Task 6: Full Verification
+## Task 6: Full Verification
 
 **Files:**
 - Verify only

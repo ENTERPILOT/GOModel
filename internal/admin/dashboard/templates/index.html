@@ -152,7 +152,7 @@
                     <option :value="p" x-text="p"></option>
                 </template>
             </select>
-            <input type="text" placeholder="User path /team/alpha" x-model="usageLogUserPath" @input.debounce.300ms="fetchUsageLog(true)" class="filter-input">
+            <input type="text" placeholder="User path /team/alpha" aria-label="Filter by user path" x-model="usageLogUserPath" @input.debounce.300ms="fetchUsageLog(true)" class="filter-input">
         </div>
         <div class="table-wrapper" x-show="usageLog.entries.length > 0">
             <table class="data-table usage-log-table">

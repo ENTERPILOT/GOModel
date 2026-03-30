@@ -271,18 +271,22 @@
             executionPlanCurrentScope() {
                 const form = this.executionPlanForm || this.defaultExecutionPlanForm();
                 const provider = String(form.scope_provider || '').trim();
+                const userPath = this.normalizeExecutionPlanScopeUserPath(form.scope_user_path);
                 return {
                     scope_provider: provider,
-                    scope_model: provider ? String(form.scope_model || '').trim() : ''
+                    scope_model: provider ? String(form.scope_model || '').trim() : '',
+                    scope_user_path: userPath
                 };
             },
 
             executionPlanScopeMatches(plan, scope) {
-                const normalized = scope || { scope_provider: '', scope_model: '' };
+                const normalized = scope || { scope_provider: '', scope_model: '', scope_user_path: '' };
                 const provider = String(plan && plan.scope && plan.scope.scope_provider || '').trim();
                 const model = provider ? String(plan && plan.scope && plan.scope.scope_model || '').trim() : '';
+                const userPath = this.normalizeExecutionPlanScopeUserPath(plan && plan.scope && plan.scope.scope_user_path);
                 return provider === String(normalized.scope_provider || '').trim()
-                    && model === String(normalized.scope_model || '').trim();
+                    && model === String(normalized.scope_model || '').trim()
+                    && userPath === this.normalizeExecutionPlanScopeUserPath(normalized.scope_user_path);
             },
 
             executionPlanActiveScopeMatch() {
@@ -509,6 +513,14 @@
                 this.executionPlanForm.guardrails.splice(index, 1);
             },
 
+            normalizeExecutionPlanScopeUserPath(value) {
+                const trimmed = String(value || '').trim();
+                if (!trimmed) {
+                    return '';
+                }
+                return trimmed.startsWith('/') ? trimmed : '/' + trimmed;
+            },
+
             buildExecutionPlanRequest() {
                 const form = this.executionPlanForm || this.defaultExecutionPlanForm();
                 const provider = String(form.scope_provider || '').trim();
@@ -524,10 +536,12 @@
                     : null;
                 const hydratedScope = this.executionPlanHydratedScope || {
                     scope_provider: '',
-                    scope_model: ''
+                    scope_model: '',
+                    scope_user_path: ''
                 };
                 const sameHydratedScope = String(hydratedScope.scope_provider || '').trim() === provider
-                    && String(hydratedScope.scope_model || '').trim() === model;
+                    && String(hydratedScope.scope_model || '').trim() === model
+                    && this.normalizeExecutionPlanScopeUserPath(hydratedScope.scope_user_path) === this.normalizeExecutionPlanScopeUserPath(userPath);
                 const includeFallback = this.executionPlanFailoverVisible()
                     || (!!this.executionPlanFormHydrated
                         && sameHydratedScope

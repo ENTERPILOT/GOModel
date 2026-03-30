@@ -540,6 +540,15 @@ func TestServiceListViews_AnnotatesCompileFailuresPerRow(t *testing.T) {
 	}
 }
 
+func TestViewScopeSpecificity_PathExceedsProvider(t *testing.T) {
+	if got, want := viewScopeSpecificity("path"), 2; got != want {
+		t.Fatalf("viewScopeSpecificity(path) = %d, want %d", got, want)
+	}
+	if got, want := viewScopeSpecificity("provider"), 1; got != want {
+		t.Fatalf("viewScopeSpecificity(provider) = %d, want %d", got, want)
+	}
+}
+
 func TestServiceDeactivate_RefreshesSnapshot(t *testing.T) {
 	store := &staticStore{
 		versions: []Version{
@@ -624,6 +633,51 @@ func TestServiceDeactivate_RejectsGlobalWorkflow(t *testing.T) {
 	}
 	if !IsValidationError(err) {
 		t.Fatalf("Deactivate() error = %v, want validation error", err)
+	}
+}
+
+func TestServiceDeactivate_AllowsPathScopedWorkflow(t *testing.T) {
+	store := &staticStore{
+		versions: []Version{
+			{
+				ID:       "global-v1",
+				Scope:    Scope{},
+				ScopeKey: "global",
+				Version:  1,
+				Active:   true,
+				Name:     "global",
+				Payload: Payload{
+					SchemaVersion: 1,
+					Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+				},
+			},
+			{
+				ID:       "path-v1",
+				Scope:    Scope{UserPath: "/team/a"},
+				ScopeKey: "path:/team/a",
+				Version:  1,
+				Active:   true,
+				Name:     "path-only",
+				Payload: Payload{
+					SchemaVersion: 1,
+					Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+				},
+			},
+		},
+	}
+	service, err := NewService(store, NewCompiler(nil))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	if err := service.Deactivate(context.Background(), "path-v1"); err != nil {
+		t.Fatalf("Deactivate() error = %v", err)
+	}
+	if store.versions[1].Active {
+		t.Fatal("path-scoped workflow remained active after deactivation")
 	}
 }
 

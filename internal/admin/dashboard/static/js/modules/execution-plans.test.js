@@ -1014,6 +1014,20 @@ test('validateExecutionPlanRequest accepts slashless scope_user_path values', ()
     module.models = [
         { provider_type: 'openai', model: { id: 'gpt-5' } }
     ];
+    module.executionPlans = [
+        {
+            id: 'openai-gpt-5-team-alpha',
+            scope: {
+                scope_provider: 'openai',
+                scope_model: 'gpt-5',
+                scope_user_path: '/team/alpha'
+            }
+        }
+    ];
+    module.executionPlanForm = module.defaultExecutionPlanForm();
+    module.executionPlanForm.scope_provider = 'openai';
+    module.executionPlanForm.scope_model = 'gpt-5';
+    module.executionPlanForm.scope_user_path = 'team/alpha';
 
     const payload = {
         scope_provider: 'openai',
@@ -1033,6 +1047,8 @@ test('validateExecutionPlanRequest accepts slashless scope_user_path values', ()
     };
 
     assert.equal(module.validateExecutionPlanRequest(payload), '');
+    assert.equal(module.executionPlanActiveScopeMatch().id, 'openai-gpt-5-team-alpha');
+    assert.equal(module.executionPlanSubmitMode(), 'save');
 });
 
 test('setExecutionPlanProvider clears model when provider changes', () => {
