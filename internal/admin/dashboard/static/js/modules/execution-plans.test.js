@@ -255,6 +255,32 @@ test('validateExecutionPlanRequest rejects duplicate guardrail refs', () => {
     );
 });
 
+test('validateExecutionPlanRequest accepts slashless scope_user_path values', () => {
+    const module = createExecutionPlansModule();
+    module.models = [
+        { provider_type: 'openai', model: { id: 'gpt-5' } }
+    ];
+
+    const payload = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        scope_user_path: 'team/alpha',
+        name: 'Scoped workflow',
+        plan_payload: {
+            schema_version: 1,
+            features: {
+                cache: true,
+                audit: true,
+                usage: true,
+                guardrails: false
+            },
+            guardrails: []
+        }
+    };
+
+    assert.equal(module.validateExecutionPlanRequest(payload), '');
+});
+
 test('setExecutionPlanProvider clears model when provider changes', () => {
     const module = createExecutionPlansModule();
     module.models = [

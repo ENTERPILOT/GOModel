@@ -16,6 +16,9 @@ func normalizeAuditUserPathFilter(raw string) (string, error) {
 }
 
 func auditUserPathSubtreePattern(userPath string) string {
+	if userPath == "/" {
+		return "/%"
+	}
 	return escapeLikeWildcards(userPath) + "/%"
 }
 

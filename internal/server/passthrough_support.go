@@ -122,6 +122,9 @@ func skipPassthroughHeader(key string) bool {
 }
 
 func skipPassthroughRequestHeader(key string) bool {
+	if http.CanonicalHeaderKey(strings.TrimSpace(key)) == http.CanonicalHeaderKey(core.UserPathHeader) {
+		return true
+	}
 	return skipPassthroughHeader(key)
 }
 

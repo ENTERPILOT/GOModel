@@ -334,7 +334,6 @@
             validateExecutionPlanRequest(payload) {
                 const preservedProvider = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_provider || '').trim();
                 const preservedModel = String(this.executionPlanHydratedScope && this.executionPlanHydratedScope.scope_model || '').trim();
-                const userPath = String(payload.scope_user_path || '').trim();
 
                 if (payload.scope_provider) {
                     const providers = this.executionPlanProviderOptions();
@@ -352,10 +351,6 @@
                         return 'Choose a registered model for the selected provider.';
                     }
                 }
-                if (userPath && !userPath.startsWith('/')) {
-                    return 'Path scopes must start with /.';
-                }
-
                 const features = payload.plan_payload && payload.plan_payload.features ? payload.plan_payload.features : {};
                 const guardrails = Array.isArray(payload.plan_payload && payload.plan_payload.guardrails)
                     ? payload.plan_payload.guardrails
