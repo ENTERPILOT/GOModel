@@ -7,6 +7,13 @@ function readFixture(relativePath) {
     return fs.readFileSync(path.join(__dirname, relativePath), 'utf8');
 }
 
+function readExecutionPlanTemplateSource() {
+    return [
+        readFixture('../../../templates/index.html'),
+        readFixture('../../../templates/execution-plan-chart.html')
+    ].join('\n');
+}
+
 function readCSSRule(source, selector) {
     const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = source.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, 'm'));
@@ -15,7 +22,7 @@ function readCSSRule(source, selector) {
 }
 
 test('async pipeline branch spans full width and offsets the turn below the main row', () => {
-    const template = readFixture('../../../templates/index.html');
+    const template = readExecutionPlanTemplateSource();
     const css = readFixture('../../css/dashboard.css');
 
     assert.match(
@@ -46,7 +53,7 @@ test('async pipeline branch spans full width and offsets the turn below the main
 });
 
 test('async label stays inline on the right side of the branch', () => {
-    const template = readFixture('../../../templates/index.html');
+    const template = readExecutionPlanTemplateSource();
     const css = readFixture('../../css/dashboard.css');
 
     assert.match(
@@ -140,6 +147,20 @@ test('workflow actions use New Workflow copy for open and submit buttons', () =>
     );
 });
 
+test('workflow editor uses the shared helper disclosure instead of a title-only question mark', () => {
+    const template = [
+        readFixture('../../../templates/index.html'),
+        readFixture('../../../templates/helper-disclosure.html')
+    ].join('\n');
+
+    assert.match(
+        template,
+        /{{template "helper-disclosure" "\{ heading: 'Workflow', open: false, copyId: 'workflow-help-copy'[\s\S]*Create immutable version\. Submitting activates it for the selected scope\./
+    );
+    assert.doesNotMatch(template, /class="execution-plan-help"/);
+    assert.doesNotMatch(template, /title="Create immutable version\. Submitting activates it for the selected scope\."/);
+});
+
 test('workflow failover controls are gated by the runtime FEATURE_FALLBACK_MODE flag', () => {
     const template = readFixture('../../../templates/index.html');
 
@@ -155,32 +176,37 @@ test('workflow failover controls are gated by the runtime FEATURE_FALLBACK_MODE 
 
 test('workflow editor renders a live preview card from the draft workflow state', () => {
     const template = readFixture('../../../templates/index.html');
+    const chartTemplate = readFixture('../../../templates/execution-plan-chart.html');
 
     assert.match(
         template,
-        /<article class="execution-plan-card execution-plan-preview-card">[\s\S]*x-text="workflowDisplayName\(executionPlanPreview\(\)\)"[\s\S]*x-text="planScopeLabel\(executionPlanPreview\(\)\)"[\s\S]*x-text="'Failover: ' \+ executionPlanFallbackLabel\(executionPlanPreview\(\)\)"[\s\S]*x-show="epHasGuardrails\(executionPlanPreview\(\)\)"[\s\S]*x-show="planGuardrails\(executionPlanPreview\(\)\)\.length > 0"/
+        /<article class="execution-plan-card execution-plan-preview-card">[\s\S]*x-text="workflowDisplayName\(executionPlanPreview\(\)\)"[\s\S]*x-text="planScopeLabel\(executionPlanPreview\(\)\)"[\s\S]*x-text="'Failover: ' \+ executionPlanFallbackLabel\(executionPlanPreview\(\)\)"[\s\S]*{{template "execution-plan-chart" "executionPlanWorkflowChart\(executionPlanPreview\(\)\)"}}[\s\S]*x-show="planGuardrails\(executionPlanPreview\(\)\)\.length > 0"/
+    );
+    assert.match(
+        chartTemplate,
+        /{{define "execution-plan-chart"}}[\s\S]*x-show="{{\.}}\.showGuardrails"[\s\S]*x-show="{{\.}}\.showCache"[\s\S]*x-text="{{\.}}\.aiLabel"/
     );
 });
 
 test('audit log pipeline always renders cache and binds runtime highlight classes across the full path', () => {
-    const template = readFixture('../../../templates/index.html');
+    const template = readExecutionPlanTemplateSource();
     const css = readFixture('../../css/dashboard.css');
 
     assert.match(
         template,
-        /<div class="ep-step">[\s\S]*:class="epCacheNodeClass\(epRuntimeFromEntry\(entry\)\)"[\s\S]*x-text="epCacheStatusLabel\(epRuntimeFromEntry\(entry\)\)"/
+        /{{template "execution-plan-chart" "executionPlanAuditChart\(entry\)"}}[\s\S]*<div class="ep-step" x-show="{{\.}}\.showCache">[\s\S]*:class="{{\.}}\.cacheNodeClass"[\s\S]*x-text="{{\.}}\.cacheStatusLabel"/
     );
     assert.match(
         template,
-        /x-show="epHasGuardrails\(auditEntryExecutionPlan\(entry\)\)"[\s\S]*x-show="epHasUsage\(auditEntryExecutionPlan\(entry\)\)"[\s\S]*x-show="epHasAudit\(auditEntryExecutionPlan\(entry\)\)"/
+        /x-show="{{\.}}\.showGuardrails"[\s\S]*x-show="{{\.}}\.showUsage"[\s\S]*x-show="{{\.}}\.showAudit"/
     );
     assert.match(
         template,
-        /<div class="ep-conn ep-conn-grow" :class="epAiConnClass\(epRuntimeFromEntry\(entry\)\)"><\/div>[\s\S]*<div class="ep-node ep-node-ai" :class="epAiNodeClass\(epRuntimeFromEntry\(entry\)\)">/
+        /<div class="ep-conn ep-conn-grow" :class="{{\.}}\.aiConnClass"><\/div>[\s\S]*<div class="ep-node ep-node-ai" :class="{{\.}}\.aiNodeClass">/
     );
     assert.match(
         template,
-        /<div class="ep-conn ep-conn-grow" :class="epResponseConnClass\(epRuntimeFromEntry\(entry\)\)"><\/div>[\s\S]*<div class="ep-node ep-node-endpoint" :class="epResponseNodeClass\(epRuntimeFromEntry\(entry\)\)">/
+        /<div class="ep-conn ep-conn-grow" :class="{{\.}}\.responseConnClass"><\/div>[\s\S]*<div class="ep-node ep-node-endpoint" :class="{{\.}}\.responseNodeClass">/
     );
 
     const aiSuccessRule = readCSSRule(css, '.ep-node-ai-success');
@@ -214,11 +240,11 @@ test('execution plan card actions expose plan-specific accessible names', () => 
 });
 
 test('guardrails node only renders a sublabel when step detail exists', () => {
-    const template = readFixture('../../../templates/index.html');
+    const template = readExecutionPlanTemplateSource();
 
     assert.match(
         template,
-        /<span class="ep-node-label">Guardrails<\/span>\s*<span class="ep-node-sub" x-show="epGuardrailLabel\(plan\)" x-text="epGuardrailLabel\(plan\)"><\/span>/
+        /<span class="ep-node-label">Guardrails<\/span>\s*<span class="ep-node-sub" x-show="{{\.}}\.guardrailLabel" x-text="{{\.}}\.guardrailLabel"><\/span>/
     );
 });
 
@@ -258,15 +284,23 @@ test('execution pipeline uses var(--radius) for chart-local corners', () => {
 });
 
 test('AI node renders as a text-only card without an icon', () => {
-    const template = readFixture('../../../templates/index.html');
+    const template = readExecutionPlanTemplateSource();
     const css = readFixture('../../css/dashboard.css');
 
     assert.doesNotMatch(template, /class="ep-node ep-node-ai[^"]*"[^>]*>\s*<div class="ep-node-icon">/);
     assert.doesNotMatch(css, /\.ep-node-ai \.ep-node-icon\s*\{/);
 });
 
-test('endpoint pills use dedicated flush-left icons and tighter right padding', () => {
+test('workflow cards reuse the extracted execution plan chart template', () => {
     const template = readFixture('../../../templates/index.html');
+
+    assert.match(template, /{{template "execution-plan-chart" "executionPlanWorkflowChart\(executionPlanPreview\(\)\)"}}/);
+    assert.match(template, /{{template "execution-plan-chart" "executionPlanWorkflowChart\(plan\)"}}/);
+    assert.match(template, /{{template "execution-plan-chart" "executionPlanAuditChart\(entry\)"}}/);
+});
+
+test('endpoint pills use dedicated flush-left icons and tighter right padding', () => {
+    const template = readExecutionPlanTemplateSource();
     const css = readFixture('../../css/dashboard.css');
 
     assert.match(template, /class="ep-node-icon ep-node-icon-endpoint"/);

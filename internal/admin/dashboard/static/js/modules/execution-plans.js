@@ -77,6 +77,15 @@
                 };
             },
 
+            parseExecutionPlanGuardrailStep(rawStep) {
+                const trimmedStep = rawStep === null || rawStep === undefined ? '' : String(rawStep).trim();
+                if (trimmedStep === '') {
+                    return Number.NaN;
+                }
+                const parsedStep = Number(trimmedStep);
+                return Number.isFinite(parsedStep) ? parsedStep : Number.NaN;
+            },
+
             get filteredExecutionPlans() {
                 if (!this.executionPlanFilter) {
                     return this.executionPlans;
@@ -264,7 +273,7 @@
                 return raw
                     .map((step) => ({
                         ref: String(step && step.ref || '').trim(),
-                        step: Number(step && step.step)
+                        step: this.parseExecutionPlanGuardrailStep(step && step.step)
                     }))
                     .filter((step) => Number.isFinite(step.step));
             },
@@ -399,14 +408,9 @@
 
                 const guardrails = !!features.guardrails
                     ? (Array.isArray(form.guardrails) ? form.guardrails : []).map((step) => {
-                        const rawStep = step && step.step;
-                        const trimmedStep = rawStep === null || rawStep === undefined ? '' : String(rawStep).trim();
-                        const parsedStep = trimmedStep !== '' && Number.isFinite(Number(trimmedStep))
-                            ? Number(trimmedStep)
-                            : Number.NaN;
                         return {
                             ref: String(step && step.ref || '').trim(),
-                            step: parsedStep
+                            step: this.parseExecutionPlanGuardrailStep(step && step.step)
                         };
                     })
                     : [];
@@ -435,8 +439,16 @@
             },
 
             async fetchExecutionPlanRuntimeConfig() {
+                const controller = typeof AbortController === 'function' ? new AbortController() : null;
+                const timeoutID = controller && typeof setTimeout === 'function'
+                    ? setTimeout(() => controller.abort(), 10000)
+                    : null;
                 try {
-                    const res = await fetch('/admin/api/v1/dashboard/config', { headers: this.headers() });
+                    const request = { headers: this.headers() };
+                    if (controller) {
+                        request.signal = controller.signal;
+                    }
+                    const res = await fetch('/admin/api/v1/dashboard/config', request);
                     if (!this.handleFetchResponse(res, 'dashboard config')) {
                         this.executionPlanRuntimeConfig = {};
                         return;
@@ -453,6 +465,10 @@
                 } catch (e) {
                     console.error('Failed to fetch dashboard config:', e);
                     this.executionPlanRuntimeConfig = {};
+                } finally {
+                    if (timeoutID !== null && typeof clearTimeout === 'function') {
+                        clearTimeout(timeoutID);
+                    }
                 }
             },
 
@@ -795,6 +811,37 @@
                 return source && source.scope && source.scope.scope_model || null;
             },
 
+            executionPlanChartModel(source, runtime, options) {
+                const config = options || {};
+                return {
+                    showGuardrails: this.epHasGuardrails(source),
+                    guardrailLabel: this.epGuardrailLabel(source),
+                    showCache: !!config.forceCache || this.epShowCacheStep(source, runtime),
+                    cacheNodeClass: this.epCacheNodeClass(runtime),
+                    cacheConnClass: this.epCacheConnClass(runtime),
+                    cacheStatusLabel: this.epCacheStatusLabel(runtime),
+                    aiLabel: this.epAiLabel(source, runtime),
+                    aiSublabel: this.epAiSublabel(source, runtime),
+                    aiConnClass: this.epAiConnClass(runtime),
+                    aiNodeClass: this.epAiNodeClass(runtime),
+                    responseConnClass: this.epResponseConnClass(runtime),
+                    responseNodeClass: this.epResponseNodeClass(runtime),
+                    showAsync: this.epHasAsync(source),
+                    showUsage: this.epHasUsage(source),
+                    showAudit: this.epHasAudit(source)
+                };
+            },
+
+            executionPlanWorkflowChart(source) {
+                return this.executionPlanChartModel(source, null, { forceCache: false });
+            },
+
+            executionPlanAuditChart(entry) {
+                const source = this.auditEntryExecutionPlan(entry);
+                const runtime = this.epRuntimeFromEntry(entry);
+                return this.executionPlanChartModel(source, runtime, { forceCache: true });
+            },
+
             // runtime shape: {
             //   cacheHit: bool,
             //   cacheType: 'exact'|'semantic'|null,
@@ -871,7 +918,7 @@
                     : (entry.cache_hit !== undefined && entry.cache_hit !== null)
                         ? !!entry.cache_hit
                         : false;
-                const responseSuccess = statusCode === 200;
+                const responseSuccess = Number.isFinite(statusCode) && statusCode >= 200 && statusCode < 300;
                 return {
                     cacheHit,
                     cacheType: normalizedCacheType || null,
