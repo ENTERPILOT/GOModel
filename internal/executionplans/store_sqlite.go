@@ -51,30 +51,19 @@ func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
 			return nil, fmt.Errorf("initialize execution plan versions table: %w", err)
 		}
 	}
-	hasUserPathColumn, err := sqliteTableHasColumn(db, "execution_plan_versions", "scope_user_path")
-	if err != nil {
+	if _, err := db.Exec(`ALTER TABLE execution_plan_versions ADD COLUMN scope_user_path TEXT`); err != nil && !isSQLiteDuplicateColumnError(err) {
 		return nil, fmt.Errorf("initialize execution plan versions table: %w", err)
-	}
-	if !hasUserPathColumn {
-		if _, err := db.Exec(`ALTER TABLE execution_plan_versions ADD COLUMN scope_user_path TEXT`); err != nil {
-			return nil, fmt.Errorf("initialize execution plan versions table: %w", err)
-		}
 	}
 
 	return &SQLiteStore{db: db}, nil
 }
 
-func sqliteTableHasColumn(db *sql.DB, tableName, columnName string) (bool, error) {
-	escapedTableName := strings.ReplaceAll(tableName, `'`, `''`)
-	row := db.QueryRow(
-		fmt.Sprintf(`SELECT COUNT(*) > 0 FROM pragma_table_info('%s') WHERE name = ?`, escapedTableName),
-		columnName,
-	)
-	var exists bool
-	if err := row.Scan(&exists); err != nil {
-		return false, fmt.Errorf("check %s.%s column existence: %w", tableName, columnName, err)
+func isSQLiteDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
 	}
-	return exists, nil
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "duplicate column") || strings.Contains(message, "already exists")
 }
 
 func (s *SQLiteStore) ListActive(ctx context.Context) ([]Version, error) {

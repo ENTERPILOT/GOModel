@@ -134,13 +134,13 @@ Run: `go test ./internal/usage ./internal/admin ./tests/integration -run 'Usage|
 - [ ] **Step 1: Write failing UI/module tests for `scope_user_path`**
 - [ ] **Step 2: Run focused dashboard tests and verify RED**
 
-Run: `go test ./internal/admin/dashboard/...`
+Run: `node --test internal/admin/dashboard/static/js/modules/execution-plans.test.js`
 
 - [ ] **Step 3: Add `scope_user_path` authoring and display support**
 - [ ] **Step 4: Add `user_path` filter plumbing to usage and audit list requests**
 - [ ] **Step 5: Run focused dashboard tests and verify GREEN**
 
-Run: `go test ./internal/admin/dashboard/...`
+Run: `node --test internal/admin/dashboard/static/js/modules/execution-plans.test.js`
 
 ## Task 6: Full Verification
 

@@ -1,6 +1,10 @@
 package usage
 
-import "gomodel/internal/core"
+import (
+	"log/slog"
+
+	"gomodel/internal/core"
+)
 
 // StreamUsageObserver extracts usage data from parsed SSE JSON payloads.
 type StreamUsageObserver struct {
@@ -23,6 +27,9 @@ func NewStreamUsageObserver(logger LoggerInterface, model, provider, requestID, 
 	if len(userPath) > 0 {
 		if normalized, err := core.NormalizeUserPath(userPath[0]); err == nil {
 			normalizedUserPath = normalized
+		} else {
+			slog.Warn("stream usage observer received invalid user_path; preserving raw value", "user_path", userPath[0], "error", err)
+			normalizedUserPath = userPath[0]
 		}
 	}
 	return &StreamUsageObserver{
