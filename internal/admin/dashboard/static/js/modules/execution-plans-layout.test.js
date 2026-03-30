@@ -114,6 +114,32 @@ test('execution plan authoring inputs expose stable accessible names', () => {
     );
 });
 
+test('workflow editor labels the audit toggle as Audit Logs', () => {
+    const template = readFixture('../../../templates/index.html');
+
+    assert.match(
+        template,
+        /x-model="executionPlanForm\.features\.audit"[\s\S]*?<span>Audit Logs<\/span>/
+    );
+});
+
+test('workflow actions use New Workflow copy for open and submit buttons', () => {
+    const template = readFixture('../../../templates/index.html');
+
+    assert.match(
+        template,
+        /@click="openExecutionPlanCreate\(\)">New Workflow<\/button>/
+    );
+    assert.match(
+        template,
+        /class="pagination-btn pagination-btn-primary execution-plan-submit-btn"[\s\S]*executionPlanSubmitting \? executionPlanSubmittingLabel\(\) : executionPlanSubmitLabel\(\)/
+    );
+    assert.match(
+        template,
+        /execution-plan-submit-icon[\s\S]*<svg x-show="executionPlanSubmitMode\(\) === 'create'" viewBox="0 0 24 24">[\s\S]*<svg x-show="executionPlanSubmitMode\(\) === 'save'" viewBox="0 0 24 24">/
+    );
+});
+
 test('workflow failover controls are gated by the runtime FEATURE_FALLBACK_MODE flag', () => {
     const template = readFixture('../../../templates/index.html');
 
@@ -125,6 +151,53 @@ test('workflow failover controls are gated by the runtime FEATURE_FALLBACK_MODE 
         template,
         /x-show="executionPlanFailoverVisible\(\)"[\s\S]*x-text="'Failover: ' \+ executionPlanFallbackLabel\(plan\)"/
     );
+});
+
+test('workflow editor renders a live preview card from the draft workflow state', () => {
+    const template = readFixture('../../../templates/index.html');
+
+    assert.match(
+        template,
+        /<article class="execution-plan-card execution-plan-preview-card">[\s\S]*x-text="workflowDisplayName\(executionPlanPreview\(\)\)"[\s\S]*x-text="planScopeLabel\(executionPlanPreview\(\)\)"[\s\S]*x-text="'Failover: ' \+ executionPlanFallbackLabel\(executionPlanPreview\(\)\)"[\s\S]*x-show="epHasGuardrails\(executionPlanPreview\(\)\)"[\s\S]*x-show="planGuardrails\(executionPlanPreview\(\)\)\.length > 0"/
+    );
+});
+
+test('audit log pipeline always renders cache and binds runtime highlight classes across the full path', () => {
+    const template = readFixture('../../../templates/index.html');
+    const css = readFixture('../../css/dashboard.css');
+
+    assert.match(
+        template,
+        /<div class="ep-step">[\s\S]*:class="epCacheNodeClass\(epRuntimeFromEntry\(entry\)\)"[\s\S]*x-text="epCacheStatusLabel\(epRuntimeFromEntry\(entry\)\)"/
+    );
+    assert.match(
+        template,
+        /x-show="epHasGuardrails\(auditEntryExecutionPlan\(entry\)\)"[\s\S]*x-show="epHasUsage\(auditEntryExecutionPlan\(entry\)\)"[\s\S]*x-show="epHasAudit\(auditEntryExecutionPlan\(entry\)\)"/
+    );
+    assert.match(
+        template,
+        /<div class="ep-conn ep-conn-grow" :class="epAiConnClass\(epRuntimeFromEntry\(entry\)\)"><\/div>[\s\S]*<div class="ep-node ep-node-ai" :class="epAiNodeClass\(epRuntimeFromEntry\(entry\)\)">/
+    );
+    assert.match(
+        template,
+        /<div class="ep-conn ep-conn-grow" :class="epResponseConnClass\(epRuntimeFromEntry\(entry\)\)"><\/div>[\s\S]*<div class="ep-node ep-node-endpoint" :class="epResponseNodeClass\(epRuntimeFromEntry\(entry\)\)">/
+    );
+
+    const aiSuccessRule = readCSSRule(css, '.ep-node-ai-success');
+    assert.match(aiSuccessRule, /border-color:\s*color-mix\(in srgb, var\(--success\) 52%, var\(--border\)\)/);
+    assert.match(aiSuccessRule, /background:\s*color-mix\(in srgb, var\(--success\) 9%, var\(--bg-surface\)\)/);
+
+    const endpointSuccessRule = readCSSRule(css, '.ep-node-endpoint-success');
+    assert.match(endpointSuccessRule, /border-color:\s*color-mix\(in srgb, var\(--success\) 52%, var\(--border\)\)/);
+    assert.match(endpointSuccessRule, /background:\s*color-mix\(in srgb, var\(--success\) 9%, var\(--bg-surface\)\)/);
+
+    const semanticCacheRule = readCSSRule(css, '.ep-node-cache-semantic');
+    assert.match(semanticCacheRule, /border-color:\s*color-mix\(in srgb, var\(--success\) 52%, var\(--border\)\)/);
+    assert.match(semanticCacheRule, /background:\s*color-mix\(in srgb, var\(--success\) 9%, var\(--bg-surface\)\)/);
+
+    const skippedAiRule = readCSSRule(css, '.ep-node-ai-skipped');
+    assert.match(skippedAiRule, /position:\s*relative/);
+    assert.match(skippedAiRule, /opacity:\s*0\.28/);
 });
 
 test('execution plan card actions expose plan-specific accessible names', () => {

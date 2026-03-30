@@ -33,6 +33,9 @@
                     if (requestToken !== this.auditFetchToken) return;
                     this.auditLog = payload;
                     if (!this.auditLog.entries) this.auditLog.entries = [];
+                    if (typeof this.prefetchAuditExecutionPlans === 'function') {
+                        await this.prefetchAuditExecutionPlans(this.auditLog.entries);
+                    }
                 } catch (e) {
                     console.error('Failed to fetch audit log:', e);
                     if (requestToken !== this.auditFetchToken) return;

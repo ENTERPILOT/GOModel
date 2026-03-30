@@ -1291,6 +1291,7 @@ td.col-price {
 }
 
 .execution-plan-guardrails,
+.execution-plan-preview,
 .execution-plan-guardrail-editor {
     display: flex;
     flex-direction: column;
@@ -2053,6 +2054,32 @@ body.conversation-drawer-open {
     border-color: color-mix(in srgb, var(--accent) 78%, #000 12%);
 }
 
+.execution-plan-submit-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.execution-plan-submit-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+}
+
+.execution-plan-submit-icon svg {
+    width: 16px;
+    height: 16px;
+    fill: none;
+    stroke: currentcolor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
 .pagination-btn:disabled {
     opacity: 0.4;
     cursor: default;
@@ -2235,6 +2262,7 @@ body.conversation-drawer-open {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    position: relative;
     width: 16px;
     height: 16px;
     padding: 0;
@@ -2245,6 +2273,18 @@ body.conversation-drawer-open {
     cursor: pointer;
     transition: color 0.18s ease, border-color 0.18s ease;
     -webkit-tap-highlight-color: transparent;
+}
+
+.timezone-help-toggle::before {
+    content: "";
+    position: absolute;
+    width: 32px;
+    height: 32px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: transparent;
+    pointer-events: auto;
 }
 
 .timezone-help-toggle:hover {
@@ -2691,6 +2731,19 @@ body.conversation-drawer-open {
     color: var(--text-muted);
 }
 
+.ep-node-endpoint-success {
+    border-color: color-mix(in srgb, var(--success) 52%, var(--border));
+    background: color-mix(in srgb, var(--success) 9%, var(--bg-surface));
+}
+
+.ep-node-endpoint-success .ep-node-icon-endpoint {
+    color: var(--success);
+}
+
+.ep-node-endpoint-success .ep-node-label {
+    color: color-mix(in srgb, var(--success) 85%, var(--text));
+}
+
 /* ─── Guardrails node ─── */
 
 .ep-node-guardrails {
@@ -2750,23 +2803,23 @@ body.conversation-drawer-open {
 
 /* Cache — runtime: semantic hit */
 .ep-node-cache-semantic {
-    border-color: color-mix(in srgb, #a78bfa 46%, var(--border));
-    background: color-mix(in srgb, #a78bfa 8%, var(--bg-surface));
+    border-color: color-mix(in srgb, var(--success) 52%, var(--border));
+    background: color-mix(in srgb, var(--success) 9%, var(--bg-surface));
 }
 
 .ep-node-cache-semantic .ep-node-icon {
-    background: color-mix(in srgb, #a78bfa 16%, var(--bg));
-    color: #a78bfa;
+    background: color-mix(in srgb, var(--success) 18%, var(--bg));
+    color: var(--success);
 }
 
 .ep-node-cache-semantic .ep-node-label {
-    color: #a78bfa;
+    color: color-mix(in srgb, var(--success) 85%, var(--text));
 }
 
 .ep-node-cache-semantic .ep-node-badge {
-    background: color-mix(in srgb, #a78bfa 14%, var(--bg));
-    border-color: color-mix(in srgb, #a78bfa 38%, var(--border));
-    color: #a78bfa;
+    background: color-mix(in srgb, var(--success) 14%, var(--bg));
+    border-color: color-mix(in srgb, var(--success) 38%, var(--border));
+    color: var(--success);
 }
 
 /* Cache — runtime: miss badge only */
@@ -2784,8 +2837,22 @@ body.conversation-drawer-open {
     gap: 6px;
 }
 
+.ep-node-ai-success {
+    border-color: color-mix(in srgb, var(--success) 52%, var(--border));
+    background: color-mix(in srgb, var(--success) 9%, var(--bg-surface));
+}
+
+.ep-node-ai-success .ep-node-label {
+    color: color-mix(in srgb, var(--success) 85%, var(--text));
+}
+
+.ep-node-ai-success .ep-node-sub {
+    color: color-mix(in srgb, var(--success) 78%, var(--text-muted));
+}
+
 /* AI skipped — cache hit absorbed the request */
 .ep-node-ai-skipped {
+    position: relative;
     opacity: 0.28;
 }
 

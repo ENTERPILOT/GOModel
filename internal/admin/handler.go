@@ -727,6 +727,28 @@ func (h *Handler) ListExecutionPlans(c *echo.Context) error {
 	return c.JSON(http.StatusOK, views)
 }
 
+// GetExecutionPlan handles GET /admin/api/v1/execution-plans/:id
+func (h *Handler) GetExecutionPlan(c *echo.Context) error {
+	if h.plans == nil {
+		return handleError(c, h.executionPlansUnavailableError())
+	}
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("execution plan id is required", nil))
+	}
+
+	view, err := h.plans.GetView(c.Request().Context(), id)
+	if err != nil {
+		if errors.Is(err, executionplans.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("workflow not found: "+id))
+		}
+		return handleError(c, err)
+	}
+
+	return c.JSON(http.StatusOK, view)
+}
+
 // ListExecutionPlanGuardrails handles GET /admin/api/v1/execution-plans/guardrails
 func (h *Handler) ListExecutionPlanGuardrails(c *echo.Context) error {
 	if h.guardrails == nil {

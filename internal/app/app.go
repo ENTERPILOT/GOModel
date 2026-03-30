@@ -733,10 +733,14 @@ func dashboardFallbackModeValue(cfg *config.Config) string {
 	}
 
 	mode := strings.ToLower(strings.TrimSpace(string(cfg.Fallback.DefaultMode)))
-	if mode == "" {
+	switch mode {
+	case string(config.FallbackModeAuto):
+		return string(config.FallbackModeAuto)
+	case string(config.FallbackModeManual):
+		return string(config.FallbackModeManual)
+	default:
 		return string(config.FallbackModeOff)
 	}
-	return mode
 }
 
 func runtimeExecutionFeatureCaps(cfg *config.Config) core.ExecutionFeatures {

@@ -38,6 +38,106 @@ test('executionPlanProviderOptions returns unique sorted provider types', () => 
     );
 });
 
+test('defaultExecutionPlanForm starts fallback disabled for new workflows', () => {
+    const module = createExecutionPlansModule();
+
+    assert.equal(module.executionPlanForm.features.fallback, false);
+    assert.equal(module.defaultExecutionPlanForm().features.fallback, false);
+});
+
+test('executionPlanPreview mirrors the draft workflow card state from the editor form', () => {
+    const module = createExecutionPlansModule();
+    module.executionPlanForm = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        name: 'Draft workflow',
+        description: 'Live preview of the edited workflow',
+        features: {
+            cache: true,
+            audit: false,
+            usage: true,
+            guardrails: true,
+            fallback: false
+        },
+        guardrails: [
+            { ref: 'policy-system', step: 10 }
+        ]
+    };
+
+    assert.equal(
+        JSON.stringify(module.executionPlanPreview()),
+        JSON.stringify({
+            id: 'draft-workflow-preview',
+            scope_type: 'provider_model',
+            scope_display: 'openai/gpt-5',
+            scope: {
+                scope_provider: 'openai',
+                scope_model: 'gpt-5'
+            },
+            name: 'Draft workflow',
+            description: 'Live preview of the edited workflow',
+            plan_payload: {
+                schema_version: 1,
+                features: {
+                    cache: true,
+                    audit: false,
+                    usage: true,
+                    guardrails: true,
+                    fallback: false
+                },
+                guardrails: [
+                    { ref: 'policy-system', step: 10 }
+                ]
+            }
+        })
+    );
+});
+
+test('executionPlanSubmitMode switches to save when an active workflow already matches the selected scope', () => {
+    const module = createExecutionPlansModule();
+    module.executionPlans = [
+        {
+            id: 'global-plan',
+            scope: {
+                scope_provider: '',
+                scope_model: ''
+            }
+        },
+        {
+            id: 'openai-gpt-5-plan',
+            scope: {
+                scope_provider: 'openai',
+                scope_model: 'gpt-5'
+            }
+        }
+    ];
+    module.executionPlanForm = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        name: '',
+        description: '',
+        features: {
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: false,
+            fallback: false
+        },
+        guardrails: []
+    };
+
+    assert.equal(module.executionPlanActiveScopeMatch().id, 'openai-gpt-5-plan');
+    assert.equal(module.executionPlanSubmitMode(), 'save');
+    assert.equal(module.executionPlanSubmitLabel(), 'Save');
+    assert.equal(module.executionPlanSubmittingLabel(), 'Saving...');
+
+    module.executionPlanForm.scope_model = 'gpt-4o-mini';
+    assert.equal(module.executionPlanActiveScopeMatch(), null);
+    assert.equal(module.executionPlanSubmitMode(), 'create');
+    assert.equal(module.executionPlanSubmitLabel(), 'Create');
+    assert.equal(module.executionPlanSubmittingLabel(), 'Creating...');
+});
+
 test('buildExecutionPlanRequest emits provider-model payload and strips guardrails when disabled', () => {
     const module = createExecutionPlansModule();
     module.executionPlanRuntimeConfig = {
@@ -126,6 +226,7 @@ test('openExecutionPlanCreate hydrates features and guardrails via shared normal
             fallback: false
         })
     );
+    assert.equal(module.executionPlanFormHydrated, true);
     assert.equal(
         JSON.stringify(module.executionPlanForm.guardrails),
         JSON.stringify([{ ref: 'policy-system', step: 30 }])
@@ -261,11 +362,43 @@ test('fetchExecutionPlanRuntimeConfig loads FEATURE_FALLBACK_MODE from the admin
     );
 });
 
-test('buildExecutionPlanRequest preserves fallback state even when the control is hidden', () => {
+test('buildExecutionPlanRequest omits fallback for new plans when the control is hidden', () => {
     const module = createExecutionPlansModule();
     module.executionPlanRuntimeConfig = {
         FEATURE_FALLBACK_MODE: 'off'
     };
+    module.executionPlanForm = {
+        scope_provider: 'openai',
+        scope_model: 'gpt-5',
+        name: 'OpenAI GPT-5',
+        description: 'Preserve hidden fallback state',
+        features: {
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: false,
+            fallback: false
+        },
+        guardrails: []
+    };
+
+    assert.equal(
+        JSON.stringify(module.buildExecutionPlanRequest().plan_payload.features),
+        JSON.stringify({
+            cache: true,
+            audit: true,
+            usage: true,
+            guardrails: false
+        })
+    );
+});
+
+test('buildExecutionPlanRequest preserves fallback state for hydrated plans even when the control is hidden', () => {
+    const module = createExecutionPlansModule();
+    module.executionPlanRuntimeConfig = {
+        FEATURE_FALLBACK_MODE: 'off'
+    };
+    module.executionPlanFormHydrated = true;
     module.executionPlanForm = {
         scope_provider: 'openai',
         scope_model: 'gpt-5',
@@ -575,4 +708,183 @@ test('submitExecutionPlanForm ignores duplicate submissions while a request is a
 
     assert.equal(fetchCalled, false);
     assert.equal(module.executionPlanSubmitting, true);
+});
+
+test('epRuntimeFromEntry derives cache hit state from cache_type without relying on headers', () => {
+    const module = createExecutionPlansModule();
+
+    assert.equal(
+        JSON.stringify(module.epRuntimeFromEntry({ cache_type: 'semantic', provider: 'openai', model: 'gpt-5' })),
+        JSON.stringify({
+            cacheHit: true,
+            cacheType: 'semantic',
+            provider: 'openai',
+            model: 'gpt-5',
+            statusCode: null,
+            responseSuccess: false,
+            aiSuccess: false
+        })
+    );
+
+    assert.equal(
+        JSON.stringify(module.epRuntimeFromEntry({ cache_type: 'exact' })),
+        JSON.stringify({
+            cacheHit: true,
+            cacheType: 'exact',
+            provider: null,
+            model: null,
+            statusCode: null,
+            responseSuccess: false,
+            aiSuccess: false
+        })
+    );
+
+    assert.equal(
+        JSON.stringify(module.epRuntimeFromEntry({})),
+        JSON.stringify({
+            cacheHit: false,
+            cacheType: null,
+            provider: null,
+            model: null,
+            statusCode: null,
+            responseSuccess: false,
+            aiSuccess: false
+        })
+    );
+});
+
+test('audit runtime uses explicit cache-hit labels and highlights the uncached 200 path', () => {
+    const module = createExecutionPlansModule();
+
+    const semanticHit = module.epRuntimeFromEntry({
+        cache_type: 'semantic',
+        status_code: 200
+    });
+    assert.equal(module.epCacheNodeClass(semanticHit), 'ep-node-cache-semantic');
+    assert.equal(module.epCacheConnClass(semanticHit), 'ep-conn-hit');
+    assert.equal(module.epCacheStatusLabel(semanticHit), 'Hit (Semantic)');
+    assert.equal(module.epAiConnClass(semanticHit), 'ep-conn-dim');
+    assert.equal(module.epAiNodeClass(semanticHit), 'ep-node-ai-skipped');
+    assert.equal(module.epResponseConnClass(semanticHit), 'ep-conn-dim');
+    assert.equal(module.epResponseNodeClass(semanticHit), 'ep-node-endpoint-success');
+
+    const uncachedSuccess = module.epRuntimeFromEntry({
+        provider: 'openai',
+        model: 'gpt-5',
+        status_code: 200
+    });
+    assert.equal(uncachedSuccess.cacheHit, false);
+    assert.equal(module.epCacheNodeClass(uncachedSuccess), '');
+    assert.equal(module.epCacheStatusLabel(uncachedSuccess), null);
+    assert.equal(module.epAiConnClass(uncachedSuccess), '');
+    assert.equal(module.epAiNodeClass(uncachedSuccess), 'ep-node-ai-success');
+    assert.equal(module.epResponseConnClass(uncachedSuccess), '');
+    assert.equal(module.epResponseNodeClass(uncachedSuccess), 'ep-node-endpoint-success');
+});
+
+test('auditEntryExecutionPlan prefers an exact historical workflow version cache over active workflows', () => {
+    const module = createExecutionPlansModule();
+    module.executionPlans = [
+        {
+            id: 'active-current',
+            scope: {
+                scope_provider: 'openai',
+                scope_model: 'gpt-5'
+            },
+            plan_payload: {
+                features: {
+                    cache: false,
+                    audit: false,
+                    usage: false,
+                    guardrails: false,
+                    fallback: true
+                },
+                guardrails: []
+            }
+        }
+    ];
+    module.executionPlanVersionsByID = {
+        'historical-v1': {
+            id: 'historical-v1',
+            active: false,
+            scope: {
+                scope_provider: 'openai',
+                scope_model: 'gpt-5'
+            },
+            plan_payload: {
+                features: {
+                    cache: true,
+                    audit: true,
+                    usage: true,
+                    guardrails: true,
+                    fallback: true
+                },
+                guardrails: [
+                    { ref: 'policy-system', step: 10 }
+                ]
+            }
+        }
+    };
+
+    const resolved = module.auditEntryExecutionPlan({
+        execution_plan_version_id: 'historical-v1'
+    });
+
+    assert.equal(resolved.id, 'historical-v1');
+    assert.equal(module.epHasUsage(resolved), true);
+    assert.equal(module.epHasAudit(resolved), true);
+    assert.equal(module.epHasGuardrails(resolved), true);
+});
+
+test('fetchExecutionPlanVersion loads a historical workflow version once and caches misses', async () => {
+    const fetchCalls = [];
+    const module = createExecutionPlansModule({
+        fetch(url) {
+            fetchCalls.push(url);
+            if (url.endsWith('/historical-v2')) {
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    json: async () => ({
+                        id: 'historical-v2',
+                        active: false,
+                        scope: {
+                            scope_provider: 'openai',
+                            scope_model: 'gpt-5'
+                        },
+                        plan_payload: {
+                            features: {
+                                cache: true,
+                                audit: true,
+                                usage: true,
+                                guardrails: false,
+                                fallback: true
+                            },
+                            guardrails: []
+                        }
+                    })
+                });
+            }
+            return Promise.resolve({
+                ok: false,
+                status: 404,
+                statusText: 'Not Found'
+            });
+        }
+    });
+    module.headers = () => ({ authorization: 'Bearer token' });
+
+    const loaded = await module.fetchExecutionPlanVersion('historical-v2');
+    const repeated = await module.fetchExecutionPlanVersion('historical-v2');
+    const missing = await module.fetchExecutionPlanVersion('missing-plan');
+    const missingAgain = await module.fetchExecutionPlanVersion('missing-plan');
+
+    assert.equal(loaded.id, 'historical-v2');
+    assert.equal(repeated.id, 'historical-v2');
+    assert.equal(missing, null);
+    assert.equal(missingAgain, null);
+    assert.deepEqual(fetchCalls, [
+        '/admin/api/v1/execution-plans/historical-v2',
+        '/admin/api/v1/execution-plans/missing-plan'
+    ]);
 });

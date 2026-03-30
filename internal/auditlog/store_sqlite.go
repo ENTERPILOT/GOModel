@@ -11,12 +11,12 @@ import (
 )
 
 // SQLite has a default limit of 999 bindable parameters per query (SQLITE_MAX_VARIABLE_NUMBER).
-// With 16 columns per log entry, we can safely insert up to 62 entries per batch (62 * 16 = 992).
+// With 17 columns per log entry, we can safely insert up to 58 entries per batch (58 * 17 = 986).
 // We chunk larger batches to avoid hitting this limit.
 const (
 	maxSQLiteParams    = 999
-	columnsPerEntry    = 16
-	maxEntriesPerBatch = maxSQLiteParams / columnsPerEntry // 62 entries
+	columnsPerEntry    = 17
+	maxEntriesPerBatch = maxSQLiteParams / columnsPerEntry // 58 entries
 )
 
 // SQLiteStore implements LogStore for SQLite databases.
@@ -46,6 +46,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 			provider TEXT,
 			alias_used INTEGER DEFAULT 0,
 			execution_plan_version_id TEXT,
+			cache_type TEXT,
 			status_code INTEGER DEFAULT 0,
 			request_id TEXT,
 			client_ip TEXT,
@@ -64,6 +65,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		"ALTER TABLE audit_logs ADD COLUMN resolved_model TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN alias_used INTEGER DEFAULT 0",
 		"ALTER TABLE audit_logs ADD COLUMN execution_plan_version_id TEXT",
+		"ALTER TABLE audit_logs ADD COLUMN cache_type TEXT",
 	}
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {
@@ -124,7 +126,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 		values := make([]any, 0, len(chunk)*columnsPerEntry)
 
 		for j, e := range chunk {
-			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 			dataJSON := marshalLogData(e.Data, e.ID)
 
@@ -143,6 +145,10 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 			if dataJSON != nil {
 				dataValue = string(dataJSON)
 			}
+			var cacheTypeValue any
+			if cacheType := normalizeCacheType(e.CacheType); cacheType != "" {
+				cacheTypeValue = cacheType
+			}
 
 			values = append(values,
 				e.ID,
@@ -153,6 +159,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 				e.Provider,
 				aliasUsedInt,
 				e.ExecutionPlanVersionID,
+				cacheTypeValue,
 				e.StatusCode,
 				e.RequestID,
 				e.ClientIP,
@@ -164,7 +171,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*LogEntry) error
 			)
 		}
 
-		query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, resolved_model, provider, alias_used, execution_plan_version_id, status_code,
+		query := `INSERT OR IGNORE INTO audit_logs (id, timestamp, duration_ns, model, resolved_model, provider, alias_used, execution_plan_version_id, cache_type, status_code,
 			request_id, client_ip, method, path, stream, error_type, data) VALUES ` +
 			strings.Join(placeholders, ",")
 

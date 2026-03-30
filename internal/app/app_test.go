@@ -51,3 +51,16 @@ func TestDashboardRuntimeConfig_ExposesFallbackMode(t *testing.T) {
 		t.Fatalf("dashboardRuntimeConfig()[%q] = %q, want %q", admin.DashboardConfigFeatureFallbackMode, got, config.FallbackModeManual)
 	}
 }
+
+func TestDashboardRuntimeConfig_InvalidFallbackModeDefaultsOff(t *testing.T) {
+	cfg := &config.Config{
+		Fallback: config.FallbackConfig{
+			DefaultMode: config.FallbackMode("experimental"),
+		},
+	}
+
+	values := dashboardRuntimeConfig(cfg)
+	if got := values[admin.DashboardConfigFeatureFallbackMode]; got != string(config.FallbackModeOff) {
+		t.Fatalf("dashboardRuntimeConfig()[%q] = %q, want %q", admin.DashboardConfigFeatureFallbackMode, got, config.FallbackModeOff)
+	}
+}

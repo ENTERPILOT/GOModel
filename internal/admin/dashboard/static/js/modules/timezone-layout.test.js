@@ -55,9 +55,21 @@ test('dashboard templates expose a settings page and timezone context in activit
     const toggleRule = readCSSRule(css, '.timezone-help-toggle');
     assert.match(toggleRule, /width:\s*16px/);
     assert.match(toggleRule, /height:\s*16px/);
+    assert.match(toggleRule, /position:\s*relative/);
     assert.match(toggleRule, /border-radius:\s*4px/);
     assert.match(toggleRule, /background:\s*transparent/);
     assert.doesNotMatch(toggleRule, /box-shadow:/);
+
+    const toggleHitAreaRule = readCSSRule(css, '.timezone-help-toggle::before');
+    assert.match(toggleHitAreaRule, /content:\s*""/);
+    assert.match(toggleHitAreaRule, /position:\s*absolute/);
+    assert.match(toggleHitAreaRule, /width:\s*32px/);
+    assert.match(toggleHitAreaRule, /height:\s*32px/);
+    assert.match(toggleHitAreaRule, /top:\s*50%/);
+    assert.match(toggleHitAreaRule, /left:\s*50%/);
+    assert.match(toggleHitAreaRule, /transform:\s*translate\(-50%,\s*-50%\)/);
+    assert.match(toggleHitAreaRule, /background:\s*transparent/);
+    assert.match(toggleHitAreaRule, /pointer-events:\s*auto/);
 
     const toggleHoverRule = readCSSRule(css, '.timezone-help-toggle:hover');
     assert.match(toggleHoverRule, /background:\s*transparent/);

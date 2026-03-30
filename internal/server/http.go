@@ -284,6 +284,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 		adminAPI.DELETE("/aliases/:name", cfg.AdminHandler.DeleteAlias)
 		adminAPI.GET("/execution-plans", cfg.AdminHandler.ListExecutionPlans)
 		adminAPI.GET("/execution-plans/guardrails", cfg.AdminHandler.ListExecutionPlanGuardrails)
+		adminAPI.GET("/execution-plans/:id", cfg.AdminHandler.GetExecutionPlan)
 		adminAPI.POST("/execution-plans", cfg.AdminHandler.CreateExecutionPlan)
 		adminAPI.POST("/execution-plans/:id/deactivate", cfg.AdminHandler.DeactivateExecutionPlan)
 	}

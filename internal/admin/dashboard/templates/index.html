@@ -668,7 +668,7 @@
             <p class="execution-plan-page-note">Active workflows are matched with most-specific-wins precedence: provider + model, then provider, then global.</p>
         </div>
         <div class="page-header-controls">
-            <button type="button" class="pagination-btn pagination-btn-primary" x-show="executionPlansAvailable" @click="openExecutionPlanCreate()">Create Workflow</button>
+            <button type="button" class="pagination-btn pagination-btn-primary" x-show="executionPlansAvailable" @click="openExecutionPlanCreate()">New Workflow</button>
         </div>
     </div>
 
@@ -749,7 +749,7 @@
                     </label>
                     <label class="execution-plan-feature-toggle">
                         <input type="checkbox" x-model="executionPlanForm.features.audit">
-                        <span>Audit</span>
+                        <span>Audit Logs</span>
                     </label>
                     <label class="execution-plan-feature-toggle">
                         <input type="checkbox" x-model="executionPlanForm.features.usage">
@@ -763,6 +763,117 @@
                         <input type="checkbox" x-model="executionPlanForm.features.fallback">
                         <span>Failover</span>
                     </label>
+                </div>
+
+                <div class="execution-plan-preview">
+                    <div class="execution-plan-section-head">
+                        <h4>Preview</h4>
+                        <span class="provider-badge">Live</span>
+                    </div>
+
+                    <article class="execution-plan-card execution-plan-preview-card">
+                        <div class="execution-plan-card-head">
+                            <div>
+                                <p class="alias-form-kicker" x-text="planScopeTypeLabel(executionPlanPreview())"></p>
+                                <h3 x-text="workflowDisplayName(executionPlanPreview())"></h3>
+                            </div>
+                            <div class="execution-plan-card-badges">
+                                <span class="provider-badge" x-text="planScopeLabel(executionPlanPreview())"></span>
+                            </div>
+                        </div>
+
+                        <p class="execution-plan-card-description" x-show="executionPlanPreview().description" x-text="executionPlanPreview().description"></p>
+                        <p class="alias-form-hint" x-show="executionPlanFailoverVisible()" x-text="'Failover: ' + executionPlanFallbackLabel(executionPlanPreview())"></p>
+
+                        <div class="exec-pipeline">
+                            <div class="exec-pipeline-row">
+                                <div class="ep-left">
+                                    <div class="ep-node ep-node-endpoint">
+                                        <div class="ep-node-icon ep-node-icon-endpoint">
+                                            <svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Client</span>
+                                    </div>
+
+                                    <div class="ep-step" x-show="epHasGuardrails(executionPlanPreview())">
+                                        <div class="ep-conn"></div>
+                                        <div class="ep-node ep-node-guardrails">
+                                            <div class="ep-node-icon">
+                                                <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                            </div>
+                                            <span class="ep-node-label">Guardrails</span>
+                                            <span class="ep-node-sub" x-show="epGuardrailLabel(executionPlanPreview())" x-text="epGuardrailLabel(executionPlanPreview())"></span>
+                                        </div>
+                                    </div>
+
+                                    <div class="ep-step" x-show="epHasCache(executionPlanPreview())">
+                                        <div class="ep-conn"></div>
+                                        <div class="ep-node ep-node-cache">
+                                            <div class="ep-node-icon">
+                                                <svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                                            </div>
+                                            <span class="ep-node-label">Cache</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="ep-conn ep-conn-grow"></div>
+                                </div>
+
+                                <div class="ep-node ep-node-ai">
+                                    <span class="ep-node-label" x-text="epAiLabel(executionPlanPreview(), null)"></span>
+                                    <span class="ep-node-sub" x-show="epAiSublabel(executionPlanPreview(), null)" x-text="epAiSublabel(executionPlanPreview(), null)"></span>
+                                </div>
+
+                                <div class="ep-right">
+                                    <div class="ep-conn ep-conn-grow"></div>
+                                    <div class="ep-node ep-node-endpoint">
+                                        <div class="ep-node-icon ep-node-icon-endpoint">
+                                            <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Response</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="ep-async-section" x-show="epHasAsync(executionPlanPreview())">
+                                <div class="ep-async-row">
+                                    <div class="ep-node ep-node-async ep-node-async-usage" x-show="epHasUsage(executionPlanPreview())">
+                                        <div class="ep-node-icon">
+                                            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Usage</span>
+                                    </div>
+                                    <div class="ep-step" x-show="epHasUsage(executionPlanPreview()) && epHasAudit(executionPlanPreview())">
+                                        <div class="ep-conn ep-conn-async"></div>
+                                    </div>
+                                    <div class="ep-node ep-node-async ep-node-async-audit" x-show="epHasAudit(executionPlanPreview())">
+                                        <div class="ep-node-icon">
+                                            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Audit Log</span>
+                                    </div>
+                                </div>
+                                <div class="ep-async-turn"></div>
+                                <span class="ep-async-label">Async</span>
+                            </div>
+                        </div>
+
+                        <div class="execution-plan-guardrails">
+                            <div class="execution-plan-section-head">
+                                <h4>Guardrails</h4>
+                                <span class="provider-badge" x-text="planGuardrails(executionPlanPreview()).length ? planGuardrails(executionPlanPreview()).length + ' steps' : 'None'"></span>
+                            </div>
+                            <div class="execution-plan-guardrail-list" x-show="planGuardrails(executionPlanPreview()).length > 0">
+                                <template x-for="(step, stepIndex) in planGuardrails(executionPlanPreview())" :key="'draft-workflow-preview-guardrail-' + stepIndex">
+                                    <div class="execution-plan-guardrail-item">
+                                        <span class="mono" x-text="step.ref"></span>
+                                        <span class="provider-badge" x-text="'step ' + step.step"></span>
+                                    </div>
+                                </template>
+                            </div>
+                            <p class="alias-form-hint" x-show="planGuardrails(executionPlanPreview()).length === 0">No guardrails configured for this plan.</p>
+                        </div>
+                    </article>
                 </div>
 
                 <div class="execution-plan-guardrail-editor" x-show="executionPlanForm.features.guardrails">
@@ -793,7 +904,20 @@
 
                 <div class="alias-form-actions">
                     <button type="button" class="pagination-btn" @click="closeExecutionPlanForm()">Cancel</button>
-                    <button type="submit" class="pagination-btn pagination-btn-primary" :disabled="executionPlanSubmitting" x-text="executionPlanSubmitting ? 'Creating...' : 'Create Workflow'"></button>
+                    <button type="submit" class="pagination-btn pagination-btn-primary execution-plan-submit-btn" :disabled="executionPlanSubmitting">
+                        <span class="execution-plan-submit-icon" aria-hidden="true">
+                            <svg x-show="executionPlanSubmitMode() === 'create'" viewBox="0 0 24 24">
+                                <path d="M12 5v14"></path>
+                                <path d="M5 12h14"></path>
+                            </svg>
+                            <svg x-show="executionPlanSubmitMode() === 'save'" viewBox="0 0 24 24">
+                                <path d="M5 4h11l3 3v13H5z"></path>
+                                <path d="M8 4v6h8"></path>
+                                <path d="M8 20v-6h8v6"></path>
+                            </svg>
+                        </span>
+                        <span x-text="executionPlanSubmitting ? executionPlanSubmittingLabel() : executionPlanSubmitLabel()"></span>
+                    </button>
                 </div>
             </form>
         </section>
@@ -1045,11 +1169,11 @@
                             <span class="provider-badge" x-show="entry.error_type" x-text="entry.error_type"></span>
                         </div>
 
-                        <!-- Execution Pipeline (runtime view) -->
+                        <!-- Execution Pipeline (workflow + runtime view) -->
                         <div class="exec-pipeline">
                             <div class="exec-pipeline-row">
 
-                                <!-- Left half: Client + optional steps + growing connector -->
+                                <!-- Left half: Client + optional workflow steps + growing connector -->
                                 <div class="ep-left">
                                     <div class="ep-node ep-node-endpoint">
                                         <div class="ep-node-icon ep-node-icon-endpoint">
@@ -1058,8 +1182,20 @@
                                         <span class="ep-node-label">Client</span>
                                     </div>
 
-                                    <!-- Cache step — shown when runtime has cache data -->
-                                    <div class="ep-step" x-show="epShowCacheStep(null, epRuntimeFromEntry(entry))">
+                                    <!-- Guardrails step (optional) -->
+                                    <div class="ep-step" x-show="epHasGuardrails(auditEntryExecutionPlan(entry))">
+                                        <div class="ep-conn"></div>
+                                        <div class="ep-node ep-node-guardrails">
+                                            <div class="ep-node-icon">
+                                                <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                            </div>
+                                            <span class="ep-node-label">Guardrails</span>
+                                            <span class="ep-node-sub" x-show="epGuardrailLabel(auditEntryExecutionPlan(entry))" x-text="epGuardrailLabel(auditEntryExecutionPlan(entry))"></span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Cache step — always shown in audit runtime view -->
+                                    <div class="ep-step">
                                         <div class="ep-conn" :class="epCacheConnClass(epRuntimeFromEntry(entry))"></div>
                                         <div class="ep-node ep-node-cache" :class="epCacheNodeClass(epRuntimeFromEntry(entry))">
                                             <div class="ep-node-icon">
@@ -1082,8 +1218,8 @@
 
                                 <!-- Right half: growing connector + Response -->
                                 <div class="ep-right">
-                                    <div class="ep-conn ep-conn-grow"></div>
-                                    <div class="ep-node ep-node-endpoint">
+                                    <div class="ep-conn ep-conn-grow" :class="epResponseConnClass(epRuntimeFromEntry(entry))"></div>
+                                    <div class="ep-node ep-node-endpoint" :class="epResponseNodeClass(epRuntimeFromEntry(entry))">
                                         <div class="ep-node-icon ep-node-icon-endpoint">
                                             <svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
                                         </div>
@@ -1091,6 +1227,28 @@
                                     </div>
                                 </div>
 
+                            </div>
+
+                            <div class="ep-async-section" x-show="epHasAsync(auditEntryExecutionPlan(entry))">
+                                <div class="ep-async-row">
+                                    <div class="ep-node ep-node-async ep-node-async-usage" x-show="epHasUsage(auditEntryExecutionPlan(entry))">
+                                        <div class="ep-node-icon">
+                                            <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Usage</span>
+                                    </div>
+                                    <div class="ep-step" x-show="epHasUsage(auditEntryExecutionPlan(entry)) && epHasAudit(auditEntryExecutionPlan(entry))">
+                                        <div class="ep-conn ep-conn-async"></div>
+                                    </div>
+                                    <div class="ep-node ep-node-async ep-node-async-audit" x-show="epHasAudit(auditEntryExecutionPlan(entry))">
+                                        <div class="ep-node-icon">
+                                            <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                        </div>
+                                        <span class="ep-node-label">Audit Log</span>
+                                    </div>
+                                </div>
+                                <div class="ep-async-turn"></div>
+                                <span class="ep-async-label">Async</span>
                             </div>
                         </div>
 

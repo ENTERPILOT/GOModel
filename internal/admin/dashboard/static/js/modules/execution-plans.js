@@ -2,6 +2,8 @@
     function dashboardExecutionPlansModule() {
         return {
             executionPlans: [],
+            executionPlanVersionsByID: {},
+            executionPlanVersionRequests: {},
             executionPlansAvailable: true,
             executionPlansLoading: false,
             executionPlanRuntimeConfig: {},
@@ -12,6 +14,7 @@
             executionPlanSubmitting: false,
             executionPlanDeactivatingID: '',
             executionPlanFormError: '',
+            executionPlanFormHydrated: false,
             executionPlanHydratedScope: {
                 scope_provider: '',
                 scope_model: ''
@@ -27,7 +30,7 @@
                     audit: true,
                     usage: true,
                     guardrails: false,
-                    fallback: true
+                    fallback: false
                 },
                 guardrails: []
             },
@@ -43,7 +46,7 @@
                         audit: true,
                         usage: true,
                         guardrails: false,
-                        fallback: true
+                        fallback: false
                     },
                     guardrails: []
                 };
@@ -156,6 +159,87 @@
                 return scopeLabel;
             },
 
+            executionPlanCurrentScope() {
+                const form = this.executionPlanForm || this.defaultExecutionPlanForm();
+                const provider = String(form.scope_provider || '').trim();
+                return {
+                    scope_provider: provider,
+                    scope_model: provider ? String(form.scope_model || '').trim() : ''
+                };
+            },
+
+            executionPlanScopeMatches(plan, scope) {
+                const normalized = scope || { scope_provider: '', scope_model: '' };
+                const provider = String(plan && plan.scope && plan.scope.scope_provider || '').trim();
+                const model = provider ? String(plan && plan.scope && plan.scope.scope_model || '').trim() : '';
+                return provider === String(normalized.scope_provider || '').trim()
+                    && model === String(normalized.scope_model || '').trim();
+            },
+
+            executionPlanActiveScopeMatch() {
+                const scope = this.executionPlanCurrentScope();
+                const hasScopedSelection = scope.scope_provider !== '' || scope.scope_model !== '';
+                if (!hasScopedSelection && !this.executionPlanFormHydrated) {
+                    return null;
+                }
+                const plans = Array.isArray(this.executionPlans) ? this.executionPlans : [];
+                return plans.find((plan) => this.executionPlanScopeMatches(plan, scope)) || null;
+            },
+
+            executionPlanSubmitMode() {
+                return this.executionPlanActiveScopeMatch() ? 'save' : 'create';
+            },
+
+            executionPlanSubmitLabel() {
+                return this.executionPlanSubmitMode() === 'save' ? 'Save' : 'Create';
+            },
+
+            executionPlanSubmittingLabel() {
+                return this.executionPlanSubmitMode() === 'save' ? 'Saving...' : 'Creating...';
+            },
+
+            executionPlanPreview() {
+                const form = this.executionPlanForm || this.defaultExecutionPlanForm();
+                const provider = String(form.scope_provider || '').trim();
+                const model = provider ? String(form.scope_model || '').trim() : '';
+                const features = form.features || {};
+                const guardrailsEnabled = !!features.guardrails;
+                const guardrails = guardrailsEnabled ? this.executionPlanSourceGuardrails(form) : [];
+                let scopeType = 'global';
+                let scopeDisplay = 'global';
+
+                if (provider && model) {
+                    scopeType = 'provider_model';
+                    scopeDisplay = provider + '/' + model;
+                } else if (provider) {
+                    scopeType = 'provider';
+                    scopeDisplay = provider;
+                }
+
+                return {
+                    id: 'draft-workflow-preview',
+                    scope_type: scopeType,
+                    scope_display: scopeDisplay,
+                    scope: {
+                        scope_provider: provider,
+                        scope_model: model
+                    },
+                    name: String(form.name || '').trim(),
+                    description: String(form.description || '').trim(),
+                    plan_payload: {
+                        schema_version: 1,
+                        features: {
+                            cache: !!features.cache,
+                            audit: !!features.audit,
+                            usage: !!features.usage,
+                            guardrails: guardrailsEnabled,
+                            fallback: !!features.fallback
+                        },
+                        guardrails
+                    }
+                };
+            },
+
             executionPlanSourceFeatures(source) {
                 const raw = source && source.plan_payload && source.plan_payload.features
                     ? source.plan_payload.features
@@ -230,6 +314,7 @@
                 this.executionPlanNotice = '';
 
                 if (!plan) {
+                    this.executionPlanFormHydrated = false;
                     this.executionPlanHydratedScope = {
                         scope_provider: '',
                         scope_model: ''
@@ -239,6 +324,7 @@
                     return;
                 }
 
+                this.executionPlanFormHydrated = true;
                 this.executionPlanHydratedScope = {
                     scope_provider: String(plan.scope && plan.scope.scope_provider || '').trim(),
                     scope_model: String(plan.scope && plan.scope.scope_model || '').trim()
@@ -269,6 +355,7 @@
                 this.executionPlanFormOpen = false;
                 this.executionPlanSubmitting = false;
                 this.executionPlanFormError = '';
+                this.executionPlanFormHydrated = false;
                 this.executionPlanHydratedScope = {
                     scope_provider: '',
                     scope_model: ''
@@ -308,6 +395,7 @@
                 const provider = String(form.scope_provider || '').trim();
                 const model = provider ? String(form.scope_model || '').trim() : '';
                 const features = form.features || {};
+                const includeFallback = this.executionPlanFailoverVisible() || !!this.executionPlanFormHydrated;
 
                 const guardrails = !!features.guardrails
                     ? (Array.isArray(form.guardrails) ? form.guardrails : []).map((step) => {
@@ -334,12 +422,14 @@
                             cache: !!features.cache,
                             audit: !!features.audit,
                             usage: !!features.usage,
-                            guardrails: !!features.guardrails,
-                            fallback: !!features.fallback
+                            guardrails: !!features.guardrails
                         },
                         guardrails
                     }
                 };
+                if (includeFallback) {
+                    payload.plan_payload.features.fallback = !!features.fallback;
+                }
 
                 return payload;
             },
@@ -449,6 +539,7 @@
                     }
                     const payload = await res.json();
                     this.executionPlans = Array.isArray(payload) ? payload : [];
+                    this.cacheExecutionPlanVersions(this.executionPlans);
                 } catch (e) {
                     console.error('Failed to fetch workflows:', e);
                     this.executionPlans = [];
@@ -484,6 +575,142 @@
                     this.fetchExecutionPlans(),
                     this.fetchExecutionPlanGuardrails()
                 ]);
+            },
+
+            cacheExecutionPlanVersion(plan) {
+                const planID = String(plan && plan.id || '').trim();
+                if (!planID) {
+                    return null;
+                }
+                this.executionPlanVersionsByID = {
+                    ...(this.executionPlanVersionsByID || {}),
+                    [planID]: plan
+                };
+                return plan;
+            },
+
+            cacheExecutionPlanVersions(plans) {
+                if (!Array.isArray(plans) || plans.length === 0) {
+                    return;
+                }
+                const next = {
+                    ...(this.executionPlanVersionsByID || {})
+                };
+                plans.forEach((plan) => {
+                    const planID = String(plan && plan.id || '').trim();
+                    if (planID) {
+                        next[planID] = plan;
+                    }
+                });
+                this.executionPlanVersionsByID = next;
+            },
+
+            cacheMissingExecutionPlanVersion(planID) {
+                const normalizedID = String(planID || '').trim();
+                if (!normalizedID) {
+                    return;
+                }
+                this.executionPlanVersionsByID = {
+                    ...(this.executionPlanVersionsByID || {}),
+                    [normalizedID]: null
+                };
+            },
+
+            executionPlanVersionCacheHas(planID) {
+                return Object.prototype.hasOwnProperty.call(this.executionPlanVersionsByID || {}, String(planID || '').trim());
+            },
+
+            executionPlanVersionByID(planID) {
+                const normalizedID = String(planID || '').trim();
+                if (!normalizedID) {
+                    return null;
+                }
+                if (this.executionPlanVersionCacheHas(normalizedID)) {
+                    return this.executionPlanVersionsByID[normalizedID];
+                }
+                const plans = Array.isArray(this.executionPlans) ? this.executionPlans : [];
+                const activeMatch = plans.find((plan) => String(plan && plan.id || '').trim() === normalizedID) || null;
+                if (activeMatch) {
+                    this.cacheExecutionPlanVersion(activeMatch);
+                }
+                return activeMatch;
+            },
+
+            async fetchExecutionPlanVersion(planID) {
+                const normalizedID = String(planID || '').trim();
+                if (!normalizedID) {
+                    return null;
+                }
+                if (this.executionPlanVersionCacheHas(normalizedID)) {
+                    return this.executionPlanVersionsByID[normalizedID];
+                }
+                if (this.executionPlanVersionRequests && this.executionPlanVersionRequests[normalizedID]) {
+                    return this.executionPlanVersionRequests[normalizedID];
+                }
+
+                const request = (async () => {
+                    try {
+                        const res = await fetch('/admin/api/v1/execution-plans/' + encodeURIComponent(normalizedID), {
+                            headers: this.headers()
+                        });
+                        if (res.status === 404) {
+                            this.cacheMissingExecutionPlanVersion(normalizedID);
+                            return null;
+                        }
+                        if (res.status === 401) {
+                            if (typeof this.handleFetchResponse === 'function') {
+                                this.handleFetchResponse(res, 'workflow');
+                            }
+                            return null;
+                        }
+                        if (!res.ok) {
+                            if (typeof this.handleFetchResponse === 'function') {
+                                this.handleFetchResponse(res, 'workflow');
+                            }
+                            return null;
+                        }
+
+                        const payload = await res.json();
+                        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                            this.cacheMissingExecutionPlanVersion(normalizedID);
+                            return null;
+                        }
+                        return this.cacheExecutionPlanVersion(payload);
+                    } catch (e) {
+                        console.error('Failed to fetch workflow version:', e);
+                        return null;
+                    } finally {
+                        if (this.executionPlanVersionRequests) {
+                            delete this.executionPlanVersionRequests[normalizedID];
+                        }
+                    }
+                })();
+
+                this.executionPlanVersionRequests = {
+                    ...(this.executionPlanVersionRequests || {}),
+                    [normalizedID]: request
+                };
+                return request;
+            },
+
+            async prefetchAuditExecutionPlans(entries) {
+                const uniquePlanIDs = [...new Set(
+                    (Array.isArray(entries) ? entries : [])
+                        .map((entry) => String(entry && entry.execution_plan_version_id || '').trim())
+                        .filter(Boolean)
+                )];
+                if (uniquePlanIDs.length === 0) {
+                    return;
+                }
+                await Promise.all(uniquePlanIDs.map((planID) => this.fetchExecutionPlanVersion(planID)));
+            },
+
+            auditEntryExecutionPlan(entry) {
+                const planID = String(entry && entry.execution_plan_version_id || '').trim();
+                if (!planID) {
+                    return null;
+                }
+                return this.executionPlanVersionByID(planID);
             },
 
             async submitExecutionPlanForm() {
@@ -568,9 +795,17 @@
                 return source && source.scope && source.scope.scope_model || null;
             },
 
-            // runtime shape: { cacheHit: bool|null, cacheType: 'exact'|'semantic'|null, provider, model }
+            // runtime shape: {
+            //   cacheHit: bool,
+            //   cacheType: 'exact'|'semantic'|null,
+            //   provider,
+            //   model,
+            //   statusCode: number|null,
+            //   responseSuccess: bool,
+            //   aiSuccess: bool
+            // }
             epRuntimeHasCache(runtime) {
-                return !!(runtime && runtime.cacheHit !== null && runtime.cacheHit !== undefined);
+                return !!(runtime && runtime.cacheHit);
             },
 
             epShowCacheStep(source, runtime) {
@@ -578,43 +813,73 @@
             },
 
             epCacheNodeClass(runtime) {
-                if (!this.epRuntimeHasCache(runtime)) return '';
+                if (!runtime || !runtime.cacheHit) return '';
                 if (runtime.cacheHit && runtime.cacheType === 'semantic') return 'ep-node-cache-semantic';
                 if (runtime.cacheHit) return 'ep-node-cache-hit';
-                return 'ep-node-cache-miss';
+                return '';
             },
 
             epCacheConnClass(runtime) {
-                if (!this.epRuntimeHasCache(runtime)) return '';
-                return runtime.cacheHit ? 'ep-conn-hit' : '';
+                return runtime && runtime.cacheHit ? 'ep-conn-hit' : '';
             },
 
             epCacheStatusLabel(runtime) {
-                if (!this.epRuntimeHasCache(runtime)) return null;
-                if (runtime.cacheHit && runtime.cacheType === 'semantic') return 'Semantic';
-                return runtime.cacheHit ? 'Hit' : 'Miss';
+                if (!runtime || !runtime.cacheHit) return null;
+                if (runtime.cacheType === 'semantic') return 'Hit (Semantic)';
+                return 'Hit (Exact)';
             },
 
             epAiConnClass(runtime) {
-                if (!this.epRuntimeHasCache(runtime)) return '';
-                return runtime.cacheHit ? 'ep-conn-dim' : '';
+                if (!runtime) return '';
+                if (runtime.cacheHit) return 'ep-conn-dim';
+                return '';
             },
 
             epAiNodeClass(runtime) {
-                if (!this.epRuntimeHasCache(runtime)) return '';
-                return runtime.cacheHit ? 'ep-node-ai-skipped' : '';
+                if (!runtime) return '';
+                if (runtime.cacheHit) return 'ep-node-ai-skipped';
+                return runtime.aiSuccess ? 'ep-node-ai-success' : '';
+            },
+
+            epResponseConnClass(runtime) {
+                if (!runtime) return '';
+                if (runtime.cacheHit) return 'ep-conn-dim';
+                return '';
+            },
+
+            epResponseNodeClass(runtime) {
+                if (!runtime) return '';
+                return runtime.responseSuccess ? 'ep-node-endpoint-success' : '';
             },
 
             epRuntimeFromEntry(entry) {
                 if (!entry) return null;
-                const cacheHit = (entry.cache_hit !== undefined && entry.cache_hit !== null)
-                    ? !!entry.cache_hit
-                    : null;
+                const normalizedCacheType = (() => {
+                    const value = String(entry.cache_type || '').trim().toLowerCase();
+                    if (value === 'exact' || value === 'semantic') return value;
+                    return null;
+                })();
+                const statusCode = (() => {
+                    if (entry.status_code === undefined || entry.status_code === null) return null;
+                    const raw = String(entry.status_code).trim();
+                    if (!raw) return null;
+                    const value = Number(raw);
+                    return Number.isFinite(value) ? value : null;
+                })();
+                const cacheHit = normalizedCacheType
+                    ? true
+                    : (entry.cache_hit !== undefined && entry.cache_hit !== null)
+                        ? !!entry.cache_hit
+                        : false;
+                const responseSuccess = statusCode === 200;
                 return {
                     cacheHit,
-                    cacheType: entry.cache_type || null,
+                    cacheType: normalizedCacheType || null,
                     provider: entry.provider || null,
-                    model: entry.model || null
+                    model: entry.model || null,
+                    statusCode,
+                    responseSuccess,
+                    aiSuccess: responseSuccess && !cacheHit
                 };
             },
 
