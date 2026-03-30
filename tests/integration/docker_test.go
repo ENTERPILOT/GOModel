@@ -23,7 +23,12 @@ func dockerRunDetached(ctx context.Context, options []string, image string, comm
 	args = append(args, image)
 	args = append(args, command...)
 
-	id, err := runDocker(ctx, args...)
+	output, err := runDocker(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := parseDockerRunContainerID(output)
 	if err != nil {
 		return nil, err
 	}
@@ -121,4 +126,42 @@ func dockerPublishedHost() string {
 		}
 		return "127.0.0.1"
 	}
+}
+
+func parseDockerRunContainerID(output string) (string, error) {
+	var id string
+
+	for _, line := range strings.FieldsFunc(output, func(r rune) bool {
+		return r == '\n' || r == '\r'
+	}) {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			id = line
+		}
+	}
+
+	if id == "" {
+		return "", fmt.Errorf("docker run did not return a container ID")
+	}
+	if !isLikelyDockerContainerID(id) {
+		return "", fmt.Errorf("docker run returned an unexpected container ID: %q", id)
+	}
+	return id, nil
+}
+
+func isLikelyDockerContainerID(id string) bool {
+	if len(id) < 12 {
+		return false
+	}
+
+	for _, r := range id {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'f':
+		default:
+			return false
+		}
+	}
+
+	return true
 }
