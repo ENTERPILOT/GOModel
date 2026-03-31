@@ -282,6 +282,9 @@
                         <span x-text="authKeyCopied ? 'Copied' : 'Copy'"></span>
                     </button>
                 </div>
+                <p class="alias-form-error" x-show="authKeyCopyError">
+                    Unable to copy the key automatically. Copy it manually.
+                </p>
                 <div class="alias-form-actions">
                     <button type="button" class="pagination-btn pagination-btn-primary"
                         @click="dismissIssuedKey()">Done, I&rsquo;ve stored it</button>

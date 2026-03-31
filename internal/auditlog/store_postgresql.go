@@ -87,7 +87,6 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS auth_key_id TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS auth_method TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS user_path TEXT",
-		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS auth_method TEXT",
 	}
 	for _, migration := range migrations {
 		if _, err := pool.Exec(ctx, migration); err != nil {

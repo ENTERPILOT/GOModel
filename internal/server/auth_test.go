@@ -189,6 +189,9 @@ func TestAuthMiddlewareWithAuthenticator_ManagedKeyEnrichesContextAndAudit(t *te
 		if entry.AuthKeyID != "key-123" {
 			t.Fatalf("audit entry auth key id = %q, want key-123", entry.AuthKeyID)
 		}
+		if entry.AuthMethod != auditlog.AuthMethodAPIKey {
+			t.Fatalf("audit entry auth method = %q, want %q", entry.AuthMethod, auditlog.AuthMethodAPIKey)
+		}
 		return c.String(http.StatusOK, "ok")
 	}
 
@@ -235,6 +238,7 @@ func TestAuthMiddlewareWithAuthenticator_ManagedKeyFailureUsesGenericClientMessa
 	require.True(t, ok)
 	require.NotNil(t, entry)
 	require.NotNil(t, entry.Data)
+	assert.Equal(t, auditlog.AuthMethodAPIKey, entry.AuthMethod)
 	assert.Equal(t, string(core.ErrorTypeAuthentication), entry.ErrorType)
 	assert.Equal(t, "authentication unavailable", entry.Data.ErrorMessage)
 }

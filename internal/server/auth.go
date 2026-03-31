@@ -72,12 +72,12 @@ func AuthMiddlewareWithAuthenticator(masterKey string, authenticator BearerToken
 			}
 
 			if authenticator != nil && authenticator.Enabled() {
+				auditlog.EnrichEntryWithAuthMethod(c, auditlog.AuthMethodAPIKey)
 				authKeyID, err := authenticator.Authenticate(c.Request().Context(), token)
 				if err == nil {
 					ctx := core.WithAuthKeyID(c.Request().Context(), authKeyID)
 					c.SetRequest(c.Request().WithContext(ctx))
 					auditlog.EnrichEntryWithAuthKeyID(c, authKeyID)
-					auditlog.EnrichEntryWithAuthMethod(c, auditlog.AuthMethodAPIKey)
 					return next(c)
 				}
 

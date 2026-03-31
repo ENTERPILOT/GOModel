@@ -72,7 +72,6 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		"ALTER TABLE audit_logs ADD COLUMN auth_key_id TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN auth_method TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN user_path TEXT",
-		"ALTER TABLE audit_logs ADD COLUMN auth_method TEXT",
 	}
 	for _, migration := range migrations {
 		if _, err := db.Exec(migration); err != nil {

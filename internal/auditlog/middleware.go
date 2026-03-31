@@ -398,6 +398,12 @@ func EnrichEntryWithAuthMethod(c *echo.Context, method string) {
 	if !ok || entry == nil {
 		return
 	}
+	method = strings.ToLower(strings.TrimSpace(method))
+	switch method {
+	case AuthMethodAPIKey, AuthMethodMasterKey, AuthMethodNoKey, "unknown":
+	default:
+		return
+	}
 	entry.AuthMethod = method
 }
 

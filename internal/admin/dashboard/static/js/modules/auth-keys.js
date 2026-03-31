@@ -11,6 +11,8 @@
             authKeyIssuedValue: '',
             authKeyDeactivatingID: '',
             authKeyCopied: false,
+            authKeyCopyError: false,
+            authKeyCopyResetTimer: null,
             authKeyForm: {
                 name: '',
                 description: '',
@@ -52,6 +54,7 @@
                 this.authKeyError = '';
                 this.authKeyNotice = '';
                 this.authKeyIssuedValue = '';
+                this.resetAuthKeyCopyFeedback();
                 this.authKeyForm = this.defaultAuthKeyForm();
             },
 
@@ -59,20 +62,95 @@
                 this.authKeyFormOpen = false;
                 this.authKeyError = '';
                 this.authKeyIssuedValue = '';
-                this.authKeyCopied = false;
+                this.resetAuthKeyCopyFeedback();
                 this.authKeyForm = this.defaultAuthKeyForm();
             },
 
+            clearAuthKeyCopyResetTimer() {
+                if (this.authKeyCopyResetTimer !== null) {
+                    clearTimeout(this.authKeyCopyResetTimer);
+                    this.authKeyCopyResetTimer = null;
+                }
+            },
+
+            scheduleAuthKeyCopyFeedbackReset() {
+                this.clearAuthKeyCopyResetTimer();
+                this.authKeyCopyResetTimer = setTimeout(() => {
+                    this.authKeyCopied = false;
+                    this.authKeyCopyError = false;
+                    this.authKeyCopyResetTimer = null;
+                }, 2000);
+            },
+
+            resetAuthKeyCopyFeedback() {
+                this.clearAuthKeyCopyResetTimer();
+                this.authKeyCopied = false;
+                this.authKeyCopyError = false;
+            },
+
+            setAuthKeyCopyFeedback(copied, hasError) {
+                this.authKeyCopied = copied;
+                this.authKeyCopyError = hasError;
+                this.scheduleAuthKeyCopyFeedbackReset();
+            },
+
             copyAuthKeyValue() {
-                navigator.clipboard.writeText(this.authKeyIssuedValue).then(() => {
-                    this.authKeyCopied = true;
-                    setTimeout(() => { this.authKeyCopied = false; }, 2000);
-                });
+                const value = String(this.authKeyIssuedValue || '');
+                const clipboard = global.navigator && global.navigator.clipboard;
+
+                this.resetAuthKeyCopyFeedback();
+
+                if (clipboard && typeof clipboard.writeText === 'function') {
+                    return clipboard.writeText(value).then(() => {
+                        this.setAuthKeyCopyFeedback(true, false);
+                    }).catch((error) => {
+                        console.error('Failed to copy auth key:', error);
+                        this.setAuthKeyCopyFeedback(false, true);
+                    });
+                }
+
+                const doc = global.document;
+                if (!doc || !doc.body || typeof doc.createElement !== 'function' || typeof doc.execCommand !== 'function') {
+                    this.setAuthKeyCopyFeedback(false, true);
+                    return Promise.resolve();
+                }
+
+                const textarea = doc.createElement('textarea');
+                textarea.value = value;
+                textarea.setAttribute('readonly', '');
+                textarea.style.position = 'fixed';
+                textarea.style.top = '0';
+                textarea.style.left = '0';
+                textarea.style.opacity = '0';
+
+                try {
+                    doc.body.appendChild(textarea);
+                    if (typeof textarea.focus === 'function') {
+                        textarea.focus();
+                    }
+                    if (typeof textarea.select === 'function') {
+                        textarea.select();
+                    }
+                    if (typeof textarea.setSelectionRange === 'function') {
+                        textarea.setSelectionRange(0, textarea.value.length);
+                    }
+                    const copied = !!doc.execCommand('copy');
+                    this.setAuthKeyCopyFeedback(copied, !copied);
+                } catch (error) {
+                    console.error('Failed to copy auth key:', error);
+                    this.setAuthKeyCopyFeedback(false, true);
+                } finally {
+                    if (textarea.parentNode) {
+                        textarea.parentNode.removeChild(textarea);
+                    }
+                }
+
+                return Promise.resolve();
             },
 
             dismissIssuedKey() {
                 this.authKeyIssuedValue = '';
-                this.authKeyCopied = false;
+                this.resetAuthKeyCopyFeedback();
                 this.authKeyForm = this.defaultAuthKeyForm();
             },
 
