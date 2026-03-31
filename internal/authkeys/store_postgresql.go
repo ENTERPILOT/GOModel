@@ -43,8 +43,14 @@ func NewPostgreSQLStore(ctx context.Context, pool *pgxpool.Pool) (*PostgreSQLSto
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth_keys table: %w", err)
 	}
-	if _, err := pool.Exec(ctx, `ALTER TABLE auth_keys ADD COLUMN IF NOT EXISTS user_path TEXT`); err != nil {
-		return nil, fmt.Errorf("failed to initialize auth_keys table: %w", err)
+
+	migrations := []string{
+		`ALTER TABLE auth_keys ADD COLUMN IF NOT EXISTS user_path TEXT`,
+	}
+	for _, migration := range migrations {
+		if _, err := pool.Exec(ctx, migration); err != nil {
+			return nil, fmt.Errorf("failed to run migration %q: %w", migration, err)
+		}
 	}
 	for _, index := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_auth_keys_enabled ON auth_keys(enabled)`,

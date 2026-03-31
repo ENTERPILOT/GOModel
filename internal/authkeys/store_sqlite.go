@@ -38,8 +38,14 @@ func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth_keys table: %w", err)
 	}
-	if _, err := db.Exec(`ALTER TABLE auth_keys ADD COLUMN user_path TEXT`); err != nil && !isSQLiteDuplicateColumnError(err) {
-		return nil, fmt.Errorf("failed to initialize auth_keys table: %w", err)
+
+	migrations := []string{
+		`ALTER TABLE auth_keys ADD COLUMN user_path TEXT`,
+	}
+	for _, migration := range migrations {
+		if _, err := db.Exec(migration); err != nil && !isSQLiteDuplicateColumnError(err) {
+			return nil, fmt.Errorf("failed to run migration %q: %w", migration, err)
+		}
 	}
 	for _, index := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_auth_keys_enabled ON auth_keys(enabled)`,
