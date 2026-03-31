@@ -966,6 +966,8 @@
 	                    aiNodeClass: this.epAiNodeClass(runtime),
 	                    responseConnClass: this.epResponseConnClass(runtime),
 	                    responseNodeClass: this.epResponseNodeClass(runtime),
+				    authNodeClass: this.epAuthNodeClass(runtime),
+				    authNodeSublabel: this.epAuthNodeSublabel(runtime),
 	                    showAsync,
 	                    showUsage,
 	                    showAudit
@@ -1043,6 +1045,18 @@
                 return runtime.responseSuccess ? 'ep-node-endpoint-success' : '';
             },
 
+            epAuthNodeClass(runtime) {
+                if (!runtime) return '';
+                if (runtime.authError) return 'ep-node-auth-error';
+                if (runtime.authMethod === 'api_key' || runtime.authMethod === 'master_key') return 'ep-node-auth-success';
+                return '';
+            },
+
+            epAuthNodeSublabel(runtime) {
+                if (!runtime || !runtime.authMethod) return null;
+                return runtime.authMethod;
+            },
+
             epRuntimeFromEntry(entry) {
                 if (!entry) return null;
                 const normalizedCacheType = (() => {
@@ -1063,6 +1077,8 @@
                         ? !!entry.cache_hit
                         : false;
                 const responseSuccess = Number.isFinite(statusCode) && statusCode >= 200 && statusCode < 300;
+                const authError = String(entry.error_type || '').trim().toLowerCase() === 'authentication_error';
+                const authMethod = String(entry.auth_method || '').trim().toLowerCase() || null;
                 return {
                     cacheHit,
                     cacheType: normalizedCacheType || null,
@@ -1070,7 +1086,9 @@
                     model: entry.model || null,
                     statusCode,
                     responseSuccess,
-                    aiSuccess: responseSuccess && !cacheHit
+                    aiSuccess: responseSuccess && !cacheHit,
+                    authError,
+                    authMethod
                 };
             },
 

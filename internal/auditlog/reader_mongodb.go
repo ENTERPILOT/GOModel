@@ -29,6 +29,7 @@ type mongoLogRow struct {
 	StatusCode             int       `bson:"status_code"`
 	RequestID              string    `bson:"request_id"`
 	AuthKeyID              string    `bson:"auth_key_id"`
+	AuthMethod             string    `bson:"auth_method"`
 	ClientIP               string    `bson:"client_ip"`
 	Method                 string    `bson:"method"`
 	Path                   string    `bson:"path"`
@@ -51,6 +52,7 @@ func (r mongoLogRow) toLogEntry() *LogEntry {
 		StatusCode:             r.StatusCode,
 		RequestID:              r.RequestID,
 		AuthKeyID:              r.AuthKeyID,
+		AuthMethod:             r.AuthMethod,
 		ClientIP:               r.ClientIP,
 		Method:                 r.Method,
 		Path:                   r.Path,

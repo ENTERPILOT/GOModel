@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	auditLogInsertColumnCount     = 18
+	auditLogInsertColumnCount     = 19
 	postgresMaxBindParameters     = 65535
 	auditLogInsertMaxRowsPerQuery = postgresMaxBindParameters / auditLogInsertColumnCount
 )
 
 const auditLogInsertPrefix = `
 		INSERT INTO audit_logs (id, timestamp, duration_ns, model, resolved_model, provider, alias_used, execution_plan_version_id, cache_type, status_code,
-			request_id, auth_key_id, client_ip, method, path, stream, error_type, data)
+			request_id, auth_key_id, auth_method, client_ip, method, path, stream, error_type, data)
 		VALUES `
 
 const auditLogInsertSuffix = `
@@ -65,6 +65,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 			status_code INTEGER DEFAULT 0,
 			request_id TEXT,
 			auth_key_id TEXT,
+			auth_method TEXT,
 			client_ip TEXT,
 			method TEXT,
 			path TEXT,
@@ -83,6 +84,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS execution_plan_version_id TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS cache_type TEXT",
 		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS auth_key_id TEXT",
+		"ALTER TABLE audit_logs ADD COLUMN IF NOT EXISTS auth_method TEXT",
 	}
 	for _, migration := range migrations {
 		if _, err := pool.Exec(ctx, migration); err != nil {
@@ -222,6 +224,7 @@ func buildAuditLogInsert(entries []*LogEntry) (string, []any) {
 			entry.StatusCode,
 			entry.RequestID,
 			entry.AuthKeyID,
+			entry.AuthMethod,
 			entry.ClientIP,
 			entry.Method,
 			entry.Path,

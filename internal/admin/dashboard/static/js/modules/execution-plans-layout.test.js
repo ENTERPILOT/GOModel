@@ -217,7 +217,7 @@ test('workflow editor renders a live preview card from the draft workflow state'
     );
     assert.match(
         chartTemplate,
-        /{{define "execution-plan-chart"}}[\s\S]*x-show="{{\.}}\.showGuardrails"[\s\S]*x-show="{{\.}}\.showCache"[\s\S]*x-text="{{\.}}\.aiLabel"/
+        /{{define "execution-plan-chart"}}[\s\S]*<span class="ep-node-label">Auth<\/span>[\s\S]*x-text="{{\.}}\.authNodeSublabel"[\s\S]*x-show="{{\.}}\.showGuardrails"[\s\S]*x-show="{{\.}}\.showCache"[\s\S]*x-text="{{\.}}\.aiLabel"/
     );
 });
 
@@ -231,7 +231,7 @@ test('audit log pipeline always renders cache and binds runtime highlight classe
     );
     assert.match(
         template,
-        /x-show="{{\.}}\.showGuardrails"[\s\S]*x-show="{{\.}}\.showUsage"[\s\S]*x-show="{{\.}}\.showAudit"/
+        /:class="{{\.}}\.authNodeClass"[\s\S]*x-show="{{\.}}\.showGuardrails"[\s\S]*x-show="{{\.}}\.showUsage"[\s\S]*x-show="{{\.}}\.showAudit"/
     );
     assert.match(
         template,
@@ -253,6 +253,14 @@ test('audit log pipeline always renders cache and binds runtime highlight classe
     const semanticCacheRule = readCSSRule(css, '.ep-node-cache-semantic');
     assert.match(semanticCacheRule, /border-color:\s*color-mix\(in srgb, var\(--success\) 52%, var\(--border\)\)/);
     assert.match(semanticCacheRule, /background:\s*color-mix\(in srgb, var\(--success\) 9%, var\(--bg-surface\)\)/);
+
+    const authSuccessRule = readCSSRule(css, '.ep-node-auth-success');
+    assert.match(authSuccessRule, /border-color:\s*color-mix\(in srgb, var\(--success\) 52%, var\(--border\)\)/);
+    assert.match(authSuccessRule, /background:\s*color-mix\(in srgb, var\(--success\) 9%, var\(--bg-surface\)\)/);
+
+    const authErrorRule = readCSSRule(css, '.ep-node-auth-error');
+    assert.match(authErrorRule, /border-color:\s*color-mix\(in srgb, var\(--danger\) 52%, var\(--border\)\)/);
+    assert.match(authErrorRule, /background:\s*color-mix\(in srgb, var\(--danger\) 9%, var\(--bg-surface\)\)/);
 
     const skippedAiRule = readCSSRule(css, '.ep-node-ai-skipped');
     assert.match(skippedAiRule, /position:\s*relative/);

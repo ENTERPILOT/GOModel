@@ -1142,6 +1142,7 @@ td.col-price {
     flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
+    margin-top: 16px;
 }
 
 .model-row-actions {
@@ -2823,6 +2824,40 @@ body.conversation-drawer-open {
 .ep-node-cache-miss .ep-node-badge {
     color: var(--text-muted);
     border-color: var(--border);
+}
+
+/* ─── Auth node ─── */
+
+.ep-node-auth-success {
+    border-color: color-mix(in srgb, var(--success) 52%, var(--border));
+    background: color-mix(in srgb, var(--success) 9%, var(--bg-surface));
+}
+
+.ep-node-auth-success .ep-node-icon {
+    background: color-mix(in srgb, var(--success) 18%, var(--bg));
+    color: var(--success);
+}
+
+.ep-node-auth-success .ep-node-label {
+    color: color-mix(in srgb, var(--success) 85%, var(--text));
+}
+
+.ep-node-auth-success .ep-node-sub {
+    color: color-mix(in srgb, var(--success) 70%, var(--text-muted));
+}
+
+.ep-node-auth-error {
+    border-color: color-mix(in srgb, var(--danger) 52%, var(--border));
+    background: color-mix(in srgb, var(--danger) 9%, var(--bg-surface));
+}
+
+.ep-node-auth-error .ep-node-icon {
+    background: color-mix(in srgb, var(--danger) 14%, var(--bg));
+    color: var(--danger);
+}
+
+.ep-node-auth-error .ep-node-label {
+    color: color-mix(in srgb, var(--danger) 85%, var(--text));
 }
 
 /* ─── AI node ─── */

@@ -33,6 +33,7 @@ func AuthMiddlewareWithAuthenticator(masterKey string, authenticator BearerToken
 		return func(c *echo.Context) error {
 			// If no auth mechanism is configured, allow all requests.
 			if masterKey == "" && (authenticator == nil || !authenticator.Enabled()) {
+				auditlog.EnrichEntryWithAuthMethod(c, auditlog.AuthMethodNoKey)
 				return next(c)
 			}
 
@@ -66,6 +67,7 @@ func AuthMiddlewareWithAuthenticator(masterKey string, authenticator BearerToken
 
 			token := strings.TrimPrefix(authHeader, prefix)
 			if masterKey != "" && subtle.ConstantTimeCompare([]byte(token), []byte(masterKey)) == 1 {
+				auditlog.EnrichEntryWithAuthMethod(c, auditlog.AuthMethodMasterKey)
 				return next(c)
 			}
 
@@ -75,6 +77,7 @@ func AuthMiddlewareWithAuthenticator(masterKey string, authenticator BearerToken
 					ctx := core.WithAuthKeyID(c.Request().Context(), authKeyID)
 					c.SetRequest(c.Request().WithContext(ctx))
 					auditlog.EnrichEntryWithAuthKeyID(c, authKeyID)
+					auditlog.EnrichEntryWithAuthMethod(c, auditlog.AuthMethodAPIKey)
 					return next(c)
 				}
 
