@@ -338,7 +338,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		slog.Info("provider passthrough disabled")
 	}
 
-	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response, cfg.AppConfig.RawProviders)
+	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response, cfg.AppConfig.RawProviders, usageResult.Logger, providerResult.Registry)
 	if err != nil {
 		var (
 			executionPlansCloseErr error
@@ -774,6 +774,7 @@ func dashboardRuntimeConfig(cfg *config.Config) admin.DashboardConfigResponse {
 		LoggingEnabled:       dashboardEnabledValue(cfg != nil && cfg.Logging.Enabled),
 		UsageEnabled:         dashboardEnabledValue(cfg != nil && cfg.Usage.Enabled),
 		GuardrailsEnabled:    dashboardEnabledValue(cfg != nil && cfg.Guardrails.Enabled),
+		CacheEnabled:         dashboardEnabledValue(cfg != nil && responseCacheConfigured(cfg.Cache.Response)),
 		RedisURL:             dashboardEnabledValue(simpleResponseCacheConfigured(cfg)),
 		SemanticCacheEnabled: dashboardEnabledValue(semanticResponseCacheConfigured(cfg)),
 	}

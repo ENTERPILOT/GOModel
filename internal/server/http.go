@@ -277,6 +277,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	if cfg != nil && cfg.AdminEndpointsEnabled && cfg.AdminHandler != nil {
 		adminAPI := e.Group("/admin/api/v1")
 		adminAPI.GET("/dashboard/config", cfg.AdminHandler.DashboardConfig)
+		adminAPI.GET("/cache/overview", cfg.AdminHandler.CacheOverview)
 		adminAPI.GET("/usage/summary", cfg.AdminHandler.UsageSummary)
 		adminAPI.GET("/usage/daily", cfg.AdminHandler.DailyUsage)
 		adminAPI.GET("/usage/models", cfg.AdminHandler.UsageByModel)

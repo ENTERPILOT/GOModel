@@ -12,6 +12,7 @@ type UsageQueryParams struct {
 	Interval  string    // "daily", "weekly", "monthly", "yearly"
 	TimeZone  string    // IANA timezone used for day-boundary interpretation and grouping
 	UserPath  string    // subtree filter on tracked user path
+	CacheMode string    // "uncached" (default), "cached", or "all"
 }
 
 // UsageSummary holds aggregated usage statistics over a time period.
@@ -70,6 +71,7 @@ type UsageLogEntry struct {
 	Provider               string         `json:"provider"`
 	Endpoint               string         `json:"endpoint"`
 	UserPath               string         `json:"user_path,omitempty"`
+	CacheType              string         `json:"cache_type,omitempty"`
 	InputTokens            int            `json:"input_tokens"`
 	OutputTokens           int            `json:"output_tokens"`
 	TotalTokens            int            `json:"total_tokens"`
@@ -88,6 +90,35 @@ type UsageLogResult struct {
 	Offset  int             `json:"offset"`
 }
 
+// CacheOverviewSummary holds cached-only aggregate statistics over a time period.
+type CacheOverviewSummary struct {
+	TotalHits      int      `json:"total_hits"`
+	ExactHits      int      `json:"exact_hits"`
+	SemanticHits   int      `json:"semantic_hits"`
+	TotalInput     int64    `json:"total_input_tokens"`
+	TotalOutput    int64    `json:"total_output_tokens"`
+	TotalTokens    int64    `json:"total_tokens"`
+	TotalSavedCost *float64 `json:"total_saved_cost"`
+}
+
+// CacheOverviewDaily holds cached-only statistics for a single period.
+type CacheOverviewDaily struct {
+	Date         string   `json:"date"`
+	Hits         int      `json:"hits"`
+	ExactHits    int      `json:"exact_hits"`
+	SemanticHits int      `json:"semantic_hits"`
+	InputTokens  int64    `json:"input_tokens"`
+	OutputTokens int64    `json:"output_tokens"`
+	TotalTokens  int64    `json:"total_tokens"`
+	SavedCost    *float64 `json:"saved_cost"`
+}
+
+// CacheOverview aggregates cached-only summary and daily series for the dashboard.
+type CacheOverview struct {
+	Summary CacheOverviewSummary `json:"summary"`
+	Daily   []CacheOverviewDaily `json:"daily"`
+}
+
 // UsageReader provides read access to usage data for the admin API.
 type UsageReader interface {
 	// GetSummary returns aggregated usage statistics for the given date range.
@@ -103,4 +134,7 @@ type UsageReader interface {
 
 	// GetUsageLog returns a paginated list of individual usage entries with optional filtering.
 	GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error)
+
+	// GetCacheOverview returns cached-only aggregates for the admin dashboard.
+	GetCacheOverview(ctx context.Context, params UsageQueryParams) (*CacheOverview, error)
 }

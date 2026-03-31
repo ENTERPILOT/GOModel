@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"encoding/json"
 	"maps"
 	"strings"
 	"time"
@@ -229,6 +230,62 @@ func ExtractFromSSEUsage(
 		entry.CostsCalculationCaveat = costResult.Caveat
 	}
 
+	return entry
+}
+
+// ExtractFromCachedResponseBody converts a cached OpenAI-compatible response body into
+// a synthetic usage entry for a cache hit. If the response body cannot be parsed, it
+// still returns a minimal zero-token entry so cache-hit counts remain observable.
+func ExtractFromCachedResponseBody(
+	body []byte,
+	requestID, model, provider, endpoint, cacheType string,
+	pricing ...*core.ModelPricing,
+) *UsageEntry {
+	cacheType = normalizeCacheType(cacheType)
+	if cacheType == "" {
+		cacheType = CacheTypeExact
+	}
+
+	var entry *UsageEntry
+	switch endpoint {
+	case "/v1/chat/completions":
+		var resp core.ChatResponse
+		if err := json.Unmarshal(body, &resp); err == nil {
+			entry = ExtractFromChatResponse(&resp, requestID, provider, endpoint, pricing...)
+		}
+	case "/v1/responses":
+		var resp core.ResponsesResponse
+		if err := json.Unmarshal(body, &resp); err == nil {
+			entry = ExtractFromResponsesResponse(&resp, requestID, provider, endpoint, pricing...)
+		}
+	case "/v1/embeddings":
+		var resp core.EmbeddingResponse
+		if err := json.Unmarshal(body, &resp); err == nil {
+			entry = ExtractFromEmbeddingResponse(&resp, requestID, provider, endpoint, pricing...)
+		}
+	}
+
+	if entry == nil {
+		entry = &UsageEntry{
+			ID:         uuid.New().String(),
+			RequestID:  requestID,
+			Timestamp:  time.Now().UTC(),
+			Model:      model,
+			Provider:   provider,
+			Endpoint:   endpoint,
+			CacheType:  cacheType,
+			ProviderID: "",
+		}
+		return entry
+	}
+
+	entry.CacheType = cacheType
+	if strings.TrimSpace(entry.Model) == "" {
+		entry.Model = strings.TrimSpace(model)
+	}
+	if strings.TrimSpace(entry.Provider) == "" {
+		entry.Provider = strings.TrimSpace(provider)
+	}
 	return entry
 }
 

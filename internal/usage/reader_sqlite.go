@@ -25,14 +25,9 @@ func NewSQLiteReader(db *sql.DB) (*SQLiteReader, error) {
 
 // GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
-	conditions, args := sqliteDateRangeConditions(params)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, err := sqliteUsageConditions(params)
 	if err != nil {
 		return nil, err
-	}
-	if userPath != "" {
-		conditions = append(conditions, "(user_path = ? OR user_path LIKE ? ESCAPE '\\')")
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	where := buildWhereClause(conditions)
 
@@ -54,14 +49,9 @@ func (r *SQLiteReader) GetSummary(ctx context.Context, params UsageQueryParams) 
 
 // GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
-	conditions, args := sqliteDateRangeConditions(params)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, err := sqliteUsageConditions(params)
 	if err != nil {
 		return nil, err
-	}
-	if userPath != "" {
-		conditions = append(conditions, "(user_path = ? OR user_path LIKE ? ESCAPE '\\')")
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	where := buildWhereClause(conditions)
 
@@ -95,8 +85,7 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
-	conditions, args := sqliteDateRangeConditions(params.UsageQueryParams)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, err := sqliteUsageConditions(params.UsageQueryParams)
 	if err != nil {
 		return nil, err
 	}
@@ -108,10 +97,6 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 	if params.Provider != "" {
 		conditions = append(conditions, "provider = ?")
 		args = append(args, params.Provider)
-	}
-	if userPath != "" {
-		conditions = append(conditions, "(user_path = ? OR user_path LIKE ? ESCAPE '\\')")
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	if params.Search != "" {
 		conditions = append(conditions, "(model LIKE ? ESCAPE '\\' OR provider LIKE ? ESCAPE '\\' OR request_id LIKE ? ESCAPE '\\' OR provider_id LIKE ? ESCAPE '\\')")
@@ -129,7 +114,7 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 	}
 
 	// Fetch page
-	dataQuery := `SELECT id, request_id, provider_id, timestamp, model, provider, endpoint, user_path,
+	dataQuery := `SELECT id, request_id, provider_id, timestamp, model, provider, endpoint, user_path, cache_type,
 		input_tokens, output_tokens, total_tokens, COALESCE(input_cost, 0), COALESCE(output_cost, 0), COALESCE(total_cost, 0), raw_data, COALESCE(costs_calculation_caveat, '')
 		FROM usage` + where + ` ORDER BY ` + sqliteTimestampEpochExpr() + ` DESC, id DESC LIMIT ? OFFSET ?`
 	dataArgs := append(append([]any(nil), args...), limit, offset)
@@ -147,7 +132,8 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 		var caveat *string
 		var rawDataJSON *string
 		var userPath sql.NullString
-		if err := rows.Scan(&e.ID, &e.RequestID, &e.ProviderID, &ts, &e.Model, &e.Provider, &e.Endpoint, &userPath,
+		var cacheType sql.NullString
+		if err := rows.Scan(&e.ID, &e.RequestID, &e.ProviderID, &ts, &e.Model, &e.Provider, &e.Endpoint, &userPath, &cacheType,
 			&e.InputTokens, &e.OutputTokens, &e.TotalTokens, &e.InputCost, &e.OutputCost, &e.TotalCost, &rawDataJSON, &caveat); err != nil {
 			return nil, fmt.Errorf("failed to scan usage log row: %w", err)
 		}
@@ -167,6 +153,9 @@ func (r *SQLiteReader) GetUsageLog(ctx context.Context, params UsageLogParams) (
 		}
 		if userPath.Valid {
 			e.UserPath = userPath.String
+		}
+		if cacheType.Valid {
+			e.CacheType = normalizeCacheType(cacheType.String)
 		}
 		if caveat != nil {
 			e.CostsCalculationCaveat = *caveat
@@ -248,14 +237,9 @@ func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParam
 		return nil, err
 	}
 
-	conditions, args := sqliteDateRangeConditions(params)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, err := sqliteUsageConditions(params)
 	if err != nil {
 		return nil, err
-	}
-	if userPath != "" {
-		conditions = append(conditions, "(user_path = ? OR user_path LIKE ? ESCAPE '\\')")
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	where := buildWhereClause(conditions)
 
@@ -292,11 +276,111 @@ func (r *SQLiteReader) GetDailyUsage(ctx context.Context, params UsageQueryParam
 	return result, nil
 }
 
+// GetCacheOverview returns cached-only aggregates for the admin dashboard.
+func (r *SQLiteReader) GetCacheOverview(ctx context.Context, params UsageQueryParams) (*CacheOverview, error) {
+	params.CacheMode = CacheModeCached
+
+	conditions, args, err := sqliteUsageConditions(params)
+	if err != nil {
+		return nil, err
+	}
+	where := buildWhereClause(conditions)
+
+	summaryQuery := `SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN cache_type = '` + CacheTypeExact + `' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = '` + CacheTypeSemantic + `' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		SUM(total_cost)
+		FROM usage` + where
+
+	overview := &CacheOverview{}
+	if err := r.db.QueryRowContext(ctx, summaryQuery, args...).Scan(
+		&overview.Summary.TotalHits,
+		&overview.Summary.ExactHits,
+		&overview.Summary.SemanticHits,
+		&overview.Summary.TotalInput,
+		&overview.Summary.TotalOutput,
+		&overview.Summary.TotalTokens,
+		&overview.Summary.TotalSavedCost,
+	); err != nil {
+		return nil, fmt.Errorf("failed to query cache overview summary: %w", err)
+	}
+
+	groupExpr, groupArgs, err := r.sqliteGroupExpr(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	dailyQuery := `WITH usage_periods AS (
+		SELECT ` + groupExpr + ` AS period,
+			cache_type, input_tokens, output_tokens, total_tokens, total_cost
+		FROM usage` + where + `
+	)
+	SELECT period,
+		COUNT(*),
+		COALESCE(SUM(CASE WHEN cache_type = '` + CacheTypeExact + `' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = '` + CacheTypeSemantic + `' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		SUM(total_cost)
+		FROM usage_periods GROUP BY period ORDER BY period`
+	queryArgs := append(groupArgs, args...)
+
+	rows, err := r.db.QueryContext(ctx, dailyQuery, queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query cache overview daily: %w", err)
+	}
+	defer rows.Close()
+
+	overview.Daily = make([]CacheOverviewDaily, 0)
+	for rows.Next() {
+		var d CacheOverviewDaily
+		if err := rows.Scan(&d.Date, &d.Hits, &d.ExactHits, &d.SemanticHits, &d.InputTokens, &d.OutputTokens, &d.TotalTokens, &d.SavedCost); err != nil {
+			return nil, fmt.Errorf("failed to scan cache overview daily row: %w", err)
+		}
+		overview.Daily = append(overview.Daily, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cache overview daily rows: %w", err)
+	}
+
+	return overview, nil
+}
+
 func sqliteOffsetModifier(offsetMinutes int) string {
 	if offsetMinutes == 0 {
 		return ""
 	}
 	return fmt.Sprintf("%+d minutes", offsetMinutes)
+}
+
+func sqliteUsageConditions(params UsageQueryParams) ([]string, []any, error) {
+	conditions, args := sqliteDateRangeConditions(params)
+	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if userPath != "" {
+		conditions = append(conditions, "(user_path = ? OR user_path LIKE ? ESCAPE '\\')")
+		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
+	}
+	if condition := sqliteCacheModeCondition(params.CacheMode); condition != "" {
+		conditions = append(conditions, condition)
+	}
+	return conditions, args, nil
+}
+
+func sqliteCacheModeCondition(mode string) string {
+	switch normalizeCacheMode(mode) {
+	case CacheModeCached:
+		return "(cache_type = '" + CacheTypeExact + "' OR cache_type = '" + CacheTypeSemantic + "')"
+	case CacheModeAll:
+		return ""
+	default:
+		return "(cache_type IS NULL OR cache_type = '')"
+	}
 }
 
 type sqliteTimeZoneSegment struct {

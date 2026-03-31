@@ -40,7 +40,7 @@ func newTestSemanticMiddleware(threshold float64, maxConvMessages int, excludeSy
 		MaxConversationMessages: maxConvMessages,
 		ExcludeSystemPrompt:     excludeSystem,
 	}
-	m := newSemanticCacheMiddleware(emb, store, cfg)
+	m := newSemanticCacheMiddleware(emb, store, cfg, nil)
 	return m, store, emb
 }
 
@@ -163,7 +163,7 @@ func TestSemanticCacheMiddleware_CacheMissOnLowScore(t *testing.T) {
 		SimilarityThreshold:     0.99,
 		TTL:                     3600,
 		MaxConversationMessages: 10,
-	})
+	}, nil)
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -334,7 +334,7 @@ func TestSemanticCacheMiddleware_HeaderThresholdOverride(t *testing.T) {
 		SimilarityThreshold:     0.99,
 		TTL:                     3600,
 		MaxConversationMessages: 10,
-	})
+	}, nil)
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -370,7 +370,7 @@ func TestSemanticCacheMiddleware_TTLExpiry(t *testing.T) {
 		SimilarityThreshold:     0.90,
 		TTL:                     1,
 		MaxConversationMessages: 10,
-	})
+	}, nil)
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"expiry test"}]}`)
 	serveSemanticRequest(t, m, body, "")

@@ -14,14 +14,14 @@ import (
 )
 
 const (
-	usageInsertColumnCount     = 16
+	usageInsertColumnCount     = 17
 	postgresMaxBindParameters  = 65535
 	usageInsertMaxRowsPerQuery = postgresMaxBindParameters / usageInsertColumnCount
 )
 
 const usageInsertPrefix = `
 		INSERT INTO usage (id, request_id, provider_id, timestamp, model, provider,
-			endpoint, user_path, input_tokens, output_tokens, total_tokens, raw_data,
+			endpoint, user_path, cache_type, input_tokens, output_tokens, total_tokens, raw_data,
 			input_cost, output_cost, total_cost, costs_calculation_caveat)
 		VALUES `
 
@@ -62,6 +62,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 			provider TEXT NOT NULL,
 			endpoint TEXT NOT NULL,
 			user_path TEXT,
+			cache_type TEXT,
 			input_tokens INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
 			total_tokens INTEGER NOT NULL DEFAULT 0,
@@ -79,6 +80,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS total_cost DOUBLE PRECISION",
 		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS costs_calculation_caveat TEXT DEFAULT ''",
 		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS user_path TEXT",
+		"ALTER TABLE usage ADD COLUMN IF NOT EXISTS cache_type TEXT",
 	}
 	for _, migration := range costMigrations {
 		if _, err := pool.Exec(ctx, migration); err != nil {
@@ -94,6 +96,7 @@ func NewPostgreSQLStore(pool *pgxpool.Pool, retentionDays int) (*PostgreSQLStore
 		"CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_user_path ON usage(user_path)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_cache_type ON usage(cache_type)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_raw_data_gin ON usage USING GIN (raw_data)",
 	}
 	for _, idx := range indexes {
@@ -204,6 +207,7 @@ func buildUsageInsert(entries []*UsageEntry) (string, []any) {
 			entry.Provider,
 			entry.Endpoint,
 			entry.UserPath,
+			cacheTypeValue(entry.CacheType),
 			entry.InputTokens,
 			entry.OutputTokens,
 			entry.TotalTokens,

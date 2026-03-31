@@ -116,6 +116,9 @@ func TestDashboardRuntimeConfig_ExposesFeatureAvailabilityFlags(t *testing.T) {
 	if got := values.GuardrailsEnabled; got != "on" {
 		t.Fatalf("dashboardRuntimeConfig()[%q] = %q, want on", admin.DashboardConfigGuardrailsEnabled, got)
 	}
+	if got := values.CacheEnabled; got != "on" {
+		t.Fatalf("dashboardRuntimeConfig()[%q] = %q, want on", admin.DashboardConfigCacheEnabled, got)
+	}
 	if got := values.RedisURL; got != "on" {
 		t.Fatalf("dashboardRuntimeConfig()[%q] = %q, want on", admin.DashboardConfigRedisURL, got)
 	}

@@ -61,6 +61,7 @@
 	                    'LOGGING_ENABLED',
 	                    'USAGE_ENABLED',
 	                    'GUARDRAILS_ENABLED',
+	                    'CACHE_ENABLED',
 	                    'REDIS_URL',
 	                    'SEMANTIC_CACHE_ENABLED'
 	                ];
@@ -80,6 +81,10 @@
 	            },
 
 	            executionPlanCacheVisible() {
+	                const explicit = this.executionPlanRuntimeFlag('CACHE_ENABLED');
+	                if (explicit !== '') {
+	                    return this.executionPlanRuntimeBooleanFlag('CACHE_ENABLED', false);
+	                }
 	                const redis = this.executionPlanRuntimeFlag('REDIS_URL');
 	                const semantic = this.executionPlanRuntimeFlag('SEMANTIC_CACHE_ENABLED');
 	                if (redis === '' && semantic === '') {
@@ -671,11 +676,32 @@
                         if (payload && typeof payload === 'object' && !Array.isArray(payload) && payload[key] !== undefined && payload[key] !== null) {
                             next[key] = String(payload[key]).trim();
                         }
-                    }
-                    this.executionPlanRuntimeConfig = next;
-                } catch (e) {
-                    console.error('Failed to fetch dashboard config:', e);
-                    this.executionPlanRuntimeConfig = {};
+	                    }
+	                    this.executionPlanRuntimeConfig = next;
+	                    if (typeof this.fetchCacheOverview === 'function') {
+	                        if (this.executionPlanCacheVisible()) {
+	                            this.fetchCacheOverview();
+	                        } else {
+	                            this.cacheOverview = {
+	                                summary: {
+	                                    total_hits: 0,
+	                                    exact_hits: 0,
+	                                    semantic_hits: 0,
+	                                    total_input_tokens: 0,
+	                                    total_output_tokens: 0,
+	                                    total_tokens: 0,
+	                                    total_saved_cost: null
+	                                },
+	                                daily: []
+	                            };
+	                            if (typeof this.renderChart === 'function') {
+	                                this.renderChart();
+	                            }
+	                        }
+	                    }
+	                } catch (e) {
+	                    console.error('Failed to fetch dashboard config:', e);
+	                    this.executionPlanRuntimeConfig = {};
                 } finally {
                     if (timeoutID !== null && typeof clearTimeout === 'function') {
                         clearTimeout(timeoutID);

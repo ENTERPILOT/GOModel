@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 
@@ -477,6 +478,33 @@ func TestExtractFromSSEUsageEmptyRawData(t *testing.T) {
 
 	if entry.RawData != nil {
 		t.Error("expected RawData to be nil")
+	}
+}
+
+func TestExtractFromCachedResponseBody(t *testing.T) {
+	resp := &core.ChatResponse{
+		ID:    "chatcmpl-cache",
+		Model: "gpt-4o",
+		Usage: core.Usage{
+			PromptTokens:     42,
+			CompletionTokens: 18,
+			TotalTokens:      60,
+		},
+	}
+	body, err := json.Marshal(resp)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	entry := ExtractFromCachedResponseBody(body, "req-cache", "gpt-4o", "openai", "/v1/chat/completions", CacheTypeExact)
+	if entry == nil {
+		t.Fatal("expected non-nil entry")
+	}
+	if entry.CacheType != CacheTypeExact {
+		t.Fatalf("CacheType = %q, want %q", entry.CacheType, CacheTypeExact)
+	}
+	if entry.InputTokens != 42 || entry.OutputTokens != 18 || entry.TotalTokens != 60 {
+		t.Fatalf("unexpected token counts: %+v", entry)
 	}
 }
 

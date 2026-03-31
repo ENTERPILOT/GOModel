@@ -44,6 +44,7 @@ const (
 	DashboardConfigLoggingEnabled       = "LOGGING_ENABLED"
 	DashboardConfigUsageEnabled         = "USAGE_ENABLED"
 	DashboardConfigGuardrailsEnabled    = "GUARDRAILS_ENABLED"
+	DashboardConfigCacheEnabled         = "CACHE_ENABLED"
 	DashboardConfigRedisURL             = "REDIS_URL"
 	DashboardConfigSemanticCacheEnabled = "SEMANTIC_CACHE_ENABLED"
 )
@@ -54,6 +55,7 @@ type DashboardConfigResponse struct {
 	LoggingEnabled       string `json:"LOGGING_ENABLED,omitempty"`
 	UsageEnabled         string `json:"USAGE_ENABLED,omitempty"`
 	GuardrailsEnabled    string `json:"GUARDRAILS_ENABLED,omitempty"`
+	CacheEnabled         string `json:"CACHE_ENABLED,omitempty"`
 	RedisURL             string `json:"REDIS_URL,omitempty"`
 	SemanticCacheEnabled string `json:"SEMANTIC_CACHE_ENABLED,omitempty"`
 }
@@ -124,6 +126,7 @@ func normalizeDashboardRuntimeConfig(values DashboardConfigResponse) DashboardCo
 		LoggingEnabled:       strings.TrimSpace(values.LoggingEnabled),
 		UsageEnabled:         strings.TrimSpace(values.UsageEnabled),
 		GuardrailsEnabled:    strings.TrimSpace(values.GuardrailsEnabled),
+		CacheEnabled:         strings.TrimSpace(values.CacheEnabled),
 		RedisURL:             strings.TrimSpace(values.RedisURL),
 		SemanticCacheEnabled: strings.TrimSpace(values.SemanticCacheEnabled),
 	}
@@ -160,6 +163,7 @@ func parseUsageParams(c *echo.Context) (usage.UsageQueryParams, error) {
 	if !validIntervals[params.Interval] {
 		params.Interval = "daily"
 	}
+	params.CacheMode = c.QueryParam("cache_mode")
 
 	userPath, err := normalizeUserPathQueryParam("user_path", c.QueryParam("user_path"))
 	if err != nil {
@@ -417,6 +421,37 @@ func (h *Handler) UsageLog(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, result)
+}
+
+// CacheOverview handles GET /admin/api/v1/cache/overview
+func (h *Handler) CacheOverview(c *echo.Context) error {
+	if strings.TrimSpace(h.runtimeConfig.CacheEnabled) != "on" {
+		return handleError(c, featureUnavailableError("cache analytics is unavailable"))
+	}
+	if h.usageReader == nil {
+		return c.JSON(http.StatusOK, usage.CacheOverview{
+			Daily: []usage.CacheOverviewDaily{},
+		})
+	}
+
+	params, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	params.CacheMode = usage.CacheModeCached
+
+	overview, err := h.usageReader.GetCacheOverview(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if overview == nil {
+		overview = &usage.CacheOverview{}
+	}
+	if overview.Daily == nil {
+		overview.Daily = []usage.CacheOverviewDaily{}
+	}
+
+	return c.JSON(http.StatusOK, overview)
 }
 
 // AuditLog handles GET /admin/api/v1/audit/log

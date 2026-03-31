@@ -46,6 +46,18 @@ function dashboard() {
         // Data
         summary: { total_requests: 0, total_input_tokens: 0, total_output_tokens: 0, total_tokens: 0, total_input_cost: null, total_output_cost: null, total_cost: null },
         daily: [],
+        cacheOverview: {
+            summary: {
+                total_hits: 0,
+                exact_hits: 0,
+                semantic_hits: 0,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                total_tokens: 0,
+                total_saved_cost: null
+            },
+            daily: []
+        },
         models: [],
         categories: [],
         activeCategory: 'all',

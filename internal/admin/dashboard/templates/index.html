@@ -39,6 +39,18 @@
             <div class="card-label">Estimated Cost</div>
             <div class="card-value" x-text="formatCost(summary.total_cost)">-</div>
         </div>
+        <div class="card" x-show="cacheAnalyticsEnabled()">
+            <div class="card-label">Cache Hits</div>
+            <div class="card-value" x-text="formatNumber(cacheOverview.summary.total_hits)">-</div>
+        </div>
+        <div class="card" x-show="cacheAnalyticsEnabled()">
+            <div class="card-label">Local Cache Input Tokens</div>
+            <div class="card-value" x-text="formatNumber(cacheOverview.summary.total_input_tokens)">-</div>
+        </div>
+        <div class="card" x-show="cacheAnalyticsEnabled()">
+            <div class="card-label">Local Cache Output Tokens</div>
+            <div class="card-value" x-text="formatNumber(cacheOverview.summary.total_output_tokens)">-</div>
+        </div>
     </div>
 
     <!-- Usage Chart -->
@@ -126,6 +138,17 @@
 
     <!-- Auth Error Banner -->
     {{template "auth-banner" .}}
+
+    <div class="cards" x-show="cacheAnalyticsEnabled()">
+        <div class="card">
+            <div class="card-label">Cache Saved</div>
+            <div class="card-value" x-text="formatCost(cacheOverview.summary.total_saved_cost)">-</div>
+        </div>
+        <div class="card">
+            <div class="card-label">Cache Hits</div>
+            <div class="card-value" x-text="formatNumber(cacheOverview.summary.total_hits)">-</div>
+        </div>
+    </div>
 
     <!-- Usage by Model Chart -->
     <div class="model-chart-section" x-show="modelUsage.length > 0">

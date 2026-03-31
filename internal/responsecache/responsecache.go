@@ -10,6 +10,7 @@ import (
 	"gomodel/config"
 	"gomodel/internal/cache"
 	"gomodel/internal/embedding"
+	"gomodel/internal/usage"
 )
 
 const responseCachePrefix = "gomodel:response:"
@@ -23,8 +24,14 @@ type ResponseCacheMiddleware struct {
 // NewResponseCacheMiddleware creates middleware from config.
 // If neither simple nor semantic cache is configured, returns a no-op middleware.
 // rawProviders is threaded through to NewEmbedder for API-key credential resolution.
-func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, rawProviders map[string]config.RawProviderConfig) (*ResponseCacheMiddleware, error) {
+func NewResponseCacheMiddleware(
+	cfg config.ResponseCacheConfig,
+	rawProviders map[string]config.RawProviderConfig,
+	usageLogger usage.LoggerInterface,
+	pricingResolver usage.PricingResolver,
+) (*ResponseCacheMiddleware, error) {
 	m := &ResponseCacheMiddleware{}
+	hitRecorder := newUsageHitRecorder(usageLogger, pricingResolver)
 
 	if cfg.Simple.Redis != nil && cfg.Simple.Redis.URL != "" {
 		ttl := time.Duration(cfg.Simple.Redis.TTL) * time.Second
@@ -43,7 +50,7 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, rawProviders map
 		if err != nil {
 			return nil, err
 		}
-		m.simple = newSimpleCacheMiddleware(store, ttl)
+		m.simple = newSimpleCacheMiddleware(store, ttl, hitRecorder)
 		slog.Info("response cache (simple/exact) enabled", "ttl_seconds", cfg.Simple.Redis.TTL, "prefix", prefix)
 	} else {
 		slog.Warn("response cache (simple/exact) is disabled; set cache.response.simple.redis.url to enable it")
@@ -60,7 +67,7 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, rawProviders map
 			_ = emb.Close()
 			return nil, err
 		}
-		m.semantic = newSemanticCacheMiddleware(emb, vs, sem)
+		m.semantic = newSemanticCacheMiddleware(emb, vs, sem, hitRecorder)
 		slog.Info("response cache (semantic) enabled",
 			"threshold", sem.SimilarityThreshold,
 			"ttl_seconds", sem.TTL,
@@ -141,6 +148,6 @@ func (m *ResponseCacheMiddleware) Close() error {
 // NewResponseCacheMiddlewareWithStore creates middleware with a custom store (for testing).
 func NewResponseCacheMiddlewareWithStore(store cache.Store, ttl time.Duration) *ResponseCacheMiddleware {
 	return &ResponseCacheMiddleware{
-		simple: newSimpleCacheMiddleware(store, ttl),
+		simple: newSimpleCacheMiddleware(store, ttl, nil),
 	}
 }

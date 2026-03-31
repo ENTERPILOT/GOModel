@@ -25,20 +25,9 @@ func NewMongoDBReader(database *mongo.Database) (*MongoDBReader, error) {
 // GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
 	pipeline := bson.A{}
-	matchFilters := bson.D{}
-
-	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
-	}
-	if userPath, err := normalizeUsageUserPathFilter(params.UserPath); err != nil {
+	matchFilters, err := mongoUsageMatchFilters(params)
+	if err != nil {
 		return nil, err
-	} else if userPath != "" {
-		matchFilters = append(matchFilters, bson.E{
-			Key: "user_path",
-			Value: bson.D{
-				{Key: "$regex", Value: usageUserPathSubtreeRegex(userPath)},
-			},
-		})
 	}
 	if len(matchFilters) > 0 {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
@@ -98,20 +87,9 @@ func (r *MongoDBReader) GetSummary(ctx context.Context, params UsageQueryParams)
 // GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
 	pipeline := bson.A{}
-	matchFilters := bson.D{}
-
-	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
-	}
-	if userPath, err := normalizeUsageUserPathFilter(params.UserPath); err != nil {
+	matchFilters, err := mongoUsageMatchFilters(params)
+	if err != nil {
 		return nil, err
-	} else if userPath != "" {
-		matchFilters = append(matchFilters, bson.E{
-			Key: "user_path",
-			Value: bson.D{
-				{Key: "$regex", Value: usageUserPathSubtreeRegex(userPath)},
-			},
-		})
 	}
 	if len(matchFilters) > 0 {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
@@ -178,36 +156,9 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
-	matchFilters := bson.D{}
-
-	if tsFilter := mongoDateRangeFilter(params.UsageQueryParams); tsFilter != nil {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
-	}
-
-	if params.Model != "" {
-		matchFilters = append(matchFilters, bson.E{Key: "model", Value: params.Model})
-	}
-	if params.Provider != "" {
-		matchFilters = append(matchFilters, bson.E{Key: "provider", Value: params.Provider})
-	}
-	if userPath, err := normalizeUsageUserPathFilter(params.UserPath); err != nil {
+	matchFilters, err := mongoUsageLogMatchFilters(params)
+	if err != nil {
 		return nil, err
-	} else if userPath != "" {
-		matchFilters = append(matchFilters, bson.E{
-			Key: "user_path",
-			Value: bson.D{
-				{Key: "$regex", Value: usageUserPathSubtreeRegex(userPath)},
-			},
-		})
-	}
-	if params.Search != "" {
-		regex := bson.D{{Key: "$regex", Value: params.Search}, {Key: "$options", Value: "i"}}
-		matchFilters = append(matchFilters, bson.E{Key: "$or", Value: bson.A{
-			bson.D{{Key: "model", Value: regex}},
-			bson.D{{Key: "provider", Value: regex}},
-			bson.D{{Key: "request_id", Value: regex}},
-			bson.D{{Key: "provider_id", Value: regex}},
-		}})
 	}
 
 	pipeline := bson.A{}
@@ -242,6 +193,7 @@ func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) 
 			Provider               string         `bson:"provider"`
 			Endpoint               string         `bson:"endpoint"`
 			UserPath               string         `bson:"user_path"`
+			CacheType              string         `bson:"cache_type"`
 			InputTokens            int            `bson:"input_tokens"`
 			OutputTokens           int            `bson:"output_tokens"`
 			TotalTokens            int            `bson:"total_tokens"`
@@ -282,6 +234,7 @@ func (r *MongoDBReader) GetUsageLog(ctx context.Context, params UsageLogParams) 
 			Provider:               row.Provider,
 			Endpoint:               row.Endpoint,
 			UserPath:               row.UserPath,
+			CacheType:              normalizeCacheType(row.CacheType),
 			InputTokens:            row.InputTokens,
 			OutputTokens:           row.OutputTokens,
 			TotalTokens:            row.TotalTokens,
@@ -340,20 +293,9 @@ func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryPara
 	}
 
 	pipeline := bson.A{}
-	matchFilters := bson.D{}
-
-	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
-		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
-	}
-	if userPath, err := normalizeUsageUserPathFilter(params.UserPath); err != nil {
+	matchFilters, err := mongoUsageMatchFilters(params)
+	if err != nil {
 		return nil, err
-	} else if userPath != "" {
-		matchFilters = append(matchFilters, bson.E{
-			Key: "user_path",
-			Value: bson.D{
-				{Key: "$regex", Value: usageUserPathSubtreeRegex(userPath)},
-			},
-		})
 	}
 	if len(matchFilters) > 0 {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
@@ -422,4 +364,221 @@ func (r *MongoDBReader) GetDailyUsage(ctx context.Context, params UsageQueryPara
 	}
 
 	return result, nil
+}
+
+// GetCacheOverview returns cached-only aggregates for the admin dashboard.
+func (r *MongoDBReader) GetCacheOverview(ctx context.Context, params UsageQueryParams) (*CacheOverview, error) {
+	params.CacheMode = CacheModeCached
+
+	matchFilters, err := mongoUsageMatchFilters(params)
+	if err != nil {
+		return nil, err
+	}
+
+	summaryPipeline := bson.A{}
+	if len(matchFilters) > 0 {
+		summaryPipeline = append(summaryPipeline, bson.D{{Key: "$match", Value: matchFilters}})
+	}
+	summaryPipeline = append(summaryPipeline, bson.D{{Key: "$group", Value: bson.D{
+		{Key: "_id", Value: nil},
+		{Key: "total_hits", Value: bson.D{{Key: "$sum", Value: 1}}},
+		{Key: "exact_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeExact}}}, 1, 0}}}}}},
+		{Key: "semantic_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeSemantic}}}, 1, 0}}}}}},
+		{Key: "total_input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
+		{Key: "total_output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+		{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
+		{Key: "total_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+		{Key: "has_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
+	}}})
+
+	overview := &CacheOverview{Daily: []CacheOverviewDaily{}}
+	cursor, err := r.collection.Aggregate(ctx, summaryPipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate cache overview summary: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	if cursor.Next(ctx) {
+		var row struct {
+			TotalHits      int     `bson:"total_hits"`
+			ExactHits      int     `bson:"exact_hits"`
+			SemanticHits   int     `bson:"semantic_hits"`
+			TotalInput     int64   `bson:"total_input_tokens"`
+			TotalOutput    int64   `bson:"total_output_tokens"`
+			TotalTokens    int64   `bson:"total_tokens"`
+			TotalSavedCost float64 `bson:"total_saved_cost"`
+			HasSavedCost   int     `bson:"has_saved_cost"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return nil, fmt.Errorf("failed to decode cache overview summary: %w", err)
+		}
+		overview.Summary = CacheOverviewSummary{
+			TotalHits:    row.TotalHits,
+			ExactHits:    row.ExactHits,
+			SemanticHits: row.SemanticHits,
+			TotalInput:   row.TotalInput,
+			TotalOutput:  row.TotalOutput,
+			TotalTokens:  row.TotalTokens,
+		}
+		if row.HasSavedCost > 0 {
+			overview.Summary.TotalSavedCost = &row.TotalSavedCost
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cache overview summary cursor: %w", err)
+	}
+
+	interval := params.Interval
+	if interval == "" {
+		interval = "daily"
+	}
+	dailyPipeline := bson.A{}
+	if len(matchFilters) > 0 {
+		dailyPipeline = append(dailyPipeline, bson.D{{Key: "$match", Value: matchFilters}})
+	}
+	dailyPipeline = append(dailyPipeline,
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "$dateToString", Value: bson.D{
+				{Key: "format", Value: mongoDateFormat(interval)},
+				{Key: "date", Value: "$timestamp"},
+				{Key: "timezone", Value: usageTimeZone(params)},
+			}}}},
+			{Key: "hits", Value: bson.D{{Key: "$sum", Value: 1}}},
+			{Key: "exact_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeExact}}}, 1, 0}}}}}},
+			{Key: "semantic_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeSemantic}}}, 1, 0}}}}}},
+			{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
+			{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+			{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
+			{Key: "saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+			{Key: "has_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
+	)
+
+	cursor, err = r.collection.Aggregate(ctx, dailyPipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate cache overview daily: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var row struct {
+			Date         string  `bson:"_id"`
+			Hits         int     `bson:"hits"`
+			ExactHits    int     `bson:"exact_hits"`
+			SemanticHits int     `bson:"semantic_hits"`
+			InputTokens  int64   `bson:"input_tokens"`
+			OutputTokens int64   `bson:"output_tokens"`
+			TotalTokens  int64   `bson:"total_tokens"`
+			SavedCost    float64 `bson:"saved_cost"`
+			HasSavedCost int     `bson:"has_saved_cost"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return nil, fmt.Errorf("failed to decode cache overview daily row: %w", err)
+		}
+		entry := CacheOverviewDaily{
+			Date:         row.Date,
+			Hits:         row.Hits,
+			ExactHits:    row.ExactHits,
+			SemanticHits: row.SemanticHits,
+			InputTokens:  row.InputTokens,
+			OutputTokens: row.OutputTokens,
+			TotalTokens:  row.TotalTokens,
+		}
+		if row.HasSavedCost > 0 {
+			entry.SavedCost = &row.SavedCost
+		}
+		overview.Daily = append(overview.Daily, entry)
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cache overview daily cursor: %w", err)
+	}
+
+	return overview, nil
+}
+
+func mongoUsageMatchFilters(params UsageQueryParams) (bson.D, error) {
+	matchFilters := bson.D{}
+	if tsFilter := mongoDateRangeFilter(params); tsFilter != nil {
+		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
+	}
+	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	if err != nil {
+		return nil, err
+	}
+	if userPath != "" {
+		matchFilters = append(matchFilters, bson.E{
+			Key: "user_path",
+			Value: bson.D{
+				{Key: "$regex", Value: usageUserPathSubtreeRegex(userPath)},
+			},
+		})
+	}
+	if filter := mongoCacheModeFilter(params.CacheMode); len(filter) > 0 {
+		matchFilters = append(matchFilters, filter...)
+	}
+	return matchFilters, nil
+}
+
+func mongoUsageLogMatchFilters(params UsageLogParams) (bson.D, error) {
+	matchFilters, err := mongoUsageMatchFilters(params.UsageQueryParams)
+	if err != nil {
+		return nil, err
+	}
+
+	if params.Model != "" {
+		matchFilters = append(matchFilters, bson.E{Key: "model", Value: params.Model})
+	}
+	if params.Provider != "" {
+		matchFilters = append(matchFilters, bson.E{Key: "provider", Value: params.Provider})
+	}
+	if params.Search != "" {
+		regex := bson.D{{Key: "$regex", Value: params.Search}, {Key: "$options", Value: "i"}}
+		searchFilter := bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "model", Value: regex}},
+			bson.D{{Key: "provider", Value: regex}},
+			bson.D{{Key: "request_id", Value: regex}},
+			bson.D{{Key: "provider_id", Value: regex}},
+		}}}
+		matchFilters = mongoAndFilters(matchFilters, searchFilter)
+	}
+
+	return matchFilters, nil
+}
+
+func mongoAndFilters(filters ...bson.D) bson.D {
+	nonEmpty := make([]bson.D, 0, len(filters))
+	for _, filter := range filters {
+		if len(filter) > 0 {
+			nonEmpty = append(nonEmpty, filter)
+		}
+	}
+
+	switch len(nonEmpty) {
+	case 0:
+		return nil
+	case 1:
+		return nonEmpty[0]
+	default:
+		clauses := make(bson.A, 0, len(nonEmpty))
+		for _, filter := range nonEmpty {
+			clauses = append(clauses, filter)
+		}
+		return bson.D{{Key: "$and", Value: clauses}}
+	}
+}
+
+func mongoCacheModeFilter(mode string) bson.D {
+	switch normalizeCacheMode(mode) {
+	case CacheModeCached:
+		return bson.D{{Key: "cache_type", Value: bson.D{{Key: "$in", Value: bson.A{CacheTypeExact, CacheTypeSemantic}}}}}
+	case CacheModeAll:
+		return nil
+	default:
+		return bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "cache_type", Value: bson.D{{Key: "$exists", Value: false}}}},
+			bson.D{{Key: "cache_type", Value: nil}},
+			bson.D{{Key: "cache_type", Value: ""}},
+		}}}
+	}
 }
