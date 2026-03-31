@@ -86,8 +86,10 @@ func (s *qdrantStore) ensureCollection(ctx context.Context, dim int) error {
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return err
+	}
 	if resp.StatusCode == http.StatusOK {
 		s.vectorSize = dim
 		return nil

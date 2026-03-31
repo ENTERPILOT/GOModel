@@ -88,8 +88,10 @@ func (s *weaviateStore) ensureClass(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	io.Copy(io.Discard, resp.Body)
-	resp.Body.Close()
+	defer resp.Body.Close()
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		return err
+	}
 	if resp.StatusCode == http.StatusOK {
 		return nil
 	}
@@ -200,7 +202,7 @@ func floatSliceJSON(v []float32) string {
 		if i > 0 {
 			b.WriteByte(',')
 		}
-		b.WriteString(fmt.Sprintf("%g", x))
+		fmt.Fprintf(&b, "%g", x)
 	}
 	b.WriteByte(']')
 	return b.String()
@@ -251,12 +253,12 @@ func (s *weaviateStore) runGraphQLSearch(ctx context.Context, query string) ([]V
 		return nil, nil
 	}
 	var items []struct {
-		CacheKey    string `json:"cache_key"`
-		ResponseB64 string `json:"response_b64"`
+		CacheKey    string  `json:"cache_key"`
+		ResponseB64 string  `json:"response_b64"`
 		ExpiresAt   float64 `json:"expires_at"`
 		Additional  struct {
-			Distance   *float64 `json:"distance"`
-			Certainty  *float64 `json:"certainty"`
+			Distance  *float64 `json:"distance"`
+			Certainty *float64 `json:"certainty"`
 		} `json:"_additional"`
 	}
 	if err := json.Unmarshal(itemsRaw, &items); err != nil {
