@@ -192,7 +192,7 @@ func TestStreamUsageObserverNormalizesUserPath(t *testing.T) {
 	}
 }
 
-func TestStreamUsageObserverPreservesInvalidUserPath(t *testing.T) {
+func TestStreamUsageObserverFallsBackToRootForInvalidUserPath(t *testing.T) {
 	logger := &trackingLogger{enabled: true}
 	observer := NewStreamUsageObserver(logger, "gpt-4", "openai", "req-123", "/v1/chat/completions", nil, "/team/../alpha")
 	observer.OnJSONEvent(map[string]any{
@@ -209,8 +209,8 @@ func TestStreamUsageObserverPreservesInvalidUserPath(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 entry, got %d", len(entries))
 	}
-	if got := entries[0].UserPath; got != "/team/../alpha" {
-		t.Fatalf("UserPath = %q, want /team/../alpha", got)
+	if got := entries[0].UserPath; got != "/" {
+		t.Fatalf("UserPath = %q, want /", got)
 	}
 }
 

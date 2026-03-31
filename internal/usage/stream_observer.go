@@ -28,8 +28,8 @@ func NewStreamUsageObserver(logger LoggerInterface, model, provider, requestID, 
 		if normalized, err := core.NormalizeUserPath(userPath[0]); err == nil {
 			normalizedUserPath = normalized
 		} else {
-			slog.Warn("stream usage observer received invalid user_path; preserving raw value", "user_path", userPath[0], "error", err)
-			normalizedUserPath = userPath[0]
+			slog.Warn("stream usage observer received invalid user_path; using root fallback", "error", err)
+			normalizedUserPath = "/"
 		}
 	}
 	return &StreamUsageObserver{

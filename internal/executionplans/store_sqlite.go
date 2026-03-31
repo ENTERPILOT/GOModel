@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -51,19 +50,44 @@ func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
 			return nil, fmt.Errorf("initialize execution plan versions table: %w", err)
 		}
 	}
-	if _, err := db.Exec(`ALTER TABLE execution_plan_versions ADD COLUMN scope_user_path TEXT`); err != nil && !isSQLiteDuplicateColumnError(err) {
+	hasUserPathColumn, err := sqliteTableHasColumn(db, "execution_plan_versions", "scope_user_path")
+	if err != nil {
 		return nil, fmt.Errorf("initialize execution plan versions table: %w", err)
+	}
+	if !hasUserPathColumn {
+		if _, err := db.Exec(`ALTER TABLE execution_plan_versions ADD COLUMN scope_user_path TEXT`); err != nil {
+			return nil, err
+		}
 	}
 
 	return &SQLiteStore{db: db}, nil
 }
 
-func isSQLiteDuplicateColumnError(err error) bool {
-	if err == nil {
-		return false
+func sqliteTableHasColumn(db *sql.DB, tableName, columnName string) (bool, error) {
+	rows, err := db.Query(fmt.Sprintf(`PRAGMA table_info('%s')`, tableName))
+	if err != nil {
+		return false, err
 	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "duplicate column") || strings.Contains(message, "already exists")
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, err
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
 }
 
 func (s *SQLiteStore) ListActive(ctx context.Context) ([]Version, error) {
