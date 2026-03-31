@@ -484,7 +484,7 @@ func TestExtractFromSSEUsageEmptyRawData(t *testing.T) {
 func TestExtractFromCachedResponseBody(t *testing.T) {
 	resp := &core.ChatResponse{
 		ID:    "chatcmpl-cache",
-		Model: "gpt-4o",
+		Model: "gpt-4o-body",
 		Usage: core.Usage{
 			PromptTokens:     42,
 			CompletionTokens: 18,
@@ -502,6 +502,18 @@ func TestExtractFromCachedResponseBody(t *testing.T) {
 	}
 	if entry.CacheType != CacheTypeExact {
 		t.Fatalf("CacheType = %q, want %q", entry.CacheType, CacheTypeExact)
+	}
+	if entry.RequestID != "req-cache" {
+		t.Fatalf("RequestID = %q, want %q", entry.RequestID, "req-cache")
+	}
+	if entry.Provider != "openai" {
+		t.Fatalf("Provider = %q, want %q", entry.Provider, "openai")
+	}
+	if entry.Endpoint != "/v1/chat/completions" {
+		t.Fatalf("Endpoint = %q, want %q", entry.Endpoint, "/v1/chat/completions")
+	}
+	if entry.Model != "gpt-4o" {
+		t.Fatalf("Model = %q, want %q", entry.Model, "gpt-4o")
 	}
 	if entry.InputTokens != 42 || entry.OutputTokens != 18 || entry.TotalTokens != 60 {
 		t.Fatalf("unexpected token counts: %+v", entry)

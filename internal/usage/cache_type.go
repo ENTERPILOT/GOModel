@@ -39,3 +39,18 @@ func cacheTypeValue(value string) any {
 	}
 	return nil
 }
+
+func normalizedUsageEntryForStorage(entry *UsageEntry) *UsageEntry {
+	if entry == nil {
+		return nil
+	}
+
+	normalized := normalizeCacheType(entry.CacheType)
+	if normalized == entry.CacheType {
+		return entry
+	}
+
+	cloned := *entry
+	cloned.CacheType = normalized
+	return &cloned
+}

@@ -240,15 +240,16 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 func (r *PostgreSQLReader) GetCacheOverview(ctx context.Context, params UsageQueryParams) (*CacheOverview, error) {
 	params.CacheMode = CacheModeCached
 
-	conditions, args, _, err := pgUsageConditions(params, 1)
+	conditions, args, _, err := pgUsageConditions(params, 3)
 	if err != nil {
 		return nil, err
 	}
 	where := buildWhereClause(conditions)
+	queryArgs := append([]any{CacheTypeExact, CacheTypeSemantic}, args...)
 
 	summaryQuery := `SELECT COUNT(*),
-		COALESCE(SUM(CASE WHEN cache_type = '` + CacheTypeExact + `' THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN cache_type = '` + CacheTypeSemantic + `' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = $1 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = $2 THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(input_tokens), 0),
 		COALESCE(SUM(output_tokens), 0),
 		COALESCE(SUM(total_tokens), 0),
@@ -256,7 +257,7 @@ func (r *PostgreSQLReader) GetCacheOverview(ctx context.Context, params UsageQue
 		FROM "usage"` + where
 
 	overview := &CacheOverview{}
-	if err := r.pool.QueryRow(ctx, summaryQuery, args...).Scan(
+	if err := r.pool.QueryRow(ctx, summaryQuery, queryArgs...).Scan(
 		&overview.Summary.TotalHits,
 		&overview.Summary.ExactHits,
 		&overview.Summary.SemanticHits,
@@ -275,15 +276,15 @@ func (r *PostgreSQLReader) GetCacheOverview(ctx context.Context, params UsageQue
 	groupExpr := pgGroupExpr(interval, usageTimeZone(params))
 	dailyQuery := fmt.Sprintf(`SELECT %s as period,
 		COUNT(*),
-		COALESCE(SUM(CASE WHEN cache_type = '%s' THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN cache_type = '%s' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = $1 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = $2 THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(input_tokens), 0),
 		COALESCE(SUM(output_tokens), 0),
 		COALESCE(SUM(total_tokens), 0),
 		SUM(total_cost)
-		FROM "usage"%s GROUP BY %s ORDER BY period`, groupExpr, CacheTypeExact, CacheTypeSemantic, where, groupExpr)
+		FROM "usage"%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
 
-	rows, err := r.pool.Query(ctx, dailyQuery, args...)
+	rows, err := r.pool.Query(ctx, dailyQuery, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query cache overview daily: %w", err)
 	}

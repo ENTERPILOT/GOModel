@@ -1261,6 +1261,29 @@ func TestCacheOverview_ReturnsPayloadWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestCacheOverview_ReturnsErrorWhenReaderFails(t *testing.T) {
+	reader := &mockUsageReader{cacheErr: errors.New("boom")}
+	h := NewHandler(reader, nil, WithDashboardRuntimeConfig(DashboardConfigResponse{
+		CacheEnabled: "on",
+	}))
+	c, rec := newHandlerContext("/admin/api/v1/cache/overview?days=30")
+
+	if err := h.CacheOverview(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if _, ok := body["error"]; !ok {
+		t.Fatalf("expected error payload, got %v", body)
+	}
+}
+
 // --- handleError tests ---
 
 func TestHandleError_GatewayErrors(t *testing.T) {

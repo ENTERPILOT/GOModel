@@ -3,6 +3,7 @@ package usage
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -375,31 +376,58 @@ func (r *MongoDBReader) GetCacheOverview(ctx context.Context, params UsageQueryP
 		return nil, err
 	}
 
-	summaryPipeline := bson.A{}
-	if len(matchFilters) > 0 {
-		summaryPipeline = append(summaryPipeline, bson.D{{Key: "$match", Value: matchFilters}})
+	interval := params.Interval
+	if interval == "" {
+		interval = "daily"
 	}
-	summaryPipeline = append(summaryPipeline, bson.D{{Key: "$group", Value: bson.D{
-		{Key: "_id", Value: nil},
-		{Key: "total_hits", Value: bson.D{{Key: "$sum", Value: 1}}},
-		{Key: "exact_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeExact}}}, 1, 0}}}}}},
-		{Key: "semantic_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeSemantic}}}, 1, 0}}}}}},
-		{Key: "total_input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
-		{Key: "total_output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
-		{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
-		{Key: "total_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
-		{Key: "has_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
+
+	pipeline := bson.A{}
+	if len(matchFilters) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
+	}
+	pipeline = append(pipeline, bson.D{{Key: "$facet", Value: bson.D{
+		{Key: "summary", Value: bson.A{
+			bson.D{{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: nil},
+				{Key: "total_hits", Value: bson.D{{Key: "$sum", Value: 1}}},
+				{Key: "exact_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeExact}}}, 1, 0}}}}}},
+				{Key: "semantic_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeSemantic}}}, 1, 0}}}}}},
+				{Key: "total_input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
+				{Key: "total_output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+				{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
+				{Key: "total_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+				{Key: "has_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
+			}}},
+		}},
+		{Key: "daily", Value: bson.A{
+			bson.D{{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: bson.D{{Key: "$dateToString", Value: bson.D{
+					{Key: "format", Value: mongoDateFormat(interval)},
+					{Key: "date", Value: "$timestamp"},
+					{Key: "timezone", Value: usageTimeZone(params)},
+				}}}},
+				{Key: "hits", Value: bson.D{{Key: "$sum", Value: 1}}},
+				{Key: "exact_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeExact}}}, 1, 0}}}}}},
+				{Key: "semantic_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeSemantic}}}, 1, 0}}}}}},
+				{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
+				{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+				{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
+				{Key: "saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+				{Key: "has_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
+			}}},
+			bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
+		}},
 	}}})
 
 	overview := &CacheOverview{Daily: []CacheOverviewDaily{}}
-	cursor, err := r.collection.Aggregate(ctx, summaryPipeline)
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
 	if err != nil {
-		return nil, fmt.Errorf("failed to aggregate cache overview summary: %w", err)
+		return nil, fmt.Errorf("failed to aggregate cache overview: %w", err)
 	}
 	defer cursor.Close(ctx)
 
-	if cursor.Next(ctx) {
-		var row struct {
+	var facetResult struct {
+		Summary []struct {
 			TotalHits      int     `bson:"total_hits"`
 			ExactHits      int     `bson:"exact_hits"`
 			SemanticHits   int     `bson:"semantic_hits"`
@@ -408,10 +436,31 @@ func (r *MongoDBReader) GetCacheOverview(ctx context.Context, params UsageQueryP
 			TotalTokens    int64   `bson:"total_tokens"`
 			TotalSavedCost float64 `bson:"total_saved_cost"`
 			HasSavedCost   int     `bson:"has_saved_cost"`
+		} `bson:"summary"`
+		Daily []struct {
+			Date         string  `bson:"_id"`
+			Hits         int     `bson:"hits"`
+			ExactHits    int     `bson:"exact_hits"`
+			SemanticHits int     `bson:"semantic_hits"`
+			InputTokens  int64   `bson:"input_tokens"`
+			OutputTokens int64   `bson:"output_tokens"`
+			TotalTokens  int64   `bson:"total_tokens"`
+			SavedCost    float64 `bson:"saved_cost"`
+			HasSavedCost int     `bson:"has_saved_cost"`
+		} `bson:"daily"`
+	}
+
+	if cursor.Next(ctx) {
+		if err := cursor.Decode(&facetResult); err != nil {
+			return nil, fmt.Errorf("failed to decode cache overview facet result: %w", err)
 		}
-		if err := cursor.Decode(&row); err != nil {
-			return nil, fmt.Errorf("failed to decode cache overview summary: %w", err)
-		}
+	}
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cache overview cursor: %w", err)
+	}
+
+	if len(facetResult.Summary) > 0 {
+		row := facetResult.Summary[0]
 		overview.Summary = CacheOverviewSummary{
 			TotalHits:    row.TotalHits,
 			ExactHits:    row.ExactHits,
@@ -424,58 +473,8 @@ func (r *MongoDBReader) GetCacheOverview(ctx context.Context, params UsageQueryP
 			overview.Summary.TotalSavedCost = &row.TotalSavedCost
 		}
 	}
-	if err := cursor.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating cache overview summary cursor: %w", err)
-	}
 
-	interval := params.Interval
-	if interval == "" {
-		interval = "daily"
-	}
-	dailyPipeline := bson.A{}
-	if len(matchFilters) > 0 {
-		dailyPipeline = append(dailyPipeline, bson.D{{Key: "$match", Value: matchFilters}})
-	}
-	dailyPipeline = append(dailyPipeline,
-		bson.D{{Key: "$group", Value: bson.D{
-			{Key: "_id", Value: bson.D{{Key: "$dateToString", Value: bson.D{
-				{Key: "format", Value: mongoDateFormat(interval)},
-				{Key: "date", Value: "$timestamp"},
-				{Key: "timezone", Value: usageTimeZone(params)},
-			}}}},
-			{Key: "hits", Value: bson.D{{Key: "$sum", Value: 1}}},
-			{Key: "exact_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeExact}}}, 1, 0}}}}}},
-			{Key: "semantic_hits", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$eq", Value: bson.A{"$cache_type", CacheTypeSemantic}}}, 1, 0}}}}}},
-			{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
-			{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
-			{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
-			{Key: "saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
-			{Key: "has_saved_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
-		}}},
-		bson.D{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
-	)
-
-	cursor, err = r.collection.Aggregate(ctx, dailyPipeline)
-	if err != nil {
-		return nil, fmt.Errorf("failed to aggregate cache overview daily: %w", err)
-	}
-	defer cursor.Close(ctx)
-
-	for cursor.Next(ctx) {
-		var row struct {
-			Date         string  `bson:"_id"`
-			Hits         int     `bson:"hits"`
-			ExactHits    int     `bson:"exact_hits"`
-			SemanticHits int     `bson:"semantic_hits"`
-			InputTokens  int64   `bson:"input_tokens"`
-			OutputTokens int64   `bson:"output_tokens"`
-			TotalTokens  int64   `bson:"total_tokens"`
-			SavedCost    float64 `bson:"saved_cost"`
-			HasSavedCost int     `bson:"has_saved_cost"`
-		}
-		if err := cursor.Decode(&row); err != nil {
-			return nil, fmt.Errorf("failed to decode cache overview daily row: %w", err)
-		}
+	for _, row := range facetResult.Daily {
 		entry := CacheOverviewDaily{
 			Date:         row.Date,
 			Hits:         row.Hits,
@@ -489,9 +488,6 @@ func (r *MongoDBReader) GetCacheOverview(ctx context.Context, params UsageQueryP
 			entry.SavedCost = &row.SavedCost
 		}
 		overview.Daily = append(overview.Daily, entry)
-	}
-	if err := cursor.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating cache overview daily cursor: %w", err)
 	}
 
 	return overview, nil
@@ -533,7 +529,7 @@ func mongoUsageLogMatchFilters(params UsageLogParams) (bson.D, error) {
 		matchFilters = append(matchFilters, bson.E{Key: "provider", Value: params.Provider})
 	}
 	if params.Search != "" {
-		regex := bson.D{{Key: "$regex", Value: params.Search}, {Key: "$options", Value: "i"}}
+		regex := bson.D{{Key: "$regex", Value: regexp.QuoteMeta(params.Search)}, {Key: "$options", Value: "i"}}
 		searchFilter := bson.D{{Key: "$or", Value: bson.A{
 			bson.D{{Key: "model", Value: regex}},
 			bson.D{{Key: "provider", Value: regex}},

@@ -183,6 +183,7 @@ func buildUsageInsert(entries []*UsageEntry) (string, []any) {
 	placeholder := 1
 
 	for i, entry := range entries {
+		entry = normalizedUsageEntryForStorage(entry)
 		if i > 0 {
 			builder.WriteString(", ")
 		}

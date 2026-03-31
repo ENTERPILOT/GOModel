@@ -280,11 +280,17 @@ func ExtractFromCachedResponseBody(
 	}
 
 	entry.CacheType = cacheType
-	if strings.TrimSpace(entry.Model) == "" {
-		entry.Model = strings.TrimSpace(model)
+	if normalized := strings.TrimSpace(requestID); normalized != "" {
+		entry.RequestID = normalized
 	}
-	if strings.TrimSpace(entry.Provider) == "" {
-		entry.Provider = strings.TrimSpace(provider)
+	if normalized := strings.TrimSpace(model); normalized != "" {
+		entry.Model = normalized
+	}
+	if normalized := strings.TrimSpace(provider); normalized != "" {
+		entry.Provider = normalized
+	}
+	if normalized := strings.TrimSpace(endpoint); normalized != "" {
+		entry.Endpoint = normalized
 	}
 	return entry
 }

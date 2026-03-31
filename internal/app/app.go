@@ -115,6 +115,13 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		}
 		return nil, fmt.Errorf("failed to initialize usage tracking: %w", err)
 	}
+	if usageResult == nil || usageResult.Logger == nil {
+		closeErr := errors.Join(app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("usage tracking initialization returned nil result (also: close error: %v)", closeErr)
+		}
+		return nil, fmt.Errorf("usage tracking initialization returned nil result")
+	}
 	app.usage = usageResult
 
 	// Initialize batch lifecycle storage.
@@ -298,6 +305,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		slog.Warn("ADMIN_UI_ENABLED=true requires ADMIN_ENDPOINTS_ENABLED=true — forcing UI to disabled")
 		adminCfg.UIEnabled = false
 	}
+	usageEnabledForDashboard := usageResult.Logger.Config().Enabled
 	if adminCfg.EndpointsEnabled {
 		adminHandler, dashHandler, adminErr := initAdmin(
 			auditResult.Storage,
@@ -307,7 +315,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			app.aliases.Service,
 			executionPlanResult.Service,
 			guardrailRegistry,
-			dashboardRuntimeConfig(appCfg),
+			dashboardRuntimeConfig(appCfg, usageEnabledForDashboard),
 			adminCfg.UIEnabled,
 		)
 		if adminErr != nil {
@@ -768,16 +776,20 @@ func defaultExecutionPlanInput(cfg *config.Config) executionplans.CreateInput {
 	}
 }
 
-func dashboardRuntimeConfig(cfg *config.Config) admin.DashboardConfigResponse {
+func dashboardRuntimeConfig(cfg *config.Config, usageEnabled bool) admin.DashboardConfigResponse {
 	return admin.DashboardConfigResponse{
 		FeatureFallbackMode:  dashboardFallbackModeValue(cfg),
 		LoggingEnabled:       dashboardEnabledValue(cfg != nil && cfg.Logging.Enabled),
 		UsageEnabled:         dashboardEnabledValue(cfg != nil && cfg.Usage.Enabled),
 		GuardrailsEnabled:    dashboardEnabledValue(cfg != nil && cfg.Guardrails.Enabled),
-		CacheEnabled:         dashboardEnabledValue(cfg != nil && responseCacheConfigured(cfg.Cache.Response)),
+		CacheEnabled:         dashboardEnabledValue(cacheAnalyticsConfigured(cfg, usageEnabled)),
 		RedisURL:             dashboardEnabledValue(simpleResponseCacheConfigured(cfg)),
 		SemanticCacheEnabled: dashboardEnabledValue(semanticResponseCacheConfigured(cfg)),
 	}
+}
+
+func cacheAnalyticsConfigured(cfg *config.Config, usageEnabled bool) bool {
+	return cfg != nil && usageEnabled && responseCacheConfigured(cfg.Cache.Response)
 }
 
 func dashboardEnabledValue(enabled bool) string {

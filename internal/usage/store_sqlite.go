@@ -12,11 +12,11 @@ import (
 )
 
 // SQLite has a default limit of 999 bindable parameters per query (SQLITE_MAX_VARIABLE_NUMBER).
-// With 17 columns per usage entry, we can safely insert up to 58 entries per batch (58 * 17 = 986).
+// maxEntriesPerBatch derives from maxSQLiteParams / columnsPerUsageEntry.
 const (
 	maxSQLiteParams      = 999
 	columnsPerUsageEntry = 17
-	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 62 entries
+	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 58 entries
 )
 
 // SQLiteStore implements UsageStore for SQLite databases.
@@ -123,6 +123,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*UsageEntry) err
 		values := make([]any, 0, len(chunk)*columnsPerUsageEntry)
 
 		for j, e := range chunk {
+			e = normalizedUsageEntryForStorage(e)
 			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 			rawDataJSON := marshalRawData(e.RawData, e.ID)

@@ -39,6 +39,7 @@ func TestBuildUsageInsert(t *testing.T) {
 			Model:                  "gpt-4.1",
 			Provider:               "openai",
 			Endpoint:               "/v1/responses",
+			CacheType:              "unexpected-cache-type",
 			InputTokens:            20,
 			OutputTokens:           8,
 			TotalTokens:            28,
