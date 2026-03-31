@@ -82,11 +82,18 @@ test('dashboard pages reuse a shared auth banner template', () => {
     );
 
     const authBannerCalls = indexTemplate.match(/{{template "auth-banner" \.}}/g) || [];
-    assert.equal(authBannerCalls.length, 5);
+    assert.equal(authBannerCalls.length, 6);
     assert.doesNotMatch(
         indexTemplate,
         /<div class="alert alert-warning" x-show="authError">[\s\S]*Authentication required\. Enter your API key in the sidebar to view data\.[\s\S]*<\/div>/
     );
+});
+
+test('auth key expirations render as a UTC date with the full UTC timestamp in the hover title', () => {
+    const indexTemplate = readFixture('../../../templates/index.html');
+
+    assert.match(indexTemplate, /x-text="key\.expires_at \? formatDateUTC\(key\.expires_at\) : '\\u2014'"/);
+    assert.match(indexTemplate, /:title="key\.expires_at \? formatTimestampUTC\(key\.expires_at\) : ''"/);
 });
 
 test('usage and audit pages reuse a shared pagination template', () => {

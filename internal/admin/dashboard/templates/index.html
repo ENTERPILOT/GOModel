@@ -227,6 +227,138 @@
     </div>
 </div>
 
+<!-- API Keys Page -->
+<div x-show="page==='auth-keys'">
+    <div class="page-header">
+        <h2>API Keys</h2>
+        <div class="page-header-controls">
+            <button type="button" class="pagination-btn pagination-btn-primary"
+                x-show="authKeysAvailable && !authError"
+                @click="openAuthKeyForm()">Create API Key</button>
+        </div>
+    </div>
+
+    {{template "auth-banner" .}}
+
+    <div class="alert alert-warning" x-show="!authKeysAvailable && !authError">
+        API key management is unavailable.
+    </div>
+    <p class="alias-form-error" x-show="authKeyError && !authError" x-text="authKeyError"></p>
+    <p class="alias-form-hint" x-show="authKeyNotice && !authKeyFormOpen" x-text="authKeyNotice"></p>
+
+    <p class="alias-form-hint auth-keys-help-notice" x-show="authKeysAvailable && !authError">
+        Managed API keys authenticate requests to the gateway. Deactivation is permanent — create a new key if access needs to be restored.
+    </p>
+
+    <div class="model-alias-editor" x-show="authKeyFormOpen">
+        <form class="alias-form" @submit.prevent="submitAuthKeyForm()">
+            <div class="aliases-editor-header">
+                <div>
+                    <p class="alias-form-kicker">Managed key</p>
+                    <h3>Create API Key</h3>
+                </div>
+                <button type="button" class="table-action-btn alias-close-btn"
+                    aria-label="Close" @click="closeAuthKeyForm()">&#x2715;</button>
+            </div>
+
+            <div class="auth-key-issued-banner" x-show="authKeyIssuedValue">
+                <p class="auth-key-issued-warning">
+                    Store this key securely &mdash; it won&rsquo;t be shown again.
+                </p>
+                <div class="auth-key-issued-value-row">
+                    <code class="auth-key-issued-token" x-text="authKeyIssuedValue"></code>
+                    <button type="button" class="pagination-btn auth-key-copy-btn"
+                        :class="{ 'auth-key-copy-btn-copied': authKeyCopied }"
+                        @click="copyAuthKeyValue()">
+                        <template x-if="!authKeyCopied">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        </template>
+                        <template x-if="authKeyCopied">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12l3 3 5-5"/></svg>
+                        </template>
+                        <span x-text="authKeyCopied ? 'Copied' : 'Copy'"></span>
+                    </button>
+                </div>
+                <div class="alias-form-actions">
+                    <button type="button" class="pagination-btn pagination-btn-primary"
+                        @click="dismissIssuedKey()">Done, I&rsquo;ve stored it</button>
+                </div>
+            </div>
+
+            <div x-show="!authKeyIssuedValue">
+                <div class="alias-form-grid">
+                    <label class="alias-form-field">
+                        <span>Name <span class="alias-form-hint">(required)</span></span>
+                        <input type="text" class="filter-input" placeholder="e.g. ci-deploy"
+                            x-model="authKeyForm.name" autocomplete="off">
+                    </label>
+                    <label class="alias-form-field">
+                        <span>Expires <span class="alias-form-hint">(optional, valid through the selected date)</span></span>
+                        <input type="date" class="filter-input" x-model="authKeyForm.expires_at">
+                    </label>
+                </div>
+                <label class="alias-form-field">
+                    <span>Description (optional)</span>
+                    <textarea rows="2" class="alias-form-textarea"
+                        placeholder="What is this key used for?"
+                        x-model="authKeyForm.description"></textarea>
+                </label>
+                <p class="alias-form-error" x-show="authKeyError" x-text="authKeyError"></p>
+                <div class="alias-form-actions">
+                    <button type="submit" class="pagination-btn pagination-btn-primary"
+                        :disabled="authKeyFormSubmitting"
+                        x-text="authKeyFormSubmitting ? 'Creating...' : 'Create API Key'"></button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="table-wrapper" x-show="authKeys.length > 0 && authKeysAvailable">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Token</th>
+                    <th>Status</th>
+                    <th>Expires</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <template x-for="key in authKeys" :key="key.id">
+                    <tr>
+                        <td x-text="key.name"></td>
+                        <td class="auth-key-description" x-text="key.description || '\u2014'"></td>
+                        <td><code class="auth-key-redacted" x-text="key.redacted_value"></code></td>
+                        <td>
+                            <span class="auth-key-status-badge"
+                                :class="key.active ? 'auth-key-status-active' : 'auth-key-status-inactive'"
+                                x-text="key.active ? 'Active' : 'Inactive'"></span>
+                        </td>
+                        <td :title="key.expires_at ? formatTimestampUTC(key.expires_at) : ''"
+                            x-text="key.expires_at ? formatDateUTC(key.expires_at) : '\u2014'"></td>
+                        <td x-text="formatTimestamp(key.created_at)"></td>
+                        <td>
+                            <button type="button" class="table-action-btn table-action-btn-danger"
+                                x-show="key.active"
+                                :disabled="authKeyDeactivatingID === key.id"
+                                @click="deactivateAuthKey(key)"
+                                x-text="authKeyDeactivatingID === key.id ? 'Deactivating...' : 'Deactivate'"></button>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+
+    <p class="empty-state"
+        x-show="authKeys.length === 0 && !authKeysLoading && !authError && authKeysAvailable">
+        No API keys yet. Issue a key to get started.
+    </p>
+</div>
+
 <!-- Models Page -->
 <div x-show="page==='models'">
     <div class="page-header">
