@@ -22,8 +22,9 @@ type ResponseCacheMiddleware struct {
 
 // NewResponseCacheMiddleware creates middleware from config.
 // If neither simple nor semantic cache is configured, returns a no-op middleware.
-// rawProviders is threaded through to NewEmbedder for API-key credential resolution.
-func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, rawProviders map[string]config.RawProviderConfig) (*ResponseCacheMiddleware, error) {
+// resolvedProviders must be the credential/env-resolved map from providers.InitResult
+// (same keys as live routing). Semantic embedder.provider names a key in this map.
+func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, resolvedProviders map[string]config.RawProviderConfig) (*ResponseCacheMiddleware, error) {
 	m := &ResponseCacheMiddleware{}
 
 	switch {
@@ -55,7 +56,7 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, rawProviders map
 
 	sem := cfg.Semantic
 	if sem != nil && config.SemanticCacheActive(sem) {
-		emb, err := embedding.NewEmbedder(sem.Embedder, rawProviders)
+		emb, err := embedding.NewEmbedder(sem.Embedder, resolvedProviders)
 		if err != nil {
 			return nil, err
 		}

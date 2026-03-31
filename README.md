@@ -214,7 +214,7 @@ Responses served from this layer carry `X-Cache: HIT (exact)`.
 
 ### Layer 2 — Semantic cache *(coming soon)*
 
-Embeds the last user message with `all-MiniLM-L6-v2` (local ONNX, zero external dependency) and performs a KNN vector search. Semantically equivalent queries — e.g. *"What's the capital of France?"* vs *"Which city is France's capital?"* — return the same cached response without an upstream LLM call.
+Embeds the last user message via your configured provider’s OpenAI-compatible `/v1/embeddings` API (`cache.response.semantic.embedder.provider` must name a key in the top-level `providers` map) and performs a KNN vector search. Semantically equivalent queries — e.g. *"What's the capital of France?"* vs *"Which city is France's capital?"* — can return the same cached response without an upstream LLM call.
 
 Expected hit rates: ~60–70% in high-repetition workloads vs. ~18% for exact-match alone.
 
@@ -247,7 +247,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 | Area | Status | Notes |
 | ---- | :----: | ----- |
-| Semantic response cache | 🚧 | Exact-match Redis cache is live. Semantic (vector KNN) layer with local `all-MiniLM-L6-v2` embedder is in progress — see [ADR-0006](docs/adr/0006-semantic-response-cache.md). |
+| Semantic response cache | 🚧 | Exact-match Redis cache is live. Semantic (vector KNN) layer with API embeddings is in progress — see [ADR-0006](docs/adr/0006-semantic-response-cache.md). |
 | Billing management | 🚧 | Usage and pricing primitives exist, but billing workflows are not complete. |
 | Budget management | 🚧 | Gateway-level budget enforcement and policy controls are not implemented yet. |
 | Guardrails depth | 🚧 | The system prompt guardrail is available today; broader guardrail types are still to come. |

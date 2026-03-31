@@ -415,13 +415,12 @@ type SemanticCacheConfig struct {
 }
 
 // EmbedderConfig selects how embeddings are generated.
-// Provider "local" (default) uses the bundled MiniLM ONNX model.
-// Any other value must match a key in the top-level providers map;
-// that provider's api_key and base_url are reused automatically.
+// Provider must match a key in the top-level providers map when semantic
+// caching is active; that provider's api_key and base_url are reused for
+// POST /v1/embeddings. There is no default provider.
 type EmbedderConfig struct {
-	Provider  string `yaml:"provider"`
-	Model     string `yaml:"model"`
-	ModelPath string `yaml:"model_path"`
+	Provider string `yaml:"provider"`
+	Model    string `yaml:"model"`
 }
 
 // VectorStoreConfig selects the vector DB backend.
@@ -494,6 +493,13 @@ func ValidateCacheConfig(c *CacheConfig) error {
 		if sem.TTL < 0 {
 			return fmt.Errorf("cache.response.semantic.ttl: must be >= 0 (yaml: ttl, env: SEMANTIC_CACHE_TTL); got %d", sem.TTL)
 		}
+		ep := strings.TrimSpace(sem.Embedder.Provider)
+		if ep == "" {
+			return fmt.Errorf("cache.response.semantic.embedder.provider: required when semantic cache is enabled; use a key from the top-level providers map (e.g. openai, gemini)")
+		}
+		if strings.EqualFold(ep, "local") {
+			return fmt.Errorf("cache.response.semantic.embedder.provider: local embedding is not supported; use a named API provider")
+		}
 	}
 	return nil
 }
@@ -535,9 +541,6 @@ func mergeSemanticResponseDefaults(sem *SemanticCacheConfig) {
 	}
 	if sem.MaxConversationMessages == 0 {
 		sem.MaxConversationMessages = 3
-	}
-	if sem.Embedder.Provider == "" {
-		sem.Embedder.Provider = "local"
 	}
 	if sem.VectorStore.Type == "" {
 		sem.VectorStore.Type = "sqlite-vec"
@@ -624,9 +627,6 @@ func applyResponseSemanticEnv(resp *ResponseCacheConfig) {
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_EMBEDDER_MODEL"); val != "" {
 		sem.Embedder.Model = val
-	}
-	if val := os.Getenv("SEMANTIC_CACHE_MODEL_PATH"); val != "" {
-		sem.Embedder.ModelPath = val
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_VECTOR_STORE_TYPE"); val != "" {
 		sem.VectorStore.Type = val

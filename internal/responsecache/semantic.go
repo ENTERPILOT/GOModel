@@ -41,7 +41,7 @@ func newSemanticCacheMiddleware(emb embedding.Embedder, store VecStore, cfg conf
 		embedder:         emb,
 		store:            store,
 		cfg:              cfg,
-		embedderIdentity: e.Provider + "\x00" + e.Model + "\x00" + e.ModelPath,
+		embedderIdentity: e.Provider + "\x00" + e.Model,
 	}
 }
 

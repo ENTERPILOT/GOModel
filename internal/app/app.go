@@ -310,7 +310,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		slog.Info("provider passthrough disabled")
 	}
 
-	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response, cfg.AppConfig.RawProviders)
+	rcm, err := responsecache.NewResponseCacheMiddleware(appCfg.Cache.Response, providerResult.CredentialResolvedProviders)
 	if err != nil {
 		var (
 			executionPlansCloseErr error

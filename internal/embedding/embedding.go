@@ -8,41 +8,36 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strings"
 	"time"
-
-	all_minilm "github.com/clems4ever/all-minilm-l6-v2-go/all_minilm_l6_v2"
 
 	"gomodel/config"
 )
 
-// defaultTimeout caps how long embedding HTTP calls may block the client.
 const defaultTimeout = 120 * time.Second
 
-// Embedder converts text into a float32 vector representation.
 type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
 	Close() error
 }
 
-// NewEmbedder creates an Embedder based on cfg.
-//
-// When cfg.Provider is "local" or empty, a MiniLMEmbedder backed by the
-// bundled all-MiniLM-L6-v2 ONNX model is returned. The ONNX Runtime shared
-// library is discovered via the ONNXRUNTIME_LIB_PATH environment variable or
-// cfg.ModelPath if set.
-//
-// For any other provider value, the named provider must exist in rawProviders;
-// its api_key and base_url are reused to call POST /v1/embeddings (OpenAI-compatible).
-// When base_url is omitted, defaults match the gateway's provider packages (e.g. gemini → Google OpenAI-compatible host), not api.openai.com.
-func NewEmbedder(cfg config.EmbedderConfig, rawProviders map[string]config.RawProviderConfig) (Embedder, error) {
-	if cfg.Provider == "" || cfg.Provider == "local" {
-		return newMiniLMEmbedder(cfg.ModelPath)
+// NewEmbedder returns an Embedder that calls POST /v1/embeddings on the
+// OpenAI-compatible endpoint for the named provider. cfg.Provider must be a
+// non-empty key in resolvedProviders (the env-merged, credential-filtered map
+// from providers.Init, not YAML-only config). That entry's api_key and base_url are reused.
+// When base_url is omitted, defaults match the gateway's provider packages
+// (e.g. gemini → Google OpenAI-compatible host), not api.openai.com.
+func NewEmbedder(cfg config.EmbedderConfig, resolvedProviders map[string]config.RawProviderConfig) (Embedder, error) {
+	p := strings.TrimSpace(cfg.Provider)
+	if p == "" {
+		return nil, fmt.Errorf("embedding: embedder provider is required (set cache.response.semantic.embedder.provider to a key in the providers map, e.g. openai or gemini)")
 	}
-	raw, ok := rawProviders[cfg.Provider]
+	if strings.EqualFold(p, "local") {
+		return nil, fmt.Errorf("embedding: local embedding is not supported; use a named API provider")
+	}
+	raw, ok := resolvedProviders[p]
 	if !ok {
-		return nil, fmt.Errorf("embedding: provider %q not found in providers map", cfg.Provider)
+		return nil, fmt.Errorf("embedding: provider %q not found among credential-resolved providers (check key spelling, env vars, and that the provider passes gateway credential rules)", p)
 	}
 	baseURL := embeddingAPIBaseURL(raw)
 	typ := strings.ToLower(strings.TrimSpace(raw.Type))
@@ -64,9 +59,6 @@ func NewEmbedder(cfg config.EmbedderConfig, rawProviders map[string]config.RawPr
 	}, nil
 }
 
-// normalizeGeminiEmbeddingModel maps OpenAI-style embedding IDs that do not exist on
-// Google's OpenAI-compatible /v1/embeddings surface to a supported Gemini model.
-// See: https://ai.google.dev/gemini-api/docs/openai#embeddings
 func normalizeGeminiEmbeddingModel(model string) string {
 	lower := strings.ToLower(strings.TrimSpace(model))
 	if lower == "" {
@@ -99,56 +91,6 @@ func embeddingAPIBaseURL(raw config.RawProviderConfig) string {
 	}
 }
 
-// MiniLMEmbedder uses the local all-MiniLM-L6-v2 ONNX model.
-// No network calls are made; the model runs in-process.
-type miniLMEmbedder struct {
-	model *all_minilm.Model
-}
-
-func newMiniLMEmbedder(runtimePath string) (*miniLMEmbedder, error) {
-	if runtimePath == "" {
-		runtimePath = os.Getenv("ONNXRUNTIME_LIB_PATH")
-	}
-	var opts []all_minilm.ModelOption
-	if runtimePath != "" {
-		opts = append(opts, all_minilm.WithRuntimePath(runtimePath))
-	}
-	m, err := all_minilm.NewModel(opts...)
-	if err != nil {
-		return nil, fmt.Errorf("embedding: failed to load local MiniLM model: %w", err)
-	}
-	return &miniLMEmbedder{model: m}, nil
-}
-
-func (e *miniLMEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	type result struct {
-		vec []float32
-		err error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		vec, err := e.model.Compute(text, true)
-		ch <- result{vec, err}
-	}()
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("embedding: MiniLM compute failed: %w", ctx.Err())
-	case r := <-ch:
-		if r.err != nil {
-			return nil, fmt.Errorf("embedding: MiniLM compute failed: %w", r.err)
-		}
-		return r.vec, nil
-	}
-}
-
-func (e *miniLMEmbedder) Close() error {
-	if e.model != nil {
-		e.model.Close()
-	}
-	return nil
-}
-
-// apiEmbedder calls POST /v1/embeddings on any OpenAI-compatible endpoint.
 type apiEmbedder struct {
 	baseURL    string
 	apiKey     string

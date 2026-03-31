@@ -44,12 +44,7 @@ Exact layer: `simpleCacheMiddleware` (byte-identical body, SHA-256). Semantic la
 
 ### Embedding
 
-Unified `Embedder` interface with two implementations:
-
-- **`MiniLMEmbedder`** (default): local `all-MiniLM-L6-v2` via ONNX Runtime (384-dim, zero external dependency). Activated when `embedder.provider` is `"local"` or absent.
-- **`APIEmbedder`**: calls `POST /v1/embeddings` on any configured OpenAI-compatible provider, reusing existing `api_key` + `base_url`. Activated when `embedder.provider` matches a named provider. Unknown provider → startup error.
-
-Local default is a key differentiator vs. Bifrost/LiteLLM.
+Unified `Embedder` interface with a single implementation: **`APIEmbedder`** calls `POST /v1/embeddings` on the configured OpenAI-compatible provider, reusing existing `api_key` + `base_url`. `embedder.provider` must be set to a key in the top-level `providers` map (e.g. `openai`, `gemini`). There is no default and no in-process/local embedder.
 
 ### Vector Store
 
@@ -109,15 +104,15 @@ Bifrost's 0.80 is too aggressive for correctness-sensitive use cases.
 ### Positive
 
 - Expected 60–70% semantic hit rates in support/FAQ/classification workloads  
-- Zero extra infrastructure in default mode  
+- Vector store can stay embedded (`sqlite-vec`) with no separate vector DB required  
 - Strong correctness guarantees via parameter isolation & high threshold  
-- Reuses existing provider credentials for API embedding  
+- Reuses existing provider credentials for embeddings  
 - Swappable backends via interfaces
 
 ### Negative / Mitigations
 
 - ~50–100 ms added latency on semantic miss (acceptable vs LLM latency)  
-- Requires `libonnxruntime` at runtime for local embedding (documented in deployment guide)  
+- Requires a provider with a working embeddings API and credentials  
 - False positives possible → mitigated by high default threshold + sampling of semantic hits  
 - No benefit for creative, real-time, or personalized traffic → use `no-store` header  
 - No observability yet → add structured logs for semantic hits/misses in v1
@@ -127,5 +122,5 @@ Bifrost's 0.80 is too aggressive for correctness-sensitive use cases.
 - Redis/RediSearch as default → rejected (external dep vs sqlite-vec zero-infra)  
 - Embed full conversation → rejected (noisy, expensive, low hit rate)  
 - Single cache store for exact + semantic → rejected (different needs & scaling)  
-- Always require external embedding API → rejected (circular dep risk, breaks zero-infra)
+- Optional in-process embedder (e.g. ONNX MiniLM) → removed; API-only embedding keeps one code path and avoids native runtime dependencies
 

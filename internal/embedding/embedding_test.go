@@ -7,10 +7,17 @@ import (
 	"gomodel/config"
 )
 
-func TestNewEmbedder_LocalDefault(t *testing.T) {
-	_, err := NewEmbedder(config.EmbedderConfig{Provider: "local"}, nil)
+func TestNewEmbedder_EmptyProvider(t *testing.T) {
+	_, err := NewEmbedder(config.EmbedderConfig{}, map[string]config.RawProviderConfig{})
 	if err == nil {
-		t.Skip("ONNX Runtime not installed; local embedder test skipped")
+		t.Fatal("expected error for empty provider")
+	}
+}
+
+func TestNewEmbedder_LocalRejected(t *testing.T) {
+	_, err := NewEmbedder(config.EmbedderConfig{Provider: "local"}, map[string]config.RawProviderConfig{"local": {}})
+	if err == nil {
+		t.Fatal("expected error for local provider")
 	}
 }
 
