@@ -63,12 +63,10 @@ type responsesOutputState struct {
 	Index int
 	Item  map[string]any
 
-	Text         strings.Builder
-	HasText      bool
-	Reasoning    strings.Builder
-	HasReasoning bool
-	Arguments    strings.Builder
-	HasArgs      bool
+	TextParts      map[int]*strings.Builder
+	ReasoningParts map[int]*strings.Builder
+	Arguments      strings.Builder
+	HasArgs        bool
 }
 
 type responsesStreamCacheBuilder struct {
@@ -195,7 +193,7 @@ func renderCachedChatStream(requestBody, cached []byte) ([]byte, error) {
 	if !includeUsage {
 		usage = nil
 	}
-	for i, choice := range resp.Choices {
+	for _, choice := range resp.Choices {
 		delta := map[string]any{}
 		role := strings.TrimSpace(choice.Message.Role)
 		if role == "" {
@@ -237,15 +235,12 @@ func renderCachedChatStream(requestBody, cached []byte) ([]byte, error) {
 		if resp.SystemFingerprint != "" {
 			chunk["system_fingerprint"] = resp.SystemFingerprint
 		}
-		if i == len(resp.Choices)-1 && usage != nil {
-			chunk["usage"] = usage
-		}
 		if err := appendSSEJSONEvent(&out, "", chunk); err != nil {
 			return nil, err
 		}
 	}
 
-	if len(resp.Choices) == 0 && usage != nil {
+	if usage != nil {
 		chunk := map[string]any{
 			"id":      resp.ID,
 			"object":  "chat.completion.chunk",
@@ -703,6 +698,7 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 		if delta == "" {
 			return
 		}
+		contentIndex, _ := jsonNumberToInt(event["content_index"])
 		index, ok := b.lookupOutputIndex(event)
 		if !ok {
 			index = 0
@@ -713,12 +709,13 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 		b.rememberOutputLocator(event, index)
 		b.AssistantIndex = index
 		b.HasAssistant = true
-		b.output(index).AppendText(delta)
+		b.output(index).AppendText(contentIndex, delta)
 	case "response.reasoning_text.delta":
 		delta, _ := event["delta"].(string)
 		if delta == "" {
 			return
 		}
+		contentIndex, _ := jsonNumberToInt(event["content_index"])
 		outputIndex, hasOutputIndex := jsonNumberToInt(event["output_index"])
 		index, ok := b.lookupOutputIndex(event)
 		if !ok {
@@ -727,7 +724,7 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 		b.rememberOutputLocator(event, index)
 		b.ReasoningIndex = index
 		b.HasReasoning = true
-		b.output(index).AppendReasoning(delta)
+		b.output(index).AppendReasoning(contentIndex, delta)
 	case "response.function_call_arguments.delta":
 		index, ok := b.lookupOutputIndex(event)
 		if !ok {
@@ -900,20 +897,20 @@ func (s *responsesOutputState) SetItem(item map[string]any) {
 	s.Item = cloneJSONMap(item)
 }
 
-func (s *responsesOutputState) AppendText(delta string) {
+func (s *responsesOutputState) AppendText(contentIndex int, delta string) {
 	if delta == "" {
 		return
 	}
-	_, _ = s.Text.WriteString(delta)
-	s.HasText = true
+	part := s.textPart(contentIndex)
+	_, _ = part.WriteString(delta)
 }
 
-func (s *responsesOutputState) AppendReasoning(delta string) {
+func (s *responsesOutputState) AppendReasoning(contentIndex int, delta string) {
 	if delta == "" {
 		return
 	}
-	_, _ = s.Reasoning.WriteString(delta)
-	s.HasReasoning = true
+	part := s.reasoningPart(contentIndex)
+	_, _ = part.WriteString(delta)
 }
 
 func (s *responsesOutputState) AppendArguments(delta string) {
@@ -930,6 +927,32 @@ func (s *responsesOutputState) SetArguments(arguments string) {
 	s.HasArgs = true
 }
 
+func (s *responsesOutputState) textPart(contentIndex int) *strings.Builder {
+	if s.TextParts == nil {
+		s.TextParts = make(map[int]*strings.Builder)
+	}
+	part, ok := s.TextParts[contentIndex]
+	if ok {
+		return part
+	}
+	part = &strings.Builder{}
+	s.TextParts[contentIndex] = part
+	return part
+}
+
+func (s *responsesOutputState) reasoningPart(contentIndex int) *strings.Builder {
+	if s.ReasoningParts == nil {
+		s.ReasoningParts = make(map[int]*strings.Builder)
+	}
+	part, ok := s.ReasoningParts[contentIndex]
+	if ok {
+		return part
+	}
+	part = &strings.Builder{}
+	s.ReasoningParts[contentIndex] = part
+	return part
+}
+
 func (s *responsesOutputState) BuildItem() map[string]any {
 	item := cloneJSONMap(s.Item)
 	if item == nil {
@@ -937,7 +960,7 @@ func (s *responsesOutputState) BuildItem() map[string]any {
 	}
 
 	itemType, _ := item["type"].(string)
-	if s.HasText {
+	if len(s.TextParts) > 0 {
 		if itemType == "" {
 			itemType = "message"
 			item["type"] = itemType
@@ -945,12 +968,9 @@ func (s *responsesOutputState) BuildItem() map[string]any {
 		if item["role"] == nil {
 			item["role"] = "assistant"
 		}
-		item["content"] = []map[string]any{{
-			"type": "output_text",
-			"text": s.Text.String(),
-		}}
+		item["content"] = buildResponsesContentParts(item["content"], "output_text", s.TextParts)
 	}
-	if s.HasReasoning {
+	if len(s.ReasoningParts) > 0 {
 		if itemType == "" {
 			itemType = "reasoning"
 			item["type"] = itemType
@@ -963,10 +983,7 @@ func (s *responsesOutputState) BuildItem() map[string]any {
 				targetField = "summary"
 			}
 		}
-		item[targetField] = []map[string]any{{
-			"type": "reasoning_text",
-			"text": s.Reasoning.String(),
-		}}
+		item[targetField] = buildResponsesContentParts(item[targetField], "reasoning_text", s.ReasoningParts)
 	}
 	if s.HasArgs {
 		if itemType == "" {
@@ -980,6 +997,51 @@ func (s *responsesOutputState) BuildItem() map[string]any {
 	}
 
 	return item
+}
+
+func buildResponsesContentParts(existing any, partType string, parts map[int]*strings.Builder) []map[string]any {
+	if len(parts) == 0 {
+		return nil
+	}
+
+	existingParts, _ := existing.([]any)
+	maxIndex := len(existingParts) - 1
+	for index := range parts {
+		if index > maxIndex {
+			maxIndex = index
+		}
+	}
+
+	built := make([]map[string]any, 0, maxIndex+1)
+	for index := 0; index <= maxIndex; index++ {
+		existingPart, existingOK := cloneJSONPart(existingParts, index)
+		partBuilder, hasPart := parts[index]
+
+		switch {
+		case hasPart:
+			if existingPart == nil {
+				existingPart = make(map[string]any)
+			}
+			existingPart["type"] = partType
+			existingPart["text"] = partBuilder.String()
+			built = append(built, existingPart)
+		case existingOK:
+			built = append(built, existingPart)
+		}
+	}
+
+	return built
+}
+
+func cloneJSONPart(parts []any, index int) (map[string]any, bool) {
+	if index < 0 || index >= len(parts) {
+		return nil, false
+	}
+	part, ok := parts[index].(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return cloneJSONMap(part), true
 }
 
 func buildChatToolCalls(states map[int]*chatToolCallState) []map[string]any {

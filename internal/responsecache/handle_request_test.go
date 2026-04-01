@@ -452,6 +452,55 @@ func TestReconstructStreamingResponse_PreservesChatReasoningContent(t *testing.T
 	}
 }
 
+func TestRenderCachedChatStream_EmitsStandaloneUsageChunk(t *testing.T) {
+	raw := []byte(
+		"data: {\"id\":\"chatcmpl-usage\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-usage\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":2,\"total_tokens\":13}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	cached, ok := reconstructStreamingResponse("/v1/chat/completions", raw, streamResponseDefaults{
+		Model:    "gpt-4o-mini",
+		Provider: "openai",
+	})
+	if !ok {
+		t.Fatal("expected streamed chat response to reconstruct successfully")
+	}
+
+	replay, err := renderCachedChatStream([]byte(`{"model":"gpt-4o-mini","stream":true,"stream_options":{"include_usage":true}}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedChatStream() error = %v", err)
+	}
+
+	var events []map[string]any
+	parseSSEJSONEvents(replay, func(event map[string]any) {
+		events = append(events, event)
+	})
+	if len(events) != 2 {
+		t.Fatalf("len(events) = %d, want 2 chat events before [DONE]", len(events))
+	}
+
+	firstChoices, ok := events[0]["choices"].([]any)
+	if !ok || len(firstChoices) != 1 {
+		t.Fatalf("first event choices = %#v, want len=1", events[0]["choices"])
+	}
+	if _, ok := events[0]["usage"]; ok {
+		t.Fatalf("first event should not carry usage, got %#v", events[0]["usage"])
+	}
+
+	secondChoices, ok := events[1]["choices"].([]any)
+	if !ok || len(secondChoices) != 0 {
+		t.Fatalf("usage event choices = %#v, want empty slice", events[1]["choices"])
+	}
+	usage, ok := events[1]["usage"].(map[string]any)
+	if !ok {
+		t.Fatalf("usage event usage = %#v, want object", events[1]["usage"])
+	}
+	if got, ok := jsonNumberToInt(usage["total_tokens"]); !ok || got != 13 {
+		t.Fatalf("usage.total_tokens = %#v, want 13", usage["total_tokens"])
+	}
+}
+
 func TestReconstructStreamingResponse_PreservesChatLogprobs(t *testing.T) {
 	raw := []byte(
 		"data: {\"id\":\"chatcmpl-logprobs\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"logprobs\":null,\"finish_reason\":null}]}\n\n" +
@@ -486,7 +535,9 @@ func TestReconstructStreamingResponse_PreservesResponsesReasoningText(t *testing
 			"event: response.output_item.added\n" +
 			"data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"in_progress\",\"summary\":[]}}\n\n" +
 			"event: response.reasoning_text.delta\n" +
-			"data: {\"type\":\"response.reasoning_text.delta\",\"item_id\":\"rs_1\",\"output_index\":0,\"delta\":\"step by step\"}\n\n" +
+			"data: {\"type\":\"response.reasoning_text.delta\",\"item_id\":\"rs_1\",\"output_index\":0,\"content_index\":0,\"delta\":\"step by\"}\n\n" +
+			"event: response.reasoning_text.delta\n" +
+			"data: {\"type\":\"response.reasoning_text.delta\",\"item_id\":\"rs_1\",\"output_index\":0,\"content_index\":1,\"delta\":\"step\"}\n\n" +
 			"event: response.output_item.done\n" +
 			"data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[]}}\n\n" +
 			"event: response.completed\n" +
@@ -518,44 +569,49 @@ func TestReconstructStreamingResponse_PreservesResponsesReasoningText(t *testing
 		t.Fatalf("reasoning item should not use content field, got %#v", item["content"])
 	}
 	summary, ok := item["summary"].([]any)
-	if !ok || len(summary) != 1 {
-		t.Fatalf("reconstructed reasoning summary = %#v, want len=1", item["summary"])
+	if !ok || len(summary) != 2 {
+		t.Fatalf("reconstructed reasoning summary = %#v, want len=2", item["summary"])
 	}
-	part, ok := summary[0].(map[string]any)
-	if !ok {
-		t.Fatalf("reconstructed summary[0] = %#v, want object", summary[0])
-	}
-	if got, _ := part["type"].(string); got != "reasoning_text" {
-		t.Fatalf("reconstructed summary part type = %q, want reasoning_text", got)
-	}
-	if got, _ := part["text"].(string); got != "step by step" {
-		t.Fatalf("reconstructed summary part text = %q, want step by step", got)
+	wantTexts := []string{"step by", "step"}
+	for i, wantText := range wantTexts {
+		part, ok := summary[i].(map[string]any)
+		if !ok {
+			t.Fatalf("reconstructed summary[%d] = %#v, want object", i, summary[i])
+		}
+		if got, _ := part["type"].(string); got != "reasoning_text" {
+			t.Fatalf("reconstructed summary part type = %q, want reasoning_text", got)
+		}
+		if got, _ := part["text"].(string); got != wantText {
+			t.Fatalf("reconstructed summary part text = %q, want %q", got, wantText)
+		}
 	}
 
 	replay, err := renderCachedResponsesStream([]byte(`{"model":"grok-4","stream":true}`), cached)
 	if err != nil {
 		t.Fatalf("renderCachedResponsesStream() error = %v", err)
 	}
-	var reasoningDelta map[string]any
+	var reasoningDeltas []map[string]any
 	parseSSEJSONEvents(replay, func(event map[string]any) {
 		if eventType, _ := event["type"].(string); eventType == "response.reasoning_text.delta" {
-			reasoningDelta = event
+			reasoningDeltas = append(reasoningDeltas, event)
 		}
 	})
-	if reasoningDelta == nil {
-		t.Fatalf("cached responses replay = %q, want reasoning_text delta event", string(replay))
+	if len(reasoningDeltas) != 2 {
+		t.Fatalf("cached responses replay = %q, want 2 reasoning_text delta events", string(replay))
 	}
-	if got, _ := reasoningDelta["delta"].(string); got != "step by step" {
-		t.Fatalf("reasoning delta text = %q, want step by step", got)
-	}
-	if got, _ := reasoningDelta["item_id"].(string); got != "rs_1" {
-		t.Fatalf("reasoning delta item_id = %q, want rs_1", got)
-	}
-	if got, ok := jsonNumberToInt(reasoningDelta["output_index"]); !ok || got != 0 {
-		t.Fatalf("reasoning delta output_index = %#v, want 0", reasoningDelta["output_index"])
-	}
-	if got, ok := jsonNumberToInt(reasoningDelta["content_index"]); !ok || got != 0 {
-		t.Fatalf("reasoning delta content_index = %#v, want 0", reasoningDelta["content_index"])
+	for i, deltaEvent := range reasoningDeltas {
+		if got, _ := deltaEvent["delta"].(string); got != wantTexts[i] {
+			t.Fatalf("reasoning delta text = %q, want %q", got, wantTexts[i])
+		}
+		if got, _ := deltaEvent["item_id"].(string); got != "rs_1" {
+			t.Fatalf("reasoning delta item_id = %q, want rs_1", got)
+		}
+		if got, ok := jsonNumberToInt(deltaEvent["output_index"]); !ok || got != 0 {
+			t.Fatalf("reasoning delta output_index = %#v, want 0", deltaEvent["output_index"])
+		}
+		if got, ok := jsonNumberToInt(deltaEvent["content_index"]); !ok || got != i {
+			t.Fatalf("reasoning delta content_index = %#v, want %d", deltaEvent["content_index"], i)
+		}
 	}
 }
 
@@ -564,7 +620,9 @@ func TestReconstructStreamingResponse_HonorsResponsesTextDeltaLocators(t *testin
 		"event: response.created\n" +
 			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_text_locator\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"status\":\"in_progress\",\"output\":[{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"in_progress\",\"summary\":[]}]}}\n\n" +
 			"event: response.output_text.delta\n" +
-			"data: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":1,\"delta\":\"final answer\"}\n\n" +
+			"data: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":1,\"content_index\":0,\"delta\":\"final\"}\n\n" +
+			"event: response.output_text.delta\n" +
+			"data: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":1,\"content_index\":1,\"delta\":\"answer\"}\n\n" +
 			"event: response.completed\n" +
 			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_text_locator\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"status\":\"completed\",\"output\":[{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[{\"type\":\"reasoning_text\",\"text\":\"step by step\"}]},{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[]}]}}\n\n" +
 			"data: [DONE]\n\n",
@@ -598,41 +656,46 @@ func TestReconstructStreamingResponse_HonorsResponsesTextDeltaLocators(t *testin
 		t.Fatalf("reconstructed output[1] = %#v, want object", output[1])
 	}
 	content, ok := messageItem["content"].([]any)
-	if !ok || len(content) != 1 {
-		t.Fatalf("reconstructed message content = %#v, want len=1", messageItem["content"])
+	if !ok || len(content) != 2 {
+		t.Fatalf("reconstructed message content = %#v, want len=2", messageItem["content"])
 	}
-	messagePart, ok := content[0].(map[string]any)
-	if !ok {
-		t.Fatalf("reconstructed message content[0] = %#v, want object", content[0])
-	}
-	if got, _ := messagePart["text"].(string); got != "final answer" {
-		t.Fatalf("reconstructed message text = %q, want final answer", got)
+	wantTexts := []string{"final", "answer"}
+	for i, wantText := range wantTexts {
+		messagePart, ok := content[i].(map[string]any)
+		if !ok {
+			t.Fatalf("reconstructed message content[%d] = %#v, want object", i, content[i])
+		}
+		if got, _ := messagePart["text"].(string); got != wantText {
+			t.Fatalf("reconstructed message text = %q, want %q", got, wantText)
+		}
 	}
 
 	replay, err := renderCachedResponsesStream([]byte(`{"model":"gpt-4o-mini","stream":true}`), cached)
 	if err != nil {
 		t.Fatalf("renderCachedResponsesStream() error = %v", err)
 	}
-	var textDelta map[string]any
+	var textDeltas []map[string]any
 	parseSSEJSONEvents(replay, func(event map[string]any) {
 		if eventType, _ := event["type"].(string); eventType == "response.output_text.delta" {
-			textDelta = event
+			textDeltas = append(textDeltas, event)
 		}
 	})
-	if textDelta == nil {
-		t.Fatalf("cached responses replay = %q, want output_text delta event", string(replay))
+	if len(textDeltas) != 2 {
+		t.Fatalf("cached responses replay = %q, want 2 output_text delta events", string(replay))
 	}
-	if got, _ := textDelta["delta"].(string); got != "final answer" {
-		t.Fatalf("text delta text = %q, want final answer", got)
-	}
-	if got, _ := textDelta["item_id"].(string); got != "msg_1" {
-		t.Fatalf("text delta item_id = %q, want msg_1", got)
-	}
-	if got, ok := jsonNumberToInt(textDelta["output_index"]); !ok || got != 1 {
-		t.Fatalf("text delta output_index = %#v, want 1", textDelta["output_index"])
-	}
-	if got, ok := jsonNumberToInt(textDelta["content_index"]); !ok || got != 0 {
-		t.Fatalf("text delta content_index = %#v, want 0", textDelta["content_index"])
+	for i, deltaEvent := range textDeltas {
+		if got, _ := deltaEvent["delta"].(string); got != wantTexts[i] {
+			t.Fatalf("text delta text = %q, want %q", got, wantTexts[i])
+		}
+		if got, _ := deltaEvent["item_id"].(string); got != "msg_1" {
+			t.Fatalf("text delta item_id = %q, want msg_1", got)
+		}
+		if got, ok := jsonNumberToInt(deltaEvent["output_index"]); !ok || got != 1 {
+			t.Fatalf("text delta output_index = %#v, want 1", deltaEvent["output_index"])
+		}
+		if got, ok := jsonNumberToInt(deltaEvent["content_index"]); !ok || got != i {
+			t.Fatalf("text delta content_index = %#v, want %d", deltaEvent["content_index"], i)
+		}
 	}
 }
 
