@@ -327,8 +327,9 @@ func renderCachedResponsesStream(requestBody, cached []byte) ([]byte, error) {
 		}
 	}
 
-	if err := appendSSEJSONEvent(&out, "response.completed", map[string]any{
-		"type":     "response.completed",
+	terminalEventName := responsesTerminalEventName(responseWithUsage)
+	if err := appendSSEJSONEvent(&out, terminalEventName, map[string]any{
+		"type":     terminalEventName,
 		"response": responseWithUsage,
 	}); err != nil {
 		return nil, err
@@ -643,7 +644,7 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 
 	eventType, _ := event["type"].(string)
 	switch eventType {
-	case "response.created", "response.completed", "response.done":
+	case "response.created", "response.completed", "response.failed", "response.incomplete", "response.done":
 		response, ok := event["response"].(map[string]any)
 		if !ok {
 			return
@@ -1136,6 +1137,7 @@ func responsesAddedItem(item map[string]any) map[string]any {
 		return nil
 	}
 	added["status"] = "in_progress"
+	delete(added, "arguments")
 	if _, ok := added["content"].([]any); ok {
 		added["content"] = []any{}
 	}
@@ -1143,6 +1145,18 @@ func responsesAddedItem(item map[string]any) map[string]any {
 		added["summary"] = []any{}
 	}
 	return added
+}
+
+func responsesTerminalEventName(response map[string]any) string {
+	status, _ := response["status"].(string)
+	switch status {
+	case "failed":
+		return "response.failed"
+	case "incomplete":
+		return "response.incomplete"
+	default:
+		return "response.completed"
+	}
 }
 
 func appendResponsesItemDeltaEvents(out *bytes.Buffer, item map[string]any, itemID string, outputIndex int) error {

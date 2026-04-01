@@ -738,3 +738,154 @@ func TestRenderCachedResponsesStream_PreservesReasoningTextDeltas(t *testing.T) 
 		t.Fatalf("cached responses replay = %q, want output_text delta event", string(replay))
 	}
 }
+
+func TestRenderCachedResponsesStream_FunctionCallAddedItemOmitsArguments(t *testing.T) {
+	cached := []byte(`{
+		"id":"resp_function_call",
+		"object":"response",
+		"created_at":1234567890,
+		"model":"gpt-4o-mini",
+		"provider":"openai",
+		"status":"completed",
+		"output":[
+			{
+				"id":"fc_1",
+				"type":"function_call",
+				"status":"completed",
+				"call_id":"call_1",
+				"name":"lookup_weather",
+				"arguments":"{\"city\":\"Warsaw\"}"
+			}
+		]
+	}`)
+
+	replay, err := renderCachedResponsesStream([]byte(`{"model":"gpt-4o-mini","stream":true}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedResponsesStream() error = %v", err)
+	}
+
+	var addedItem map[string]any
+	var argDelta map[string]any
+	var argDone map[string]any
+	parseSSEJSONEvents(replay, func(event map[string]any) {
+		switch eventType, _ := event["type"].(string); eventType {
+		case "response.output_item.added":
+			addedItem, _ = event["item"].(map[string]any)
+		case "response.function_call_arguments.delta":
+			argDelta = event
+		case "response.function_call_arguments.done":
+			argDone = event
+		}
+	})
+
+	if addedItem == nil {
+		t.Fatalf("cached responses replay = %q, want output_item.added event", string(replay))
+	}
+	if _, ok := addedItem["arguments"]; ok {
+		t.Fatalf("added item arguments = %#v, want omitted", addedItem["arguments"])
+	}
+	if argDelta == nil || argDone == nil {
+		t.Fatalf("cached responses replay = %q, want function_call_arguments delta and done events", string(replay))
+	}
+	if got, _ := argDelta["delta"].(string); got != `{"city":"Warsaw"}` {
+		t.Fatalf("arguments delta = %q, want full arguments", got)
+	}
+	if got, _ := argDone["arguments"].(string); got != `{"city":"Warsaw"}` {
+		t.Fatalf("arguments done = %q, want full arguments", got)
+	}
+}
+
+func TestReconstructStreamingResponse_PreservesResponsesTerminalEvents(t *testing.T) {
+	tests := []struct {
+		name             string
+		eventName        string
+		status           string
+		terminalResponse string
+		assertTerminal   func(*testing.T, map[string]any)
+	}{
+		{
+			name:             "failed",
+			eventName:        "response.failed",
+			status:           "failed",
+			terminalResponse: `{"id":"resp_failed","object":"response","created_at":1234567890,"model":"gpt-4o-mini","provider":"openai","status":"failed","error":{"code":"boom","message":"upstream failed"},"metadata":{"trace":"abc"},"output":[]}`,
+			assertTerminal: func(t *testing.T, response map[string]any) {
+				t.Helper()
+				errMap, ok := response["error"].(map[string]any)
+				if !ok {
+					t.Fatalf("terminal response error = %#v, want object", response["error"])
+				}
+				if got, _ := errMap["code"].(string); got != "boom" {
+					t.Fatalf("terminal response error.code = %q, want boom", got)
+				}
+			},
+		},
+		{
+			name:             "incomplete",
+			eventName:        "response.incomplete",
+			status:           "incomplete",
+			terminalResponse: `{"id":"resp_incomplete","object":"response","created_at":1234567890,"model":"gpt-4o-mini","provider":"openai","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"metadata":{"trace":"def"},"output":[]}`,
+			assertTerminal: func(t *testing.T, response map[string]any) {
+				t.Helper()
+				details, ok := response["incomplete_details"].(map[string]any)
+				if !ok {
+					t.Fatalf("terminal response incomplete_details = %#v, want object", response["incomplete_details"])
+				}
+				if got, _ := details["reason"].(string); got != "max_output_tokens" {
+					t.Fatalf("terminal response incomplete_details.reason = %q, want max_output_tokens", got)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw := []byte(
+				"event: response.created\n" +
+					"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_terminal\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"status\":\"in_progress\",\"output\":[]}}\n\n" +
+					"event: " + tt.eventName + "\n" +
+					"data: {\"type\":\"" + tt.eventName + "\",\"response\":" + tt.terminalResponse + "}\n\n" +
+					"data: [DONE]\n\n",
+			)
+
+			cached, ok := reconstructStreamingResponse("/v1/responses", raw, streamResponseDefaults{
+				Model:    "gpt-4o-mini",
+				Provider: "openai",
+			})
+			if !ok {
+				t.Fatal("expected streamed responses payload to reconstruct successfully")
+			}
+
+			var cachedResponse map[string]any
+			if err := json.Unmarshal(cached, &cachedResponse); err != nil {
+				t.Fatalf("json.Unmarshal(cached) error = %v", err)
+			}
+			if got, _ := cachedResponse["status"].(string); got != tt.status {
+				t.Fatalf("cached response status = %q, want %q", got, tt.status)
+			}
+			tt.assertTerminal(t, cachedResponse)
+
+			replay, err := renderCachedResponsesStream([]byte(`{"model":"gpt-4o-mini","stream":true}`), cached)
+			if err != nil {
+				t.Fatalf("renderCachedResponsesStream() error = %v", err)
+			}
+
+			var terminalEvent map[string]any
+			parseSSEJSONEvents(replay, func(event map[string]any) {
+				if eventType, _ := event["type"].(string); eventType == tt.eventName {
+					terminalEvent = event
+				}
+			})
+			if terminalEvent == nil {
+				t.Fatalf("cached responses replay = %q, want terminal event %s", string(replay), tt.eventName)
+			}
+			response, ok := terminalEvent["response"].(map[string]any)
+			if !ok {
+				t.Fatalf("terminal event response = %#v, want object", terminalEvent["response"])
+			}
+			if got, _ := response["status"].(string); got != tt.status {
+				t.Fatalf("terminal event status = %q, want %q", got, tt.status)
+			}
+			tt.assertTerminal(t, response)
+		})
+	}
+}
