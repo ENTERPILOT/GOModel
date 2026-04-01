@@ -2,6 +2,7 @@ package responsecache
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -500,19 +501,138 @@ func TestReconstructStreamingResponse_PreservesResponsesReasoningText(t *testing
 	if !ok {
 		t.Fatal("expected streamed responses payload to reconstruct successfully")
 	}
-	if !bytes.Contains(cached, []byte(`"type":"reasoning_text"`)) || !bytes.Contains(cached, []byte(`"text":"step by step"`)) {
-		t.Fatalf("reconstructed responses body = %q, want reasoning_text persisted", string(cached))
+
+	var response map[string]any
+	if err := json.Unmarshal(cached, &response); err != nil {
+		t.Fatalf("json.Unmarshal(cached) error = %v", err)
+	}
+	output, ok := response["output"].([]any)
+	if !ok || len(output) != 1 {
+		t.Fatalf("reconstructed output = %#v, want len=1", response["output"])
+	}
+	item, ok := output[0].(map[string]any)
+	if !ok {
+		t.Fatalf("reconstructed output[0] = %#v, want object", output[0])
+	}
+	if _, ok := item["content"]; ok {
+		t.Fatalf("reasoning item should not use content field, got %#v", item["content"])
+	}
+	summary, ok := item["summary"].([]any)
+	if !ok || len(summary) != 1 {
+		t.Fatalf("reconstructed reasoning summary = %#v, want len=1", item["summary"])
+	}
+	part, ok := summary[0].(map[string]any)
+	if !ok {
+		t.Fatalf("reconstructed summary[0] = %#v, want object", summary[0])
+	}
+	if got, _ := part["type"].(string); got != "reasoning_text" {
+		t.Fatalf("reconstructed summary part type = %q, want reasoning_text", got)
+	}
+	if got, _ := part["text"].(string); got != "step by step" {
+		t.Fatalf("reconstructed summary part text = %q, want step by step", got)
 	}
 
 	replay, err := renderCachedResponsesStream([]byte(`{"model":"grok-4","stream":true}`), cached)
 	if err != nil {
 		t.Fatalf("renderCachedResponsesStream() error = %v", err)
 	}
-	if !bytes.Contains(replay, []byte("event: response.reasoning_text.delta")) {
+	var reasoningDelta map[string]any
+	parseSSEJSONEvents(replay, func(event map[string]any) {
+		if eventType, _ := event["type"].(string); eventType == "response.reasoning_text.delta" {
+			reasoningDelta = event
+		}
+	})
+	if reasoningDelta == nil {
 		t.Fatalf("cached responses replay = %q, want reasoning_text delta event", string(replay))
 	}
-	if !bytes.Contains(replay, []byte("step by step")) {
-		t.Fatalf("cached responses replay = %q, want persisted reasoning text", string(replay))
+	if got, _ := reasoningDelta["delta"].(string); got != "step by step" {
+		t.Fatalf("reasoning delta text = %q, want step by step", got)
+	}
+	if got, _ := reasoningDelta["item_id"].(string); got != "rs_1" {
+		t.Fatalf("reasoning delta item_id = %q, want rs_1", got)
+	}
+	if got, ok := jsonNumberToInt(reasoningDelta["output_index"]); !ok || got != 0 {
+		t.Fatalf("reasoning delta output_index = %#v, want 0", reasoningDelta["output_index"])
+	}
+	if got, ok := jsonNumberToInt(reasoningDelta["content_index"]); !ok || got != 0 {
+		t.Fatalf("reasoning delta content_index = %#v, want 0", reasoningDelta["content_index"])
+	}
+}
+
+func TestReconstructStreamingResponse_HonorsResponsesTextDeltaLocators(t *testing.T) {
+	raw := []byte(
+		"event: response.created\n" +
+			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_text_locator\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"status\":\"in_progress\",\"output\":[{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"in_progress\",\"summary\":[]}]}}\n\n" +
+			"event: response.output_text.delta\n" +
+			"data: {\"type\":\"response.output_text.delta\",\"item_id\":\"msg_1\",\"output_index\":1,\"delta\":\"final answer\"}\n\n" +
+			"event: response.completed\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_text_locator\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"status\":\"completed\",\"output\":[{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[{\"type\":\"reasoning_text\",\"text\":\"step by step\"}]},{\"id\":\"msg_1\",\"type\":\"message\",\"role\":\"assistant\",\"status\":\"completed\",\"content\":[]}]}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	cached, ok := reconstructStreamingResponse("/v1/responses", raw, streamResponseDefaults{
+		Model:    "gpt-4o-mini",
+		Provider: "openai",
+	})
+	if !ok {
+		t.Fatal("expected streamed responses payload to reconstruct successfully")
+	}
+
+	var response map[string]any
+	if err := json.Unmarshal(cached, &response); err != nil {
+		t.Fatalf("json.Unmarshal(cached) error = %v", err)
+	}
+	output, ok := response["output"].([]any)
+	if !ok || len(output) != 2 {
+		t.Fatalf("reconstructed output = %#v, want len=2", response["output"])
+	}
+	reasoningItem, ok := output[0].(map[string]any)
+	if !ok {
+		t.Fatalf("reconstructed output[0] = %#v, want object", output[0])
+	}
+	if _, ok := reasoningItem["content"]; ok {
+		t.Fatalf("reasoning item should not use content field, got %#v", reasoningItem["content"])
+	}
+	messageItem, ok := output[1].(map[string]any)
+	if !ok {
+		t.Fatalf("reconstructed output[1] = %#v, want object", output[1])
+	}
+	content, ok := messageItem["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("reconstructed message content = %#v, want len=1", messageItem["content"])
+	}
+	messagePart, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("reconstructed message content[0] = %#v, want object", content[0])
+	}
+	if got, _ := messagePart["text"].(string); got != "final answer" {
+		t.Fatalf("reconstructed message text = %q, want final answer", got)
+	}
+
+	replay, err := renderCachedResponsesStream([]byte(`{"model":"gpt-4o-mini","stream":true}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedResponsesStream() error = %v", err)
+	}
+	var textDelta map[string]any
+	parseSSEJSONEvents(replay, func(event map[string]any) {
+		if eventType, _ := event["type"].(string); eventType == "response.output_text.delta" {
+			textDelta = event
+		}
+	})
+	if textDelta == nil {
+		t.Fatalf("cached responses replay = %q, want output_text delta event", string(replay))
+	}
+	if got, _ := textDelta["delta"].(string); got != "final answer" {
+		t.Fatalf("text delta text = %q, want final answer", got)
+	}
+	if got, _ := textDelta["item_id"].(string); got != "msg_1" {
+		t.Fatalf("text delta item_id = %q, want msg_1", got)
+	}
+	if got, ok := jsonNumberToInt(textDelta["output_index"]); !ok || got != 1 {
+		t.Fatalf("text delta output_index = %#v, want 1", textDelta["output_index"])
+	}
+	if got, ok := jsonNumberToInt(textDelta["content_index"]); !ok || got != 0 {
+		t.Fatalf("text delta content_index = %#v, want 0", textDelta["content_index"])
 	}
 }
 

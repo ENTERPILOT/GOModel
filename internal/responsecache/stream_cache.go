@@ -703,25 +703,30 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 		if delta == "" {
 			return
 		}
-		index := 0
-		if b.HasAssistant {
-			index = b.AssistantIndex
+		index, ok := b.lookupOutputIndex(event)
+		if !ok {
+			index = 0
+			if b.HasAssistant {
+				index = b.AssistantIndex
+			}
 		}
-		state := b.output(index)
-		state.AppendText(delta)
-		if !b.HasAssistant {
-			b.AssistantIndex = index
-			b.HasAssistant = true
-		}
+		b.rememberOutputLocator(event, index)
+		b.AssistantIndex = index
+		b.HasAssistant = true
+		b.output(index).AppendText(delta)
 	case "response.reasoning_text.delta":
 		delta, _ := event["delta"].(string)
 		if delta == "" {
 			return
 		}
+		outputIndex, hasOutputIndex := jsonNumberToInt(event["output_index"])
 		index, ok := b.lookupOutputIndex(event)
 		if !ok {
-			index = b.ensureReasoningOutputIndex()
+			index = b.ensureReasoningOutputIndex(outputIndex, hasOutputIndex)
 		}
+		b.rememberOutputLocator(event, index)
+		b.ReasoningIndex = index
+		b.HasReasoning = true
 		b.output(index).AppendReasoning(delta)
 	case "response.function_call_arguments.delta":
 		index, ok := b.lookupOutputIndex(event)
@@ -868,7 +873,20 @@ func (b *responsesStreamCacheBuilder) lookupOutputIndex(event map[string]any) (i
 	return index, ok
 }
 
-func (b *responsesStreamCacheBuilder) ensureReasoningOutputIndex() int {
+func (b *responsesStreamCacheBuilder) rememberOutputLocator(event map[string]any, index int) {
+	itemID, _ := event["item_id"].(string)
+	if itemID == "" {
+		return
+	}
+	b.ItemIDs[itemID] = index
+}
+
+func (b *responsesStreamCacheBuilder) ensureReasoningOutputIndex(outputIndex int, hasOutputIndex bool) int {
+	if hasOutputIndex {
+		b.ReasoningIndex = outputIndex
+		b.HasReasoning = true
+		return outputIndex
+	}
 	if b.HasReasoning {
 		return b.ReasoningIndex
 	}
@@ -938,7 +956,9 @@ func (s *responsesOutputState) BuildItem() map[string]any {
 			item["type"] = itemType
 		}
 		targetField := "content"
-		if itemType != "reasoning" {
+		if itemType == "reasoning" {
+			targetField = "summary"
+		} else {
 			if _, ok := item["summary"].([]any); ok {
 				targetField = "summary"
 			}
@@ -1092,12 +1112,12 @@ func appendResponsesItemDeltaEvents(out *bytes.Buffer, item map[string]any, item
 		if !ok {
 			continue
 		}
-		for _, partAny := range parts {
+		for contentIndex, partAny := range parts {
 			part, ok := partAny.(map[string]any)
 			if !ok {
 				continue
 			}
-			eventName, payload, ok := responsesContentDeltaEvent(part)
+			eventName, payload, ok := responsesContentDeltaEvent(part, itemID, outputIndex, contentIndex)
 			if !ok {
 				continue
 			}
@@ -1110,7 +1130,7 @@ func appendResponsesItemDeltaEvents(out *bytes.Buffer, item map[string]any, item
 	return nil
 }
 
-func responsesContentDeltaEvent(part map[string]any) (string, map[string]any, bool) {
+func responsesContentDeltaEvent(part map[string]any, itemID string, outputIndex, contentIndex int) (string, map[string]any, bool) {
 	partType, _ := part["type"].(string)
 	text, _ := part["text"].(string)
 	if partType == "" || text == "" {
@@ -1127,10 +1147,17 @@ func responsesContentDeltaEvent(part map[string]any) (string, map[string]any, bo
 		return "", nil, false
 	}
 
-	return eventName, map[string]any{
-		"type":  eventName,
-		"delta": text,
-	}, true
+	payload := map[string]any{
+		"type":          eventName,
+		"delta":         text,
+		"output_index":  outputIndex,
+		"content_index": contentIndex,
+	}
+	if itemID != "" {
+		payload["item_id"] = itemID
+	}
+
+	return eventName, payload, true
 }
 
 func chatUsageMap(usage core.Usage) map[string]any {
