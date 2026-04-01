@@ -96,8 +96,11 @@ func cacheKeyRequestBody(path string, body []byte) []byte {
 		if err != nil || req == nil {
 			return body
 		}
-		req.Stream = false
-		req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		if req.Stream {
+			req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		} else {
+			req.StreamOptions = nil
+		}
 		normalized, err := json.Marshal(req)
 		if err != nil {
 			return body
@@ -108,8 +111,11 @@ func cacheKeyRequestBody(path string, body []byte) []byte {
 		if err != nil || req == nil {
 			return body
 		}
-		req.Stream = false
-		req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		if req.Stream {
+			req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		} else {
+			req.StreamOptions = nil
+		}
 		normalized, err := json.Marshal(req)
 		if err != nil {
 			return body
@@ -149,17 +155,13 @@ func isEventStreamContentType(contentType string) bool {
 
 func writeCachedResponse(c *echo.Context, path string, requestBody, cached []byte, cacheType string) error {
 	if isStreamingRequest(path, requestBody) {
-		streamBody, err := renderCachedStream(path, requestBody, cached)
-		if err != nil {
-			return err
-		}
 		auditlog.EnrichEntryWithStream(c, true)
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
 		c.Response().Header().Set("X-Cache", "HIT ("+cacheType+")")
 		c.Response().WriteHeader(http.StatusOK)
-		_, _ = c.Response().Write(streamBody)
+		_, _ = c.Response().Write(cached)
 		return nil
 	}
 

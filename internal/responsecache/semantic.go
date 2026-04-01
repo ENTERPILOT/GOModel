@@ -133,9 +133,9 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	if core.GetFallbackUsed(c.Request().Context()) {
 		return nil
 	}
-	data, ok := capture.cachedBody(path, streamResponseDefaultsFromContext(c.Request().Context()), c.Response().Header().Get("Content-Type"))
+	data, ok := capture.cachedBody(c.Response().Header().Get("Content-Type"))
 	if !ok {
-		slog.Warn("semantic cache: failed to reconstruct cacheable response body", "path", path)
+		slog.Warn("semantic cache: failed to capture cacheable response body", "path", path)
 		return nil
 	}
 	ttl := time.Duration(m.cfg.TTL) * time.Second
@@ -351,6 +351,7 @@ func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPla
 		MaxTokens      *int                `json:"max_tokens"`
 		Tools          []map[string]any    `json:"tools"`
 		ResponseFormat any                 `json:"response_format"`
+		Stream         bool                `json:"stream,omitempty"`
 		StreamOptions  *core.StreamOptions `json:"stream_options"`
 	}
 	_ = json.Unmarshal(body, &req)
@@ -396,7 +397,12 @@ func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPla
 	}
 	h.Write([]byte{0})
 
-	if streamOptions := normalizeStreamOptionsForCache(req.StreamOptions); streamOptions != nil {
+	if req.Stream {
+		h.Write([]byte("1"))
+	}
+	h.Write([]byte{0})
+
+	if streamOptions := normalizeStreamOptionsForCache(req.StreamOptions); req.Stream && streamOptions != nil {
 		soJSON, _ := json.Marshal(streamOptions)
 		h.Write(soJSON)
 	}

@@ -570,6 +570,46 @@ func TestExtractFromCachedResponseBody(t *testing.T) {
 		}
 	})
 
+	t.Run("parses cached chat SSE bodies", func(t *testing.T) {
+		body := []byte(
+			"data: {\"id\":\"chatcmpl-cache-sse\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hi\"},\"finish_reason\":null}]}\n\n" +
+				"data: {\"id\":\"chatcmpl-cache-sse\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":4,\"total_tokens\":13}}\n\n" +
+				"data: [DONE]\n\n",
+		)
+
+		entry := ExtractFromCachedResponseBody(body, "req-cache-sse", "gpt-4o", "openai", "/v1/chat/completions", CacheTypeExact)
+		if entry == nil {
+			t.Fatal("expected non-nil entry")
+		}
+		if entry.ProviderID != "chatcmpl-cache-sse" {
+			t.Fatalf("ProviderID = %q, want chatcmpl-cache-sse", entry.ProviderID)
+		}
+		if entry.InputTokens != 9 || entry.OutputTokens != 4 || entry.TotalTokens != 13 {
+			t.Fatalf("unexpected token counts: %+v", entry)
+		}
+	})
+
+	t.Run("parses cached responses SSE bodies", func(t *testing.T) {
+		body := []byte(
+			"event: response.created\n" +
+				"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp-cache-sse\",\"object\":\"response\",\"status\":\"in_progress\",\"model\":\"gpt-5\",\"output\":[]}}\n\n" +
+				"event: response.completed\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-cache-sse\",\"object\":\"response\",\"status\":\"completed\",\"model\":\"gpt-5\",\"output\":[],\"usage\":{\"input_tokens\":15,\"output_tokens\":8,\"total_tokens\":23}}}\n\n" +
+				"data: [DONE]\n\n",
+		)
+
+		entry := ExtractFromCachedResponseBody(body, "req-resp-sse", "gpt-5", "openai", "/v1/responses", CacheTypeExact)
+		if entry == nil {
+			t.Fatal("expected non-nil entry")
+		}
+		if entry.ProviderID != "resp-cache-sse" {
+			t.Fatalf("ProviderID = %q, want resp-cache-sse", entry.ProviderID)
+		}
+		if entry.InputTokens != 15 || entry.OutputTokens != 8 || entry.TotalTokens != 23 {
+			t.Fatalf("unexpected token counts: %+v", entry)
+		}
+	})
+
 	t.Run("defaults unknown cache type to exact", func(t *testing.T) {
 		resp := &core.ChatResponse{
 			ID:    "chatcmpl-cache",

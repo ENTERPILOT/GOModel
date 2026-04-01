@@ -1,7 +1,9 @@
 package usage
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"maps"
 	"path"
 	"strings"
@@ -10,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"gomodel/internal/core"
+	"gomodel/internal/streaming"
 )
 
 // buildRawUsageFromDetails merges typed token detail fields into a RawUsage map.
@@ -266,6 +269,9 @@ func ExtractFromCachedResponseBody(
 			entry = ExtractFromEmbeddingResponse(&resp, requestID, provider, endpoint, pricing...)
 		}
 	}
+	if entry == nil {
+		entry = extractFromCachedSSEBody(body, requestID, model, provider, endpoint, pricing...)
+	}
 
 	if entry == nil {
 		entry = &UsageEntry{
@@ -295,6 +301,40 @@ func ExtractFromCachedResponseBody(
 		entry.Endpoint = endpoint
 	}
 	return entry
+}
+
+type staticPricingResolver struct {
+	pricing *core.ModelPricing
+}
+
+func (r staticPricingResolver) ResolvePricing(_, _ string) *core.ModelPricing {
+	return r.pricing
+}
+
+func extractFromCachedSSEBody(
+	body []byte,
+	requestID, model, provider, endpoint string,
+	pricing ...*core.ModelPricing,
+) *UsageEntry {
+	if len(bytes.TrimSpace(body)) == 0 || !bytes.Contains(body, []byte("data:")) {
+		return nil
+	}
+
+	observer := &StreamUsageObserver{
+		model:     strings.TrimSpace(model),
+		provider:  strings.TrimSpace(provider),
+		requestID: strings.TrimSpace(requestID),
+		endpoint:  endpoint,
+	}
+	if len(pricing) > 0 && pricing[0] != nil {
+		observer.pricingResolver = staticPricingResolver{pricing: pricing[0]}
+	}
+
+	stream := streaming.NewObservedSSEStream(io.NopCloser(bytes.NewReader(body)), observer)
+	_, _ = io.Copy(io.Discard, stream)
+	_ = stream.Close()
+
+	return observer.cachedEntry
 }
 
 func normalizeCachedResponseEndpoint(endpoint string) string {

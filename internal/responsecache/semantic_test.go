@@ -226,6 +226,25 @@ func TestComputeParamsHash_StreamIncludeUsageChangesHash(t *testing.T) {
 	}
 }
 
+func TestComputeParamsHash_StreamModeChangesHash(t *testing.T) {
+	base := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"same prompt"}]}`)
+	streaming := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"same prompt"}]}`)
+	plan := &core.ExecutionPlan{
+		Mode:         core.ExecutionModeTranslated,
+		ProviderType: "openai",
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+		},
+	}
+
+	first := computeParamsHash(base, "/v1/chat/completions", plan, "", "")
+	second := computeParamsHash(streaming, "/v1/chat/completions", plan, "", "")
+
+	if first == second {
+		t.Fatal("stream mode should affect semantic params_hash")
+	}
+}
+
 func TestSemanticCacheMiddleware_GuardrailsHashIsolation(t *testing.T) {
 	m, store, emb := newTestSemanticMiddleware(0.90, 10, false)
 	emb.vector = []float32{1, 0, 0}
@@ -303,10 +322,15 @@ func TestSemanticCacheMiddleware_ExcludeSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestSemanticCacheMiddleware_StreamingMissPopulatesSemanticCacheAcrossModes(t *testing.T) {
+func TestSemanticCacheMiddleware_StreamingMissPopulatesStreamingSemanticCacheOnly(t *testing.T) {
 	m, store, _ := newTestSemanticMiddleware(0.90, 10, false)
 	streamBody := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"semantic-stream-cache"}]}`)
 	jsonBody := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"semantic-stream-cache"}]}`)
+	rawStream := []byte(
+		"data: {\"id\":\"chatcmpl-semantic-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Semantic\"},\"finish_reason\":null}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-semantic-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" cache\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2,\"total_tokens\":9}}\n\n" +
+			"data: [DONE]\n\n",
+	)
 	e := echo.New()
 	handlerCalls := 0
 
@@ -318,12 +342,13 @@ func TestSemanticCacheMiddleware_StreamingMissPopulatesSemanticCacheAcrossModes(
 		c := e.NewContext(req, rec)
 		if err := m.Handle(c, body, func() error {
 			handlerCalls++
-			c.Response().Header().Set("Content-Type", "text/event-stream")
-			c.Response().WriteHeader(http.StatusOK)
-			_, _ = c.Response().Write([]byte("data: {\"id\":\"chatcmpl-semantic-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Semantic\"},\"finish_reason\":null}]}\n\n"))
-			_, _ = c.Response().Write([]byte("data: {\"id\":\"chatcmpl-semantic-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" cache\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2,\"total_tokens\":9}}\n\n"))
-			_, _ = c.Response().Write([]byte("data: [DONE]\n\n"))
-			return nil
+			if isStreamingRequest(c.Request().URL.Path, body) {
+				c.Response().Header().Set("Content-Type", "text/event-stream")
+				c.Response().WriteHeader(http.StatusOK)
+				_, _ = c.Response().Write(rawStream)
+				return nil
+			}
+			return c.JSON(http.StatusOK, map[string]string{"mode": "json"})
 		}); err != nil {
 			t.Fatalf("Handle error: %v", err)
 		}
@@ -342,31 +367,99 @@ func TestSemanticCacheMiddleware_StreamingMissPopulatesSemanticCacheAcrossModes(
 	}
 
 	rec2 := run(jsonBody)
-	if got := rec2.Header().Get("X-Cache"); got != "HIT (semantic)" {
-		t.Fatalf("non-streaming follow-up should hit semantic cache, got X-Cache=%q", got)
+	if got := rec2.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("non-streaming follow-up should miss semantic cache because stream mode is keyed separately, got X-Cache=%q", got)
 	}
 	if got := rec2.Header().Get("Content-Type"); got != "application/json" {
-		t.Fatalf("non-streaming semantic hit Content-Type = %q, want application/json", got)
+		t.Fatalf("non-streaming miss Content-Type = %q, want application/json", got)
 	}
-	if !bytes.Contains(rec2.Body.Bytes(), []byte(`"content":"Semantic cache"`)) {
-		t.Fatalf("semantic cache hit body = %q, want reconstructed JSON response", rec2.Body.String())
+	if !bytes.Contains(rec2.Body.Bytes(), []byte(`"mode":"json"`)) {
+		t.Fatalf("non-streaming miss body = %q, want JSON response", rec2.Body.String())
 	}
-	if handlerCalls != 1 {
-		t.Fatalf("semantic hit should not call handler again, got %d calls", handlerCalls)
+	if handlerCalls != 2 {
+		t.Fatalf("non-streaming miss should call handler again, got %d calls", handlerCalls)
+	}
+
+	m.wg.Wait()
+
+	if store.Len() != 2 {
+		t.Fatalf("expected separate semantic entries for stream and non-stream requests, got %d entries", store.Len())
 	}
 
 	rec3 := run(streamBody)
 	if got := rec3.Header().Get("X-Cache"); got != "HIT (semantic)" {
-		t.Fatalf("streaming follow-up should hit semantic cache, got X-Cache=%q", got)
+		t.Fatalf("streaming follow-up should hit its own semantic cache entry, got X-Cache=%q", got)
 	}
 	if got := rec3.Header().Get("Content-Type"); got != "text/event-stream" {
 		t.Fatalf("streaming semantic hit Content-Type = %q, want text/event-stream", got)
 	}
-	if !bytes.Contains(rec3.Body.Bytes(), []byte("Semantic cache")) || !bytes.Contains(rec3.Body.Bytes(), []byte("[DONE]")) {
-		t.Fatalf("streaming semantic hit body = %q, want synthesized SSE", rec3.Body.String())
+	if !bytes.Equal(rec3.Body.Bytes(), rawStream) {
+		t.Fatalf("streaming semantic hit body = %q, want verbatim SSE replay", rec3.Body.String())
 	}
-	if handlerCalls != 1 {
+	if handlerCalls != 2 {
 		t.Fatalf("streaming semantic hit should not call handler again, got %d calls", handlerCalls)
+	}
+
+	rec4 := run(jsonBody)
+	if got := rec4.Header().Get("X-Cache"); got != "HIT (semantic)" {
+		t.Fatalf("non-streaming follow-up should hit its own semantic cache entry, got X-Cache=%q", got)
+	}
+	if got := rec4.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("non-streaming semantic hit Content-Type = %q, want application/json", got)
+	}
+	if !bytes.Contains(rec4.Body.Bytes(), []byte(`"mode":"json"`)) {
+		t.Fatalf("non-streaming semantic hit body = %q, want cached JSON response", rec4.Body.String())
+	}
+	if handlerCalls != 2 {
+		t.Fatalf("non-streaming semantic hit should not call handler again, got %d calls", handlerCalls)
+	}
+}
+
+func TestSemanticCacheMiddleware_InvalidStreamingBodySkipsSemanticCacheWrite(t *testing.T) {
+	m, store, _ := newTestSemanticMiddleware(0.90, 10, false)
+	body := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"semantic-invalid-stream"}]}`)
+	invalidStream := []byte(
+		": keep-alive\n\n" +
+			"data: {\"id\":\"chatcmpl-semantic-invalid\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"partial\"},\"finish_reason\":null}]}\n\n",
+	)
+	e := echo.New()
+	handlerCalls := 0
+
+	run := func() *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		if err := m.Handle(c, body, func() error {
+			handlerCalls++
+			c.Response().Header().Set("Content-Type", "text/event-stream")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Write(invalidStream)
+			return nil
+		}); err != nil {
+			t.Fatalf("Handle error: %v", err)
+		}
+		return rec
+	}
+
+	rec1 := run()
+	if got := rec1.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("first request should miss cache, got X-Cache=%q", got)
+	}
+
+	m.wg.Wait()
+
+	if store.Len() != 0 {
+		t.Fatalf("invalid streaming body should not populate semantic cache, got %d entries", store.Len())
+	}
+
+	rec2 := run()
+	if got := rec2.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("invalid streaming body should not be cached, got X-Cache=%q", got)
+	}
+	if handlerCalls != 2 {
+		t.Fatalf("expected invalid stream to bypass semantic cache on follow-up, got %d calls", handlerCalls)
 	}
 }
 
