@@ -32,6 +32,12 @@ These scenarios target the auth-enabled live gateway on `http://localhost:8080`
 and cover the newer workflows, managed API keys, and cache analytics features.
 
 ```bash
+set -euo pipefail
+if [ ! -r .env ]; then
+  echo "error: .env is missing or unreadable" >&2
+  exit 1
+fi
+
 set -a
 source .env
 set +a
@@ -58,7 +64,7 @@ export QA_DEACTIVATED_REQ="qa-auth-deactivated-$QA_SUFFIX"
 export QA_CACHE_REPLY="QA_CACHE_EXACT_OK_$QA_SUFFIX"
 
 cleanup_release_auth_artifacts() {
-  rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
+  rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE" "$QA_WORKFLOW_JSON" "$QA_WORKFLOW_ID_FILE"
 }
 
 cleanup_release_auth_artifacts
@@ -759,10 +765,17 @@ AUTH_KEY_JSON=$(curl -sS -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
   -H "$ADMIN_AUTH_HEADER" \
   -H 'Content-Type: application/json' \
   -d "{\"name\":\"$QA_AUTH_KEY_NAME\",\"description\":\"Release e2e managed key\",\"user_path\":\"$QA_USER_PATH\"}")
+AUTH_KEY_VALUE=$(printf '%s\n' "$AUTH_KEY_JSON" \
+  | jq -er '.value | select(type == "string" and length > 0)') \
+  || {
+    echo "error: managed API key creation failed or did not return a usable one-time key value" >&2
+    printf '%s\n' "$AUTH_KEY_JSON" | jq '.' >&2 2>/dev/null || printf '%s\n' "$AUTH_KEY_JSON" >&2
+    exit 1
+  }
 (
   umask 077
   printf '%s\n' "$AUTH_KEY_JSON" > "$QA_AUTH_KEY_JSON"
-  printf '%s\n' "$AUTH_KEY_JSON" | jq -r '.value' > "$QA_AUTH_KEY_VALUE_FILE"
+  printf '%s\n' "$AUTH_KEY_VALUE" > "$QA_AUTH_KEY_VALUE_FILE"
 )
 chmod 600 "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
 printf '%s\n' "$AUTH_KEY_JSON" \
@@ -954,5 +967,5 @@ Deactivates the workflow created for the scoped managed-key release run.
 WORKFLOW_ID=$(cat "$QA_WORKFLOW_ID_FILE")
 curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans/$WORKFLOW_ID/deactivate" \
   -H "$ADMIN_AUTH_HEADER"
-rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
+rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE" "$QA_WORKFLOW_JSON" "$QA_WORKFLOW_ID_FILE"
 ```
