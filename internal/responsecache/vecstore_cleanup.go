@@ -10,12 +10,13 @@ import (
 const vecStoreCleanupInterval = time.Hour
 
 type vecCleanup struct {
-	stopCh chan struct{}
+	cancel context.CancelFunc
 	wg     sync.WaitGroup
 }
 
 func startVecCleanup(store VecStore) *vecCleanup {
-	c := &vecCleanup{stopCh: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	c := &vecCleanup{cancel: cancel}
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
@@ -24,10 +25,13 @@ func startVecCleanup(store VecStore) *vecCleanup {
 		for {
 			select {
 			case <-t.C:
-				if err := store.DeleteExpired(context.Background()); err != nil {
+				if err := store.DeleteExpired(ctx); err != nil {
+					if ctx.Err() != nil {
+						return
+					}
 					slog.Warn("vecstore: delete expired", "err", err)
 				}
-			case <-c.stopCh:
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -39,6 +43,6 @@ func (c *vecCleanup) close() {
 	if c == nil {
 		return
 	}
-	close(c.stopCh)
+	c.cancel()
 	c.wg.Wait()
 }

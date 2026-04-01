@@ -23,8 +23,8 @@ func TestHandleRequest_SemanticMissPopulatesExactCache(t *testing.T) {
 	vecStore := NewMapVecStore()
 	semCfg := config.SemanticCacheConfig{
 		SimilarityThreshold:     0.90,
-		TTL:                     3600,
-		MaxConversationMessages: 10,
+		TTL:                     intPtr(3600),
+		MaxConversationMessages: intPtr(10),
 	}
 
 	m := &ResponseCacheMiddleware{
@@ -79,8 +79,8 @@ func TestHandleRequest_FallbackUsedSkipsCacheWrites(t *testing.T) {
 	vecStore := NewMapVecStore()
 	semCfg := config.SemanticCacheConfig{
 		SimilarityThreshold:     0.90,
-		TTL:                     3600,
-		MaxConversationMessages: 10,
+		TTL:                     intPtr(3600),
+		MaxConversationMessages: intPtr(10),
 	}
 
 	m := &ResponseCacheMiddleware{

@@ -63,6 +63,16 @@ CREATE TABLE IF NOT EXISTS %s (
 		pool.Close()
 		return nil, fmt.Errorf("vecstore pgvector: create table: %w", err)
 	}
+	idxStmts := []string{
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (params_hash)`, quotePGIdent(tbl+"_params_hash_idx"), quoted),
+		fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %s ON %s (expires_at)`, quotePGIdent(tbl+"_expires_at_idx"), quoted),
+	}
+	for _, stmt := range idxStmts {
+		if _, err := pool.Exec(ctx, stmt); err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("vecstore pgvector: create index: %w", err)
+		}
+	}
 	s.cleanup = startVecCleanup(s)
 	return s, nil
 }

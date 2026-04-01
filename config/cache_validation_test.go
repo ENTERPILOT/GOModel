@@ -112,7 +112,7 @@ func TestValidateCacheConfig_SemanticEnabledRequiresQdrantURL(t *testing.T) {
 			Semantic: &SemanticCacheConfig{
 				Enabled:             boolPtr(true),
 				SimilarityThreshold: 0.9,
-				TTL:                 3600,
+				TTL:                 intPtr(3600),
 				Embedder:            EmbedderConfig{Provider: "openai"},
 				VectorStore: VectorStoreConfig{
 					Type: "qdrant",
@@ -135,7 +135,7 @@ func TestValidateCacheConfig_SemanticEnabledRequiresQdrantCollection(t *testing.
 			Semantic: &SemanticCacheConfig{
 				Enabled:             boolPtr(true),
 				SimilarityThreshold: 0.9,
-				TTL:                 3600,
+				TTL:                 intPtr(3600),
 				Embedder:            EmbedderConfig{Provider: "openai"},
 				VectorStore: VectorStoreConfig{
 					Type:   "qdrant",
@@ -158,7 +158,7 @@ func TestValidateCacheConfig_SemanticSimilarityThresholdInvalid(t *testing.T) {
 		Response: ResponseCacheConfig{
 			Semantic: &SemanticCacheConfig{
 				Enabled:  boolPtr(true),
-				TTL:      3600,
+				TTL:      intPtr(3600),
 				Embedder: EmbedderConfig{Provider: "openai"},
 				VectorStore: VectorStoreConfig{
 					Type: "pgvector",
@@ -205,7 +205,7 @@ func TestValidateCacheConfig_SemanticRequiresEmbedderProvider(t *testing.T) {
 			Semantic: &SemanticCacheConfig{
 				Enabled:             boolPtr(true),
 				SimilarityThreshold: 0.9,
-				TTL:                 3600,
+				TTL:                 intPtr(3600),
 				VectorStore: VectorStoreConfig{
 					Type: "pgvector",
 					PGVector: PGVectorConfig{
@@ -235,7 +235,7 @@ func TestValidateCacheConfig_SemanticRejectsLocalEmbedder(t *testing.T) {
 			Semantic: &SemanticCacheConfig{
 				Enabled:             boolPtr(true),
 				SimilarityThreshold: 0.9,
-				TTL:                 3600,
+				TTL:                 intPtr(3600),
 				Embedder:            EmbedderConfig{Provider: "local"},
 				VectorStore: VectorStoreConfig{
 					Type: "pgvector",
@@ -263,7 +263,7 @@ func TestValidateCacheConfig_SemanticNegativeTTL(t *testing.T) {
 			Semantic: &SemanticCacheConfig{
 				Enabled:             boolPtr(true),
 				SimilarityThreshold: 0.9,
-				TTL:                 -1,
+				TTL:                 intPtr(-1),
 				Embedder:            EmbedderConfig{Provider: "openai"},
 				VectorStore: VectorStoreConfig{
 					Type: "pgvector",

@@ -407,8 +407,8 @@ type SimpleCacheConfig struct {
 type SemanticCacheConfig struct {
 	Enabled                 *bool             `yaml:"enabled"`
 	SimilarityThreshold     float64           `yaml:"similarity_threshold"`
-	TTL                     int               `yaml:"ttl"`
-	MaxConversationMessages int               `yaml:"max_conversation_messages"`
+	TTL                     *int              `yaml:"ttl"`
+	MaxConversationMessages *int              `yaml:"max_conversation_messages"`
 	ExcludeSystemPrompt     bool              `yaml:"exclude_system_prompt"`
 	Embedder                EmbedderConfig    `yaml:"embedder"`
 	VectorStore             VectorStoreConfig `yaml:"vector_store"`
@@ -535,8 +535,8 @@ func ValidateCacheConfig(c *CacheConfig) error {
 		if math.IsNaN(st) || math.IsInf(st, 0) || st <= 0 || st > 1 {
 			return fmt.Errorf("cache.response.semantic.similarity_threshold: must be greater than 0 and at most 1 (yaml: similarity_threshold, env: SEMANTIC_CACHE_THRESHOLD); got %v", st)
 		}
-		if sem.TTL < 0 {
-			return fmt.Errorf("cache.response.semantic.ttl: must be >= 0 (yaml: ttl, env: SEMANTIC_CACHE_TTL); got %d", sem.TTL)
+		if sem.TTL != nil && *sem.TTL < 0 {
+			return fmt.Errorf("cache.response.semantic.ttl: must be >= 0 (yaml: ttl, env: SEMANTIC_CACHE_TTL); got %d", *sem.TTL)
 		}
 		ep := strings.TrimSpace(sem.Embedder.Provider)
 		if ep == "" {
@@ -581,28 +581,34 @@ func mergeSemanticResponseDefaults(sem *SemanticCacheConfig) {
 	if sem.SimilarityThreshold == 0 {
 		sem.SimilarityThreshold = 0.92
 	}
-	if sem.TTL == 0 {
-		sem.TTL = 3600
+	if sem.TTL == nil {
+		sem.TTL = intPtr(3600)
 	}
-	if sem.MaxConversationMessages == 0 {
-		sem.MaxConversationMessages = 3
+	if sem.MaxConversationMessages == nil {
+		sem.MaxConversationMessages = intPtr(3)
 	}
 }
 
-func applyResponseSimpleEnv(resp *ResponseCacheConfig) {
+func intPtr(v int) *int { return &v }
+
+func applyResponseSimpleEnv(resp *ResponseCacheConfig) error {
 	v, ok := os.LookupEnv("RESPONSE_CACHE_SIMPLE_ENABLED")
 	if ok && !parseBool(v) {
 		resp.Simple = nil
-		return
+		return nil
 	}
 	if resp.Simple == nil {
 		if ok && parseBool(v) {
 			resp.Simple = &SimpleCacheConfig{}
 		} else {
-			return
+			return nil
 		}
 	}
 	simple := resp.Simple
+	if ok {
+		b := parseBool(v)
+		simple.Enabled = &b
+	}
 	if u := os.Getenv("REDIS_URL"); u != "" {
 		if simple.Redis == nil {
 			simple.Redis = &RedisResponseConfig{}
@@ -619,23 +625,26 @@ func applyResponseSimpleEnv(resp *ResponseCacheConfig) {
 		if simple.Redis == nil {
 			simple.Redis = &RedisResponseConfig{}
 		}
-		if n, err := strconv.Atoi(ts); err == nil {
-			simple.Redis.TTL = n
+		n, err := strconv.Atoi(ts)
+		if err != nil {
+			return fmt.Errorf("invalid value for REDIS_TTL_RESPONSES: %q is not a valid integer", ts)
 		}
+		simple.Redis.TTL = n
 	}
+	return nil
 }
 
-func applyResponseSemanticEnv(resp *ResponseCacheConfig) {
+func applyResponseSemanticEnv(resp *ResponseCacheConfig) error {
 	v, enabledKeySet := os.LookupEnv("SEMANTIC_CACHE_ENABLED")
 	if enabledKeySet && !parseBool(v) {
 		resp.Semantic = nil
-		return
+		return nil
 	}
 	if resp.Semantic == nil {
 		if enabledKeySet && parseBool(v) {
 			resp.Semantic = &SemanticCacheConfig{}
 		} else {
-			return
+			return nil
 		}
 	}
 	sem := resp.Semantic
@@ -644,19 +653,25 @@ func applyResponseSemanticEnv(resp *ResponseCacheConfig) {
 		sem.Enabled = &b
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_THRESHOLD"); val != "" {
-		if f, err := strconv.ParseFloat(val, 64); err == nil {
-			sem.SimilarityThreshold = f
+		f, err := strconv.ParseFloat(val, 64)
+		if err != nil {
+			return fmt.Errorf("invalid value for SEMANTIC_CACHE_THRESHOLD: %q is not a valid float", val)
 		}
+		sem.SimilarityThreshold = f
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_TTL"); val != "" {
-		if i, err := strconv.Atoi(val); err == nil {
-			sem.TTL = i
+		i, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("invalid value for SEMANTIC_CACHE_TTL: %q is not a valid integer", val)
 		}
+		sem.TTL = &i
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_MAX_CONV_MESSAGES"); val != "" {
-		if i, err := strconv.Atoi(val); err == nil {
-			sem.MaxConversationMessages = i
+		i, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("invalid value for SEMANTIC_CACHE_MAX_CONV_MESSAGES: %q is not a valid integer", val)
 		}
+		sem.MaxConversationMessages = &i
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_EXCLUDE_SYSTEM_PROMPT"); val != "" {
 		sem.ExcludeSystemPrompt = parseBool(val)
@@ -686,9 +701,11 @@ func applyResponseSemanticEnv(resp *ResponseCacheConfig) {
 		sem.VectorStore.PGVector.Table = val
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_PGVECTOR_DIMENSION"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil {
-			sem.VectorStore.PGVector.Dimension = n
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("invalid value for SEMANTIC_CACHE_PGVECTOR_DIMENSION: %q is not a valid integer", val)
 		}
+		sem.VectorStore.PGVector.Dimension = n
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_PINECONE_HOST"); val != "" {
 		sem.VectorStore.Pinecone.Host = val
@@ -700,9 +717,11 @@ func applyResponseSemanticEnv(resp *ResponseCacheConfig) {
 		sem.VectorStore.Pinecone.Namespace = val
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_PINECONE_DIMENSION"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil {
-			sem.VectorStore.Pinecone.Dimension = n
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("invalid value for SEMANTIC_CACHE_PINECONE_DIMENSION: %q is not a valid integer", val)
 		}
+		sem.VectorStore.Pinecone.Dimension = n
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_WEAVIATE_URL"); val != "" {
 		sem.VectorStore.Weaviate.URL = val
@@ -713,6 +732,7 @@ func applyResponseSemanticEnv(resp *ResponseCacheConfig) {
 	if val := os.Getenv("SEMANTIC_CACHE_WEAVIATE_API_KEY"); val != "" {
 		sem.VectorStore.Weaviate.APIKey = val
 	}
+	return nil
 }
 
 // ServerConfig holds HTTP server configuration
@@ -879,8 +899,12 @@ func Load() (*LoadResult, error) {
 		return nil, err
 	}
 
-	applyResponseSimpleEnv(&cfg.Cache.Response)
-	applyResponseSemanticEnv(&cfg.Cache.Response)
+	if err := applyResponseSimpleEnv(&cfg.Cache.Response); err != nil {
+		return nil, err
+	}
+	if err := applyResponseSemanticEnv(&cfg.Cache.Response); err != nil {
+		return nil, err
+	}
 	mergeSemanticResponseDefaults(cfg.Cache.Response.Semantic)
 
 	if err := applyEnvOverrides(cfg); err != nil {
@@ -1139,11 +1163,14 @@ func applyEnvOverridesValue(v reflect.Value) error {
 			continue
 		}
 		if field.Type.Kind() == reflect.Pointer {
+			elemType := field.Type.Elem()
+			if elemType.Kind() != reflect.Struct {
+				continue
+			}
 			if fieldVal.IsNil() {
 				// Only allocate if the pointed-to struct has env-tagged descendants;
 				// otherwise leave it nil so optional config sections stay absent.
-				elemType := field.Type.Elem()
-				if elemType.Kind() != reflect.Struct || !hasEnvDescendants(elemType) {
+				if !hasEnvDescendants(elemType) {
 					continue
 				}
 				// Allocate a zero-value struct so env vars can populate its fields.

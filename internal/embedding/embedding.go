@@ -18,6 +18,7 @@ const defaultTimeout = 120 * time.Second
 
 type Embedder interface {
 	Embed(ctx context.Context, text string) ([]float32, error)
+	Identity() string
 	Close() error
 }
 
@@ -148,6 +149,10 @@ func (e *apiEmbedder) Embed(ctx context.Context, text string) ([]float32, error)
 		return nil, fmt.Errorf("embedding: API returned empty embedding")
 	}
 	return parsed.Data[0].Embedding, nil
+}
+
+func (e *apiEmbedder) Identity() string {
+	return e.endpointURL + "\x00" + e.model
 }
 
 func (e *apiEmbedder) Close() error { return nil }

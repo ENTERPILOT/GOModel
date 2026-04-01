@@ -58,17 +58,27 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, resolvedProvider
 	if sem != nil && config.SemanticCacheActive(sem) {
 		emb, err := embedding.NewEmbedder(sem.Embedder, resolvedProviders)
 		if err != nil {
+			if m.simple != nil {
+				_ = m.simple.close()
+			}
 			return nil, err
 		}
 		vs, err := NewVecStore(sem.VectorStore)
 		if err != nil {
 			_ = emb.Close()
+			if m.simple != nil {
+				_ = m.simple.close()
+			}
 			return nil, err
 		}
 		m.semantic = newSemanticCacheMiddleware(emb, vs, *sem)
+		ttlLog := 0
+		if sem.TTL != nil {
+			ttlLog = *sem.TTL
+		}
 		slog.Info("response cache (semantic) enabled",
 			"threshold", sem.SimilarityThreshold,
-			"ttl_seconds", sem.TTL,
+			"ttl_seconds", ttlLog,
 			"vector_store", sem.VectorStore.Type,
 			"embedder", sem.Embedder.Provider,
 		)

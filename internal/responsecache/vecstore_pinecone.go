@@ -128,12 +128,21 @@ func (s *pineconeStore) Search(ctx context.Context, vec []float32, paramsHash st
 	if len(vec) != s.dimension {
 		return nil, fmt.Errorf("vecstore pinecone: embedding len %d != dimension %d", len(vec), s.dimension)
 	}
+	now := time.Now().Unix()
 	body := map[string]any{
 		"vector":          vec,
 		"topK":            limit,
 		"includeMetadata": true,
 		"filter": map[string]any{
-			"params_hash": map[string]any{"$eq": paramsHash},
+			"$and": []any{
+				map[string]any{"params_hash": map[string]any{"$eq": paramsHash}},
+				map[string]any{
+					"$or": []any{
+						map[string]any{"expires_at": map[string]any{"$eq": 0}},
+						map[string]any{"expires_at": map[string]any{"$gte": now}},
+					},
+				},
+			},
 		},
 	}
 	if s.namespace != "" {
@@ -165,13 +174,8 @@ func (s *pineconeStore) Search(ctx context.Context, vec []float32, paramsHash st
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, fmt.Errorf("vecstore pinecone: decode query: %w", err)
 	}
-	now := time.Now().Unix()
 	out := make([]VecResult, 0, len(parsed.Matches))
 	for _, m := range parsed.Matches {
-		exp, _ := payloadInt64(m.Metadata["expires_at"])
-		if exp > 0 && exp < now {
-			continue
-		}
 		b64, _ := m.Metadata["response_b64"].(string)
 		rb, err := base64.StdEncoding.DecodeString(b64)
 		if err != nil {

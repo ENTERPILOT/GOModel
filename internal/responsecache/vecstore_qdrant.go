@@ -87,30 +87,54 @@ func (s *qdrantStore) ensureCollection(ctx context.Context, dim int) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return err
-	}
-	if resp.StatusCode == http.StatusOK {
+	raw, _ := io.ReadAll(resp.Body)
+
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		var info struct {
+			Result struct {
+				Config struct {
+					Params struct {
+						Vectors json.RawMessage `json:"vectors"`
+					} `json:"params"`
+				} `json:"config"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(raw, &info); err == nil {
+			var singleVec struct {
+				Size int `json:"size"`
+			}
+			if json.Unmarshal(info.Result.Config.Params.Vectors, &singleVec) == nil && singleVec.Size > 0 {
+				if singleVec.Size != dim {
+					return fmt.Errorf("vecstore qdrant: collection %q has vector size %d but embedder produces %d", s.collection, singleVec.Size, dim)
+				}
+			}
+		}
 		s.vectorSize = dim
 		return nil
+
+	case resp.StatusCode == http.StatusNotFound:
+		createBody := map[string]any{
+			"vectors": map[string]any{
+				"size":     dim,
+				"distance": "Cosine",
+			},
+		}
+		resp2, err := s.req(ctx, http.MethodPut, "/collections/"+s.collection, createBody)
+		if err != nil {
+			return err
+		}
+		defer resp2.Body.Close()
+		raw2, _ := io.ReadAll(resp2.Body)
+		if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
+			return fmt.Errorf("vecstore qdrant: create collection: %s: %s", resp2.Status, string(raw2))
+		}
+		s.vectorSize = dim
+		return nil
+
+	default:
+		return fmt.Errorf("vecstore qdrant: get collection: %s: %s", resp.Status, string(raw))
 	}
-	createBody := map[string]any{
-		"vectors": map[string]any{
-			"size":     dim,
-			"distance": "Cosine",
-		},
-	}
-	resp2, err := s.req(ctx, http.MethodPut, "/collections/"+s.collection, createBody)
-	if err != nil {
-		return err
-	}
-	defer resp2.Body.Close()
-	raw, _ := io.ReadAll(resp2.Body)
-	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return fmt.Errorf("vecstore qdrant: create collection: %s: %s", resp2.Status, string(raw))
-	}
-	s.vectorSize = dim
-	return nil
 }
 
 func (s *qdrantStore) Insert(ctx context.Context, key string, vec []float32, response []byte, paramsHash string, ttl time.Duration) error {

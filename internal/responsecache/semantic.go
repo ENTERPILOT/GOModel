@@ -37,12 +37,11 @@ type semanticCacheMiddleware struct {
 }
 
 func newSemanticCacheMiddleware(emb embedding.Embedder, store VecStore, cfg config.SemanticCacheConfig) *semanticCacheMiddleware {
-	e := cfg.Embedder
 	return &semanticCacheMiddleware{
 		embedder:         emb,
 		store:            store,
 		cfg:              cfg,
-		embedderIdentity: e.Provider + "\x00" + e.Model,
+		embedderIdentity: emb.Identity(),
 	}
 }
 
@@ -79,7 +78,7 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 		threshold = v
 	}
 
-	if m.cfg.MaxConversationMessages > 0 && msgCount > m.cfg.MaxConversationMessages {
+	if m.cfg.MaxConversationMessages != nil && *m.cfg.MaxConversationMessages > 0 && msgCount > *m.cfg.MaxConversationMessages {
 		return next()
 	}
 
@@ -134,10 +133,11 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	}
 
 	data := bytes.Clone(capture.body.Bytes())
-	ttl := time.Duration(m.cfg.TTL) * time.Second
-	if ttl == 0 {
-		ttl = time.Hour
+	ttlSec := 0
+	if m.cfg.TTL != nil {
+		ttlSec = *m.cfg.TTL
 	}
+	ttl := time.Duration(ttlSec) * time.Second
 	if v := headerDuration(c.Request(), "X-Cache-TTL"); v > 0 {
 		ttl = v
 	}

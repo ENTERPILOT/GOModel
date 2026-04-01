@@ -89,11 +89,13 @@ func (s *weaviateStore) ensureClass(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
-		return err
-	}
+	raw, _ := io.ReadAll(resp.Body)
+
 	if resp.StatusCode == http.StatusOK {
 		return nil
+	}
+	if resp.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("vecstore weaviate: get class: %s: %s", resp.Status, string(raw))
 	}
 	schema := map[string]any{
 		"class":      s.class,
@@ -117,9 +119,9 @@ func (s *weaviateStore) ensureClass(ctx context.Context) error {
 		return err
 	}
 	defer resp2.Body.Close()
-	raw, _ := io.ReadAll(resp2.Body)
+	raw2, _ := io.ReadAll(resp2.Body)
 	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return fmt.Errorf("vecstore weaviate: create class: %s: %s", resp2.Status, string(raw))
+		return fmt.Errorf("vecstore weaviate: create class: %s: %s", resp2.Status, string(raw2))
 	}
 	return nil
 }
@@ -170,15 +172,28 @@ func (s *weaviateStore) Insert(ctx context.Context, key string, vec []float32, r
 }
 
 func (s *weaviateStore) Search(ctx context.Context, vec []float32, paramsHash string, limit int) ([]VecResult, error) {
+	now := time.Now().Unix()
 	query := fmt.Sprintf(`
 {
   Get {
     %s(
       nearVector: { vector: %s }
       where: {
-        path: ["params_hash"]
-        operator: Equal
-        valueText: %q
+        operator: And
+        operands: [
+          {
+            path: ["params_hash"]
+            operator: Equal
+            valueText: %q
+          },
+          {
+            operator: Or
+            operands: [
+              { path: ["expires_at"], operator: Equal, valueNumber: 0 },
+              { path: ["expires_at"], operator: GreaterThanEqual, valueNumber: %d }
+            ]
+          }
+        ]
       }
       limit: %d
     ) {
@@ -191,7 +206,7 @@ func (s *weaviateStore) Search(ctx context.Context, vec []float32, paramsHash st
       }
     }
   }
-}`, s.class, floatSliceJSON(vec), paramsHash, limit)
+}`, s.class, floatSliceJSON(vec), paramsHash, now, limit)
 	return s.runGraphQLSearch(ctx, query)
 }
 
