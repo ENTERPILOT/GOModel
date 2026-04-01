@@ -1,7 +1,9 @@
 package usage
 
 import (
+	"encoding/json"
 	"maps"
+	"path"
 	"strings"
 	"time"
 
@@ -230,6 +232,85 @@ func ExtractFromSSEUsage(
 	}
 
 	return entry
+}
+
+// ExtractFromCachedResponseBody converts a cached OpenAI-compatible response body into
+// a synthetic usage entry for a cache hit. If the response body cannot be parsed, it
+// still returns a minimal zero-token entry so cache-hit counts remain observable.
+func ExtractFromCachedResponseBody(
+	body []byte,
+	requestID, model, provider, endpoint, cacheType string,
+	pricing ...*core.ModelPricing,
+) *UsageEntry {
+	cacheType = normalizeCacheType(cacheType)
+	if cacheType == "" {
+		cacheType = CacheTypeExact
+	}
+	endpoint = normalizeCachedResponseEndpoint(endpoint)
+
+	var entry *UsageEntry
+	switch endpoint {
+	case "/v1/chat/completions":
+		var resp core.ChatResponse
+		if err := json.Unmarshal(body, &resp); err == nil {
+			entry = ExtractFromChatResponse(&resp, requestID, provider, endpoint, pricing...)
+		}
+	case "/v1/responses":
+		var resp core.ResponsesResponse
+		if err := json.Unmarshal(body, &resp); err == nil {
+			entry = ExtractFromResponsesResponse(&resp, requestID, provider, endpoint, pricing...)
+		}
+	case "/v1/embeddings":
+		var resp core.EmbeddingResponse
+		if err := json.Unmarshal(body, &resp); err == nil {
+			entry = ExtractFromEmbeddingResponse(&resp, requestID, provider, endpoint, pricing...)
+		}
+	}
+
+	if entry == nil {
+		entry = &UsageEntry{
+			ID:         uuid.New().String(),
+			RequestID:  strings.TrimSpace(requestID),
+			Timestamp:  time.Now().UTC(),
+			Model:      strings.TrimSpace(model),
+			Provider:   strings.TrimSpace(provider),
+			Endpoint:   endpoint,
+			CacheType:  cacheType,
+			ProviderID: "",
+		}
+		return entry
+	}
+
+	entry.CacheType = cacheType
+	if normalized := strings.TrimSpace(requestID); normalized != "" {
+		entry.RequestID = normalized
+	}
+	if normalized := strings.TrimSpace(model); normalized != "" {
+		entry.Model = normalized
+	}
+	if normalized := strings.TrimSpace(provider); normalized != "" {
+		entry.Provider = normalized
+	}
+	if endpoint != "" {
+		entry.Endpoint = endpoint
+	}
+	return entry
+}
+
+func normalizeCachedResponseEndpoint(endpoint string) string {
+	normalized := strings.TrimSpace(endpoint)
+	if normalized == "" {
+		return ""
+	}
+
+	cleaned := path.Clean(normalized)
+	if cleaned == "." {
+		return ""
+	}
+	if strings.HasPrefix(normalized, "/") && !strings.HasPrefix(cleaned, "/") {
+		return "/" + cleaned
+	}
+	return cleaned
 }
 
 func pricingForEndpoint(pricing *core.ModelPricing, endpoint string) *core.ModelPricing {

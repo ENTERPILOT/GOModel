@@ -13,7 +13,26 @@ import (
 	"gomodel/internal/auditlog"
 	"gomodel/internal/cache"
 	"gomodel/internal/core"
+	"gomodel/internal/usage"
 )
+
+type recordingUsageLogger struct {
+	entries []*usage.UsageEntry
+}
+
+func (l *recordingUsageLogger) Write(entry *usage.UsageEntry) {
+	if entry != nil {
+		l.entries = append(l.entries, entry)
+	}
+}
+
+func (l *recordingUsageLogger) Config() usage.Config {
+	return usage.Config{Enabled: true}
+}
+
+func (l *recordingUsageLogger) Close() error {
+	return nil
+}
 
 func TestHandleRequest_SemanticMissPopulatesExactCache(t *testing.T) {
 	store := cache.NewMapStore()
@@ -29,8 +48,8 @@ func TestHandleRequest_SemanticMissPopulatesExactCache(t *testing.T) {
 	}
 
 	m := &ResponseCacheMiddleware{
-		simple:   newSimpleCacheMiddleware(store, time.Hour),
-		semantic: newSemanticCacheMiddleware(emb, vecStore, semCfg),
+		simple:   newSimpleCacheMiddleware(store, time.Hour, nil),
+		semantic: newSemanticCacheMiddleware(emb, vecStore, semCfg, nil),
 	}
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"handle-request-exact-backfill"}]}`)
@@ -86,8 +105,8 @@ func TestHandleRequest_FallbackUsedSkipsCacheWrites(t *testing.T) {
 	}
 
 	m := &ResponseCacheMiddleware{
-		simple:   newSimpleCacheMiddleware(store, time.Hour),
-		semantic: newSemanticCacheMiddleware(emb, vecStore, semCfg),
+		simple:   newSimpleCacheMiddleware(store, time.Hour, nil),
+		semantic: newSemanticCacheMiddleware(emb, vecStore, semCfg, nil),
 	}
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"fallback-skip-cache"}]}`)
@@ -137,7 +156,7 @@ func TestHandleRequest_ExactHitMarksAuditEntryCacheType(t *testing.T) {
 	defer store.Close()
 
 	m := &ResponseCacheMiddleware{
-		simple: newSimpleCacheMiddleware(store, time.Hour),
+		simple: newSimpleCacheMiddleware(store, time.Hour, nil),
 	}
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"mark-exact-cache-type"}]}`)
@@ -175,5 +194,70 @@ func TestHandleRequest_ExactHitMarksAuditEntryCacheType(t *testing.T) {
 	}
 	if entry2.CacheType != auditlog.CacheTypeExact {
 		t.Fatalf("second request CacheType = %q, want %q", entry2.CacheType, auditlog.CacheTypeExact)
+	}
+}
+
+func TestHandleRequest_ExactHitWritesSyntheticUsageEntry(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+
+	logger := &recordingUsageLogger{}
+	m := &ResponseCacheMiddleware{
+		simple: newSimpleCacheMiddleware(store, time.Hour, newUsageHitRecorder(logger, nil)),
+	}
+
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"cache-usage-hit"}]}`)
+	e := echo.New()
+
+	run := func() *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		plan := &core.ExecutionPlan{
+			Mode:         core.ExecutionModeTranslated,
+			ProviderType: "openai",
+			Resolution: &core.RequestModelResolution{
+				ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+			},
+		}
+		c.SetRequest(req.WithContext(core.WithExecutionPlan(req.Context(), plan)))
+		if err := m.HandleRequest(c, body, func() error {
+			return c.JSON(http.StatusOK, &core.ChatResponse{
+				ID:    "chatcmpl-cache-hit",
+				Model: "gpt-4",
+				Usage: core.Usage{
+					PromptTokens:     11,
+					CompletionTokens: 5,
+					TotalTokens:      16,
+				},
+			})
+		}); err != nil {
+			t.Fatalf("HandleRequest: %v", err)
+		}
+		return rec
+	}
+
+	rec1 := run()
+	if rec1.Header().Get("X-Cache") != "" {
+		t.Fatalf("first request should miss exact cache, got X-Cache=%q", rec1.Header().Get("X-Cache"))
+	}
+
+	m.simple.wg.Wait()
+
+	rec2 := run()
+	if rec2.Header().Get("X-Cache") != "HIT (exact)" {
+		t.Fatalf("second request should be exact hit, got X-Cache=%q", rec2.Header().Get("X-Cache"))
+	}
+	if len(logger.entries) != 1 {
+		t.Fatalf("expected 1 synthetic usage entry, got %d", len(logger.entries))
+	}
+	entry := logger.entries[0]
+	if entry.CacheType != usage.CacheTypeExact {
+		t.Fatalf("CacheType = %q, want %q", entry.CacheType, usage.CacheTypeExact)
+	}
+	if entry.InputTokens != 11 || entry.OutputTokens != 5 || entry.TotalTokens != 16 {
+		t.Fatalf("unexpected tokens: %+v", entry)
 	}
 }

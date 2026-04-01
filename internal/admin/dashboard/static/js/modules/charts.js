@@ -1,33 +1,61 @@
 (function(global) {
     function dashboardChartsModule() {
         return {
-            _overviewChartConfig(colors, labels, inputData, outputData) {
+            _overviewChartConfig(colors, labels, inputData, outputData, cacheInputData, cacheOutputData) {
+                const cacheEnabled = typeof this.cacheAnalyticsEnabled === 'function' && this.cacheAnalyticsEnabled();
+                const datasets = [
+                    {
+                        label: 'Input Tokens',
+                        data: inputData,
+                        borderColor: '#c2845a',
+                        backgroundColor: 'rgba(194, 132, 90, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    },
+                    {
+                        label: 'Output Tokens',
+                        data: outputData,
+                        borderColor: '#7a9e7e',
+                        backgroundColor: 'rgba(122, 158, 126, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3,
+                        pointHoverRadius: 5
+                    }
+                ];
+                if (cacheEnabled) {
+                    datasets.push(
+                        {
+                            label: 'Local Cache Input Tokens',
+                            data: cacheInputData,
+                            borderColor: '#5f7dcf',
+                            backgroundColor: 'rgba(95, 125, 207, 0.08)',
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                            borderDash: [6, 4]
+                        },
+                        {
+                            label: 'Local Cache Output Tokens',
+                            data: cacheOutputData,
+                            borderColor: '#b0677b',
+                            backgroundColor: 'rgba(176, 103, 123, 0.08)',
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 2,
+                            pointHoverRadius: 4,
+                            borderDash: [6, 4]
+                        }
+                    );
+                }
                 return {
                     type: 'line',
                     data: {
                         labels: labels,
-                        datasets: [
-                            {
-                                label: 'Input Tokens',
-                                data: inputData,
-                                borderColor: '#c2845a',
-                                backgroundColor: 'rgba(194, 132, 90, 0.1)',
-                                fill: true,
-                                tension: 0.3,
-                                pointRadius: 3,
-                                pointHoverRadius: 5
-                            },
-                            {
-                                label: 'Output Tokens',
-                                data: outputData,
-                                borderColor: '#7a9e7e',
-                                backgroundColor: 'rgba(122, 158, 126, 0.1)',
-                                fill: true,
-                                tension: 0.3,
-                                pointRadius: 3,
-                                pointHoverRadius: 5
-                            }
-                        ]
+                        datasets: datasets
                     },
                     options: {
                         responsive: true,
@@ -182,7 +210,12 @@
                     const labels = filled.map((d) => d.date);
                     const inputData = filled.map((d) => d.input_tokens);
                     const outputData = filled.map((d) => d.output_tokens);
-                    const config = this._overviewChartConfig(colors, labels, inputData, outputData);
+                    const cacheByDate = {};
+                    const cacheDaily = this.fillMissingDays(this.cacheOverview && Array.isArray(this.cacheOverview.daily) ? this.cacheOverview.daily : []);
+                    cacheDaily.forEach((d) => { cacheByDate[d.date] = d; });
+                    const cacheInputData = labels.map((label) => (cacheByDate[label] && cacheByDate[label].input_tokens) || 0);
+                    const cacheOutputData = labels.map((label) => (cacheByDate[label] && cacheByDate[label].output_tokens) || 0);
+                    const config = this._overviewChartConfig(colors, labels, inputData, outputData, cacheInputData, cacheOutputData);
 
                     if (this.chart) {
                         this.chart.destroy();

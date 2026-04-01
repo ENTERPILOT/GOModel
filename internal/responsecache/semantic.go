@@ -34,15 +34,17 @@ type semanticCacheMiddleware struct {
 	cfg              config.SemanticCacheConfig
 	embedderIdentity string
 	wg               sync.WaitGroup
+	hitRecorder      func(*echo.Context, []byte, string)
 }
 
-func newSemanticCacheMiddleware(emb embedding.Embedder, store VecStore, cfg config.SemanticCacheConfig) *semanticCacheMiddleware {
+func newSemanticCacheMiddleware(emb embedding.Embedder, store VecStore, cfg config.SemanticCacheConfig, hitRecorder func(*echo.Context, []byte, string)) *semanticCacheMiddleware {
 	e := cfg.Embedder
 	return &semanticCacheMiddleware{
 		embedder:         emb,
 		store:            store,
 		cfg:              cfg,
 		embedderIdentity: e.Provider + "\x00" + e.Model + "\x00" + e.ModelPath,
+		hitRecorder:      hitRecorder,
 	}
 }
 
@@ -108,6 +110,9 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 		c.Response().Header().Set("X-Cache", "HIT (semantic)")
 		c.Response().WriteHeader(http.StatusOK)
 		_, _ = c.Response().Write(results[0].Response)
+		if m.hitRecorder != nil {
+			m.hitRecorder(c, results[0].Response, CacheTypeSemantic)
+		}
 		slog.Info("semantic cache hit",
 			"path", path,
 			"score", results[0].Score,

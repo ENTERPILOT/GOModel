@@ -42,16 +42,19 @@ type simpleCacheMiddleware struct {
 	wg    sync.WaitGroup
 	jobs  chan cacheWriteJob
 
+	hitRecorder func(*echo.Context, []byte, string)
+
 	workers sync.WaitGroup
 	mu      sync.RWMutex
 	closed  bool
 }
 
-func newSimpleCacheMiddleware(store cache.Store, ttl time.Duration) *simpleCacheMiddleware {
+func newSimpleCacheMiddleware(store cache.Store, ttl time.Duration, hitRecorder func(*echo.Context, []byte, string)) *simpleCacheMiddleware {
 	m := &simpleCacheMiddleware{
-		store: store,
-		ttl:   ttl,
-		jobs:  make(chan cacheWriteJob, cacheWriteQueueSize),
+		store:       store,
+		ttl:         ttl,
+		jobs:        make(chan cacheWriteJob, cacheWriteQueueSize),
+		hitRecorder: hitRecorder,
 	}
 	m.startWorkers()
 	return m
@@ -112,6 +115,9 @@ func (m *simpleCacheMiddleware) TryHit(c *echo.Context, body []byte) (bool, erro
 		c.Response().Header().Set("X-Cache", "HIT (exact)")
 		c.Response().WriteHeader(http.StatusOK)
 		_, _ = c.Response().Write(cached)
+		if m.hitRecorder != nil {
+			m.hitRecorder(c, cached, CacheTypeExact)
+		}
 		slog.Info("response cache hit (exact)",
 			"path", path,
 			"request_id", c.Request().Header.Get("X-Request-ID"),

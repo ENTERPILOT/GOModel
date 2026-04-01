@@ -25,14 +25,9 @@ func NewPostgreSQLReader(pool *pgxpool.Pool) (*PostgreSQLReader, error) {
 
 // GetSummary returns aggregated usage statistics for the given query parameters.
 func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryParams) (*UsageSummary, error) {
-	conditions, args, nextIdx := pgDateRangeConditions(params, 1)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, _, err := pgUsageConditions(params, 1)
 	if err != nil {
 		return nil, err
-	}
-	if userPath != "" {
-		conditions = append(conditions, fmt.Sprintf("(user_path = $%d OR user_path LIKE $%d ESCAPE '\\')", nextIdx, nextIdx+1))
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	where := buildWhereClause(conditions)
 
@@ -54,14 +49,9 @@ func (r *PostgreSQLReader) GetSummary(ctx context.Context, params UsageQueryPara
 
 // GetUsageByModel returns token and cost totals grouped by model and provider.
 func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error) {
-	conditions, args, nextIdx := pgDateRangeConditions(params, 1)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, _, err := pgUsageConditions(params, 1)
 	if err != nil {
 		return nil, err
-	}
-	if userPath != "" {
-		conditions = append(conditions, fmt.Sprintf("(user_path = $%d OR user_path LIKE $%d ESCAPE '\\')", nextIdx, nextIdx+1))
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	where := buildWhereClause(conditions)
 
@@ -95,8 +85,7 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)
 
-	conditions, args, argIdx := pgDateRangeConditions(params.UsageQueryParams, 1)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, argIdx, err := pgUsageConditions(params.UsageQueryParams, 1)
 	if err != nil {
 		return nil, err
 	}
@@ -110,11 +99,6 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 		conditions = append(conditions, fmt.Sprintf("provider = $%d", argIdx))
 		args = append(args, params.Provider)
 		argIdx++
-	}
-	if userPath != "" {
-		conditions = append(conditions, fmt.Sprintf("(user_path = $%d OR user_path LIKE $%d ESCAPE '\\')", argIdx, argIdx+1))
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
-		argIdx += 2
 	}
 	if params.Search != "" {
 		s := "%" + escapeLikeWildcards(params.Search) + "%"
@@ -133,7 +117,7 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 	}
 
 	// Fetch page
-	dataQuery := fmt.Sprintf(`SELECT id, request_id, provider_id, timestamp, model, provider, endpoint, user_path,
+	dataQuery := fmt.Sprintf(`SELECT id, request_id, provider_id, timestamp, model, provider, endpoint, user_path, cache_type,
 		input_tokens, output_tokens, total_tokens, COALESCE(input_cost, 0), COALESCE(output_cost, 0), COALESCE(total_cost, 0), raw_data, COALESCE(costs_calculation_caveat, '')
 		FROM "usage"%s ORDER BY timestamp DESC LIMIT $%d OFFSET $%d`, where, argIdx, argIdx+1)
 	dataArgs := append(append([]any(nil), args...), limit, offset)
@@ -149,7 +133,8 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 		var e UsageLogEntry
 		var rawDataJSON *string
 		var userPath *string
-		if err := rows.Scan(&e.ID, &e.RequestID, &e.ProviderID, &e.Timestamp, &e.Model, &e.Provider, &e.Endpoint, &userPath,
+		var cacheType *string
+		if err := rows.Scan(&e.ID, &e.RequestID, &e.ProviderID, &e.Timestamp, &e.Model, &e.Provider, &e.Endpoint, &userPath, &cacheType,
 			&e.InputTokens, &e.OutputTokens, &e.TotalTokens, &e.InputCost, &e.OutputCost, &e.TotalCost, &rawDataJSON, &e.CostsCalculationCaveat); err != nil {
 			return nil, fmt.Errorf("failed to scan usage log row: %w", err)
 		}
@@ -160,6 +145,9 @@ func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParam
 		}
 		if userPath != nil {
 			e.UserPath = *userPath
+		}
+		if cacheType != nil {
+			e.CacheType = normalizeCacheType(*cacheType)
 		}
 		entries = append(entries, e)
 	}
@@ -216,14 +204,9 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 	}
 	groupExpr := pgGroupExpr(interval, usageTimeZone(params))
 
-	conditions, args, nextIdx := pgDateRangeConditions(params, 1)
-	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	conditions, args, _, err := pgUsageConditions(params, 1)
 	if err != nil {
 		return nil, err
-	}
-	if userPath != "" {
-		conditions = append(conditions, fmt.Sprintf("(user_path = $%d OR user_path LIKE $%d ESCAPE '\\')", nextIdx, nextIdx+1))
-		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	where := buildWhereClause(conditions)
 
@@ -253,6 +236,103 @@ func (r *PostgreSQLReader) GetDailyUsage(ctx context.Context, params UsageQueryP
 	return result, nil
 }
 
+// GetCacheOverview returns cached-only aggregates for the admin dashboard.
+func (r *PostgreSQLReader) GetCacheOverview(ctx context.Context, params UsageQueryParams) (*CacheOverview, error) {
+	params.CacheMode = CacheModeCached
+
+	conditions, args, _, err := pgUsageConditions(params, 3)
+	if err != nil {
+		return nil, err
+	}
+	where := buildWhereClause(conditions)
+	queryArgs := append([]any{CacheTypeExact, CacheTypeSemantic}, args...)
+
+	summaryQuery := `SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN cache_type = $1 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = $2 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		SUM(total_cost)
+		FROM "usage"` + where
+
+	overview := &CacheOverview{}
+	if err := r.pool.QueryRow(ctx, summaryQuery, queryArgs...).Scan(
+		&overview.Summary.TotalHits,
+		&overview.Summary.ExactHits,
+		&overview.Summary.SemanticHits,
+		&overview.Summary.TotalInput,
+		&overview.Summary.TotalOutput,
+		&overview.Summary.TotalTokens,
+		&overview.Summary.TotalSavedCost,
+	); err != nil {
+		return nil, fmt.Errorf("failed to query cache overview summary: %w", err)
+	}
+
+	interval := params.Interval
+	if interval == "" {
+		interval = "daily"
+	}
+	groupExpr := pgGroupExpr(interval, usageTimeZone(params))
+	dailyQuery := fmt.Sprintf(`SELECT %s as period,
+		COUNT(*),
+		COALESCE(SUM(CASE WHEN cache_type = $1 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN cache_type = $2 THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(input_tokens), 0),
+		COALESCE(SUM(output_tokens), 0),
+		COALESCE(SUM(total_tokens), 0),
+		SUM(total_cost)
+		FROM "usage"%s GROUP BY %s ORDER BY period`, groupExpr, where, groupExpr)
+
+	rows, err := r.pool.Query(ctx, dailyQuery, queryArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query cache overview daily: %w", err)
+	}
+	defer rows.Close()
+
+	overview.Daily = make([]CacheOverviewDaily, 0)
+	for rows.Next() {
+		var d CacheOverviewDaily
+		if err := rows.Scan(&d.Date, &d.Hits, &d.ExactHits, &d.SemanticHits, &d.InputTokens, &d.OutputTokens, &d.TotalTokens, &d.SavedCost); err != nil {
+			return nil, fmt.Errorf("failed to scan cache overview daily row: %w", err)
+		}
+		overview.Daily = append(overview.Daily, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating cache overview daily rows: %w", err)
+	}
+
+	return overview, nil
+}
+
 func pgQuoteLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func pgUsageConditions(params UsageQueryParams, argIdx int) (conditions []string, args []any, nextIdx int, err error) {
+	conditions, args, nextIdx = pgDateRangeConditions(params, argIdx)
+	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if userPath != "" {
+		conditions = append(conditions, fmt.Sprintf("(user_path = $%d OR user_path LIKE $%d ESCAPE '\\')", nextIdx, nextIdx+1))
+		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
+		nextIdx += 2
+	}
+	if condition := pgCacheModeCondition(params.CacheMode); condition != "" {
+		conditions = append(conditions, condition)
+	}
+	return conditions, args, nextIdx, nil
+}
+
+func pgCacheModeCondition(mode string) string {
+	switch normalizeCacheMode(mode) {
+	case CacheModeCached:
+		return "(cache_type = '" + CacheTypeExact + "' OR cache_type = '" + CacheTypeSemantic + "')"
+	case CacheModeAll:
+		return ""
+	default:
+		return "(cache_type IS NULL OR cache_type = '')"
+	}
 }

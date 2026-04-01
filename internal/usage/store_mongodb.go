@@ -82,6 +82,9 @@ func NewMongoDBStore(database *mongo.Database, retentionDays int) (*MongoDBStore
 		{
 			Keys: bson.D{{Key: "user_path", Value: 1}},
 		},
+		{
+			Keys: bson.D{{Key: "cache_type", Value: 1}, {Key: "timestamp", Value: 1}},
+		},
 	}
 
 	// Add timestamp index - use TTL index if retention is configured,
@@ -120,7 +123,7 @@ func (s *MongoDBStore) WriteBatch(ctx context.Context, entries []*UsageEntry) er
 	// Convert entries to BSON documents
 	docs := make([]any, len(entries))
 	for i, e := range entries {
-		docs[i] = e
+		docs[i] = normalizedUsageEntryForStorage(e)
 	}
 
 	// Use unordered insert for better performance (continues on errors)

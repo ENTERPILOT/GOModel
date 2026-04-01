@@ -12,11 +12,11 @@ import (
 )
 
 // SQLite has a default limit of 999 bindable parameters per query (SQLITE_MAX_VARIABLE_NUMBER).
-// With 16 columns per usage entry, we can safely insert up to 62 entries per batch (62 * 16 = 992).
+// maxEntriesPerBatch derives from maxSQLiteParams / columnsPerUsageEntry.
 const (
 	maxSQLiteParams      = 999
-	columnsPerUsageEntry = 16
-	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 62 entries
+	columnsPerUsageEntry = 17
+	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 58 entries
 )
 
 // SQLiteStore implements UsageStore for SQLite databases.
@@ -46,6 +46,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 			provider TEXT NOT NULL,
 			endpoint TEXT NOT NULL,
 			user_path TEXT,
+			cache_type TEXT,
 			input_tokens INTEGER NOT NULL DEFAULT 0,
 			output_tokens INTEGER NOT NULL DEFAULT 0,
 			total_tokens INTEGER NOT NULL DEFAULT 0,
@@ -63,6 +64,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		"ALTER TABLE usage ADD COLUMN total_cost REAL",
 		"ALTER TABLE usage ADD COLUMN costs_calculation_caveat TEXT DEFAULT ''",
 		"ALTER TABLE usage ADD COLUMN user_path TEXT",
+		"ALTER TABLE usage ADD COLUMN cache_type TEXT",
 	}
 	for _, migration := range costMigrations {
 		if _, err := db.Exec(migration); err != nil {
@@ -82,6 +84,7 @@ func NewSQLiteStore(db *sql.DB, retentionDays int) (*SQLiteStore, error) {
 		"CREATE INDEX IF NOT EXISTS idx_usage_model ON usage(model)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_provider ON usage(provider)",
 		"CREATE INDEX IF NOT EXISTS idx_usage_user_path ON usage(user_path)",
+		"CREATE INDEX IF NOT EXISTS idx_usage_cache_type ON usage(cache_type)",
 	}
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
@@ -120,7 +123,8 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*UsageEntry) err
 		values := make([]any, 0, len(chunk)*columnsPerUsageEntry)
 
 		for j, e := range chunk {
-			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+			e = normalizedUsageEntryForStorage(e)
+			placeholders[j] = "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 
 			rawDataJSON := marshalRawData(e.RawData, e.ID)
 
@@ -139,6 +143,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*UsageEntry) err
 				e.Provider,
 				e.Endpoint,
 				e.UserPath,
+				cacheTypeValue(e.CacheType),
 				e.InputTokens,
 				e.OutputTokens,
 				e.TotalTokens,
@@ -151,7 +156,7 @@ func (s *SQLiteStore) WriteBatch(ctx context.Context, entries []*UsageEntry) err
 		}
 
 		query := `INSERT OR IGNORE INTO usage (id, request_id, provider_id, timestamp, model, provider,
-			endpoint, user_path, input_tokens, output_tokens, total_tokens, raw_data,
+			endpoint, user_path, cache_type, input_tokens, output_tokens, total_tokens, raw_data,
 			input_cost, output_cost, total_cost, costs_calculation_caveat) VALUES ` +
 			strings.Join(placeholders, ",")
 
