@@ -56,6 +56,13 @@ export QA_CACHE_REQ1="qa-cache-exact-$QA_SUFFIX-1"
 export QA_CACHE_REQ2="qa-cache-exact-$QA_SUFFIX-2"
 export QA_DEACTIVATED_REQ="qa-auth-deactivated-$QA_SUFFIX"
 export QA_CACHE_REPLY="QA_CACHE_EXACT_OK_$QA_SUFFIX"
+
+cleanup_release_auth_artifacts() {
+  rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
+}
+
+cleanup_release_auth_artifacts
+trap 'cleanup_release_auth_artifacts' EXIT
 ```
 
 ## 1. Infra, discovery, observability
@@ -752,8 +759,12 @@ AUTH_KEY_JSON=$(curl -sS -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
   -H "$ADMIN_AUTH_HEADER" \
   -H 'Content-Type: application/json' \
   -d "{\"name\":\"$QA_AUTH_KEY_NAME\",\"description\":\"Release e2e managed key\",\"user_path\":\"$QA_USER_PATH\"}")
-printf '%s\n' "$AUTH_KEY_JSON" > "$QA_AUTH_KEY_JSON"
-printf '%s\n' "$AUTH_KEY_JSON" | jq -r '.value' > "$QA_AUTH_KEY_VALUE_FILE"
+(
+  umask 077
+  printf '%s\n' "$AUTH_KEY_JSON" > "$QA_AUTH_KEY_JSON"
+  printf '%s\n' "$AUTH_KEY_JSON" | jq -r '.value' > "$QA_AUTH_KEY_VALUE_FILE"
+)
+chmod 600 "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
 printf '%s\n' "$AUTH_KEY_JSON" \
   | jq '{id,name,user_path,active,redacted_value}'
 ```
@@ -943,4 +954,5 @@ Deactivates the workflow created for the scoped managed-key release run.
 WORKFLOW_ID=$(cat "$QA_WORKFLOW_ID_FILE")
 curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans/$WORKFLOW_ID/deactivate" \
   -H "$ADMIN_AUTH_HEADER"
+rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
 ```
