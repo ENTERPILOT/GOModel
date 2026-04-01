@@ -536,6 +536,14 @@ func TestShouldSkipAllCache_CacheControlNoStore(t *testing.T) {
 	}
 }
 
+func TestShouldSkipAllCache_CacheControlNoCache(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Cache-Control", "private, no-cache, max-age=0")
+	if !ShouldSkipAllCache(req) {
+		t.Fatal("expected ShouldSkipAllCache for Cache-Control: no-cache")
+	}
+}
+
 func TestSemanticCacheMiddleware_HitMarksAuditEntryCacheType(t *testing.T) {
 	m, _, _ := newTestSemanticMiddleware(0.90, 10, false)
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"semantic-cache-type"}]}`)

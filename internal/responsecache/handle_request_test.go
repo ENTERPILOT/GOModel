@@ -262,6 +262,74 @@ func TestHandleRequest_ExactHitWritesSyntheticUsageEntry(t *testing.T) {
 	}
 }
 
+func TestHandleRequest_CacheControlNoCacheBypassesAllLayers(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+
+	emb := &mockEmbedder{vector: []float32{1, 0, 0}}
+	vecStore := NewMapVecStore()
+	semCfg := config.SemanticCacheConfig{
+		Enabled:                 true,
+		SimilarityThreshold:     0.90,
+		TTL:                     3600,
+		MaxConversationMessages: 10,
+	}
+
+	m := &ResponseCacheMiddleware{
+		simple:   newSimpleCacheMiddleware(store, time.Hour, nil),
+		semantic: newSemanticCacheMiddleware(emb, vecStore, semCfg, nil),
+	}
+
+	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"handle-request-no-cache"}]}`)
+	e := echo.New()
+	handlerCalls := 0
+
+	run := func(cacheControl string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if cacheControl != "" {
+			req.Header.Set("Cache-Control", cacheControl)
+		}
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		if err := m.HandleRequest(c, body, func() error {
+			handlerCalls++
+			return c.JSON(http.StatusOK, map[string]int{"n": handlerCalls})
+		}); err != nil {
+			t.Fatalf("HandleRequest: %v", err)
+		}
+		return rec
+	}
+
+	rec1 := run("")
+	if got := rec1.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("first request should miss cache, got X-Cache=%q", got)
+	}
+
+	m.simple.wg.Wait()
+	m.semantic.wg.Wait()
+
+	rec2 := run("no-cache")
+	if got := rec2.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("no-cache request should bypass cache, got X-Cache=%q", got)
+	}
+	if !bytes.Contains(rec2.Body.Bytes(), []byte(`"n":2`)) {
+		t.Fatalf("no-cache response body = %q, want fresh handler response", rec2.Body.String())
+	}
+
+	rec3 := run("")
+	if got := rec3.Header().Get("X-Cache"); got != "HIT (exact)" {
+		t.Fatalf("follow-up request should still hit original cache entry, got X-Cache=%q", got)
+	}
+	if !bytes.Contains(rec3.Body.Bytes(), []byte(`"n":1`)) {
+		t.Fatalf("cached response body = %q, want original cached payload", rec3.Body.String())
+	}
+	if handlerCalls != 2 {
+		t.Fatalf("expected handler to run exactly twice, got %d calls", handlerCalls)
+	}
+}
+
 func TestHandleRequest_StreamingMissPopulatesExactCacheAcrossModes(t *testing.T) {
 	store := cache.NewMapStore()
 	defer store.Close()
@@ -380,6 +448,71 @@ func TestReconstructStreamingResponse_PreservesChatReasoningContent(t *testing.T
 	}
 	if !bytes.Contains(replayWithUsage, []byte(`"usage"`)) {
 		t.Fatalf("cached chat replay with include_usage = %q, want usage chunk", string(replayWithUsage))
+	}
+}
+
+func TestReconstructStreamingResponse_PreservesChatLogprobs(t *testing.T) {
+	raw := []byte(
+		"data: {\"id\":\"chatcmpl-logprobs\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"logprobs\":null,\"finish_reason\":null}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-logprobs\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4o-mini\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"logprobs\":null,\"finish_reason\":\"stop\"}]}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	cached, ok := reconstructStreamingResponse("/v1/chat/completions", raw, streamResponseDefaults{
+		Model:    "gpt-4o-mini",
+		Provider: "openai",
+	})
+	if !ok {
+		t.Fatal("expected streamed chat response to reconstruct successfully")
+	}
+	if !bytes.Contains(cached, []byte(`"logprobs":null`)) {
+		t.Fatalf("reconstructed chat response = %q, want choice.logprobs preserved", string(cached))
+	}
+
+	replay, err := renderCachedChatStream([]byte(`{"model":"gpt-4o-mini","stream":true}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedChatStream() error = %v", err)
+	}
+	if !bytes.Contains(replay, []byte(`"logprobs":null`)) {
+		t.Fatalf("cached chat replay = %q, want choice.logprobs preserved", string(replay))
+	}
+}
+
+func TestReconstructStreamingResponse_PreservesResponsesReasoningText(t *testing.T) {
+	raw := []byte(
+		"event: response.created\n" +
+			"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_reasoning_build\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"grok-4\",\"provider\":\"xai\",\"status\":\"in_progress\",\"output\":[]}}\n\n" +
+			"event: response.output_item.added\n" +
+			"data: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"in_progress\",\"summary\":[]}}\n\n" +
+			"event: response.reasoning_text.delta\n" +
+			"data: {\"type\":\"response.reasoning_text.delta\",\"item_id\":\"rs_1\",\"output_index\":0,\"delta\":\"step by step\"}\n\n" +
+			"event: response.output_item.done\n" +
+			"data: {\"type\":\"response.output_item.done\",\"output_index\":0,\"item\":{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[]}}\n\n" +
+			"event: response.completed\n" +
+			"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_reasoning_build\",\"object\":\"response\",\"created_at\":1234567890,\"model\":\"grok-4\",\"provider\":\"xai\",\"status\":\"completed\",\"output\":[{\"id\":\"rs_1\",\"type\":\"reasoning\",\"status\":\"completed\",\"summary\":[]}]}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	cached, ok := reconstructStreamingResponse("/v1/responses", raw, streamResponseDefaults{
+		Model:    "grok-4",
+		Provider: "xai",
+	})
+	if !ok {
+		t.Fatal("expected streamed responses payload to reconstruct successfully")
+	}
+	if !bytes.Contains(cached, []byte(`"type":"reasoning_text"`)) || !bytes.Contains(cached, []byte(`"text":"step by step"`)) {
+		t.Fatalf("reconstructed responses body = %q, want reasoning_text persisted", string(cached))
+	}
+
+	replay, err := renderCachedResponsesStream([]byte(`{"model":"grok-4","stream":true}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedResponsesStream() error = %v", err)
+	}
+	if !bytes.Contains(replay, []byte("event: response.reasoning_text.delta")) {
+		t.Fatalf("cached responses replay = %q, want reasoning_text delta event", string(replay))
+	}
+	if !bytes.Contains(replay, []byte("step by step")) {
+		t.Fatalf("cached responses replay = %q, want persisted reasoning text", string(replay))
 	}
 }
 

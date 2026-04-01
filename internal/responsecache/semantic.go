@@ -514,9 +514,8 @@ func ShouldSkipExactCache(req *http.Request) bool {
 	return strings.EqualFold(req.Header.Get("X-Cache-Type"), CacheTypeSemantic)
 }
 
-// ShouldSkipAllCache reports whether caching must be bypassed for this request
-// (X-Cache-Control: no-store or Cache-Control containing no-store), matching
-// shouldSkipSemanticCache / shouldSkipCache semantics for the no-store directive.
+// ShouldSkipAllCache reports whether caching must be bypassed for this request,
+// matching the exact-cache middleware semantics for no-cache and no-store.
 func ShouldSkipAllCache(req *http.Request) bool {
 	if strings.EqualFold(req.Header.Get("X-Cache-Control"), "no-store") {
 		return true
@@ -528,7 +527,7 @@ func ShouldSkipAllCache(req *http.Request) bool {
 	directives := strings.Split(strings.ToLower(cc), ",")
 	for _, d := range directives {
 		d = strings.TrimSpace(d)
-		if d == "no-store" {
+		if d == "no-cache" || d == "no-store" {
 			return true
 		}
 	}

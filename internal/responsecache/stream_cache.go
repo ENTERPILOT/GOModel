@@ -41,6 +41,8 @@ type chatChoiceState struct {
 	Content      strings.Builder
 	Reasoning    strings.Builder
 	FinishReason string
+	Logprobs     json.RawMessage
+	HasLogprobs  bool
 	ToolCalls    map[int]*chatToolCallState
 }
 
@@ -61,10 +63,12 @@ type responsesOutputState struct {
 	Index int
 	Item  map[string]any
 
-	Text      strings.Builder
-	HasText   bool
-	Arguments strings.Builder
-	HasArgs   bool
+	Text         strings.Builder
+	HasText      bool
+	Reasoning    strings.Builder
+	HasReasoning bool
+	Arguments    strings.Builder
+	HasArgs      bool
 }
 
 type responsesStreamCacheBuilder struct {
@@ -83,6 +87,8 @@ type responsesStreamCacheBuilder struct {
 	ItemIDs        map[string]int
 	AssistantIndex int
 	HasAssistant   bool
+	ReasoningIndex int
+	HasReasoning   bool
 }
 
 func cacheKeyRequestBody(path string, body []byte) []byte {
@@ -207,11 +213,20 @@ func renderCachedChatStream(requestBody, cached []byte) ([]byte, error) {
 			delta["tool_calls"] = renderChatToolCalls(choice.Message.ToolCalls)
 		}
 
+		renderedChoice := map[string]any{
+			"index":         choice.Index,
+			"delta":         delta,
+			"finish_reason": choice.FinishReason,
+		}
+		if len(choice.Logprobs) > 0 {
+			renderedChoice["logprobs"] = choice.Logprobs
+		}
+
 		chunk := map[string]any{
 			"id":      resp.ID,
 			"object":  "chat.completion.chunk",
 			"model":   resp.Model,
-			"choices": []map[string]any{{"index": choice.Index, "delta": delta, "finish_reason": choice.FinishReason}},
+			"choices": []map[string]any{renderedChoice},
 		}
 		if resp.Created != 0 {
 			chunk["created"] = resp.Created
@@ -474,6 +489,13 @@ func (b *chatStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 		if finish, ok := choiceMap["finish_reason"].(string); ok && finish != "" {
 			state.FinishReason = finish
 		}
+		if logprobs, ok := choiceMap["logprobs"]; ok {
+			raw, err := json.Marshal(logprobs)
+			if err == nil {
+				state.Logprobs = raw
+				state.HasLogprobs = true
+			}
+		}
 
 		delta, ok := choiceMap["delta"].(map[string]any)
 		if !ok {
@@ -563,6 +585,9 @@ func (b *chatStreamCacheBuilder) Build() ([]byte, bool) {
 			"message":       message,
 			"finish_reason": state.FinishReason,
 		}
+		if state.HasLogprobs {
+			choice["logprobs"] = state.Logprobs
+		}
 		choices = append(choices, choice)
 	}
 
@@ -644,6 +669,9 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 						b.AssistantIndex = index
 						b.HasAssistant = true
 					}
+				} else if itemType == "reasoning" {
+					b.ReasoningIndex = index
+					b.HasReasoning = true
 				}
 			}
 		}
@@ -666,6 +694,9 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 				b.AssistantIndex = index
 				b.HasAssistant = true
 			}
+		} else if itemType == "reasoning" {
+			b.ReasoningIndex = index
+			b.HasReasoning = true
 		}
 	case "response.output_text.delta":
 		delta, _ := event["delta"].(string)
@@ -682,6 +713,16 @@ func (b *responsesStreamCacheBuilder) OnJSONEvent(event map[string]any) {
 			b.AssistantIndex = index
 			b.HasAssistant = true
 		}
+	case "response.reasoning_text.delta":
+		delta, _ := event["delta"].(string)
+		if delta == "" {
+			return
+		}
+		index, ok := b.lookupOutputIndex(event)
+		if !ok {
+			index = b.ensureReasoningOutputIndex()
+		}
+		b.output(index).AppendReasoning(delta)
 	case "response.function_call_arguments.delta":
 		index, ok := b.lookupOutputIndex(event)
 		if !ok {
@@ -827,6 +868,16 @@ func (b *responsesStreamCacheBuilder) lookupOutputIndex(event map[string]any) (i
 	return index, ok
 }
 
+func (b *responsesStreamCacheBuilder) ensureReasoningOutputIndex() int {
+	if b.HasReasoning {
+		return b.ReasoningIndex
+	}
+	index := len(b.Output)
+	b.ReasoningIndex = index
+	b.HasReasoning = true
+	return index
+}
+
 func (s *responsesOutputState) SetItem(item map[string]any) {
 	s.Item = cloneJSONMap(item)
 }
@@ -837,6 +888,14 @@ func (s *responsesOutputState) AppendText(delta string) {
 	}
 	_, _ = s.Text.WriteString(delta)
 	s.HasText = true
+}
+
+func (s *responsesOutputState) AppendReasoning(delta string) {
+	if delta == "" {
+		return
+	}
+	_, _ = s.Reasoning.WriteString(delta)
+	s.HasReasoning = true
 }
 
 func (s *responsesOutputState) AppendArguments(delta string) {
@@ -871,6 +930,22 @@ func (s *responsesOutputState) BuildItem() map[string]any {
 		item["content"] = []map[string]any{{
 			"type": "output_text",
 			"text": s.Text.String(),
+		}}
+	}
+	if s.HasReasoning {
+		if itemType == "" {
+			itemType = "reasoning"
+			item["type"] = itemType
+		}
+		targetField := "content"
+		if itemType != "reasoning" {
+			if _, ok := item["summary"].([]any); ok {
+				targetField = "summary"
+			}
+		}
+		item[targetField] = []map[string]any{{
+			"type": "reasoning_text",
+			"text": s.Reasoning.String(),
 		}}
 	}
 	if s.HasArgs {
