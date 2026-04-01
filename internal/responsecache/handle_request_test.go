@@ -261,3 +261,164 @@ func TestHandleRequest_ExactHitWritesSyntheticUsageEntry(t *testing.T) {
 		t.Fatalf("unexpected tokens: %+v", entry)
 	}
 }
+
+func TestHandleRequest_StreamingMissPopulatesExactCacheAcrossModes(t *testing.T) {
+	store := cache.NewMapStore()
+	defer store.Close()
+
+	m := &ResponseCacheMiddleware{
+		simple: newSimpleCacheMiddleware(store, time.Hour, nil),
+	}
+
+	streamBody := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"cache-streaming-cross-mode"}]}`)
+	jsonBody := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"cache-streaming-cross-mode"}]}`)
+	e := echo.New()
+	handlerCalls := 0
+
+	run := func(body []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		plan := &core.ExecutionPlan{
+			Mode:         core.ExecutionModeTranslated,
+			ProviderType: "openai",
+			Resolution: &core.RequestModelResolution{
+				ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+			},
+		}
+		c.SetRequest(req.WithContext(core.WithExecutionPlan(req.Context(), plan)))
+		if err := m.HandleRequest(c, body, func() error {
+			handlerCalls++
+			c.Response().Header().Set("Content-Type", "text/event-stream")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Write([]byte("data: {\"id\":\"chatcmpl-stream-cache\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n"))
+			_, _ = c.Response().Write([]byte("data: {\"id\":\"chatcmpl-stream-cache\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" world\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":11,\"completion_tokens\":2,\"total_tokens\":13}}\n\n"))
+			_, _ = c.Response().Write([]byte("data: [DONE]\n\n"))
+			return nil
+		}); err != nil {
+			t.Fatalf("HandleRequest: %v", err)
+		}
+		return rec
+	}
+
+	rec1 := run(streamBody)
+	if got := rec1.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("streaming miss should not be cache hit, got X-Cache=%q", got)
+	}
+	if got := rec1.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("streaming miss Content-Type = %q, want text/event-stream", got)
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("expected 1 handler invocation after streaming miss, got %d", handlerCalls)
+	}
+
+	m.simple.wg.Wait()
+
+	rec2 := run(jsonBody)
+	if got := rec2.Header().Get("X-Cache"); got != "HIT (exact)" {
+		t.Fatalf("non-streaming follow-up should hit exact cache, got X-Cache=%q", got)
+	}
+	if got := rec2.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("non-streaming hit Content-Type = %q, want application/json", got)
+	}
+	if !bytes.Contains(rec2.Body.Bytes(), []byte(`"content":"Hello world"`)) {
+		t.Fatalf("non-streaming cache hit body = %q, want reconstructed JSON response", rec2.Body.String())
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("non-streaming exact hit should not call handler again, got %d calls", handlerCalls)
+	}
+
+	rec3 := run(streamBody)
+	if got := rec3.Header().Get("X-Cache"); got != "HIT (exact)" {
+		t.Fatalf("streaming follow-up should hit exact cache, got X-Cache=%q", got)
+	}
+	if got := rec3.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("streaming hit Content-Type = %q, want text/event-stream", got)
+	}
+	if !bytes.Contains(rec3.Body.Bytes(), []byte("Hello world")) || !bytes.Contains(rec3.Body.Bytes(), []byte("[DONE]")) {
+		t.Fatalf("streaming cache hit body = %q, want synthesized SSE with content and [DONE]", rec3.Body.String())
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("streaming exact hit should not call handler again, got %d calls", handlerCalls)
+	}
+}
+
+func TestReconstructStreamingResponse_PreservesChatReasoningContent(t *testing.T) {
+	raw := []byte(
+		"data: {\"id\":\"chatcmpl-reasoning\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"claude-sonnet\",\"provider\":\"anthropic\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"reasoning_content\":\"think first\"},\"finish_reason\":null}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-reasoning\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"claude-sonnet\",\"provider\":\"anthropic\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"final answer\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":4,\"total_tokens\":14}}\n\n" +
+			"data: [DONE]\n\n",
+	)
+
+	cached, ok := reconstructStreamingResponse("/v1/chat/completions", raw, streamResponseDefaults{
+		Model:    "claude-sonnet",
+		Provider: "anthropic",
+	})
+	if !ok {
+		t.Fatal("expected streamed chat response to reconstruct successfully")
+	}
+	if !bytes.Contains(cached, []byte(`"reasoning_content":"think first"`)) {
+		t.Fatalf("reconstructed chat response = %q, want reasoning_content preserved", string(cached))
+	}
+
+	replay, err := renderCachedChatStream([]byte(`{"model":"claude-sonnet","stream":true}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedChatStream() error = %v", err)
+	}
+	if !bytes.Contains(replay, []byte(`"reasoning_content":"think first"`)) {
+		t.Fatalf("cached chat replay = %q, want reasoning_content delta", string(replay))
+	}
+	if bytes.Contains(replay, []byte(`"usage"`)) {
+		t.Fatalf("cached chat replay without include_usage = %q, did not expect usage chunk", string(replay))
+	}
+
+	replayWithUsage, err := renderCachedChatStream([]byte(`{"model":"claude-sonnet","stream":true,"stream_options":{"include_usage":true}}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedChatStream(include_usage) error = %v", err)
+	}
+	if !bytes.Contains(replayWithUsage, []byte(`"usage"`)) {
+		t.Fatalf("cached chat replay with include_usage = %q, want usage chunk", string(replayWithUsage))
+	}
+}
+
+func TestRenderCachedResponsesStream_PreservesReasoningTextDeltas(t *testing.T) {
+	cached := []byte(`{
+		"id":"resp_reasoning",
+		"object":"response",
+		"created_at":1234567890,
+		"model":"grok-4",
+		"provider":"xai",
+		"status":"completed",
+		"output":[
+			{
+				"id":"rs_1",
+				"type":"reasoning",
+				"status":"completed",
+				"summary":[{"type":"reasoning_text","text":"step by step"}]
+			},
+			{
+				"id":"msg_1",
+				"type":"message",
+				"role":"assistant",
+				"status":"completed",
+				"content":[{"type":"output_text","text":"final answer"}]
+			}
+		]
+	}`)
+
+	replay, err := renderCachedResponsesStream([]byte(`{"model":"grok-4","stream":true}`), cached)
+	if err != nil {
+		t.Fatalf("renderCachedResponsesStream() error = %v", err)
+	}
+	if !bytes.Contains(replay, []byte("event: response.reasoning_text.delta")) {
+		t.Fatalf("cached responses replay = %q, want reasoning_text delta event", string(replay))
+	}
+	if !bytes.Contains(replay, []byte("step by step")) {
+		t.Fatalf("cached responses replay = %q, want reasoning delta text", string(replay))
+	}
+	if !bytes.Contains(replay, []byte("event: response.output_text.delta")) {
+		t.Fatalf("cached responses replay = %q, want output_text delta event", string(replay))
+	}
+}

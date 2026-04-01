@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -80,9 +81,6 @@ func (m *simpleCacheMiddleware) Middleware() echo.MiddlewareFunc {
 			if !cacheable {
 				return next(c)
 			}
-			if isStreamingRequest(path, body) {
-				return next(c)
-			}
 			plan := core.GetExecutionPlan(c.Request().Context())
 			if shouldSkipCacheForExecutionPlan(plan) {
 				return next(c)
@@ -110,11 +108,11 @@ func (m *simpleCacheMiddleware) TryHit(c *echo.Context, body []byte) (bool, erro
 		return false, nil
 	}
 	if len(cached) > 0 {
+		if err := writeCachedResponse(c, path, body, cached, CacheTypeExact); err != nil {
+			slog.Warn("response cache replay failed", "path", path, "cache_type", CacheTypeExact, "err", err)
+			return false, nil
+		}
 		auditlog.EnrichEntryWithCacheType(c, CacheTypeExact)
-		c.Response().Header().Set("Content-Type", "application/json")
-		c.Response().Header().Set("X-Cache", "HIT (exact)")
-		c.Response().WriteHeader(http.StatusOK)
-		_, _ = c.Response().Write(cached)
 		if m.hitRecorder != nil {
 			m.hitRecorder(c, cached, CacheTypeExact)
 		}
@@ -148,7 +146,11 @@ func (m *simpleCacheMiddleware) StoreAfter(c *echo.Context, body []byte, next fu
 		if core.GetFallbackUsed(c.Request().Context()) {
 			return nil
 		}
-		data := bytes.Clone(capture.body.Bytes())
+		data, ok := capture.cachedBody(path, streamResponseDefaultsFromContext(c.Request().Context()), c.Response().Header().Get("Content-Type"))
+		if !ok {
+			slog.Warn("response cache: failed to reconstruct cacheable response body", "path", path)
+			return nil
+		}
 		m.enqueueWrite(cacheWriteJob{key: key, data: data})
 	}
 	return nil
@@ -282,7 +284,7 @@ func hashRequest(path string, body []byte, plan *core.ExecutionPlan) string {
 		h.Write([]byte(plan.ResolvedQualifiedModel()))
 		h.Write([]byte{0})
 	}
-	h.Write(body)
+	h.Write(cacheKeyRequestBody(path, body))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -290,6 +292,21 @@ type responseCapture struct {
 	http.ResponseWriter
 	body   *bytes.Buffer
 	status int
+}
+
+func (r *responseCapture) cachedBody(path string, defaults streamResponseDefaults, contentType string) ([]byte, bool) {
+	if r == nil || r.body == nil || r.body.Len() == 0 {
+		return nil, false
+	}
+
+	raw := bytes.Clone(r.body.Bytes())
+	if isEventStreamContentType(contentType) {
+		return reconstructStreamingResponse(path, raw, defaults)
+	}
+	if !json.Valid(raw) {
+		return nil, false
+	}
+	return raw, true
 }
 
 func (r *responseCapture) WriteHeader(code int) {
