@@ -278,6 +278,9 @@ func (s *qdrantStore) DeleteExpired(ctx context.Context) error {
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("vecstore qdrant: delete expired: %s: %s", resp.Status, string(raw))
 	}
