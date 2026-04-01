@@ -64,10 +64,6 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 		return next()
 	}
 
-	if isStreamingRequest(path, body) {
-		return next()
-	}
-
 	ctx := c.Request().Context()
 	plan := core.GetExecutionPlan(ctx)
 
@@ -105,20 +101,20 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	}
 
 	if len(results) > 0 && float64(results[0].Score) >= threshold {
-		auditlog.EnrichEntryWithCacheType(c, CacheTypeSemantic)
-		c.Response().Header().Set("Content-Type", "application/json")
-		c.Response().Header().Set("X-Cache", "HIT (semantic)")
-		c.Response().WriteHeader(http.StatusOK)
-		_, _ = c.Response().Write(results[0].Response)
-		if m.hitRecorder != nil {
-			m.hitRecorder(c, results[0].Response, CacheTypeSemantic)
+		replayErr := writeCachedResponse(c, path, body, results[0].Response, CacheTypeSemantic)
+		if replayErr == nil {
+			auditlog.EnrichEntryWithCacheType(c, CacheTypeSemantic)
+			if m.hitRecorder != nil {
+				m.hitRecorder(c, results[0].Response, CacheTypeSemantic)
+			}
+			slog.Info("semantic cache hit",
+				"path", path,
+				"score", results[0].Score,
+				"request_id", c.Request().Header.Get("X-Request-ID"),
+			)
+			return nil
 		}
-		slog.Info("semantic cache hit",
-			"path", path,
-			"score", results[0].Score,
-			"request_id", c.Request().Header.Get("X-Request-ID"),
-		)
-		return nil
+		slog.Warn("semantic cache replay failed", "path", path, "err", replayErr)
 	}
 
 	capture := &responseCapture{
@@ -137,8 +133,11 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	if core.GetFallbackUsed(c.Request().Context()) {
 		return nil
 	}
-
-	data := bytes.Clone(capture.body.Bytes())
+	data, ok := capture.cachedBody(path, streamResponseDefaultsFromContext(c.Request().Context()), c.Response().Header().Get("Content-Type"))
+	if !ok {
+		slog.Warn("semantic cache: failed to reconstruct cacheable response body", "path", path)
+		return nil
+	}
 	ttl := time.Duration(m.cfg.TTL) * time.Second
 	if ttl == 0 {
 		ttl = time.Hour
@@ -346,13 +345,13 @@ func extractTextFromContent(content any) string {
 // (e.g. "/v1/chat/completions") and isolates entries across distinct endpoints.
 func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPlan, guardrailsHash, embedderIdentity string) string {
 	var req struct {
-		Model          string           `json:"model"`
-		Temperature    *float64         `json:"temperature"`
-		TopP           *float64         `json:"top_p"`
-		MaxTokens      *int             `json:"max_tokens"`
-		Tools          []map[string]any `json:"tools"`
-		ResponseFormat any              `json:"response_format"`
-		Stream         bool             `json:"stream"`
+		Model          string              `json:"model"`
+		Temperature    *float64            `json:"temperature"`
+		TopP           *float64            `json:"top_p"`
+		MaxTokens      *int                `json:"max_tokens"`
+		Tools          []map[string]any    `json:"tools"`
+		ResponseFormat any                 `json:"response_format"`
+		StreamOptions  *core.StreamOptions `json:"stream_options"`
 	}
 	_ = json.Unmarshal(body, &req)
 
@@ -397,7 +396,10 @@ func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPla
 	}
 	h.Write([]byte{0})
 
-	h.Write([]byte(strconv.FormatBool(req.Stream)))
+	if streamOptions := normalizeStreamOptionsForCache(req.StreamOptions); streamOptions != nil {
+		soJSON, _ := json.Marshal(streamOptions)
+		h.Write(soJSON)
+	}
 	h.Write([]byte{0})
 
 	h.Write([]byte(guardrailsHash))
@@ -512,9 +514,8 @@ func ShouldSkipExactCache(req *http.Request) bool {
 	return strings.EqualFold(req.Header.Get("X-Cache-Type"), CacheTypeSemantic)
 }
 
-// ShouldSkipAllCache reports whether caching must be bypassed for this request
-// (X-Cache-Control: no-store or Cache-Control containing no-store), matching
-// shouldSkipSemanticCache / shouldSkipCache semantics for the no-store directive.
+// ShouldSkipAllCache reports whether caching must be bypassed for this request,
+// matching the exact-cache middleware semantics for no-cache and no-store.
 func ShouldSkipAllCache(req *http.Request) bool {
 	if strings.EqualFold(req.Header.Get("X-Cache-Control"), "no-store") {
 		return true
@@ -526,7 +527,7 @@ func ShouldSkipAllCache(req *http.Request) bool {
 	directives := strings.Split(strings.ToLower(cc), ",")
 	for _, d := range directives {
 		d = strings.TrimSpace(d)
-		if d == "no-store" {
+		if d == "no-cache" || d == "no-store" {
 			return true
 		}
 	}

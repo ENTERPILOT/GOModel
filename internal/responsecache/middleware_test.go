@@ -200,27 +200,87 @@ func TestHashRequest_ModeChangesKey(t *testing.T) {
 	}
 }
 
-func TestSimpleCacheMiddleware_SkipsStreaming(t *testing.T) {
+func TestHashRequest_StreamIncludeUsageChangesKey(t *testing.T) {
+	base := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	withUsage := []byte(`{"model":"gpt-4","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"hi"}]}`)
+	plan := &core.ExecutionPlan{
+		Mode:         core.ExecutionModeTranslated,
+		ProviderType: "openai",
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+		},
+	}
+
+	first := hashRequest("/v1/chat/completions", base, plan)
+	second := hashRequest("/v1/chat/completions", withUsage, plan)
+
+	if first == second {
+		t.Fatal("stream_options.include_usage should affect the exact cache key")
+	}
+}
+
+func TestSimpleCacheMiddleware_SharesCacheAcrossStreamingAndNonStreaming(t *testing.T) {
 	store := cache.NewMapStore()
 	defer store.Close()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
 	e := echo.New()
+	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	callCount := 0
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
 		callCount++
-		return c.JSON(http.StatusOK, map[string]string{"n": "1"})
+		return c.JSON(http.StatusOK, &core.ChatResponse{
+			ID:       "chatcmpl-shared-cache",
+			Object:   "chat.completion",
+			Model:    "gpt-4",
+			Provider: "openai",
+			Created:  1234567890,
+			Choices: []core.Choice{
+				{
+					Index: 0,
+					Message: core.ResponseMessage{
+						Role:    "assistant",
+						Content: "shared cached response",
+					},
+					FinishReason: "stop",
+				},
+			},
+			Usage: core.Usage{
+				PromptTokens:     9,
+				CompletionTokens: 3,
+				TotalTokens:      12,
+			},
+		})
 	})
 
-	body := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
-	for range 2 {
-		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
+	nonStreamingBody := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
+	streamingBody := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+
+	req1 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(nonStreamingBody))
+	req1.Header.Set("Content-Type", "application/json")
+	rec1 := httptest.NewRecorder()
+	e.ServeHTTP(rec1, req1)
+	if rec1.Header().Get("X-Cache") != "" {
+		t.Fatalf("first request should miss cache, got X-Cache=%q", rec1.Header().Get("X-Cache"))
 	}
-	if callCount != 2 {
-		t.Fatalf("streaming requests should not be cached, handler called %d times", callCount)
+
+	mw.simple.wg.Wait()
+
+	req2 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(streamingBody))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	e.ServeHTTP(rec2, req2)
+	if got := rec2.Header().Get("X-Cache"); got != "HIT (exact)" {
+		t.Fatalf("streaming request should reuse cached full response, got X-Cache=%q", got)
+	}
+	if got := rec2.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("streaming cache hit Content-Type = %q, want text/event-stream", got)
+	}
+	if !bytes.Contains(rec2.Body.Bytes(), []byte("shared cached response")) || !bytes.Contains(rec2.Body.Bytes(), []byte("[DONE]")) {
+		t.Fatalf("streaming cache hit body = %q, want synthesized SSE", rec2.Body.String())
+	}
+	if callCount != 1 {
+		t.Fatalf("expected streaming replay to avoid second handler call, got %d calls", callCount)
 	}
 }
 
