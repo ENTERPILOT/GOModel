@@ -1,0 +1,96 @@
+---
+title: "Cache"
+description: "How GOModel response caching works, how to enable it, and what is included in the exact-cache key."
+---
+
+## Overview
+
+GOModel ships with an exact-match response cache for non-streaming requests on:
+
+- `/v1/chat/completions`
+- `/v1/responses`
+- `/v1/embeddings`
+
+When a response is served from the exact cache, GOModel returns:
+
+```http
+X-Cache: HIT (exact)
+```
+
+Semantic caching is planned separately. The exact layer is the cache behavior
+available today.
+
+## Enable the exact cache
+
+Point response caching at Redis:
+
+```yaml
+cache:
+  response:
+    simple:
+      redis:
+        url: redis://localhost:6379
+        ttl: 3600
+```
+
+You can also configure it with environment variables:
+
+- `REDIS_URL`
+- `REDIS_KEY_RESPONSES`
+- `REDIS_TTL_RESPONSES`
+
+## What the exact cache keys on
+
+The exact cache hashes:
+
+- the request path
+- the resolved execution plan context used for execution
+  specifically execution mode, provider type, and resolved model
+- the final request body
+
+This means guardrails and workflows affect cache keys when they change the
+resolved execution plan or the final body sent through execution.
+
+You can bypass caching per request with:
+
+```http
+Cache-Control: no-cache
+```
+
+or:
+
+```http
+Cache-Control: no-store
+```
+
+## `user_path` behavior
+
+`user_path` is not added to the exact-cache key by itself.
+
+That is intentional. If two requests end up with the same path, resolved
+execution plan, and final request body, they can share the same exact-cache
+entry even when they originate from different `user_path` values.
+
+<Note>
+  If you need tenant or path-specific cache behavior, use a scoped workflow or
+  otherwise make the final request differ for that scope. `user_path` alone is
+  not an exact-cache partition key.
+</Note>
+
+Common patterns:
+
+- disable cache in a scoped workflow
+- use different scoped workflows for different `user_path` values
+- include scope-specific context so the final request body differs
+
+## Cache analytics
+
+When response caching and usage tracking are enabled, the admin API exposes a
+cached-only overview at:
+
+```text
+/admin/api/v1/cache/overview
+```
+
+Cached usage entries are also visible in the regular usage log and summary
+endpoints.

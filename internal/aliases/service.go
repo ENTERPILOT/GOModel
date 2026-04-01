@@ -122,15 +122,23 @@ func (s *Service) Resolve(model, provider string) (Resolution, bool, error) {
 }
 
 func (s *Service) resolveRequested(requested core.RequestedModelSelector) (Resolution, bool, error) {
-	if !requested.ExplicitProvider {
-		if resolution, ok := s.resolveAlias(requested.Model); ok {
-			return resolution, true, nil
-		}
-	}
-
 	selector, err := requested.Normalize()
 	if err != nil {
 		return Resolution{}, false, err
+	}
+
+	if requested.ExplicitProvider {
+		if !s.catalog.Supports(selector.QualifiedModel()) {
+			if resolution, ok := s.resolveAlias(requested.Model); ok {
+				resolution.Requested = selector
+				return resolution, true, nil
+			}
+		}
+		return Resolution{Requested: selector, Resolved: selector}, false, nil
+	}
+
+	if resolution, ok := s.resolveAlias(requested.Model); ok {
+		return resolution, true, nil
 	}
 	return Resolution{Requested: selector, Resolved: selector}, false, nil
 }

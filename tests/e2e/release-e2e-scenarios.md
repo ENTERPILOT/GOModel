@@ -1,6 +1,6 @@
 # Release E2E Curl Matrix
 
-This file contains 62 end-to-end curl scenarios for release validation.
+This file contains 79 end-to-end curl scenarios for release validation.
 These scenarios are prepared for execution across these local gateways:
 
 - `http://localhost:18080` - SQLite-backed main test gateway
@@ -24,6 +24,38 @@ printf 'qa file payload\n' > /tmp/qa-upload.txt
 
 export BATCH_FILE=/tmp/qa-openai-batch.jsonl
 export UPLOAD_FILE=/tmp/qa-upload.txt
+```
+
+## Auth-enabled runtime environment
+
+These scenarios target the auth-enabled live gateway on `http://localhost:8080`
+and cover the newer workflows, managed API keys, and cache analytics features.
+
+```bash
+set -a
+source .env
+set +a
+
+export AUTH_BASE_URL=http://localhost:8080
+export ADMIN_AUTH_HEADER="Authorization: Bearer $GOMODEL_MASTER_KEY"
+
+export QA_SUFFIX="${QA_SUFFIX:-$(date +%s)}"
+export QA_AUTH_KEY_NAME="qa-release-auth-key-$QA_SUFFIX"
+export QA_WORKFLOW_NAME="qa-release-workflow-$QA_SUFFIX"
+export QA_USER_PATH="/team/release/e2e/$QA_SUFFIX"
+export QA_CACHE_USER_PATH="/team/cache/e2e/$QA_SUFFIX"
+
+export QA_AUTH_KEY_JSON="/tmp/qa-release-auth-key-$QA_SUFFIX.json"
+export QA_AUTH_KEY_VALUE_FILE="/tmp/qa-release-auth-key-$QA_SUFFIX.token"
+export QA_WORKFLOW_JSON="/tmp/qa-release-workflow-$QA_SUFFIX.json"
+export QA_WORKFLOW_ID_FILE="/tmp/qa-release-workflow-$QA_SUFFIX.id"
+
+export QA_AUTH_REQ1="qa-auth-cacheoff-$QA_SUFFIX-1"
+export QA_AUTH_REQ2="qa-auth-cacheoff-$QA_SUFFIX-2"
+export QA_CACHE_REQ1="qa-cache-exact-$QA_SUFFIX-1"
+export QA_CACHE_REQ2="qa-cache-exact-$QA_SUFFIX-2"
+export QA_DEACTIVATED_REQ="qa-auth-deactivated-$QA_SUFFIX"
+export QA_CACHE_REPLY="QA_CACHE_EXACT_OK_$QA_SUFFIX"
 ```
 
 ## 1. Infra, discovery, observability
@@ -635,4 +667,201 @@ curl -sS -i "$BASE_URL/p/not-a-real-provider/responses" \
 sleep 6
 curl -sS "$BASE_URL/admin/api/v1/audit/log?request_id=$REQUEST_ID&limit=5" \
   | jq '{total,entries:(.entries|map({request_id,path,model,provider,status_code,error_type}))}'
+```
+
+## 12. Authenticated runtime features
+
+### S63 Auth-enabled dashboard runtime config
+Reads the allowlisted runtime flags for the live auth-enabled gateway.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/dashboard/config" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '.'
+```
+
+### S64 Create managed API key
+Creates one managed API key scoped to a release-specific user path and stores the one-time secret under `/tmp`.
+
+```bash
+AUTH_KEY_JSON=$(curl -sS -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"$QA_AUTH_KEY_NAME\",\"description\":\"Release e2e managed key\",\"user_path\":\"$QA_USER_PATH\"}")
+printf '%s\n' "$AUTH_KEY_JSON" > "$QA_AUTH_KEY_JSON"
+printf '%s\n' "$AUTH_KEY_JSON" | jq -r '.value' > "$QA_AUTH_KEY_VALUE_FILE"
+printf '%s\n' "$AUTH_KEY_JSON" \
+  | jq '{id,name,user_path,active,redacted_value,value}'
+```
+
+### S65 Verify managed API key list
+Checks that the newly issued managed API key is visible and active.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq ".[] | select(.name==\"$QA_AUTH_KEY_NAME\") | {id,name,user_path,active,expires_at,redacted_value}"
+```
+
+### S66 Create user-path-scoped workflow with cache disabled
+Creates a scoped workflow for `openai/gpt-4.1-nano` that disables cache for the managed-key user path.
+
+```bash
+WORKFLOW_JSON=$(curl -sS -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d "{\"scope_provider\":\"openai\",\"scope_model\":\"gpt-4.1-nano\",\"scope_user_path\":\"$QA_USER_PATH\",\"name\":\"$QA_WORKFLOW_NAME\",\"description\":\"Disable cache for managed-key release e2e scope\",\"plan_payload\":{\"schema_version\":1,\"features\":{\"cache\":false,\"audit\":true,\"usage\":true,\"guardrails\":false,\"fallback\":false},\"guardrails\":[]}}")
+printf '%s\n' "$WORKFLOW_JSON" > "$QA_WORKFLOW_JSON"
+printf '%s\n' "$WORKFLOW_JSON" | jq -r '.id' > "$QA_WORKFLOW_ID_FILE"
+printf '%s\n' "$WORKFLOW_JSON" \
+  | jq '{id,name,scope,plan_payload}'
+```
+
+### S67 Verify scoped workflow detail
+Reads the created workflow back and confirms the normalized scope and effective feature projection.
+
+```bash
+WORKFLOW_ID=$(cat "$QA_WORKFLOW_ID_FILE")
+curl -sS "$AUTH_BASE_URL/admin/api/v1/execution-plans/$WORKFLOW_ID" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '{id,name,scope,plan_payload,effective_features}'
+```
+
+### S68 Managed-key request through scoped workflow
+Sends a request with the managed API key while also sending a conflicting `X-GoModel-User-Path` header.
+
+```bash
+API_KEY=$(cat "$QA_AUTH_KEY_VALUE_FILE")
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_AUTH_REQ1" \
+  -H 'X-GoModel-User-Path: /team/should-be-overridden' \
+  -d '{"model":"openai/gpt-4.1-nano","messages":[{"role":"user","content":"Reply with exactly QA_AUTH_CACHE_OFF_OK"}],"max_tokens":16}' \
+  | sed -n '1,20p'
+```
+
+### S69 Repeated managed-key request should still bypass cache
+Repeats the same request and expects another live provider response rather than `X-Cache: HIT`.
+
+```bash
+API_KEY=$(cat "$QA_AUTH_KEY_VALUE_FILE")
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_AUTH_REQ2" \
+  -H 'X-GoModel-User-Path: /team/should-be-overridden' \
+  -d '{"model":"openai/gpt-4.1-nano","messages":[{"role":"user","content":"Reply with exactly QA_AUTH_CACHE_OFF_OK"}],"max_tokens":16}' \
+  | sed -n '1,20p'
+```
+
+### S70 Audit evidence for managed-key scoped workflow
+Confirms that auth method, managed auth key ID, normalized user path, workflow ID, and no cache hit are all recorded together.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/audit/log?request_id=$QA_AUTH_REQ2&limit=5" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '{total,entries:(.entries|map({request_id,status_code,auth_method,auth_key_id,user_path,execution_plan_version_id,cache_type,answer:.data.response_body.choices[0].message.content}))}'
+```
+
+### S71 Global cache warm request with explicit user path
+Warms the global cache-enabled workflow using the master key and a cache-specific user path.
+
+```bash
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_CACHE_REQ1" \
+  -H "X-GoModel-User-Path: $QA_CACHE_USER_PATH" \
+  -d "{\"model\":\"openai/gpt-4.1-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly $QA_CACHE_REPLY\"}],\"max_tokens\":16}" \
+  | sed -n '1,20p'
+```
+
+### S72 Repeated global cache request should hit exact cache
+Repeats the same request and expects `X-Cache: HIT (exact)`.
+
+```bash
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_CACHE_REQ2" \
+  -H "X-GoModel-User-Path: $QA_CACHE_USER_PATH" \
+  -d "{\"model\":\"openai/gpt-4.1-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly $QA_CACHE_REPLY\"}],\"max_tokens\":16}" \
+  | sed -n '1,20p'
+```
+
+### S73 Cache overview filtered by user path
+Checks cache analytics after the exact-cache hit using the same tracked user path.
+
+```bash
+sleep 6
+curl -sS "$AUTH_BASE_URL/admin/api/v1/cache/overview?days=1&user_path=$QA_CACHE_USER_PATH" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '.'
+```
+
+### S74 Cached usage log filtered by user path
+Reads cached-only usage entries for the same exact-hit request path.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/usage/log?days=1&user_path=$QA_CACHE_USER_PATH&cache_mode=cached&limit=5" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '{total,entries:(.entries|map({request_id,cache_type,model,provider,endpoint,user_path,total_tokens}))}'
+```
+
+### S75 Invalid managed API key user path (negative)
+Verifies user-path validation for managed API key creation.
+
+```bash
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"qa-invalid-user-path","user_path":"/team/../alpha"}' \
+  | sed -n '1,20p'
+```
+
+### S76 Invalid workflow scope user path (negative)
+Verifies user-path validation for workflow creation.
+
+```bash
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"scope_provider":"openai","scope_model":"gpt-4.1-nano","scope_user_path":"/team/../alpha","name":"qa-invalid-workflow-path","plan_payload":{"schema_version":1,"features":{"cache":true,"audit":true,"usage":true,"guardrails":false},"guardrails":[]}}' \
+  | sed -n '1,24p'
+```
+
+## 13. Authenticated cleanup
+
+### S77 Deactivate managed API key
+Deactivates the managed key created for the auth-enabled release run.
+
+```bash
+AUTH_KEY_ID=$(curl -sS "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq -r ".[] | select(.name==\"$QA_AUTH_KEY_NAME\") | .id")
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys/$AUTH_KEY_ID/deactivate" \
+  -H "$ADMIN_AUTH_HEADER"
+```
+
+### S78 Deactivated managed API key is rejected
+Confirms that the same managed key can no longer authenticate requests.
+
+```bash
+API_KEY=$(cat "$QA_AUTH_KEY_VALUE_FILE")
+curl -sS -i "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_DEACTIVATED_REQ" \
+  -d '{"model":"openai/gpt-4.1-nano","messages":[{"role":"user","content":"Reply with exactly QA_AUTH_DEACTIVATED"}],"max_tokens":16}' \
+  | sed -n '1,20p'
+```
+
+### S79 Deactivate scoped workflow
+Deactivates the workflow created for the scoped managed-key release run.
+
+```bash
+WORKFLOW_ID=$(cat "$QA_WORKFLOW_ID_FILE")
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans/$WORKFLOW_ID/deactivate" \
+  -H "$ADMIN_AUTH_HEADER"
 ```
