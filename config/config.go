@@ -648,8 +648,8 @@ func applyResponseSemanticEnv(resp *ResponseCacheConfig) error {
 		}
 	}
 	sem := resp.Semantic
-	if val := os.Getenv("SEMANTIC_CACHE_ENABLED"); val != "" {
-		b := parseBool(val)
+	if enabledKeySet {
+		b := parseBool(v)
 		sem.Enabled = &b
 	}
 	if val := os.Getenv("SEMANTIC_CACHE_THRESHOLD"); val != "" {
