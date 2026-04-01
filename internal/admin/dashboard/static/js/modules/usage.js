@@ -1,12 +1,88 @@
 (function(global) {
     function dashboardUsageModule() {
         return {
+            emptyCacheOverview() {
+                return {
+                    summary: {
+                        total_hits: 0,
+                        exact_hits: 0,
+                        semantic_hits: 0,
+                        total_input_tokens: 0,
+                        total_output_tokens: 0,
+                        total_tokens: 0,
+                        total_saved_cost: null
+                    },
+                    daily: []
+                };
+            },
+
+            cacheAnalyticsEnabled() {
+                return typeof this.executionPlanRuntimeBooleanFlag === 'function'
+                    ? this.executionPlanRuntimeBooleanFlag('CACHE_ENABLED', false)
+                    : false;
+            },
+
             _usageQueryStr() {
                 if (this.customStartDate && this.customEndDate) {
                     return 'start_date=' + this._formatDate(this.customStartDate) +
                         '&end_date=' + this._formatDate(this.customEndDate);
                 }
                 return 'days=' + this.days;
+            },
+
+            async fetchCacheOverview() {
+                if (!this.cacheAnalyticsEnabled()) {
+                    this.cacheOverview = this.emptyCacheOverview();
+                    if (this.page === 'overview') this.renderChart();
+                    return;
+                }
+
+                const controller = typeof this._startAbortableRequest === 'function'
+                    ? this._startAbortableRequest('_cacheOverviewFetchController')
+                    : null;
+                const options = { headers: this.headers() };
+                if (controller) {
+                    options.signal = controller.signal;
+                }
+
+                try {
+                    let queryStr;
+                    if (this.customStartDate && this.customEndDate) {
+                        queryStr = 'start_date=' + this._formatDate(this.customStartDate) +
+                            '&end_date=' + this._formatDate(this.customEndDate);
+                    } else {
+                        queryStr = 'days=' + this.days;
+                    }
+                    queryStr += '&interval=' + this.interval;
+
+                    const res = await fetch('/admin/api/v1/cache/overview?' + queryStr, options);
+                    if (!this.handleFetchResponse(res, 'cache overview')) {
+                        this.cacheOverview = this.emptyCacheOverview();
+                        return;
+                    }
+                    const payload = await res.json();
+                    if (controller && controller.signal.aborted) {
+                        return;
+                    }
+                    this.cacheOverview = payload && typeof payload === 'object' ? payload : this.emptyCacheOverview();
+                    if (!this.cacheOverview.summary) {
+                        this.cacheOverview.summary = this.emptyCacheOverview().summary;
+                    }
+                    if (!Array.isArray(this.cacheOverview.daily)) {
+                        this.cacheOverview.daily = [];
+                    }
+                    if (this.page === 'overview') this.renderChart();
+                } catch (e) {
+                    if (typeof this._isAbortError === 'function' && this._isAbortError(e)) {
+                        return;
+                    }
+                    console.error('Failed to fetch cache overview:', e);
+                    this.cacheOverview = this.emptyCacheOverview();
+                } finally {
+                    if (typeof this._clearAbortableRequest === 'function') {
+                        this._clearAbortableRequest('_cacheOverviewFetchController', controller);
+                    }
+                }
             },
 
             async fetchUsage() {
@@ -48,6 +124,11 @@
                     this.summary = summary;
                     this.daily = daily;
                     this.renderChart();
+                    if (this.cacheAnalyticsEnabled()) {
+                        this.fetchCacheOverview();
+                    } else {
+                        this.cacheOverview = this.emptyCacheOverview();
+                    }
                     if (this.page === 'usage') this.fetchUsagePage();
                     if (this.page === 'audit-logs') this.fetchAuditLog(true);
                 } catch (e) {
@@ -63,7 +144,11 @@
             },
 
             async fetchUsagePage() {
-                await Promise.all([this.fetchModelUsage(), this.fetchUsageLog(true)]);
+                const requests = [this.fetchModelUsage(), this.fetchUsageLog(true)];
+                if (this.cacheAnalyticsEnabled()) {
+                    requests.push(this.fetchCacheOverview());
+                }
+                await Promise.all(requests);
                 this.renderBarChart();
             },
 

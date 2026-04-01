@@ -34,14 +34,16 @@ type semanticCacheMiddleware struct {
 	cfg              config.SemanticCacheConfig
 	embedderIdentity string
 	wg               sync.WaitGroup
+	hitRecorder      func(*echo.Context, []byte, string)
 }
 
-func newSemanticCacheMiddleware(emb embedding.Embedder, store VecStore, cfg config.SemanticCacheConfig) *semanticCacheMiddleware {
+func newSemanticCacheMiddleware(emb embedding.Embedder, store VecStore, cfg config.SemanticCacheConfig, hitRecorder func(*echo.Context, []byte, string)) *semanticCacheMiddleware {
 	return &semanticCacheMiddleware{
 		embedder:         emb,
 		store:            store,
 		cfg:              cfg,
 		embedderIdentity: emb.Identity(),
+		hitRecorder:      hitRecorder,
 	}
 }
 
@@ -58,10 +60,6 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	}
 
 	if shouldSkipSemanticCache(c.Request()) {
-		return next()
-	}
-
-	if isStreamingRequest(path, body) {
 		return next()
 	}
 
@@ -102,17 +100,20 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	}
 
 	if len(results) > 0 && float64(results[0].Score) >= threshold {
-		auditlog.EnrichEntryWithCacheType(c, CacheTypeSemantic)
-		c.Response().Header().Set("Content-Type", "application/json")
-		c.Response().Header().Set("X-Cache", "HIT (semantic)")
-		c.Response().WriteHeader(http.StatusOK)
-		_, _ = c.Response().Write(results[0].Response)
-		slog.Info("semantic cache hit",
-			"path", path,
-			"score", results[0].Score,
-			"request_id", c.Request().Header.Get("X-Request-ID"),
-		)
-		return nil
+		replayErr := writeCachedResponse(c, path, body, results[0].Response, CacheTypeSemantic)
+		if replayErr == nil {
+			auditlog.EnrichEntryWithCacheType(c, CacheTypeSemantic)
+			if m.hitRecorder != nil {
+				m.hitRecorder(c, results[0].Response, CacheTypeSemantic)
+			}
+			slog.Info("semantic cache hit",
+				"path", path,
+				"score", results[0].Score,
+				"request_id", c.Request().Header.Get("X-Request-ID"),
+			)
+			return nil
+		}
+		slog.Warn("semantic cache replay failed", "path", path, "err", replayErr)
 	}
 
 	capture := &responseCapture{
@@ -131,8 +132,11 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	if core.GetFallbackUsed(c.Request().Context()) {
 		return nil
 	}
-
-	data := bytes.Clone(capture.body.Bytes())
+	data, ok := capture.cachedBody(path, streamResponseDefaultsFromContext(c.Request().Context()), c.Response().Header().Get("Content-Type"))
+	if !ok {
+		slog.Warn("semantic cache: failed to reconstruct cacheable response body", "path", path)
+		return nil
+	}
 	ttlSec := 0
 	if m.cfg.TTL != nil {
 		ttlSec = *m.cfg.TTL
@@ -383,16 +387,16 @@ func extractTextFromContent(content any) string {
 // (e.g. "/v1/chat/completions") and isolates entries across distinct endpoints.
 func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPlan, guardrailsHash, embedderIdentity string) string {
 	var req struct {
-		Model           string           `json:"model"`
-		Temperature     *float64         `json:"temperature"`
-		TopP            *float64         `json:"top_p"`
-		MaxTokens       *int             `json:"max_tokens"`
-		MaxOutputTokens *int             `json:"max_output_tokens"`
-		Tools           []map[string]any `json:"tools"`
-		ResponseFormat  any              `json:"response_format"`
-		Stream          bool             `json:"stream"`
-		Reasoning       json.RawMessage  `json:"reasoning"`
-		Instructions    string           `json:"instructions"`
+		Model           string              `json:"model"`
+		Temperature     *float64            `json:"temperature"`
+		TopP            *float64            `json:"top_p"`
+		MaxTokens       *int                `json:"max_tokens"`
+		MaxOutputTokens *int                `json:"max_output_tokens"`
+		Tools           []map[string]any    `json:"tools"`
+		ResponseFormat  any                 `json:"response_format"`
+		StreamOptions   *core.StreamOptions `json:"stream_options"`
+		Reasoning       json.RawMessage     `json:"reasoning"`
+		Instructions    string              `json:"instructions"`
 	}
 	_ = json.Unmarshal(body, &req)
 
@@ -452,7 +456,10 @@ func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPla
 	}
 	h.Write([]byte{0})
 
-	h.Write([]byte(strconv.FormatBool(req.Stream)))
+	if streamOptions := normalizeStreamOptionsForCache(req.StreamOptions); streamOptions != nil {
+		soJSON, _ := json.Marshal(streamOptions)
+		h.Write(soJSON)
+	}
 	h.Write([]byte{0})
 
 	h.Write([]byte(guardrailsHash))
@@ -567,9 +574,8 @@ func ShouldSkipExactCache(req *http.Request) bool {
 	return strings.EqualFold(req.Header.Get("X-Cache-Type"), CacheTypeSemantic)
 }
 
-// ShouldSkipAllCache reports whether caching must be bypassed for this request
-// (X-Cache-Control: no-store or Cache-Control containing no-store), matching
-// shouldSkipSemanticCache / shouldSkipCache semantics for the no-store directive.
+// ShouldSkipAllCache reports whether caching must be bypassed for this request,
+// matching the exact-cache middleware semantics for no-cache and no-store.
 func ShouldSkipAllCache(req *http.Request) bool {
 	if strings.EqualFold(req.Header.Get("X-Cache-Control"), "no-store") {
 		return true
@@ -581,7 +587,7 @@ func ShouldSkipAllCache(req *http.Request) bool {
 	directives := strings.Split(strings.ToLower(cc), ",")
 	for _, d := range directives {
 		d = strings.TrimSpace(d)
-		if d == "no-store" {
+		if d == "no-cache" || d == "no-store" {
 			return true
 		}
 	}

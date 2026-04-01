@@ -3435,6 +3435,59 @@ func TestBatches_InputFileRewritesAliasesAndPersistsBatchPreparation(t *testing.
 	require.Equal(t, "file_rewritten", stored.RewrittenInputFileID)
 }
 
+func TestBatches_InputFileRejectsUnsupportedExplicitProviderSelector(t *testing.T) {
+	store := newAliasesTestStore(aliases.Alias{Name: "smart", TargetModel: "claude-3-7-sonnet", TargetProvider: "anthropic", Enabled: true})
+	catalog := &aliasesTestCatalog{
+		supported: map[string]bool{
+			"anthropic/claude-3-7-sonnet": true,
+		},
+		providerTypes: map[string]string{
+			"anthropic/claude-3-7-sonnet": "anthropic",
+		},
+		models: map[string]core.Model{
+			"anthropic/claude-3-7-sonnet": {ID: "claude-3-7-sonnet", Object: "model"},
+		},
+	}
+	service, err := aliases.NewService(store, catalog)
+	require.NoError(t, err)
+	require.NoError(t, service.Refresh(context.Background()))
+
+	mock := &mockProvider{
+		supportedModels: []string{"claude-3-7-sonnet"},
+		providerTypes: map[string]string{
+			"anthropic/claude-3-7-sonnet": "anthropic",
+		},
+		fileContentResponse: &core.FileContentResponse{
+			ID:       "file_source",
+			Filename: "batch.jsonl",
+			Data:     []byte("{\"custom_id\":\"chat-1\",\"method\":\"POST\",\"url\":\"/v1/chat/completions\",\"body\":{\"model\":\"smart\",\"provider\":\"openai\",\"messages\":[{\"role\":\"user\",\"content\":\"Hi\"}]}}\n"),
+		},
+	}
+	aliasBatchPreparer := aliases.NewBatchPreparer(mock, service)
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, nil, nil)
+	handler.modelResolver = service
+	handler.batchRequestPreparer = aliasBatchPreparer
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/batches", strings.NewReader(`{
+	  "input_file_id":"file_source",
+	  "endpoint":"/v1/chat/completions",
+	  "completion_window":"24h",
+	  "metadata":{"provider":"openai"}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err = handler.Batches(c)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "unsupported model: openai/smart")
+	require.Nil(t, mock.capturedBatchReq)
+	require.Empty(t, mock.capturedFileCreateReqs)
+}
+
 func TestBatches_RollsBackPreparedInputAndUpstreamBatchWhenStoreCreateFails(t *testing.T) {
 	inner := &mockProvider{
 		batchCreateResponse: &core.BatchResponse{

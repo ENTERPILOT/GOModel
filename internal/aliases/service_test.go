@@ -235,6 +235,35 @@ func TestServiceResolveAliasWithExplicitProviderAndSlashModel(t *testing.T) {
 	}
 }
 
+func TestServiceResolveAliasWithExplicitProviderPreservesRequestedSelector(t *testing.T) {
+	catalog := newTestCatalog()
+	catalog.add("anthropic/claude-3-7-sonnet", "anthropic", core.Model{ID: "claude-3-7-sonnet", Object: "model"})
+
+	service, err := NewService(newMemoryStore(Alias{
+		Name:           "smart",
+		TargetModel:    "claude-3-7-sonnet",
+		TargetProvider: "anthropic",
+		Enabled:        true,
+	}), catalog)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	selector, changed, err := service.ResolveModel(core.NewRequestedModelSelector("smart", "openai"))
+	if err != nil {
+		t.Fatalf("ResolveModel() error = %v", err)
+	}
+	if changed {
+		t.Fatal("ResolveModel() changed = true, want false")
+	}
+	if got := selector.QualifiedModel(); got != "openai/smart" {
+		t.Fatalf("resolved selector = %q, want openai/smart", got)
+	}
+}
+
 func TestServiceUpsertRejectsQualifiedAliasChainsAndSelfTargets(t *testing.T) {
 	catalog := newTestCatalog()
 	catalog.add("gpt-4o", "openai", core.Model{ID: "gpt-4o", Object: "model"})

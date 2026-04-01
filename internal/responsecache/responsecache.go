@@ -10,6 +10,7 @@ import (
 	"gomodel/config"
 	"gomodel/internal/cache"
 	"gomodel/internal/embedding"
+	"gomodel/internal/usage"
 )
 
 const responseCachePrefix = "gomodel:response:"
@@ -24,8 +25,14 @@ type ResponseCacheMiddleware struct {
 // If neither simple nor semantic cache is configured, returns a no-op middleware.
 // resolvedProviders must be the credential/env-resolved map from providers.InitResult
 // (same keys as live routing). Semantic embedder.provider names a key in this map.
-func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, resolvedProviders map[string]config.RawProviderConfig) (*ResponseCacheMiddleware, error) {
+func NewResponseCacheMiddleware(
+	cfg config.ResponseCacheConfig,
+	resolvedProviders map[string]config.RawProviderConfig,
+	usageLogger usage.LoggerInterface,
+	pricingResolver usage.PricingResolver,
+) (*ResponseCacheMiddleware, error) {
 	m := &ResponseCacheMiddleware{}
+	hitRecorder := newUsageHitRecorder(usageLogger, pricingResolver)
 
 	switch {
 	case cfg.Simple == nil:
@@ -50,7 +57,7 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, resolvedProvider
 		if err != nil {
 			return nil, err
 		}
-		m.simple = newSimpleCacheMiddleware(store, ttl)
+		m.simple = newSimpleCacheMiddleware(store, ttl, hitRecorder)
 		slog.Info("response cache (simple/exact) enabled", "ttl_seconds", cfg.Simple.Redis.TTL, "prefix", prefix)
 	}
 
@@ -71,7 +78,7 @@ func NewResponseCacheMiddleware(cfg config.ResponseCacheConfig, resolvedProvider
 			}
 			return nil, err
 		}
-		m.semantic = newSemanticCacheMiddleware(emb, vs, *sem)
+		m.semantic = newSemanticCacheMiddleware(emb, vs, *sem, hitRecorder)
 		ttlLog := 0
 		if sem.TTL != nil {
 			ttlLog = *sem.TTL
@@ -102,7 +109,8 @@ func (m *ResponseCacheMiddleware) Middleware() echo.MiddlewareFunc {
 // HandleRequest runs the full dual-layer cache check (exact then semantic) for a
 // translated inference request that has already been guardrail-patched.
 // body is the final patched request bytes; next is the real LLM call.
-// Returns true if the request was served from cache.
+// Streaming misses are reconstructed into full JSON before storage; streaming
+// hits replay that stored JSON as synthetic SSE.
 func (m *ResponseCacheMiddleware) HandleRequest(c *echo.Context, body []byte, next func() error) error {
 	if m == nil {
 		return next()
@@ -156,6 +164,6 @@ func (m *ResponseCacheMiddleware) Close() error {
 // NewResponseCacheMiddlewareWithStore creates middleware with a custom store (for testing).
 func NewResponseCacheMiddlewareWithStore(store cache.Store, ttl time.Duration) *ResponseCacheMiddleware {
 	return &ResponseCacheMiddleware{
-		simple: newSimpleCacheMiddleware(store, ttl),
+		simple: newSimpleCacheMiddleware(store, ttl, nil),
 	}
 }

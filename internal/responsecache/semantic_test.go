@@ -32,7 +32,8 @@ func (m *mockEmbedder) Close() error { return nil }
 
 func (m *mockEmbedder) Identity() string { return "test\x00mock-model" }
 
-func intPtr(v int) *int { return &v }
+func intPtr(v int) *int   { return &v }
+func boolPtr(v bool) *bool { return &v }
 
 func newTestSemanticMiddleware(threshold float64, maxConvMessages int, excludeSystem bool) (*semanticCacheMiddleware, *MapVecStore, *mockEmbedder) {
 	store := NewMapVecStore()
@@ -43,7 +44,7 @@ func newTestSemanticMiddleware(threshold float64, maxConvMessages int, excludeSy
 		MaxConversationMessages: intPtr(maxConvMessages),
 		ExcludeSystemPrompt:     excludeSystem,
 	}
-	m := newSemanticCacheMiddleware(emb, store, cfg)
+	m := newSemanticCacheMiddleware(emb, store, cfg, nil)
 	return m, store, emb
 }
 
@@ -165,7 +166,7 @@ func TestSemanticCacheMiddleware_CacheMissOnLowScore(t *testing.T) {
 		SimilarityThreshold:     0.99,
 		TTL:                     intPtr(3600),
 		MaxConversationMessages: intPtr(10),
-	})
+	}, nil)
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -206,6 +207,25 @@ func TestSemanticCacheMiddleware_ParamsHashIsolation_Temperature(t *testing.T) {
 	rec := serveSemanticRequest(t, m, body2, "")
 	if rec.Header().Get("X-Cache") == "HIT (semantic)" {
 		t.Fatal("different temperature should produce different params_hash → cache miss")
+	}
+}
+
+func TestComputeParamsHash_StreamIncludeUsageChangesHash(t *testing.T) {
+	base := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"same prompt"}]}`)
+	withUsage := []byte(`{"model":"gpt-4","stream":true,"stream_options":{"include_usage":true},"messages":[{"role":"user","content":"same prompt"}]}`)
+	plan := &core.ExecutionPlan{
+		Mode:         core.ExecutionModeTranslated,
+		ProviderType: "openai",
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+		},
+	}
+
+	first := computeParamsHash(base, "/v1/chat/completions", plan, "", "")
+	second := computeParamsHash(withUsage, "/v1/chat/completions", plan, "", "")
+
+	if first == second {
+		t.Fatal("stream_options.include_usage should affect semantic params_hash")
 	}
 }
 
@@ -286,15 +306,70 @@ func TestSemanticCacheMiddleware_ExcludeSystemPrompt(t *testing.T) {
 	}
 }
 
-func TestSemanticCacheMiddleware_StreamingSkipped(t *testing.T) {
+func TestSemanticCacheMiddleware_StreamingMissPopulatesSemanticCacheAcrossModes(t *testing.T) {
 	m, store, _ := newTestSemanticMiddleware(0.90, 10, false)
+	streamBody := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"semantic-stream-cache"}]}`)
+	jsonBody := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"semantic-stream-cache"}]}`)
+	e := echo.New()
+	handlerCalls := 0
 
-	body := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
-	serveSemanticRequest(t, m, body, "")
+	run := func(body []byte) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		if err := m.Handle(c, body, func() error {
+			handlerCalls++
+			c.Response().Header().Set("Content-Type", "text/event-stream")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Write([]byte("data: {\"id\":\"chatcmpl-semantic-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Semantic\"},\"finish_reason\":null}]}\n\n"))
+			_, _ = c.Response().Write([]byte("data: {\"id\":\"chatcmpl-semantic-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"provider\":\"openai\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" cache\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":2,\"total_tokens\":9}}\n\n"))
+			_, _ = c.Response().Write([]byte("data: [DONE]\n\n"))
+			return nil
+		}); err != nil {
+			t.Fatalf("Handle error: %v", err)
+		}
+		return rec
+	}
+
+	rec1 := run(streamBody)
+	if got := rec1.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("streaming miss should not be cache hit, got X-Cache=%q", got)
+	}
+
 	m.wg.Wait()
 
-	if store.Len() != 0 {
-		t.Fatal("streaming requests should be skipped by semantic cache")
+	if store.Len() != 1 {
+		t.Fatalf("expected streaming miss to populate semantic cache, got %d entries", store.Len())
+	}
+
+	rec2 := run(jsonBody)
+	if got := rec2.Header().Get("X-Cache"); got != "HIT (semantic)" {
+		t.Fatalf("non-streaming follow-up should hit semantic cache, got X-Cache=%q", got)
+	}
+	if got := rec2.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("non-streaming semantic hit Content-Type = %q, want application/json", got)
+	}
+	if !bytes.Contains(rec2.Body.Bytes(), []byte(`"content":"Semantic cache"`)) {
+		t.Fatalf("semantic cache hit body = %q, want reconstructed JSON response", rec2.Body.String())
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("semantic hit should not call handler again, got %d calls", handlerCalls)
+	}
+
+	rec3 := run(streamBody)
+	if got := rec3.Header().Get("X-Cache"); got != "HIT (semantic)" {
+		t.Fatalf("streaming follow-up should hit semantic cache, got X-Cache=%q", got)
+	}
+	if got := rec3.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("streaming semantic hit Content-Type = %q, want text/event-stream", got)
+	}
+	if !bytes.Contains(rec3.Body.Bytes(), []byte("Semantic cache")) || !bytes.Contains(rec3.Body.Bytes(), []byte("[DONE]")) {
+		t.Fatalf("streaming semantic hit body = %q, want synthesized SSE", rec3.Body.String())
+	}
+	if handlerCalls != 1 {
+		t.Fatalf("streaming semantic hit should not call handler again, got %d calls", handlerCalls)
 	}
 }
 
@@ -335,7 +410,7 @@ func TestSemanticCacheMiddleware_HeaderThresholdOverride(t *testing.T) {
 		SimilarityThreshold:     0.99,
 		TTL:                     intPtr(3600),
 		MaxConversationMessages: intPtr(10),
-	})
+	}, nil)
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hello"}]}`)
 
@@ -370,7 +445,7 @@ func TestSemanticCacheMiddleware_TTLExpiry(t *testing.T) {
 		SimilarityThreshold:     0.90,
 		TTL:                     intPtr(1),
 		MaxConversationMessages: intPtr(10),
-	})
+	}, nil)
 
 	body := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"expiry test"}]}`)
 	serveSemanticRequest(t, m, body, "")
@@ -459,6 +534,14 @@ func TestShouldSkipAllCache_CacheControlNoStore(t *testing.T) {
 	req.Header.Set("Cache-Control", "private, no-store, max-age=0")
 	if !ShouldSkipAllCache(req) {
 		t.Fatal("expected ShouldSkipAllCache for Cache-Control: no-store")
+	}
+}
+
+func TestShouldSkipAllCache_CacheControlNoCache(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	req.Header.Set("Cache-Control", "private, no-cache, max-age=0")
+	if !ShouldSkipAllCache(req) {
+		t.Fatal("expected ShouldSkipAllCache for Cache-Control: no-cache")
 	}
 }
 

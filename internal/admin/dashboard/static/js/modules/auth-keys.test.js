@@ -5,6 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 function loadAuthKeysModuleFactory(overrides = {}) {
+    const clipboardSource = fs.readFileSync(path.join(__dirname, 'clipboard.js'), 'utf8');
     const source = fs.readFileSync(path.join(__dirname, 'auth-keys.js'), 'utf8');
     const window = {
         ...(overrides.window || {})
@@ -17,6 +18,7 @@ function loadAuthKeysModuleFactory(overrides = {}) {
         window
     };
     vm.createContext(context);
+    vm.runInContext(clipboardSource, context);
     vm.runInContext(source, context);
     return context.window.dashboardAuthKeysModule;
 }
@@ -65,6 +67,7 @@ test('submitAuthKeyForm serializes date-only expirations to the end of the selec
     module.authKeyForm = {
         name: 'ci-deploy',
         description: '',
+        user_path: '',
         expires_at: '2026-04-01'
     };
 
@@ -76,6 +79,66 @@ test('submitAuthKeyForm serializes date-only expirations to the end of the selec
         JSON.parse(requests[0].options.body).expires_at,
         '2026-04-01T23:59:59Z'
     );
+});
+
+test('submitAuthKeyForm normalizes user paths before sending them', async () => {
+    const requests = [];
+    const module = createAuthKeysModule({
+        fetch: async (url, options) => {
+            requests.push({ url, options });
+            return {
+                status: 201,
+                async json() {
+                    return { value: 'sk_gom_test' };
+                }
+            };
+        }
+    });
+
+    module.headers = () => ({ 'Content-Type': 'application/json' });
+    module.fetchAuthKeys = async () => {};
+    module.authKeyForm = {
+        name: 'ci-deploy',
+        description: '',
+        user_path: ' team//alpha/service/ ',
+        expires_at: ''
+    };
+
+    await module.submitAuthKeyForm();
+
+    assert.equal(requests.length, 1);
+    assert.equal(
+        JSON.parse(requests[0].options.body).user_path,
+        '/team/alpha/service'
+    );
+});
+
+test('submitAuthKeyForm rejects invalid user paths before sending the request', async () => {
+    let called = false;
+    const module = createAuthKeysModule({
+        fetch: async () => {
+            called = true;
+            return {
+                status: 201,
+                async json() {
+                    return { value: 'sk_gom_test' };
+                }
+            };
+        }
+    });
+
+    module.headers = () => ({ 'Content-Type': 'application/json' });
+    module.authKeyForm = {
+        name: 'ci-deploy',
+        description: '',
+        user_path: '/team/../alpha',
+        expires_at: ''
+    };
+
+    await module.submitAuthKeyForm();
+
+    assert.equal(called, false);
+    assert.equal(module.authKeyError, 'User path cannot contain "." or ".." segments.');
 });
 
 test('copyAuthKeyValue uses navigator.clipboard when available and resets feedback', async () => {
@@ -101,13 +164,13 @@ test('copyAuthKeyValue uses navigator.clipboard when available and resets feedba
     await module.copyAuthKeyValue();
 
     assert.deepEqual(writes, ['sk_gom_test']);
-    assert.equal(module.authKeyCopied, true);
-    assert.equal(module.authKeyCopyError, false);
+    assert.equal(module.authKeyCopyState.copied, true);
+    assert.equal(module.authKeyCopyState.error, false);
 
     timers.runAll();
 
-    assert.equal(module.authKeyCopied, false);
-    assert.equal(module.authKeyCopyError, false);
+    assert.equal(module.authKeyCopyState.copied, false);
+    assert.equal(module.authKeyCopyState.error, false);
 });
 
 test('copyAuthKeyValue sets an error flag when navigator.clipboard rejects', async () => {
@@ -133,13 +196,13 @@ test('copyAuthKeyValue sets an error flag when navigator.clipboard rejects', asy
 
     await module.copyAuthKeyValue();
 
-    assert.equal(module.authKeyCopied, false);
-    assert.equal(module.authKeyCopyError, true);
+    assert.equal(module.authKeyCopyState.copied, false);
+    assert.equal(module.authKeyCopyState.error, true);
 
     timers.runAll();
 
-    assert.equal(module.authKeyCopied, false);
-    assert.equal(module.authKeyCopyError, false);
+    assert.equal(module.authKeyCopyState.copied, false);
+    assert.equal(module.authKeyCopyState.error, false);
 });
 
 test('copyAuthKeyValue falls back to document.execCommand when clipboard API is unavailable', async () => {
@@ -189,8 +252,8 @@ test('copyAuthKeyValue falls back to document.execCommand when clipboard API is 
     assert.equal(appended.length, 1);
     assert.equal(removed.length, 1);
     assert.equal(appended[0].value, 'sk_gom_test');
-    assert.equal(module.authKeyCopied, true);
-    assert.equal(module.authKeyCopyError, false);
+    assert.equal(module.authKeyCopyState.copied, true);
+    assert.equal(module.authKeyCopyState.error, false);
 });
 
 test('fetchAuthKeys preserves existing rows and surfaces non-auth HTTP errors', async () => {
@@ -277,6 +340,7 @@ test('submitAuthKeyForm reopens the editor if issuance finishes after a manual c
     module.authKeyForm = {
         name: 'ci-deploy',
         description: '',
+        user_path: '',
         expires_at: ''
     };
 

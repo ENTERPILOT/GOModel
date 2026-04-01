@@ -2828,6 +2828,24 @@ body.conversation-drawer-open {
 
 /* ─── Auth node ─── */
 
+.ep-node-auth {
+    border-color: color-mix(in srgb, var(--accent) 46%, var(--border));
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
+}
+
+.ep-node-auth .ep-node-icon {
+    background: color-mix(in srgb, var(--accent) 16%, var(--bg));
+    color: var(--accent);
+}
+
+.ep-node-auth .ep-node-label {
+    color: var(--accent);
+}
+
+.ep-node-auth .ep-node-sub {
+    color: color-mix(in srgb, var(--accent) 70%, var(--text-muted));
+}
+
 .ep-node-auth-success {
     border-color: color-mix(in srgb, var(--success) 52%, var(--border));
     background: color-mix(in srgb, var(--success) 9%, var(--bg-surface));
@@ -3119,14 +3137,14 @@ body.conversation-drawer-open {
     color: var(--danger);
 }
 
-.auth-key-copy-btn {
+.copy-feedback-btn {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
-.auth-key-copy-btn-copied {
+.copy-feedback-btn-copied {
     background: color-mix(in srgb, var(--success) 12%, var(--bg));
     border-color: color-mix(in srgb, var(--success) 40%, var(--border));
     color: var(--success);

@@ -21,15 +21,18 @@ import (
 
 // mockUsageReader implements usage.UsageReader for testing.
 type mockUsageReader struct {
-	summary       *usage.UsageSummary
-	daily         []usage.DailyUsage
-	modelUsage    []usage.ModelUsage
-	usageLog      *usage.UsageLogResult
-	lastUsageLog  usage.UsageLogParams
-	summaryErr    error
-	dailyErr      error
-	modelUsageErr error
-	usageLogErr   error
+	summary           *usage.UsageSummary
+	daily             []usage.DailyUsage
+	modelUsage        []usage.ModelUsage
+	usageLog          *usage.UsageLogResult
+	cacheOverview     *usage.CacheOverview
+	lastUsageLog      usage.UsageLogParams
+	lastCacheOverview usage.UsageQueryParams
+	summaryErr        error
+	dailyErr          error
+	modelUsageErr     error
+	usageLogErr       error
+	cacheErr          error
 }
 
 type mockAuditReader struct {
@@ -71,6 +74,14 @@ func (m *mockUsageReader) GetUsageLog(_ context.Context, params usage.UsageLogPa
 		return nil, m.usageLogErr
 	}
 	return m.usageLog, nil
+}
+
+func (m *mockUsageReader) GetCacheOverview(_ context.Context, params usage.UsageQueryParams) (*usage.CacheOverview, error) {
+	m.lastCacheOverview = params
+	if m.cacheErr != nil {
+		return nil, m.cacheErr
+	}
+	return m.cacheOverview, nil
 }
 
 func (m *mockAuditReader) GetLogs(_ context.Context, params auditlog.LogQueryParams) (*auditlog.LogListResult, error) {
@@ -1155,6 +1166,7 @@ func TestDashboardConfig_ReturnsAllowlistedRuntimeFlags(t *testing.T) {
 		LoggingEnabled:       "on",
 		UsageEnabled:         "off",
 		GuardrailsEnabled:    "on",
+		CacheEnabled:         "on",
 		RedisURL:             "on",
 		SemanticCacheEnabled: "off",
 	}))
@@ -1183,6 +1195,9 @@ func TestDashboardConfig_ReturnsAllowlistedRuntimeFlags(t *testing.T) {
 	if got := body.GuardrailsEnabled; got != "on" {
 		t.Fatalf("GUARDRAILS_ENABLED = %q, want on", got)
 	}
+	if got := body.CacheEnabled; got != "on" {
+		t.Fatalf("CACHE_ENABLED = %q, want on", got)
+	}
 	if got := body.RedisURL; got != "on" {
 		t.Fatalf("REDIS_URL = %q, want on", got)
 	}
@@ -1191,6 +1206,107 @@ func TestDashboardConfig_ReturnsAllowlistedRuntimeFlags(t *testing.T) {
 	}
 	if rec.Body.String() == "" || strings.Contains(rec.Body.String(), "UNRELATED_FLAG") {
 		t.Fatal("UNRELATED_FLAG should not be exposed")
+	}
+}
+
+func TestCacheOverview_FeatureUnavailableWhenCacheDisabled(t *testing.T) {
+	h := NewHandler(&mockUsageReader{}, nil, WithDashboardRuntimeConfig(DashboardConfigResponse{
+		CacheEnabled: "off",
+	}))
+	c, rec := newHandlerContext("/admin/api/v1/cache/overview")
+
+	if err := h.CacheOverview(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+}
+
+func TestCacheOverview_ReturnsPayloadWhenEnabled(t *testing.T) {
+	reader := &mockUsageReader{
+		cacheOverview: &usage.CacheOverview{
+			Summary: usage.CacheOverviewSummary{
+				TotalHits:    4,
+				ExactHits:    3,
+				SemanticHits: 1,
+				TotalInput:   120,
+				TotalOutput:  60,
+				TotalTokens:  180,
+			},
+			Daily: []usage.CacheOverviewDaily{
+				{Date: "2026-03-31", Hits: 4, ExactHits: 3, SemanticHits: 1, InputTokens: 120, OutputTokens: 60, TotalTokens: 180},
+			},
+		},
+	}
+	h := NewHandler(reader, nil, WithDashboardRuntimeConfig(DashboardConfigResponse{
+		CacheEnabled: "on",
+	}))
+	c, rec := newHandlerContext("/admin/api/v1/cache/overview?days=30&user_path=/team")
+
+	if err := h.CacheOverview(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var body usage.CacheOverview
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if body.Summary.TotalHits != 4 {
+		t.Fatalf("total_hits = %d, want 4", body.Summary.TotalHits)
+	}
+	if len(body.Daily) != 1 || body.Daily[0].ExactHits != 3 {
+		t.Fatalf("unexpected daily payload: %+v", body.Daily)
+	}
+	if reader.lastCacheOverview.CacheMode != usage.CacheModeCached {
+		t.Fatalf("CacheMode = %q, want %q", reader.lastCacheOverview.CacheMode, usage.CacheModeCached)
+	}
+	if reader.lastCacheOverview.UserPath != "/team" {
+		t.Fatalf("UserPath = %q, want %q", reader.lastCacheOverview.UserPath, "/team")
+	}
+}
+
+func TestCacheOverview_ReturnsErrorWhenReaderFails(t *testing.T) {
+	reader := &mockUsageReader{cacheErr: errors.New("boom")}
+	h := NewHandler(reader, nil, WithDashboardRuntimeConfig(DashboardConfigResponse{
+		CacheEnabled: "on",
+	}))
+	c, rec := newHandlerContext("/admin/api/v1/cache/overview?days=30")
+
+	if err := h.CacheOverview(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	errorBody, ok := body["error"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected error payload, got %v", body)
+	}
+	if got, ok := errorBody["type"].(string); !ok || got != "internal_error" {
+		t.Fatalf("error.type = %#v, want %q", errorBody["type"], "internal_error")
+	}
+	if got, ok := errorBody["message"].(string); !ok || got != "an unexpected error occurred" {
+		t.Fatalf("error.message = %#v, want %q", errorBody["message"], "an unexpected error occurred")
+	} else if strings.Contains(got, "boom") {
+		t.Fatalf("error.message leaked reader error: %q", got)
+	}
+	if _, ok := errorBody["param"]; !ok {
+		t.Fatalf("error.param missing from payload: %v", errorBody)
+	}
+	if _, ok := errorBody["code"]; !ok {
+		t.Fatalf("error.code missing from payload: %v", errorBody)
+	}
+	if reader.lastCacheOverview.CacheMode != usage.CacheModeCached {
+		t.Fatalf("CacheMode = %q, want %q", reader.lastCacheOverview.CacheMode, usage.CacheModeCached)
 	}
 }
 

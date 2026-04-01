@@ -1,6 +1,6 @@
 # Release E2E Curl Matrix
 
-This file contains 62 end-to-end curl scenarios for release validation.
+This file contains 79 end-to-end curl scenarios for release validation.
 These scenarios are prepared for execution across these local gateways:
 
 - `http://localhost:18080` - SQLite-backed main test gateway
@@ -26,9 +26,55 @@ export BATCH_FILE=/tmp/qa-openai-batch.jsonl
 export UPLOAD_FILE=/tmp/qa-upload.txt
 ```
 
+## Auth-enabled runtime environment
+
+These scenarios target the auth-enabled live gateway on `http://localhost:8080`
+and cover the newer workflows, managed API keys, and cache analytics features.
+
+```bash
+set -euo pipefail
+if [ ! -r .env ]; then
+  echo "error: .env is missing or unreadable" >&2
+  exit 1
+fi
+
+set -a
+source .env
+set +a
+
+export AUTH_BASE_URL=http://localhost:8080
+export ADMIN_AUTH_HEADER="Authorization: Bearer $GOMODEL_MASTER_KEY"
+
+export QA_SUFFIX="${QA_SUFFIX:-$(date +%s)}"
+export QA_AUTH_KEY_NAME="qa-release-auth-key-$QA_SUFFIX"
+export QA_WORKFLOW_NAME="qa-release-workflow-$QA_SUFFIX"
+export QA_USER_PATH="/team/release/e2e/$QA_SUFFIX"
+export QA_CACHE_USER_PATH="/team/cache/e2e/$QA_SUFFIX"
+
+export QA_AUTH_KEY_JSON="/tmp/qa-release-auth-key-$QA_SUFFIX.json"
+export QA_AUTH_KEY_VALUE_FILE="/tmp/qa-release-auth-key-$QA_SUFFIX.token"
+export QA_WORKFLOW_JSON="/tmp/qa-release-workflow-$QA_SUFFIX.json"
+export QA_WORKFLOW_ID_FILE="/tmp/qa-release-workflow-$QA_SUFFIX.id"
+
+export QA_AUTH_REQ1="qa-auth-cacheoff-$QA_SUFFIX-1"
+export QA_AUTH_REQ2="qa-auth-cacheoff-$QA_SUFFIX-2"
+export QA_CACHE_REQ1="qa-cache-exact-$QA_SUFFIX-1"
+export QA_CACHE_REQ2="qa-cache-exact-$QA_SUFFIX-2"
+export QA_DEACTIVATED_REQ="qa-auth-deactivated-$QA_SUFFIX"
+export QA_CACHE_REPLY="QA_CACHE_EXACT_OK_$QA_SUFFIX"
+
+cleanup_release_auth_artifacts() {
+  rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE" "$QA_WORKFLOW_JSON" "$QA_WORKFLOW_ID_FILE"
+}
+
+cleanup_release_auth_artifacts
+trap 'cleanup_release_auth_artifacts' EXIT
+```
+
 ## 1. Infra, discovery, observability
 
 ### S01 Health endpoint
+
 Checks basic liveness on the main SQLite-backed gateway.
 
 ```bash
@@ -36,6 +82,7 @@ curl -sS "$BASE_URL/health"
 ```
 
 ### S02 Metrics endpoint
+
 Checks that Prometheus metrics are exposed.
 
 ```bash
@@ -43,6 +90,7 @@ curl -sS "$BASE_URL/metrics" | sed -n '1,20p'
 ```
 
 ### S03 Public models list
+
 Checks `/v1/models` and prints a small sample.
 
 ```bash
@@ -51,6 +99,7 @@ curl -sS "$BASE_URL/v1/models" \
 ```
 
 ### S04 Admin model inventory
+
 Checks `/admin/api/v1/models`.
 
 ```bash
@@ -58,6 +107,7 @@ curl -sS "$BASE_URL/admin/api/v1/models" | jq '.[0:5]'
 ```
 
 ### S05 Admin model categories
+
 Checks `/admin/api/v1/models/categories`.
 
 ```bash
@@ -65,6 +115,7 @@ curl -sS "$BASE_URL/admin/api/v1/models/categories" | jq '.'
 ```
 
 ### S06 Usage summary endpoint
+
 Reads aggregate usage summary.
 
 ```bash
@@ -72,6 +123,7 @@ curl -sS "$BASE_URL/admin/api/v1/usage/summary" | jq '.'
 ```
 
 ### S07 Usage daily endpoint
+
 Reads daily usage rollup.
 
 ```bash
@@ -79,6 +131,7 @@ curl -sS "$BASE_URL/admin/api/v1/usage/daily?days=7" | jq '.'
 ```
 
 ### S08 Usage by model endpoint
+
 Reads per-model usage totals.
 
 ```bash
@@ -86,6 +139,7 @@ curl -sS "$BASE_URL/admin/api/v1/usage/models?limit=10" | jq '.'
 ```
 
 ### S09 Filtered usage log
+
 Reads recent usage entries for a specific model.
 
 ```bash
@@ -94,6 +148,7 @@ curl -sS "$BASE_URL/admin/api/v1/usage/log?model=gpt-4.1-nano-2025-04-14&limit=5
 ```
 
 ### S10 Audit log endpoint
+
 Reads recent audit entries.
 
 ```bash
@@ -102,6 +157,7 @@ curl -sS "$BASE_URL/admin/api/v1/audit/log?limit=5" \
 ```
 
 ### S11 Audit conversation endpoint
+
 Reads a conversation thread anchored to the newest audit entry.
 
 ```bash
@@ -111,6 +167,7 @@ curl -sS "$BASE_URL/admin/api/v1/audit/conversation?log_id=$AUDIT_ID&limit=5" \
 ```
 
 ### S12 Alias list endpoint
+
 Reads current aliases.
 
 ```bash
@@ -120,6 +177,7 @@ curl -sS "$BASE_URL/admin/api/v1/aliases" | jq '.'
 ## 2. Alias administration
 
 ### S13 Create OpenAI alias
+
 Creates an alias pointing to the newest cheap OpenAI model.
 
 ```bash
@@ -130,6 +188,7 @@ curl -sS -X PUT "$BASE_URL/admin/api/v1/aliases/qa-gpt-latest" \
 ```
 
 ### S14 Create Anthropic alias
+
 Creates an alias pointing to `claude-sonnet-4-6`.
 
 ```bash
@@ -140,6 +199,7 @@ curl -sS -X PUT "$BASE_URL/admin/api/v1/aliases/qa-sonnet-thinking" \
 ```
 
 ### S15 Verify aliases are exposed in `/v1/models`
+
 Checks that aliases are discoverable through the public model list.
 
 ```bash
@@ -150,6 +210,7 @@ curl -sS "$BASE_URL/v1/models" \
 ## 3. Chat completions
 
 ### S16 OpenAI non-streaming chat
+
 Basic OpenAI-compatible chat completion.
 
 ```bash
@@ -160,6 +221,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S17 OpenAI streaming chat
+
 Checks SSE chat streaming and final usage chunk.
 
 ```bash
@@ -170,6 +232,7 @@ curl -sS --no-buffer "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S18 Older OpenAI model
+
 Regression probe against `gpt-3.5-turbo`.
 
 ```bash
@@ -180,6 +243,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S19 Anthropic Sonnet 4.6 with reasoning
+
 Checks extended-thinking compatible request flow through the chat endpoint.
 
 ```bash
@@ -190,6 +254,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S20 Gemini chat
+
 Checks translated chat on Gemini.
 
 ```bash
@@ -200,6 +265,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S21 Groq chat
+
 Checks translated chat on Groq.
 
 ```bash
@@ -210,6 +276,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S22 xAI chat
+
 Checks translated chat on xAI and reasoning-token accounting.
 
 ```bash
@@ -220,6 +287,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S23 Multimodal chat with image URL
+
 Checks multimodal chat completion with image input.
 
 ```bash
@@ -230,6 +298,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S24 Chat through OpenAI alias
+
 Checks alias resolution for OpenAI models.
 
 ```bash
@@ -240,6 +309,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S25 Chat through Anthropic alias
+
 Checks alias resolution for Anthropic models plus reasoning.
 
 ```bash
@@ -250,6 +320,7 @@ curl -sS "$BASE_URL/v1/chat/completions" \
 ```
 
 ### S26 Latest GPT reasoning on chat (negative)
+
 Reproduces the current gap for `reasoning` on `gpt-5-nano` via chat completions.
 
 ```bash
@@ -261,6 +332,7 @@ curl -sS -i "$BASE_URL/v1/chat/completions" \
 ## 4. Responses API
 
 ### S27 Non-streaming responses request
+
 Checks basic `/v1/responses`.
 
 ```bash
@@ -271,6 +343,7 @@ curl -sS "$BASE_URL/v1/responses" \
 ```
 
 ### S28 Streaming responses request
+
 Checks SSE responses streaming.
 
 ```bash
@@ -281,6 +354,7 @@ curl -sS --no-buffer "$BASE_URL/v1/responses" \
 ```
 
 ### S29 Latest GPT reasoning via responses
+
 Checks the preferred latest-GPT reasoning path.
 
 ```bash
@@ -291,6 +365,7 @@ curl -sS "$BASE_URL/v1/responses" \
 ```
 
 ### S30 Multimodal responses request
+
 Checks multimodal input through the Responses API.
 
 ```bash
@@ -301,6 +376,7 @@ curl -sS "$BASE_URL/v1/responses" \
 ```
 
 ### S31 Responses through OpenAI alias
+
 Checks alias resolution on `/v1/responses`.
 
 ```bash
@@ -313,6 +389,7 @@ curl -sS "$BASE_URL/v1/responses" \
 ## 5. Embeddings
 
 ### S32 OpenAI embeddings, single input
+
 Checks single-item embedding generation.
 
 ```bash
@@ -323,6 +400,7 @@ curl -sS "$BASE_URL/v1/embeddings" \
 ```
 
 ### S33 OpenAI embeddings, batch input
+
 Checks multi-item embedding generation.
 
 ```bash
@@ -333,6 +411,7 @@ curl -sS "$BASE_URL/v1/embeddings" \
 ```
 
 ### S34 Gemini embeddings
+
 Checks embeddings on Gemini.
 
 ```bash
@@ -345,6 +424,7 @@ curl -sS "$BASE_URL/v1/embeddings" \
 ## 6. Files
 
 ### S35 Upload batch input file to OpenAI
+
 Uploads the shared batch fixture.
 
 ```bash
@@ -355,6 +435,7 @@ curl -sS "$BASE_URL/v1/files?provider=openai" \
 ```
 
 ### S36 List OpenAI batch files
+
 Lists uploaded batch files.
 
 ```bash
@@ -363,6 +444,7 @@ curl -sS "$BASE_URL/v1/files?provider=openai&purpose=batch&limit=5" \
 ```
 
 ### S37 Get uploaded batch file metadata
+
 Fetches metadata for the newest batch file.
 
 ```bash
@@ -371,6 +453,7 @@ curl -sS "$BASE_URL/v1/files/$FILE_ID?provider=openai" | jq '.'
 ```
 
 ### S38 Get uploaded batch file content
+
 Fetches raw content for the newest batch file.
 
 ```bash
@@ -379,6 +462,7 @@ curl -sS "$BASE_URL/v1/files/$FILE_ID/content?provider=openai"
 ```
 
 ### S39 Upload assistants file to OpenAI
+
 Uploads a small text file for create/delete lifecycle testing.
 
 ```bash
@@ -389,6 +473,7 @@ curl -sS "$BASE_URL/v1/files?provider=openai" \
 ```
 
 ### S40 Delete assistants file
+
 Deletes the newest assistants-purpose file.
 
 ```bash
@@ -399,6 +484,7 @@ curl -sS -X DELETE "$BASE_URL/v1/files/$FILE_ID?provider=openai" | jq '.'
 ## 7. Native batches
 
 ### S41 File batch create without `metadata.provider` (negative)
+
 Reproduces the current compatibility gap for file-based native batches.
 
 ```bash
@@ -410,6 +496,7 @@ curl -sS "$BASE_URL/v1/batches" \
 ```
 
 ### S42 File batch create with `metadata.provider`
+
 Creates an OpenAI native batch successfully.
 
 ```bash
@@ -421,6 +508,7 @@ curl -sS "$BASE_URL/v1/batches" \
 ```
 
 ### S43 List batches
+
 Lists stored batches.
 
 ```bash
@@ -429,6 +517,7 @@ curl -sS "$BASE_URL/v1/batches?limit=5" \
 ```
 
 ### S44 Get stored OpenAI batch
+
 Reads the newest OpenAI batch.
 
 ```bash
@@ -437,6 +526,7 @@ curl -sS "$BASE_URL/v1/batches/$BATCH_ID" | jq '.'
 ```
 
 ### S45 Get OpenAI batch results before ready (negative)
+
 Checks current pending-results behavior.
 
 ```bash
@@ -445,6 +535,7 @@ curl -sS -i "$BASE_URL/v1/batches/$BATCH_ID/results"
 ```
 
 ### S46 Cancel OpenAI batch
+
 Cancels the newest OpenAI batch.
 
 ```bash
@@ -453,6 +544,7 @@ curl -sS -X POST "$BASE_URL/v1/batches/$BATCH_ID/cancel" | jq '.'
 ```
 
 ### S47 Create inline Anthropic batch
+
 Checks provider-native inline batch support.
 
 ```bash
@@ -463,6 +555,7 @@ curl -sS "$BASE_URL/v1/batches" \
 ```
 
 ### S48 Mixed-provider alias batch rejection (negative)
+
 Checks that a batch provider mismatch is rejected before upstream submission.
 
 ```bash
@@ -478,6 +571,7 @@ curl -sS -i "$BASE_URL/v1/batches" \
 ## 8. Provider passthrough
 
 ### S49 OpenAI passthrough with `/v1`
+
 Checks raw passthrough to OpenAI.
 
 ```bash
@@ -488,6 +582,7 @@ curl -sS -i "$BASE_URL/p/openai/v1/chat/completions" \
 ```
 
 ### S50 OpenAI passthrough without `/v1`
+
 Checks endpoint normalization for passthrough.
 
 ```bash
@@ -499,6 +594,7 @@ curl -sS "$BASE_URL/p/openai/chat/completions" \
 ```
 
 ### S51 Anthropic passthrough
+
 Checks raw passthrough to Anthropic messages API.
 
 ```bash
@@ -509,6 +605,7 @@ curl -sS -i "$BASE_URL/p/anthropic/v1/messages" \
 ```
 
 ### S52 Passthrough normalized error
+
 Checks that passthrough upstream errors are normalized to gateway error shape.
 
 ```bash
@@ -518,6 +615,7 @@ curl -sS -i "$BASE_URL/p/openai/v1/chat/completions" \
 ```
 
 ### S53 Passthrough streaming SSE
+
 Checks raw streaming passthrough behavior.
 
 ```bash
@@ -531,6 +629,7 @@ curl -sS --no-buffer "$BASE_URL/p/openai/v1/chat/completions" \
 ## 9. Storage backends and guardrails
 
 ### S54 PostgreSQL smoke
+
 Checks health, one model request, then admin usage/audit after the flush interval.
 
 ```bash
@@ -546,6 +645,7 @@ curl -sS "$PG_BASE_URL/admin/api/v1/audit/log?limit=3" \
 ```
 
 ### S55 MongoDB smoke
+
 Checks health, one model request, then admin audit/usage on MongoDB storage.
 
 ```bash
@@ -562,6 +662,7 @@ curl -sS "$MONGO_BASE_URL/admin/api/v1/audit/log?limit=3" \
 ```
 
 ### S56 Guardrail chat override
+
 Checks that a system-prompt guardrail overrides normal chat output.
 
 ```bash
@@ -572,6 +673,7 @@ curl -sS "$GR_BASE_URL/v1/chat/completions" \
 ```
 
 ### S57 Guardrail responses override
+
 Checks the same guardrail path on `/v1/responses`.
 
 ```bash
@@ -582,6 +684,7 @@ curl -sS "$GR_BASE_URL/v1/responses" \
 ```
 
 ### S58 Guardrail audit and usage smoke
+
 Reads admin evidence after the guardrail requests flush.
 
 ```bash
@@ -594,6 +697,7 @@ curl -sS "$GR_BASE_URL/admin/api/v1/usage/summary" | jq '.'
 ## 10. Alias cleanup
 
 ### S59 Delete OpenAI alias
+
 Removes `qa-gpt-latest`.
 
 ```bash
@@ -601,6 +705,7 @@ curl -sS -X DELETE -i "$BASE_URL/admin/api/v1/aliases/qa-gpt-latest"
 ```
 
 ### S60 Delete Anthropic alias
+
 Removes `qa-sonnet-thinking`.
 
 ```bash
@@ -610,6 +715,7 @@ curl -sS -X DELETE -i "$BASE_URL/admin/api/v1/aliases/qa-sonnet-thinking"
 ## 11. Audit failure coverage
 
 ### S61 Unsupported translated model is still written to audit log
+
 Checks that a rejected translated request is still visible in audit logs with the requested model and error type.
 
 ```bash
@@ -624,6 +730,7 @@ curl -sS "$BASE_URL/admin/api/v1/audit/log?request_id=$REQUEST_ID&limit=5" \
 ```
 
 ### S62 Unsupported passthrough provider is still written to audit log
+
 Checks that a rejected passthrough request is still visible in audit logs with the provider parsed from the path.
 
 ```bash
@@ -635,4 +742,230 @@ curl -sS -i "$BASE_URL/p/not-a-real-provider/responses" \
 sleep 6
 curl -sS "$BASE_URL/admin/api/v1/audit/log?request_id=$REQUEST_ID&limit=5" \
   | jq '{total,entries:(.entries|map({request_id,path,model,provider,status_code,error_type}))}'
+```
+
+## 12. Authenticated runtime features
+
+### S63 Auth-enabled dashboard runtime config
+
+Reads the allowlisted runtime flags for the live auth-enabled gateway.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/dashboard/config" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '.'
+```
+
+### S64 Create managed API key
+
+Creates one managed API key scoped to a release-specific user path and stores the one-time secret under `/tmp`.
+
+```bash
+AUTH_KEY_JSON=$(curl -sS -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d "{\"name\":\"$QA_AUTH_KEY_NAME\",\"description\":\"Release e2e managed key\",\"user_path\":\"$QA_USER_PATH\"}")
+AUTH_KEY_VALUE=$(printf '%s\n' "$AUTH_KEY_JSON" \
+  | jq -er '.value | select(type == "string" and length > 0)') \
+  || {
+    echo "error: managed API key creation failed or did not return a usable one-time key value" >&2
+    printf '%s\n' "$AUTH_KEY_JSON" | jq '.' >&2 2>/dev/null || printf '%s\n' "$AUTH_KEY_JSON" >&2
+    exit 1
+  }
+(
+  umask 077
+  printf '%s\n' "$AUTH_KEY_JSON" > "$QA_AUTH_KEY_JSON"
+  printf '%s\n' "$AUTH_KEY_VALUE" > "$QA_AUTH_KEY_VALUE_FILE"
+)
+chmod 600 "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE"
+printf '%s\n' "$AUTH_KEY_JSON" \
+  | jq '{id,name,user_path,active,redacted_value}'
+```
+
+### S65 Verify managed API key list
+
+Checks that the newly issued managed API key is visible and active.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq ".[] | select(.name==\"$QA_AUTH_KEY_NAME\") | {id,name,user_path,active,expires_at,redacted_value}"
+```
+
+### S66 Create user-path-scoped workflow with cache disabled
+
+Creates a scoped workflow for `openai/gpt-4.1-nano` that disables cache for the managed-key user path.
+
+```bash
+WORKFLOW_JSON=$(curl -sS -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d "{\"scope_provider\":\"openai\",\"scope_model\":\"gpt-4.1-nano\",\"scope_user_path\":\"$QA_USER_PATH\",\"name\":\"$QA_WORKFLOW_NAME\",\"description\":\"Disable cache for managed-key release e2e scope\",\"plan_payload\":{\"schema_version\":1,\"features\":{\"cache\":false,\"audit\":true,\"usage\":true,\"guardrails\":false,\"fallback\":false},\"guardrails\":[]}}")
+printf '%s\n' "$WORKFLOW_JSON" > "$QA_WORKFLOW_JSON"
+printf '%s\n' "$WORKFLOW_JSON" | jq -r '.id' > "$QA_WORKFLOW_ID_FILE"
+printf '%s\n' "$WORKFLOW_JSON" \
+  | jq '{id,name,scope,plan_payload}'
+```
+
+### S67 Verify scoped workflow detail
+
+Reads the created workflow back and confirms the normalized scope and effective feature projection.
+
+```bash
+WORKFLOW_ID=$(cat "$QA_WORKFLOW_ID_FILE")
+curl -sS "$AUTH_BASE_URL/admin/api/v1/execution-plans/$WORKFLOW_ID" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '{id,name,scope,plan_payload,effective_features}'
+```
+
+### S68 Managed-key request through scoped workflow
+
+Sends a request with the managed API key while also sending a conflicting `X-GoModel-User-Path` header.
+
+```bash
+API_KEY=$(cat "$QA_AUTH_KEY_VALUE_FILE")
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_AUTH_REQ1" \
+  -H 'X-GoModel-User-Path: /team/should-be-overridden' \
+  -d '{"model":"openai/gpt-4.1-nano","messages":[{"role":"user","content":"Reply with exactly QA_AUTH_CACHE_OFF_OK"}],"max_tokens":16}' \
+  | sed -n '1,20p'
+```
+
+### S69 Repeated managed-key request should still bypass cache
+
+Repeats the same request and expects another live provider response rather than `X-Cache: HIT`.
+
+```bash
+API_KEY=$(cat "$QA_AUTH_KEY_VALUE_FILE")
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_AUTH_REQ2" \
+  -H 'X-GoModel-User-Path: /team/should-be-overridden' \
+  -d '{"model":"openai/gpt-4.1-nano","messages":[{"role":"user","content":"Reply with exactly QA_AUTH_CACHE_OFF_OK"}],"max_tokens":16}' \
+  | sed -n '1,20p'
+```
+
+### S70 Audit evidence for managed-key scoped workflow
+
+Confirms that auth method, managed auth key ID, normalized user path, workflow ID, and no cache hit are all recorded together.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/audit/log?request_id=$QA_AUTH_REQ2&limit=5" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '{total,entries:(.entries|map({request_id,status_code,auth_method,auth_key_id,user_path,execution_plan_version_id,cache_type,answer:.data.response_body.choices[0].message.content}))}'
+```
+
+### S71 Global cache warm request with explicit user path
+
+Warms the global cache-enabled workflow using the master key and a cache-specific user path.
+
+```bash
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_CACHE_REQ1" \
+  -H "X-GoModel-User-Path: $QA_CACHE_USER_PATH" \
+  -d "{\"model\":\"openai/gpt-4.1-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly $QA_CACHE_REPLY\"}],\"max_tokens\":16}" \
+  | sed -n '1,20p'
+```
+
+### S72 Repeated global cache request should hit exact cache
+
+Repeats the same request and expects `X-Cache: HIT (exact)`.
+
+```bash
+curl -sS -D - "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_CACHE_REQ2" \
+  -H "X-GoModel-User-Path: $QA_CACHE_USER_PATH" \
+  -d "{\"model\":\"openai/gpt-4.1-nano\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly $QA_CACHE_REPLY\"}],\"max_tokens\":16}" \
+  | sed -n '1,20p'
+```
+
+### S73 Cache overview filtered by user path
+
+Checks cache analytics after the exact-cache hit using the same tracked user path.
+
+```bash
+sleep 6
+curl -sS "$AUTH_BASE_URL/admin/api/v1/cache/overview?days=1&user_path=$QA_CACHE_USER_PATH" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '.'
+```
+
+### S74 Cached usage log filtered by user path
+
+Reads cached-only usage entries for the same exact-hit request path.
+
+```bash
+curl -sS "$AUTH_BASE_URL/admin/api/v1/usage/log?days=1&user_path=$QA_CACHE_USER_PATH&cache_mode=cached&limit=5" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq '{total,entries:(.entries|map({request_id,cache_type,model,provider,endpoint,user_path,total_tokens}))}'
+```
+
+### S75 Invalid managed API key user path (negative)
+
+Verifies user-path validation for managed API key creation.
+
+```bash
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"qa-invalid-user-path","user_path":"/team/../alpha"}' \
+  | sed -n '1,20p'
+```
+
+### S76 Invalid workflow scope user path (negative)
+
+Verifies user-path validation for workflow creation.
+
+```bash
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans" \
+  -H "$ADMIN_AUTH_HEADER" \
+  -H 'Content-Type: application/json' \
+  -d '{"scope_provider":"openai","scope_model":"gpt-4.1-nano","scope_user_path":"/team/../alpha","name":"qa-invalid-workflow-path","plan_payload":{"schema_version":1,"features":{"cache":true,"audit":true,"usage":true,"guardrails":false},"guardrails":[]}}' \
+  | sed -n '1,24p'
+```
+
+## 13. Authenticated cleanup
+
+### S77 Deactivate managed API key
+
+Deactivates the managed key created for the auth-enabled release run.
+
+```bash
+AUTH_KEY_ID=$(curl -sS "$AUTH_BASE_URL/admin/api/v1/auth-keys" \
+  -H "$ADMIN_AUTH_HEADER" \
+  | jq -r ".[] | select(.name==\"$QA_AUTH_KEY_NAME\") | .id")
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/auth-keys/$AUTH_KEY_ID/deactivate" \
+  -H "$ADMIN_AUTH_HEADER"
+```
+
+### S78 Deactivated managed API key is rejected
+
+Confirms that the same managed key can no longer authenticate requests.
+
+```bash
+API_KEY=$(cat "$QA_AUTH_KEY_VALUE_FILE")
+curl -sS -i "$AUTH_BASE_URL/v1/chat/completions" \
+  -H "Authorization: Bearer $API_KEY" \
+  -H 'Content-Type: application/json' \
+  -H "X-Request-ID: $QA_DEACTIVATED_REQ" \
+  -d '{"model":"openai/gpt-4.1-nano","messages":[{"role":"user","content":"Reply with exactly QA_AUTH_DEACTIVATED"}],"max_tokens":16}' \
+  | sed -n '1,20p'
+```
+
+### S79 Deactivate scoped workflow
+
+Deactivates the workflow created for the scoped managed-key release run.
+
+```bash
+WORKFLOW_ID=$(cat "$QA_WORKFLOW_ID_FILE")
+curl -sS -i -X POST "$AUTH_BASE_URL/admin/api/v1/execution-plans/$WORKFLOW_ID/deactivate" \
+  -H "$ADMIN_AUTH_HEADER"
+rm -f "$QA_AUTH_KEY_JSON" "$QA_AUTH_KEY_VALUE_FILE" "$QA_WORKFLOW_JSON" "$QA_WORKFLOW_ID_FILE"
 ```

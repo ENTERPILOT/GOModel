@@ -44,6 +44,7 @@ const (
 	DashboardConfigLoggingEnabled       = "LOGGING_ENABLED"
 	DashboardConfigUsageEnabled         = "USAGE_ENABLED"
 	DashboardConfigGuardrailsEnabled    = "GUARDRAILS_ENABLED"
+	DashboardConfigCacheEnabled         = "CACHE_ENABLED"
 	DashboardConfigRedisURL             = "REDIS_URL"
 	DashboardConfigSemanticCacheEnabled = "SEMANTIC_CACHE_ENABLED"
 )
@@ -54,6 +55,7 @@ type DashboardConfigResponse struct {
 	LoggingEnabled       string `json:"LOGGING_ENABLED,omitempty"`
 	UsageEnabled         string `json:"USAGE_ENABLED,omitempty"`
 	GuardrailsEnabled    string `json:"GUARDRAILS_ENABLED,omitempty"`
+	CacheEnabled         string `json:"CACHE_ENABLED,omitempty"`
 	RedisURL             string `json:"REDIS_URL,omitempty"`
 	SemanticCacheEnabled string `json:"SEMANTIC_CACHE_ENABLED,omitempty"`
 }
@@ -124,6 +126,7 @@ func normalizeDashboardRuntimeConfig(values DashboardConfigResponse) DashboardCo
 		LoggingEnabled:       strings.TrimSpace(values.LoggingEnabled),
 		UsageEnabled:         strings.TrimSpace(values.UsageEnabled),
 		GuardrailsEnabled:    strings.TrimSpace(values.GuardrailsEnabled),
+		CacheEnabled:         strings.TrimSpace(values.CacheEnabled),
 		RedisURL:             strings.TrimSpace(values.RedisURL),
 		SemanticCacheEnabled: strings.TrimSpace(values.SemanticCacheEnabled),
 	}
@@ -160,6 +163,7 @@ func parseUsageParams(c *echo.Context) (usage.UsageQueryParams, error) {
 	if !validIntervals[params.Interval] {
 		params.Interval = "daily"
 	}
+	params.CacheMode = c.QueryParam("cache_mode")
 
 	userPath, err := normalizeUserPathQueryParam("user_path", c.QueryParam("user_path"))
 	if err != nil {
@@ -273,6 +277,8 @@ func handleError(c *echo.Context, err error) error {
 // @Param        days        query     int     false  "Number of days (default 30)"
 // @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
 // @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        user_path   query     string  false  "Filter by tracked user path subtree"
+// @Param        cache_mode  query     string  false  "Cache mode filter: uncached, cached, all (default uncached)"
 // @Success      200  {object}  usage.UsageSummary
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
@@ -329,6 +335,8 @@ func usageSliceResponse[T any](
 // @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
 // @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
 // @Param        interval    query     string  false  "Grouping interval: daily, weekly, monthly, yearly (default daily)"
+// @Param        user_path   query     string  false  "Filter by tracked user path subtree"
+// @Param        cache_mode  query     string  false  "Cache mode filter: uncached, cached, all (default uncached)"
 // @Success      200  {array}   usage.DailyUsage
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
@@ -348,6 +356,8 @@ func (h *Handler) DailyUsage(c *echo.Context) error {
 // @Param        days        query     int     false  "Number of days (default 30)"
 // @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
 // @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        user_path   query     string  false  "Filter by tracked user path subtree"
+// @Param        cache_mode  query     string  false  "Cache mode filter: uncached, cached, all (default uncached)"
 // @Success      200  {array}   usage.ModelUsage
 // @Failure      400  {object}  core.GatewayError
 // @Failure      401  {object}  core.GatewayError
@@ -370,6 +380,7 @@ func (h *Handler) UsageByModel(c *echo.Context) error {
 // @Param        model       query     string  false  "Filter by model name"
 // @Param        provider    query     string  false  "Filter by provider"
 // @Param        user_path   query     string  false  "Filter by tracked user path subtree"
+// @Param        cache_mode  query     string  false  "Cache mode filter: uncached, cached, all (default uncached)"
 // @Param        search      query     string  false  "Search across model, provider, request_id, provider_id"
 // @Param        limit       query     int     false  "Page size (default 50, max 200)"
 // @Param        offset      query     int     false  "Offset for pagination"
@@ -417,6 +428,53 @@ func (h *Handler) UsageLog(c *echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, result)
+}
+
+// CacheOverview handles GET /admin/api/v1/cache/overview
+//
+// @Summary      Get cached-only usage overview
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        interval    query     string  false  "Grouping interval: daily, weekly, monthly, yearly (default daily)"
+// @Param        user_path   query     string  false  "Filter by tracked user path subtree"
+// @Param        cache_mode  query     string  false  "Cache mode filter: uncached, cached, all (cache overview always uses cached mode)"
+// @Success      200  {object}  usage.CacheOverview
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Failure      503  {object}  core.GatewayError
+// @Router       /admin/api/v1/cache/overview [get]
+func (h *Handler) CacheOverview(c *echo.Context) error {
+	if strings.TrimSpace(h.runtimeConfig.CacheEnabled) != "on" {
+		return handleError(c, featureUnavailableError("cache analytics is unavailable"))
+	}
+	if h.usageReader == nil {
+		return c.JSON(http.StatusOK, usage.CacheOverview{
+			Daily: []usage.CacheOverviewDaily{},
+		})
+	}
+
+	params, err := parseUsageParams(c)
+	if err != nil {
+		return handleError(c, err)
+	}
+	params.CacheMode = usage.CacheModeCached
+
+	overview, err := h.usageReader.GetCacheOverview(c.Request().Context(), params)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if overview == nil {
+		overview = &usage.CacheOverview{}
+	}
+	if overview.Daily == nil {
+		overview.Daily = []usage.CacheOverviewDaily{}
+	}
+
+	return c.JSON(http.StatusOK, overview)
 }
 
 // AuditLog handles GET /admin/api/v1/audit/log
@@ -648,6 +706,7 @@ type createExecutionPlanRequest struct {
 type createAuthKeyRequest struct {
 	Name        string     `json:"name"`
 	Description string     `json:"description,omitempty"`
+	UserPath    string     `json:"user_path,omitempty"`
 	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 }
 
@@ -748,9 +807,15 @@ func (h *Handler) CreateAuthKey(c *echo.Context) error {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
 
+	userPath, err := normalizeUserPathQueryParam("user_path", req.UserPath)
+	if err != nil {
+		return handleError(c, err)
+	}
+
 	issued, err := h.authKeys.Create(c.Request().Context(), authkeys.CreateInput{
 		Name:        req.Name,
 		Description: req.Description,
+		UserPath:    userPath,
 		ExpiresAt:   req.ExpiresAt,
 	})
 	if err != nil {

@@ -16,6 +16,10 @@
                 "pages": ["getting-started/quickstart"]
             },
             {
+                "group": "Features",
+                "pages": ["features/cache"]
+            },
+            {
                 "group": "Guides",
                 "pages": [
                     "guides/openclaw",

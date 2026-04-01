@@ -1472,6 +1472,31 @@ func TestIsOSeriesModel(t *testing.T) {
 	}
 }
 
+func TestIsReasoningChatModel(t *testing.T) {
+	tests := []struct {
+		model    string
+		expected bool
+	}{
+		{"o3-mini", true},
+		{"o4-mini", true},
+		{"gpt-5", true},
+		{"gpt-5-mini", true},
+		{"gpt-5-nano", true},
+		{"gpt-5-chat-latest", true},
+		{"gpt-4o", false},
+		{"gpt-4.1", false},
+		{"claude-sonnet-4-6", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			if got := isReasoningChatModel(tt.model); got != tt.expected {
+				t.Errorf("isReasoningChatModel(%q) = %v, want %v", tt.model, got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestChatCompletion_ReasoningModel_AdaptsParameters(t *testing.T) {
 	maxTokens := 1000
 
@@ -1533,6 +1558,67 @@ func TestChatCompletion_ReasoningModel_AdaptsParameters(t *testing.T) {
 	}
 	if resp.Model != "o3-mini" {
 		t.Errorf("Model = %q, want %q", resp.Model, "o3-mini")
+	}
+}
+
+func TestChatCompletion_GPT5Model_AdaptsParameters(t *testing.T) {
+	maxTokens := 1000
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var raw map[string]any
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+
+		if _, ok := raw["max_tokens"]; ok {
+			t.Error("gpt-5 request should not contain max_tokens")
+		}
+
+		mct, ok := raw["max_completion_tokens"]
+		if !ok {
+			t.Fatal("gpt-5 request should contain max_completion_tokens")
+		}
+		if int(mct.(float64)) != maxTokens {
+			t.Errorf("max_completion_tokens = %v, want %d", mct, maxTokens)
+		}
+
+		if _, ok := raw["temperature"]; ok {
+			t.Error("gpt-5 request should not contain temperature")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"id": "chatcmpl-gpt5",
+			"object": "chat.completion",
+			"model": "gpt-5-mini",
+			"choices": [{"index": 0, "message": {"role": "assistant", "content": "Hi"}, "finish_reason": "stop"}],
+			"usage": {"prompt_tokens": 5, "completion_tokens": 10, "total_tokens": 15}
+		}`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	temp := 0.7
+	req := &core.ChatRequest{
+		Model:       "gpt-5-mini",
+		Messages:    []core.Message{{Role: "user", Content: "Hello"}},
+		MaxTokens:   &maxTokens,
+		Temperature: &temp,
+	}
+
+	resp, err := provider.ChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Model != "gpt-5-mini" {
+		t.Errorf("Model = %q, want %q", resp.Model, "gpt-5-mini")
 	}
 }
 
@@ -1743,6 +1829,70 @@ data: [DONE]
 	}
 	if !strings.Contains(string(respBody), "o4-mini") {
 		t.Error("response should contain o4-mini model")
+	}
+}
+
+func TestStreamChatCompletion_GPT5Model_AdaptsParameters(t *testing.T) {
+	maxTokens := 2000
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("failed to read request body: %v", err)
+		}
+
+		var raw map[string]any
+		if err := json.Unmarshal(body, &raw); err != nil {
+			t.Fatalf("failed to unmarshal request: %v", err)
+		}
+
+		if _, ok := raw["max_tokens"]; ok {
+			t.Error("streaming gpt-5 request should not contain max_tokens")
+		}
+		if _, ok := raw["temperature"]; ok {
+			t.Error("streaming gpt-5 request should not contain temperature")
+		}
+		mct, ok := raw["max_completion_tokens"]
+		if !ok {
+			t.Fatal("streaming gpt-5 request should contain max_completion_tokens")
+		}
+		if int(mct.(float64)) != maxTokens {
+			t.Errorf("max_completion_tokens = %v, want %d", mct, maxTokens)
+		}
+
+		if stream, ok := raw["stream"].(bool); !ok || !stream {
+			t.Error("stream should be true")
+		}
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`data: {"id":"chatcmpl-gpt5","object":"chat.completion.chunk","model":"gpt-5-nano","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
+
+data: [DONE]
+`))
+	}))
+	defer server.Close()
+
+	provider := NewWithHTTPClient("test-api-key", nil, llmclient.Hooks{})
+	provider.SetBaseURL(server.URL)
+
+	req := &core.ChatRequest{
+		Model:     "gpt-5-nano",
+		Messages:  []core.Message{{Role: "user", Content: "Hello"}},
+		MaxTokens: &maxTokens,
+	}
+
+	body, err := provider.StreamChatCompletion(context.Background(), req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	respBody, err := io.ReadAll(body)
+	if err != nil {
+		t.Fatalf("failed to read response body: %v", err)
+	}
+	if !strings.Contains(string(respBody), "gpt-5-nano") {
+		t.Error("response should contain gpt-5-nano model")
 	}
 }
 

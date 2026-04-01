@@ -89,18 +89,29 @@ func isOSeriesModel(model string) bool {
 	return len(m) >= 2 && m[0] == 'o' && m[1] >= '0' && m[1] <= '9'
 }
 
-// adaptForOSeries rewrites a ChatRequest body for OpenAI o-series models,
-// mapping max_tokens -> max_completion_tokens and dropping temperature while
-// preserving all unknown top-level JSON fields.
-func adaptForOSeries(req *core.ChatRequest) (any, error) {
+func isGPT5Model(model string) bool {
+	m := strings.ToLower(strings.TrimSpace(model))
+	return m == "gpt-5" || strings.HasPrefix(m, "gpt-5-")
+}
+
+// isReasoningChatModel reports whether the model follows OpenAI's reasoning
+// chat parameter rules for max_completion_tokens and temperature handling.
+func isReasoningChatModel(model string) bool {
+	return isOSeriesModel(model) || isGPT5Model(model)
+}
+
+// adaptForReasoningChat rewrites a ChatRequest body for OpenAI reasoning chat
+// models, mapping max_tokens -> max_completion_tokens and dropping temperature
+// while preserving all unknown top-level JSON fields.
+func adaptForReasoningChat(req *core.ChatRequest) (any, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return nil, core.NewInvalidRequestError("failed to marshal o-series request: "+err.Error(), err)
+		return nil, core.NewInvalidRequestError("failed to marshal reasoning request: "+err.Error(), err)
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		return nil, core.NewInvalidRequestError("failed to decode o-series request payload: "+err.Error(), err)
+		return nil, core.NewInvalidRequestError("failed to decode reasoning request payload: "+err.Error(), err)
 	}
 	if maxTokens, ok := raw["max_tokens"]; ok {
 		raw["max_completion_tokens"] = maxTokens
@@ -113,8 +124,8 @@ func adaptForOSeries(req *core.ChatRequest) (any, error) {
 // chatRequestBody returns the appropriate request body for the model.
 // Reasoning models get parameter adaptation; others pass through as-is.
 func chatRequestBody(req *core.ChatRequest) (any, error) {
-	if isOSeriesModel(req.Model) {
-		return adaptForOSeries(req)
+	if isReasoningChatModel(req.Model) {
+		return adaptForReasoningChat(req)
 	}
 	return req, nil
 }

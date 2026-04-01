@@ -149,9 +149,10 @@ func handleTranslatedInference[R any](
 	return handleWithCache(s, c, req, isStream(req), plan, dispatch)
 }
 
-// handleWithCache injects the guardrails hash into context, then either routes the
-// request through the dual-layer response cache (non-streaming) or calls dispatch
-// directly (streaming). R is the post-patch request type.
+// handleWithCache injects the guardrails hash into context, then routes the
+// request through the dual-layer response cache when caching is enabled.
+// Streaming requests are stored as full responses and replayed as SSE on hits.
+// R is the post-patch request type.
 func handleWithCache[R any](
 	s *translatedInferenceService,
 	c *echo.Context,
@@ -169,7 +170,7 @@ func handleWithCache[R any](
 		c.SetRequest(c.Request().WithContext(ctx))
 	}
 
-	if s.responseCache != nil && !stream && (plan == nil || plan.CacheEnabled()) {
+	if s.responseCache != nil && (plan == nil || plan.CacheEnabled()) {
 		body, marshalErr := marshalRequestBody(req)
 		if marshalErr != nil {
 			slog.Debug("marshalRequestBody failed", "err", marshalErr)

@@ -1,5 +1,12 @@
 (function(global) {
     function dashboardAuthKeysModule() {
+        const clipboardModuleFactory = typeof global.dashboardClipboardModule === 'function'
+            ? global.dashboardClipboardModule
+            : null;
+        const clipboard = clipboardModuleFactory
+            ? clipboardModuleFactory()
+            : null;
+
         return {
             authKeys: [],
             authKeysAvailable: true,
@@ -10,17 +17,73 @@
             authKeyFormSubmitting: false,
             authKeyIssuedValue: '',
             authKeyDeactivatingID: '',
-            authKeyCopied: false,
-            authKeyCopyError: false,
-            authKeyCopyResetTimer: null,
+            authKeyCopyState: clipboard
+                ? clipboard.createClipboardButtonState({
+                    logPrefix: 'Failed to copy auth key:'
+                })
+                : {
+                    copied: false,
+                    error: false,
+                    resetFeedback() {},
+                    copy() {
+                        return Promise.resolve();
+                    }
+                },
             authKeyForm: {
                 name: '',
                 description: '',
+                user_path: '',
                 expires_at: ''
             },
 
             defaultAuthKeyForm() {
-                return { name: '', description: '', expires_at: '' };
+                return { name: '', description: '', user_path: '', expires_at: '' };
+            },
+
+            authKeyUserPathValidationError(value) {
+                const trimmed = String(value || '').trim();
+                if (!trimmed) {
+                    return '';
+                }
+                const raw = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
+                const segments = raw.split('/');
+                for (const part of segments) {
+                    const segment = String(part || '').trim();
+                    if (!segment) {
+                        continue;
+                    }
+                    if (segment === '.' || segment === '..') {
+                        return 'User path cannot contain "." or ".." segments.';
+                    }
+                    if (segment.includes(':')) {
+                        return 'User path cannot contain ":" segments.';
+                    }
+                }
+                return '';
+            },
+
+            normalizeAuthKeyUserPath(value) {
+                if (this.authKeyUserPathValidationError(value)) {
+                    return '';
+                }
+                const trimmed = String(value || '').trim();
+                if (!trimmed) {
+                    return '';
+                }
+                const raw = trimmed.startsWith('/') ? trimmed : '/' + trimmed;
+                const segments = raw.split('/');
+                const canonical = [];
+                for (const part of segments) {
+                    const segment = String(part || '').trim();
+                    if (!segment) {
+                        continue;
+                    }
+                    canonical.push(segment);
+                }
+                if (!canonical.length) {
+                    return '/';
+                }
+                return '/' + canonical.join('/');
             },
 
             async fetchAuthKeys() {
@@ -59,7 +122,7 @@
                 this.authKeyError = '';
                 this.authKeyNotice = '';
                 if (!this.authKeyIssuedValue) {
-                    this.resetAuthKeyCopyFeedback();
+                    this.authKeyCopyState.resetFeedback();
                     this.authKeyForm = this.defaultAuthKeyForm();
                 }
             },
@@ -70,97 +133,19 @@
                 }
                 this.authKeyFormOpen = false;
                 this.authKeyError = '';
-                this.resetAuthKeyCopyFeedback();
+                this.authKeyCopyState.resetFeedback();
                 if (!this.authKeyFormSubmitting && !this.authKeyIssuedValue) {
                     this.authKeyForm = this.defaultAuthKeyForm();
                 }
             },
 
-            clearAuthKeyCopyResetTimer() {
-                if (this.authKeyCopyResetTimer !== null) {
-                    clearTimeout(this.authKeyCopyResetTimer);
-                    this.authKeyCopyResetTimer = null;
-                }
-            },
-
-            scheduleAuthKeyCopyFeedbackReset() {
-                this.clearAuthKeyCopyResetTimer();
-                this.authKeyCopyResetTimer = setTimeout(() => {
-                    this.authKeyCopied = false;
-                    this.authKeyCopyError = false;
-                    this.authKeyCopyResetTimer = null;
-                }, 2000);
-            },
-
-            resetAuthKeyCopyFeedback() {
-                this.clearAuthKeyCopyResetTimer();
-                this.authKeyCopied = false;
-                this.authKeyCopyError = false;
-            },
-
-            setAuthKeyCopyFeedback(copied, hasError) {
-                this.authKeyCopied = copied;
-                this.authKeyCopyError = hasError;
-                this.scheduleAuthKeyCopyFeedbackReset();
-            },
-
             copyAuthKeyValue() {
-                const value = String(this.authKeyIssuedValue || '');
-                const clipboard = global.navigator && global.navigator.clipboard;
-
-                this.resetAuthKeyCopyFeedback();
-
-                if (clipboard && typeof clipboard.writeText === 'function') {
-                    return clipboard.writeText(value).then(() => {
-                        this.setAuthKeyCopyFeedback(true, false);
-                    }).catch((error) => {
-                        console.error('Failed to copy auth key:', error);
-                        this.setAuthKeyCopyFeedback(false, true);
-                    });
-                }
-
-                const doc = global.document;
-                if (!doc || !doc.body || typeof doc.createElement !== 'function' || typeof doc.execCommand !== 'function') {
-                    this.setAuthKeyCopyFeedback(false, true);
-                    return Promise.resolve();
-                }
-
-                const textarea = doc.createElement('textarea');
-                textarea.value = value;
-                textarea.setAttribute('readonly', '');
-                textarea.style.position = 'fixed';
-                textarea.style.top = '0';
-                textarea.style.left = '0';
-                textarea.style.opacity = '0';
-
-                try {
-                    doc.body.appendChild(textarea);
-                    if (typeof textarea.focus === 'function') {
-                        textarea.focus();
-                    }
-                    if (typeof textarea.select === 'function') {
-                        textarea.select();
-                    }
-                    if (typeof textarea.setSelectionRange === 'function') {
-                        textarea.setSelectionRange(0, textarea.value.length);
-                    }
-                    const copied = !!doc.execCommand('copy');
-                    this.setAuthKeyCopyFeedback(copied, !copied);
-                } catch (error) {
-                    console.error('Failed to copy auth key:', error);
-                    this.setAuthKeyCopyFeedback(false, true);
-                } finally {
-                    if (textarea.parentNode) {
-                        textarea.parentNode.removeChild(textarea);
-                    }
-                }
-
-                return Promise.resolve();
+                return this.authKeyCopyState.copy(this.authKeyIssuedValue);
             },
 
             dismissIssuedKey() {
                 this.authKeyIssuedValue = '';
-                this.resetAuthKeyCopyFeedback();
+                this.authKeyCopyState.resetFeedback();
                 this.authKeyForm = this.defaultAuthKeyForm();
             },
 
@@ -182,14 +167,21 @@
                     this.authKeyError = 'Name is required.';
                     return;
                 }
+                const userPathError = this.authKeyUserPathValidationError(this.authKeyForm.user_path);
+                if (userPathError) {
+                    this.authKeyError = userPathError;
+                    return;
+                }
 
                 this.authKeyError = '';
                 this.authKeyNotice = '';
                 this.authKeyFormSubmitting = true;
+                const userPath = this.normalizeAuthKeyUserPath(this.authKeyForm.user_path);
 
                 const payload = {
                     name,
-                    description: String(this.authKeyForm.description || '').trim() || undefined
+                    description: String(this.authKeyForm.description || '').trim() || undefined,
+                    user_path: userPath || undefined
                 };
                 if (this.authKeyForm.expires_at) {
                     payload.expires_at = this.authKeyForm.expires_at + 'T23:59:59Z';
@@ -219,7 +211,7 @@
                     const issued = await res.json();
                     this.authKeyIssuedValue = issued.value || '';
                     this.authKeyFormOpen = true;
-                    this.resetAuthKeyCopyFeedback();
+                    this.authKeyCopyState.resetFeedback();
                     this.authKeyForm = this.defaultAuthKeyForm();
                     await this.fetchAuthKeys();
                 } catch (e) {
