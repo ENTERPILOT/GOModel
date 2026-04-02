@@ -132,9 +132,9 @@ func (m *semanticCacheMiddleware) Handle(c *echo.Context, body []byte, next func
 	if core.GetFallbackUsed(c.Request().Context()) {
 		return nil
 	}
-	data, ok := capture.cachedBody(path, streamResponseDefaultsFromContext(c.Request().Context()), c.Response().Header().Get("Content-Type"))
+	data, ok := capture.cachedBody(c.Response().Header().Get("Content-Type"))
 	if !ok {
-		slog.Warn("semantic cache: failed to reconstruct cacheable response body", "path", path)
+		slog.Warn("semantic cache: failed to capture cacheable response body", "path", path)
 		return nil
 	}
 	ttlSec := 0
@@ -387,16 +387,17 @@ func extractTextFromContent(content any) string {
 // (e.g. "/v1/chat/completions") and isolates entries across distinct endpoints.
 func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPlan, guardrailsHash, embedderIdentity string) string {
 	var req struct {
-		Model           string              `json:"model"`
-		Temperature     *float64            `json:"temperature"`
-		TopP            *float64            `json:"top_p"`
-		MaxTokens       *int                `json:"max_tokens"`
-		MaxOutputTokens *int                `json:"max_output_tokens"`
-		Tools           []map[string]any    `json:"tools"`
-		ResponseFormat  any                 `json:"response_format"`
-		StreamOptions   *core.StreamOptions `json:"stream_options"`
-		Reasoning       json.RawMessage     `json:"reasoning"`
-		Instructions    string              `json:"instructions"`
+		Model             string              `json:"model"`
+		Temperature       *float64            `json:"temperature"`
+		TopP              *float64            `json:"top_p"`
+		MaxTokens         *int                `json:"max_tokens"`
+		MaxOutputTokens   *int                `json:"max_output_tokens"`
+		Tools             []map[string]any    `json:"tools"`
+		ResponseFormat    any                 `json:"response_format"`
+		Stream            bool                `json:"stream,omitempty"`
+		StreamOptions     *core.StreamOptions `json:"stream_options"`
+		Reasoning         json.RawMessage     `json:"reasoning"`
+		Instructions      string              `json:"instructions"`
 	}
 	_ = json.Unmarshal(body, &req)
 
@@ -462,7 +463,12 @@ func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPla
 	}
 	h.Write([]byte{0})
 
-	if streamOptions := normalizeStreamOptionsForCache(req.StreamOptions); streamOptions != nil {
+	if req.Stream {
+		h.Write([]byte("1"))
+	}
+	h.Write([]byte{0})
+
+	if streamOptions := normalizeStreamOptionsForCache(req.StreamOptions); req.Stream && streamOptions != nil {
 		soJSON, _ := json.Marshal(streamOptions)
 		h.Write(soJSON)
 	}

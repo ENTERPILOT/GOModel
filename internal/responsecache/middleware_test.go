@@ -219,7 +219,26 @@ func TestHashRequest_StreamIncludeUsageChangesKey(t *testing.T) {
 	}
 }
 
-func TestSimpleCacheMiddleware_SharesCacheAcrossStreamingAndNonStreaming(t *testing.T) {
+func TestHashRequest_StreamModeChangesKey(t *testing.T) {
+	base := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
+	streaming := []byte(`{"model":"gpt-4","stream":true,"messages":[{"role":"user","content":"hi"}]}`)
+	plan := &core.ExecutionPlan{
+		Mode:         core.ExecutionModeTranslated,
+		ProviderType: "openai",
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "gpt-4"},
+		},
+	}
+
+	first := hashRequest("/v1/chat/completions", base, plan)
+	second := hashRequest("/v1/chat/completions", streaming, plan)
+
+	if first == second {
+		t.Fatal("stream mode should affect the exact cache key")
+	}
+}
+
+func TestSimpleCacheMiddleware_SeparatesStreamingAndNonStreamingEntries(t *testing.T) {
 	store := cache.NewMapStore()
 	defer store.Close()
 	mw := NewResponseCacheMiddlewareWithStore(store, time.Hour)
@@ -227,30 +246,27 @@ func TestSimpleCacheMiddleware_SharesCacheAcrossStreamingAndNonStreaming(t *test
 	installResolvedExecutionPlan(e, "openai", "gpt-4")
 	e.Use(mw.Middleware())
 	callCount := 0
+	rawStream := []byte(
+		"data: {\"id\":\"chatcmpl-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"streamed\"},\"finish_reason\":null}]}\n\n" +
+			"data: {\"id\":\"chatcmpl-stream\",\"object\":\"chat.completion.chunk\",\"created\":1234567890,\"model\":\"gpt-4\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":9,\"completion_tokens\":1,\"total_tokens\":10}}\n\n" +
+			"data: [DONE]\n\n",
+	)
 	e.POST("/v1/chat/completions", func(c *echo.Context) error {
 		callCount++
-		return c.JSON(http.StatusOK, &core.ChatResponse{
-			ID:       "chatcmpl-shared-cache",
-			Object:   "chat.completion",
-			Model:    "gpt-4",
-			Provider: "openai",
-			Created:  1234567890,
-			Choices: []core.Choice{
-				{
-					Index: 0,
-					Message: core.ResponseMessage{
-						Role:    "assistant",
-						Content: "shared cached response",
-					},
-					FinishReason: "stop",
-				},
-			},
-			Usage: core.Usage{
-				PromptTokens:     9,
-				CompletionTokens: 3,
-				TotalTokens:      12,
-			},
-		})
+		body, cacheable, err := requestBodyForCache(c.Request())
+		if err != nil {
+			t.Fatalf("requestBodyForCache: %v", err)
+		}
+		if !cacheable {
+			t.Fatal("expected request to be cacheable")
+		}
+		if isStreamingRequest(c.Request().URL.Path, body) {
+			c.Response().Header().Set("Content-Type", "text/event-stream")
+			c.Response().WriteHeader(http.StatusOK)
+			_, _ = c.Response().Write(rawStream)
+			return nil
+		}
+		return c.JSON(http.StatusOK, map[string]string{"result": "json cached response"})
 	})
 
 	nonStreamingBody := []byte(`{"model":"gpt-4","messages":[{"role":"user","content":"hi"}]}`)
@@ -270,17 +286,53 @@ func TestSimpleCacheMiddleware_SharesCacheAcrossStreamingAndNonStreaming(t *test
 	req2.Header.Set("Content-Type", "application/json")
 	rec2 := httptest.NewRecorder()
 	e.ServeHTTP(rec2, req2)
-	if got := rec2.Header().Get("X-Cache"); got != "HIT (exact)" {
-		t.Fatalf("streaming request should reuse cached full response, got X-Cache=%q", got)
+	if got := rec2.Header().Get("X-Cache"); got != "" {
+		t.Fatalf("streaming request should miss exact cache because stream mode is keyed separately, got X-Cache=%q", got)
 	}
 	if got := rec2.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Fatalf("streaming miss Content-Type = %q, want text/event-stream", got)
+	}
+	if !bytes.Equal(rec2.Body.Bytes(), rawStream) {
+		t.Fatalf("streaming miss body = %q, want original SSE payload", rec2.Body.String())
+	}
+	if callCount != 2 {
+		t.Fatalf("expected separate stream miss to call handler again, got %d calls", callCount)
+	}
+
+	mw.simple.wg.Wait()
+
+	req3 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(streamingBody))
+	req3.Header.Set("Content-Type", "application/json")
+	rec3 := httptest.NewRecorder()
+	e.ServeHTTP(rec3, req3)
+	if got := rec3.Header().Get("X-Cache"); got != "HIT (exact)" {
+		t.Fatalf("streaming follow-up should hit its own exact cache entry, got X-Cache=%q", got)
+	}
+	if got := rec3.Header().Get("Content-Type"); got != "text/event-stream" {
 		t.Fatalf("streaming cache hit Content-Type = %q, want text/event-stream", got)
 	}
-	if !bytes.Contains(rec2.Body.Bytes(), []byte("shared cached response")) || !bytes.Contains(rec2.Body.Bytes(), []byte("[DONE]")) {
-		t.Fatalf("streaming cache hit body = %q, want synthesized SSE", rec2.Body.String())
+	if !bytes.Equal(rec3.Body.Bytes(), rawStream) {
+		t.Fatalf("streaming cache hit body = %q, want verbatim SSE replay", rec3.Body.String())
 	}
-	if callCount != 1 {
-		t.Fatalf("expected streaming replay to avoid second handler call, got %d calls", callCount)
+	if callCount != 2 {
+		t.Fatalf("expected streaming replay to avoid a third handler call, got %d calls", callCount)
+	}
+
+	req4 := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(nonStreamingBody))
+	req4.Header.Set("Content-Type", "application/json")
+	rec4 := httptest.NewRecorder()
+	e.ServeHTTP(rec4, req4)
+	if got := rec4.Header().Get("X-Cache"); got != "HIT (exact)" {
+		t.Fatalf("non-streaming follow-up should hit its own exact cache entry, got X-Cache=%q", got)
+	}
+	if got := rec4.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("non-streaming cache hit Content-Type = %q, want application/json", got)
+	}
+	if !bytes.Contains(rec4.Body.Bytes(), []byte("json cached response")) {
+		t.Fatalf("non-streaming cache hit body = %q, want cached JSON response", rec4.Body.String())
+	}
+	if callCount != 2 {
+		t.Fatalf("non-streaming exact hit should not call handler again, got %d calls", callCount)
 	}
 }
 

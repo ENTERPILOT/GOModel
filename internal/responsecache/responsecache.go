@@ -109,8 +109,8 @@ func (m *ResponseCacheMiddleware) Middleware() echo.MiddlewareFunc {
 // HandleRequest runs the full dual-layer cache check (exact then semantic) for a
 // translated inference request that has already been guardrail-patched.
 // body is the final patched request bytes; next is the real LLM call.
-// Streaming misses are reconstructed into full JSON before storage; streaming
-// hits replay that stored JSON as synthetic SSE.
+// Streaming and non-streaming requests are cached independently. Streaming
+// misses persist raw SSE bytes and replay them verbatim on cache hits.
 func (m *ResponseCacheMiddleware) HandleRequest(c *echo.Context, body []byte, next func() error) error {
 	if m == nil {
 		return next()

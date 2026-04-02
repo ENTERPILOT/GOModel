@@ -2,9 +2,7 @@ package responsecache
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -96,8 +94,11 @@ func cacheKeyRequestBody(path string, body []byte) []byte {
 		if err != nil || req == nil {
 			return body
 		}
-		req.Stream = false
-		req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		if req.Stream {
+			req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		} else {
+			req.StreamOptions = nil
+		}
 		normalized, err := json.Marshal(req)
 		if err != nil {
 			return body
@@ -108,8 +109,11 @@ func cacheKeyRequestBody(path string, body []byte) []byte {
 		if err != nil || req == nil {
 			return body
 		}
-		req.Stream = false
-		req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		if req.Stream {
+			req.StreamOptions = normalizeStreamOptionsForCache(req.StreamOptions)
+		} else {
+			req.StreamOptions = nil
+		}
 		normalized, err := json.Marshal(req)
 		if err != nil {
 			return body
@@ -118,25 +122,6 @@ func cacheKeyRequestBody(path string, body []byte) []byte {
 	default:
 		return body
 	}
-}
-
-func streamResponseDefaultsFromContext(ctx context.Context) streamResponseDefaults {
-	var defaults streamResponseDefaults
-
-	plan := core.GetExecutionPlan(ctx)
-	if plan == nil {
-		return defaults
-	}
-
-	defaults.Provider = strings.TrimSpace(plan.ProviderType)
-	if plan.Resolution != nil {
-		if defaults.Provider == "" {
-			defaults.Provider = strings.TrimSpace(plan.Resolution.ResolvedSelector.Provider)
-		}
-		defaults.Model = strings.TrimSpace(plan.Resolution.ResolvedSelector.Model)
-	}
-
-	return defaults
 }
 
 func isEventStreamContentType(contentType string) bool {
@@ -149,17 +134,13 @@ func isEventStreamContentType(contentType string) bool {
 
 func writeCachedResponse(c *echo.Context, path string, requestBody, cached []byte, cacheType string) error {
 	if isStreamingRequest(path, requestBody) {
-		streamBody, err := renderCachedStream(path, requestBody, cached)
-		if err != nil {
-			return err
-		}
 		auditlog.EnrichEntryWithStream(c, true)
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
 		c.Response().Header().Set("X-Cache", "HIT ("+cacheType+")")
 		c.Response().WriteHeader(http.StatusOK)
-		_, _ = c.Response().Write(streamBody)
+		_, _ = c.Response().Write(cached)
 		return nil
 	}
 
@@ -168,17 +149,6 @@ func writeCachedResponse(c *echo.Context, path string, requestBody, cached []byt
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = c.Response().Write(cached)
 	return nil
-}
-
-func renderCachedStream(path string, requestBody, cached []byte) ([]byte, error) {
-	switch path {
-	case "/v1/chat/completions":
-		return renderCachedChatStream(requestBody, cached)
-	case "/v1/responses":
-		return renderCachedResponsesStream(requestBody, cached)
-	default:
-		return nil, errors.New("cached streaming replay is not supported for this path")
-	}
 }
 
 func renderCachedChatStream(requestBody, cached []byte) ([]byte, error) {

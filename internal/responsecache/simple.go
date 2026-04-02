@@ -146,9 +146,9 @@ func (m *simpleCacheMiddleware) StoreAfter(c *echo.Context, body []byte, next fu
 		if core.GetFallbackUsed(c.Request().Context()) {
 			return nil
 		}
-		data, ok := capture.cachedBody(path, streamResponseDefaultsFromContext(c.Request().Context()), c.Response().Header().Get("Content-Type"))
+		data, ok := capture.cachedBody(c.Response().Header().Get("Content-Type"))
 		if !ok {
-			slog.Warn("response cache: failed to reconstruct cacheable response body", "path", path)
+			slog.Warn("response cache: failed to capture cacheable response body", "path", path)
 			return nil
 		}
 		m.enqueueWrite(cacheWriteJob{key: key, data: data})
@@ -294,14 +294,17 @@ type responseCapture struct {
 	status int
 }
 
-func (r *responseCapture) cachedBody(path string, defaults streamResponseDefaults, contentType string) ([]byte, bool) {
+func (r *responseCapture) cachedBody(contentType string) ([]byte, bool) {
 	if r == nil || r.body == nil || r.body.Len() == 0 {
 		return nil, false
 	}
 
 	raw := bytes.Clone(r.body.Bytes())
 	if isEventStreamContentType(contentType) {
-		return reconstructStreamingResponse(path, raw, defaults)
+		if !validateCacheableSSE(raw) {
+			return nil, false
+		}
+		return raw, true
 	}
 	if !json.Valid(raw) {
 		return nil, false
