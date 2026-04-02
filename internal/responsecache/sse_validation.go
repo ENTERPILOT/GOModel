@@ -17,13 +17,14 @@ func validateCacheableSSE(raw []byte) bool {
 	sawDone := false
 
 	for len(raw) > 0 {
+		remaining := raw
 		idx, sepLen := nextCacheEventBoundary(raw)
-		if idx == -1 {
-			return false
+		event := remaining
+		raw = nil
+		if idx != -1 {
+			event = remaining[:idx]
+			raw = remaining[idx+sepLen:]
 		}
-
-		event := raw[:idx]
-		raw = raw[idx+sepLen:]
 
 		payload, hasData := sseEventPayload(event)
 		if sawDone {

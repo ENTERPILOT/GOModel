@@ -25,6 +25,15 @@ func TestValidateCacheableSSE(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "accepts eof terminated done marker",
+			raw: []byte(
+				"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n" +
+					"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+					"data: [DONE]\n",
+			),
+			want: true,
+		},
+		{
 			name: "rejects truncated stream without done",
 			raw: []byte(
 				"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
