@@ -26,6 +26,9 @@ func validateCacheableSSE(raw []byte) bool {
 		raw = raw[idx+sepLen:]
 
 		payload, hasData := sseEventPayload(event)
+		if sawDone {
+			return false
+		}
 		if !hasData {
 			continue
 		}
@@ -36,12 +39,7 @@ func validateCacheableSSE(raw []byte) bool {
 			sawDone = true
 			continue
 		}
-		if sawDone {
-			return false
-		}
-
-		var decoded map[string]any
-		if err := json.Unmarshal(payload, &decoded); err != nil {
+		if !json.Valid(payload) {
 			return false
 		}
 		sawJSONPayload = true

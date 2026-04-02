@@ -11,6 +11,11 @@ func TestValidateCacheableSSE(t *testing.T) {
 		want bool
 	}{
 		{
+			name: "rejects empty input",
+			raw:  []byte(""),
+			want: false,
+		},
+		{
 			name: "valid chat stream",
 			raw: []byte(
 				"data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n" +
@@ -49,6 +54,15 @@ func TestValidateCacheableSSE(t *testing.T) {
 				"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp-1\"}}\n\n" +
 					"data: [DONE]\n\n" +
 					"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp-1\"}}\n\n",
+			),
+			want: false,
+		},
+		{
+			name: "rejects keepalive after done",
+			raw: []byte(
+				"data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp-1\"}}\n\n" +
+					"data: [DONE]\n\n" +
+					": keep-alive\n\n",
 			),
 			want: false,
 		},

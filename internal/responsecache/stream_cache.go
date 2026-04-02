@@ -2,9 +2,7 @@ package responsecache
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"sort"
 	"strings"
@@ -126,25 +124,6 @@ func cacheKeyRequestBody(path string, body []byte) []byte {
 	}
 }
 
-func streamResponseDefaultsFromContext(ctx context.Context) streamResponseDefaults {
-	var defaults streamResponseDefaults
-
-	plan := core.GetExecutionPlan(ctx)
-	if plan == nil {
-		return defaults
-	}
-
-	defaults.Provider = strings.TrimSpace(plan.ProviderType)
-	if plan.Resolution != nil {
-		if defaults.Provider == "" {
-			defaults.Provider = strings.TrimSpace(plan.Resolution.ResolvedSelector.Provider)
-		}
-		defaults.Model = strings.TrimSpace(plan.Resolution.ResolvedSelector.Model)
-	}
-
-	return defaults
-}
-
 func isEventStreamContentType(contentType string) bool {
 	if contentType == "" {
 		return false
@@ -170,17 +149,6 @@ func writeCachedResponse(c *echo.Context, path string, requestBody, cached []byt
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = c.Response().Write(cached)
 	return nil
-}
-
-func renderCachedStream(path string, requestBody, cached []byte) ([]byte, error) {
-	switch path {
-	case "/v1/chat/completions":
-		return renderCachedChatStream(requestBody, cached)
-	case "/v1/responses":
-		return renderCachedResponsesStream(requestBody, cached)
-	default:
-		return nil, errors.New("cached streaming replay is not supported for this path")
-	}
 }
 
 func renderCachedChatStream(requestBody, cached []byte) ([]byte, error) {
