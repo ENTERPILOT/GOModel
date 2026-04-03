@@ -126,6 +126,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # To avoid possible issues related to missing libsecret binary on the runner runner
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y libsecret-1-dev
 
