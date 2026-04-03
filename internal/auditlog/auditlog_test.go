@@ -1047,6 +1047,18 @@ func TestCreateStreamEntry(t *testing.T) {
 	if streamEntry.Data.ExecutionFeatures.Cache != baseEntry.Data.ExecutionFeatures.Cache {
 		t.Error("ExecutionFeatures.Cache mismatch")
 	}
+	if streamEntry.Data.ExecutionFeatures.Audit != baseEntry.Data.ExecutionFeatures.Audit {
+		t.Error("ExecutionFeatures.Audit mismatch")
+	}
+	if streamEntry.Data.ExecutionFeatures.Usage != baseEntry.Data.ExecutionFeatures.Usage {
+		t.Error("ExecutionFeatures.Usage mismatch")
+	}
+	if streamEntry.Data.ExecutionFeatures.Guardrails != baseEntry.Data.ExecutionFeatures.Guardrails {
+		t.Error("ExecutionFeatures.Guardrails mismatch")
+	}
+	if streamEntry.Data.ExecutionFeatures.Fallback != baseEntry.Data.ExecutionFeatures.Fallback {
+		t.Error("ExecutionFeatures.Fallback mismatch")
+	}
 }
 
 func TestEnrichEntryWithExecutionPlanStoresExecutionFeatures(t *testing.T) {

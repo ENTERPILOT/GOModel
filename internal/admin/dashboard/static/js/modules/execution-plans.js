@@ -1,4 +1,6 @@
 (function(global) {
+    const DRAFT_WORKFLOW_PREVIEW_ID = 'draft-workflow-preview';
+
     function dashboardExecutionPlansModule() {
         return {
             executionPlans: [],
@@ -359,7 +361,7 @@
                 const scopeDisplay = this.executionPlanScopeDisplay(scope);
 
                 return {
-                    id: 'draft-workflow-preview',
+                    id: DRAFT_WORKFLOW_PREVIEW_ID,
                     scope_type: scopeType,
                     scope_display: scopeDisplay,
                     scope: {
@@ -1073,11 +1075,14 @@
 
             executionPlanChartWorkflowID(source, entry) {
                 const sourceID = String(source && source.id || '').trim();
-                if (sourceID) {
+                if (sourceID && sourceID !== DRAFT_WORKFLOW_PREVIEW_ID) {
                     return sourceID;
                 }
                 const entryID = String(entry && entry.execution_plan_version_id || '').trim();
-                return entryID || null;
+                if (entryID && entryID !== DRAFT_WORKFLOW_PREVIEW_ID) {
+                    return entryID;
+                }
+                return null;
             },
 
 	            executionPlanChartModel(source, runtime, options) {

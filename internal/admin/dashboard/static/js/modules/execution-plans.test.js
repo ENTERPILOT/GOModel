@@ -264,6 +264,25 @@ test('executionPlanWorkflowChart masks globally disabled workflow features from 
     );
 });
 
+test('executionPlanChartWorkflowID ignores the draft workflow preview sentinel and falls back to stored entry ids', () => {
+    const module = createExecutionPlansModule();
+
+    assert.equal(
+        module.executionPlanChartWorkflowID(
+            { id: 'draft-workflow-preview' },
+            { execution_plan_version_id: 'historical-v1' }
+        ),
+        'historical-v1'
+    );
+    assert.equal(
+        module.executionPlanChartWorkflowID(
+            { id: 'draft-workflow-preview' },
+            { execution_plan_version_id: 'draft-workflow-preview' }
+        ),
+        null
+    );
+});
+
 test('executionPlanAuditChart returns the shared chart contract for audit runtime entries', () => {
     const module = createExecutionPlansModule();
     module.executionPlanVersionsByID = {
