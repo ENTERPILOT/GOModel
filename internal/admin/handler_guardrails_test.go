@@ -225,3 +225,57 @@ func TestDeleteGuardrailRejectsActiveWorkflowReference(t *testing.T) {
 		t.Fatalf("error message = %q, want active workflow reference", envelope.Error.Message)
 	}
 }
+
+func TestDeleteGuardrailIgnoresDisabledWorkflowGuardrailRefs(t *testing.T) {
+	guardrailService := newGuardrailService(t, guardrails.Definition{
+		Name: "policy-system",
+		Type: "system_prompt",
+		Config: rawGuardrailConfig(t, map[string]any{
+			"mode":    "inject",
+			"content": "be precise",
+		}),
+	})
+	planStore := &executionPlanTestStore{
+		versions: []executionplans.Version{
+			{
+				ID:       "global-plan",
+				Scope:    executionplans.Scope{},
+				ScopeKey: "global",
+				Version:  1,
+				Active:   true,
+				Name:     "global",
+				Payload: executionplans.Payload{
+					SchemaVersion: 1,
+					Features:      executionplans.FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+					Guardrails:    []executionplans.GuardrailStep{{Ref: "policy-system", Step: 10}},
+				},
+				PlanHash: "hash-global",
+			},
+		},
+	}
+	planService, err := executionplans.NewService(planStore, executionplans.NewCompiler(guardrailService))
+	if err != nil {
+		t.Fatalf("executionplans.NewService() error = %v", err)
+	}
+	if err := planService.Refresh(context.Background()); err != nil {
+		t.Fatalf("planService.Refresh() error = %v", err)
+	}
+
+	h := NewHandler(nil, nil, WithGuardrailService(guardrailService), WithExecutionPlans(planService))
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodDelete, "/admin/api/v1/guardrails/policy-system", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/admin/api/v1/guardrails/:name")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "policy-system"}})
+
+	if err := h.DeleteGuardrail(c); err != nil {
+		t.Fatalf("DeleteGuardrail() error = %v", err)
+	}
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", rec.Code)
+	}
+	if _, ok := h.guardrailDefs.Get("policy-system"); ok {
+		t.Fatal("Get(policy-system) = present, want deleted guardrail")
+	}
+}

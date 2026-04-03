@@ -59,6 +59,15 @@ func effectiveSystemPromptMode(mode string) string {
 	return string(resolved)
 }
 
+func isValidSystemPromptMode(mode string) bool {
+	switch SystemPromptMode(strings.TrimSpace(mode)) {
+	case SystemPromptInject, SystemPromptOverride, SystemPromptDecorator:
+		return true
+	default:
+		return false
+	}
+}
+
 // Name returns this instance's name.
 func (g *SystemPromptGuardrail) Name() string {
 	return g.name

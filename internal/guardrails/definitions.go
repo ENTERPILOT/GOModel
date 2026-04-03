@@ -149,6 +149,9 @@ func decodeSystemPromptDefinitionConfig(raw json.RawMessage) (systemPromptDefini
 	}
 
 	cfg.Mode = effectiveSystemPromptMode(cfg.Mode)
+	if !isValidSystemPromptMode(cfg.Mode) {
+		return systemPromptDefinitionConfig{}, newValidationError("system_prompt mode is invalid", nil)
+	}
 	cfg.Content = strings.TrimSpace(cfg.Content)
 	if cfg.Content == "" {
 		return systemPromptDefinitionConfig{}, newValidationError("system_prompt content is required", nil)

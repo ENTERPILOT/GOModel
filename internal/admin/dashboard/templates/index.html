@@ -287,14 +287,16 @@
         </div>
     </div>
 
-    <div class="alert alert-warning" x-show="!guardrailsRuntimeEnabled() && !authError">
+    {{template "auth-banner" .}}
+
+    <div class="alert alert-warning" x-show="!guardrailsRuntimeEnabled()">
         Runtime guardrail execution is currently off because <code>GUARDRAILS_ENABLED</code> is disabled. You can still manage definitions here.
     </div>
-    <div class="alert alert-warning" x-show="!guardrailsAvailable && !authError">
+    <div class="alert alert-warning" x-show="!authError && !guardrailsAvailable">
         Guardrails feature is unavailable.
     </div>
-    <div class="alert alert-warning" x-show="guardrailError && !authError" x-text="guardrailError"></div>
-    <div class="alert alert-success" x-show="guardrailNotice && !guardrailError" x-text="guardrailNotice"></div>
+    <div class="alert alert-warning" x-show="!authError && guardrailError" x-text="guardrailError"></div>
+    <div class="alert alert-success" x-show="!authError && guardrailNotice && !guardrailError" x-text="guardrailNotice"></div>
 
     <div class="settings-guardrails-layout" :class="{ 'is-editor-open': guardrailFormOpen }">
         <section class="settings-panel settings-guardrails-list">
@@ -308,7 +310,7 @@
 
             <div class="table-toolbar" x-show="guardrailsAvailable">
                 <div class="table-toolbar-main">
-                    <input type="text" class="filter-input" placeholder="Filter by name, type, user path, summary..." x-model="guardrailFilter">
+                    <input type="text" id="guardrail-filter" class="filter-input" placeholder="Filter by name, type, user path, summary..." aria-label="Guardrail filter" x-model="guardrailFilter">
                 </div>
             </div>
 

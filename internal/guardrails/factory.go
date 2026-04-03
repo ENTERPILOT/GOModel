@@ -20,6 +20,7 @@ type Result struct {
 	Service *Service
 	Store   Store
 	Storage storage.Storage
+	RefreshErrors <-chan error
 
 	stopRefresh func()
 	closeOnce   sync.Once
@@ -93,18 +94,20 @@ func newResult(ctx context.Context, storeConn storage.Storage, refreshInterval t
 	if err := service.Refresh(ctx); err != nil {
 		return nil, err
 	}
+	stopRefresh, refreshErrors := service.StartBackgroundRefresh(ctx, refreshInterval)
 	return &Result{
-		Service:     service,
-		Store:       store,
-		stopRefresh: service.StartBackgroundRefresh(refreshInterval),
+		Service:       service,
+		Store:         store,
+		RefreshErrors: refreshErrors,
+		stopRefresh:   stopRefresh,
 	}, nil
 }
 
 func createStore(ctx context.Context, store storage.Storage) (Store, error) {
 	return storage.ResolveBackend[Store](
 		store,
-		func(db *sql.DB) (Store, error) { return NewSQLiteStore(db) },
+		func(db *sql.DB) (Store, error) { return NewSQLiteStore(ctx, db) },
 		func(pool *pgxpool.Pool) (Store, error) { return NewPostgreSQLStore(ctx, pool) },
-		func(db *mongo.Database) (Store, error) { return NewMongoDBStore(db) },
+		func(db *mongo.Database) (Store, error) { return NewMongoDBStore(ctx, db) },
 	)
 }

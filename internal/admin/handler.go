@@ -1173,6 +1173,9 @@ func (h *Handler) activeWorkflowGuardrailReferences(ctx context.Context, name st
 
 	references := make([]string, 0)
 	for _, view := range views {
+		if !view.Payload.Features.Guardrails {
+			continue
+		}
 		for _, step := range view.Payload.Guardrails {
 			if strings.TrimSpace(step.Ref) != name {
 				continue

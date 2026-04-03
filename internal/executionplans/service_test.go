@@ -372,6 +372,106 @@ func TestServiceEnsureDefaultGlobal_CreatesWhenMissing(t *testing.T) {
 	}
 }
 
+func TestServiceEnsureDefaultGlobal_ReconcilesManagedDefault(t *testing.T) {
+	store := &staticStore{
+		versions: []Version{
+			{
+				ID:          "global-v1",
+				Scope:       Scope{},
+				ScopeKey:    "global",
+				Version:     1,
+				Active:      true,
+				Name:        ManagedDefaultGlobalName,
+				Description: ManagedDefaultGlobalDescription,
+				Payload: Payload{
+					SchemaVersion: 1,
+					Features:      FeatureFlags{Cache: false, Audit: true, Usage: true, Guardrails: false},
+				},
+				PlanHash: "stale-hash",
+			},
+		},
+	}
+	service, err := NewService(store, NewCompiler(nil))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	err = service.EnsureDefaultGlobal(context.Background(), CreateInput{
+		Activate:    true,
+		Name:        ManagedDefaultGlobalName,
+		Description: ManagedDefaultGlobalDescription,
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnsureDefaultGlobal() error = %v", err)
+	}
+	if len(store.versions) != 2 {
+		t.Fatalf("len(store.versions) = %d, want 2", len(store.versions))
+	}
+	if store.versions[0].Active {
+		t.Fatal("store.versions[0].Active = true, want old managed default deactivated")
+	}
+	if !store.versions[1].Active {
+		t.Fatal("store.versions[1].Active = false, want updated managed default active")
+	}
+	if !store.versions[1].Payload.Features.Cache {
+		t.Fatal("store.versions[1].Payload.Features.Cache = false, want updated payload")
+	}
+}
+
+func TestServiceEnsureDefaultGlobal_PreservesCustomGlobal(t *testing.T) {
+	store := &staticStore{
+		versions: []Version{
+			{
+				ID:          "global-v1",
+				Scope:       Scope{},
+				ScopeKey:    "global",
+				Version:     1,
+				Active:      true,
+				Name:        "custom-global",
+				Description: "User managed",
+				Payload: Payload{
+					SchemaVersion: 1,
+					Features:      FeatureFlags{Cache: false, Audit: true, Usage: true, Guardrails: false},
+				},
+				PlanHash: "custom-hash",
+			},
+		},
+	}
+	service, err := NewService(store, NewCompiler(nil))
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	err = service.EnsureDefaultGlobal(context.Background(), CreateInput{
+		Activate:    true,
+		Name:        ManagedDefaultGlobalName,
+		Description: ManagedDefaultGlobalDescription,
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("EnsureDefaultGlobal() error = %v", err)
+	}
+	if len(store.versions) != 1 {
+		t.Fatalf("len(store.versions) = %d, want 1", len(store.versions))
+	}
+	if store.versions[0].Name != "custom-global" || !store.versions[0].Active {
+		t.Fatalf("store.versions[0] = %#v, want unchanged active custom global", store.versions[0])
+	}
+}
+
 func TestServiceCreate_RefreshesSnapshot(t *testing.T) {
 	store := &staticStore{
 		versions: []Version{

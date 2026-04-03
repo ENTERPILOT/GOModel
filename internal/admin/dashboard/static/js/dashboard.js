@@ -205,8 +205,8 @@ function dashboard() {
 
         guardrailsPageVisible() {
             return typeof this.executionPlanRuntimeBooleanFlag === 'function'
-                ? this.executionPlanRuntimeBooleanFlag('GUARDRAILS_ENABLED', false)
-                : false;
+                ? this.executionPlanRuntimeBooleanFlag('GUARDRAILS_ENABLED', true)
+                : true;
         },
 
         setTheme(t) {

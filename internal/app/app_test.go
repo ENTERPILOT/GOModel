@@ -5,6 +5,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/admin"
+	"gomodel/internal/guardrails"
 )
 
 func TestRuntimeExecutionFeatureCaps_EnableFallbackFromOverride(t *testing.T) {
@@ -30,12 +31,41 @@ func TestDefaultExecutionPlanInput_SetsFallbackFeature(t *testing.T) {
 		},
 	}
 
-	input := defaultExecutionPlanInput(cfg, nil)
+	input := defaultExecutionPlanInput(cfg, nil, nil)
 	if input.Payload.Features.Fallback == nil {
 		t.Fatal("defaultExecutionPlanInput().Payload.Features.Fallback = nil, want non-nil")
 	}
 	if !*input.Payload.Features.Fallback {
 		t.Fatal("defaultExecutionPlanInput().Payload.Features.Fallback = false, want true")
+	}
+}
+
+func TestDefaultExecutionPlanInput_IncludesConfiguredGuardrailsMissingFromLoadedCatalog(t *testing.T) {
+	cfg := &config.Config{
+		Guardrails: config.GuardrailsConfig{
+			Enabled: true,
+			Rules: []config.GuardrailRuleConfig{
+				{
+					Name:  "policy-system",
+					Type:  "system_prompt",
+					Order: 10,
+				},
+			},
+		},
+	}
+
+	input := defaultExecutionPlanInput(cfg, nil, []guardrails.Definition{
+		{Name: "policy-system", Type: "system_prompt"},
+	})
+
+	if !input.Payload.Features.Guardrails {
+		t.Fatal("defaultExecutionPlanInput().Payload.Features.Guardrails = false, want true")
+	}
+	if len(input.Payload.Guardrails) != 1 {
+		t.Fatalf("len(defaultExecutionPlanInput().Payload.Guardrails) = %d, want 1", len(input.Payload.Guardrails))
+	}
+	if got := input.Payload.Guardrails[0].Ref; got != "policy-system" {
+		t.Fatalf("defaultExecutionPlanInput().Payload.Guardrails[0].Ref = %q, want policy-system", got)
 	}
 }
 

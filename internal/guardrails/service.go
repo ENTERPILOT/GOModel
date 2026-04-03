@@ -72,17 +72,9 @@ func (s *Service) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// EnsureSeedDefinitions seeds the store with definitions only when it is empty.
-func (s *Service) EnsureSeedDefinitions(ctx context.Context, definitions []Definition) error {
+// UpsertDefinitions validates and upserts a definition set, then refreshes once.
+func (s *Service) UpsertDefinitions(ctx context.Context, definitions []Definition) error {
 	if s == nil || len(definitions) == 0 {
-		return nil
-	}
-
-	existing, err := s.store.List(ctx)
-	if err != nil {
-		return fmt.Errorf("list guardrails: %w", err)
-	}
-	if len(existing) > 0 {
 		return nil
 	}
 
@@ -92,7 +84,7 @@ func (s *Service) EnsureSeedDefinitions(ctx context.Context, definitions []Defin
 			return err
 		}
 		if err := s.store.Upsert(ctx, normalized); err != nil {
-			return fmt.Errorf("seed guardrail %q: %w", normalized.Name, err)
+			return fmt.Errorf("upsert guardrail %q: %w", normalized.Name, err)
 		}
 	}
 	return s.Refresh(ctx)
@@ -202,17 +194,25 @@ func (s *Service) BuildPipeline(steps []StepReference) (*Pipeline, string, error
 }
 
 // StartBackgroundRefresh periodically reloads guardrails from storage until stopped.
-func (s *Service) StartBackgroundRefresh(interval time.Duration) func() {
+// Callers can observe background failures on the returned error channel.
+func (s *Service) StartBackgroundRefresh(parent context.Context, interval time.Duration) (func(), <-chan error) {
+	if parent == nil {
+		errs := make(chan error)
+		close(errs)
+		return func() {}, errs
+	}
 	if interval <= 0 {
 		interval = time.Minute
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(parent)
 	done := make(chan struct{})
+	errs := make(chan error, 1)
 	var once sync.Once
 
 	go func() {
 		defer close(done)
+		defer close(errs)
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -221,7 +221,12 @@ func (s *Service) StartBackgroundRefresh(interval time.Duration) func() {
 				return
 			case <-ticker.C:
 				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
-				_ = s.Refresh(refreshCtx)
+				if err := s.Refresh(refreshCtx); err != nil {
+					select {
+					case errs <- fmt.Errorf("refresh guardrails: %w", err):
+					default:
+					}
+				}
 				refreshCancel()
 			}
 		}
@@ -232,5 +237,5 @@ func (s *Service) StartBackgroundRefresh(interval time.Duration) func() {
 			cancel()
 			<-done
 		})
-	}
+	}, errs
 }

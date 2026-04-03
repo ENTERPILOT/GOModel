@@ -87,7 +87,8 @@ test('dashboard pages reuse a shared auth banner template', () => {
     );
 
     const authBannerCalls = indexTemplate.match(/{{template "auth-banner" \.}}/g) || [];
-    assert.equal(authBannerCalls.length, 6);
+    assert.equal(authBannerCalls.length, 7);
+    assert.match(indexTemplate, /<div x-show="page==='guardrails'">[\s\S]*{{template "auth-banner" \.}}/);
     assert.doesNotMatch(
         indexTemplate,
         /<div class="alert alert-warning" x-show="authError">[\s\S]*Authentication required\. Enter your API key in the sidebar to view data\.[\s\S]*<\/div>/
@@ -113,6 +114,7 @@ test('workflow guardrail warning links directly to the top-level guardrails page
     assert.match(indexTemplate, /No named guardrails are currently registered on this deployment\./);
     assert.match(indexTemplate, /class="alert alert-warning alert-inline-actions" x-show="guardrailRefs\.length === 0"/);
     assert.match(indexTemplate, /@click="navigate\('guardrails'\)">Open Guardrails<\/button>/);
+    assert.match(indexTemplate, /id="guardrail-filter"[^>]*aria-label="Guardrail filter"[^>]*x-model="guardrailFilter"/);
 });
 
 test('usage and audit pages reuse a shared pagination template', () => {

@@ -195,12 +195,12 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		}
 		return nil, fmt.Errorf("failed to prepare guardrail definitions: %w", err)
 	}
-	if err := guardrailResult.Service.EnsureSeedDefinitions(ctx, seedGuardrails); err != nil {
+	if err := guardrailResult.Service.UpsertDefinitions(ctx, seedGuardrails); err != nil {
 		closeErr := errors.Join(app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
-			return nil, fmt.Errorf("failed to seed guardrails: %w (also: close error: %v)", err, closeErr)
+			return nil, fmt.Errorf("failed to upsert guardrails: %w (also: close error: %v)", err, closeErr)
 		}
-		return nil, fmt.Errorf("failed to seed guardrails: %w", err)
+		return nil, fmt.Errorf("failed to upsert guardrails: %w", err)
 	}
 
 	// Build runtime execution dependencies. Policy is passed explicitly into the
@@ -225,7 +225,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		}
 		return nil, fmt.Errorf("failed to initialize execution plans: %w", err)
 	}
-	defaultExecutionPlan := defaultExecutionPlanInput(appCfg, guardrailResult.Service.Names())
+	defaultExecutionPlan := defaultExecutionPlanInput(appCfg, guardrailResult.Service.Names(), seedGuardrails)
 	if err := executionPlanResult.Service.EnsureDefaultGlobal(ctx, defaultExecutionPlan); err != nil {
 		closeErr := errors.Join(executionPlanResult.Close(), app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
@@ -731,7 +731,7 @@ func configGuardrailDefinitions(cfg config.GuardrailsConfig) ([]guardrails.Defin
 	return definitions, nil
 }
 
-func defaultExecutionPlanInput(cfg *config.Config, availableGuardrails []string) executionplans.CreateInput {
+func defaultExecutionPlanInput(cfg *config.Config, availableGuardrails []string, configuredGuardrails []guardrails.Definition) executionplans.CreateInput {
 	fallbackEnabled := fallbackFeatureEnabledGlobally(cfg)
 	payload := executionplans.Payload{
 		SchemaVersion: 1,
@@ -745,6 +745,13 @@ func defaultExecutionPlanInput(cfg *config.Config, availableGuardrails []string)
 	available := make(map[string]struct{}, len(availableGuardrails))
 	for _, name := range availableGuardrails {
 		available[strings.TrimSpace(name)] = struct{}{}
+	}
+	for _, definition := range configuredGuardrails {
+		name := strings.TrimSpace(definition.Name)
+		if name == "" {
+			continue
+		}
+		available[name] = struct{}{}
 	}
 	if cfg.Guardrails.Enabled && len(cfg.Guardrails.Rules) > 0 {
 		payload.Guardrails = make([]executionplans.GuardrailStep, 0, len(cfg.Guardrails.Rules))
@@ -765,8 +772,8 @@ func defaultExecutionPlanInput(cfg *config.Config, availableGuardrails []string)
 	return executionplans.CreateInput{
 		Scope:       executionplans.Scope{},
 		Activate:    true,
-		Name:        "default-global",
-		Description: "Bootstrapped from runtime configuration",
+		Name:        executionplans.ManagedDefaultGlobalName,
+		Description: executionplans.ManagedDefaultGlobalDescription,
 		Payload:     payload,
 	}
 }

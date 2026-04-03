@@ -15,6 +15,11 @@ import (
 	"gomodel/internal/guardrails"
 )
 
+const (
+	ManagedDefaultGlobalName        = "default-global"
+	ManagedDefaultGlobalDescription = "Bootstrapped from runtime configuration"
+)
+
 // CompiledPlan is the immutable runtime projection cached in the hot-path snapshot.
 type CompiledPlan struct {
 	Version  Version
@@ -171,9 +176,9 @@ func (s *Service) refreshLocked(ctx context.Context) error {
 	return nil
 }
 
-// EnsureDefaultGlobal seeds one active global execution plan when none exists.
+// EnsureDefaultGlobal seeds or reconciles the managed active global execution plan.
 func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) error {
-	normalized, _, _, err := normalizeCreateInput(input)
+	normalized, _, planHash, err := normalizeCreateInput(input)
 	if err != nil {
 		return err
 	}
@@ -191,6 +196,20 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 			return fmt.Errorf("load execution plan %q: %w", version.ID, err)
 		}
 		if scope.Provider == "" && scope.Model == "" && scope.UserPath == "" {
+			if !isManagedDefaultGlobal(version) {
+				return nil
+			}
+			if strings.TrimSpace(version.Name) == normalized.Name &&
+				strings.TrimSpace(version.Description) == normalized.Description &&
+				strings.TrimSpace(version.PlanHash) == planHash {
+				return nil
+			}
+			if !normalized.Activate {
+				normalized.Activate = true
+			}
+			if _, err := s.Create(ctx, normalized); err != nil {
+				return fmt.Errorf("update default global execution plan: %w", err)
+			}
 			return nil
 		}
 	}
@@ -202,6 +221,11 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 		return fmt.Errorf("seed default global execution plan: %w", err)
 	}
 	return nil
+}
+
+func isManagedDefaultGlobal(version Version) bool {
+	return strings.TrimSpace(version.Name) == ManagedDefaultGlobalName &&
+		strings.TrimSpace(version.Description) == ManagedDefaultGlobalDescription
 }
 
 // Create inserts a new immutable execution-plan version and refreshes the

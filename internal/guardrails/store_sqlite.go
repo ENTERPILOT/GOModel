@@ -14,7 +14,10 @@ type SQLiteStore struct {
 }
 
 // NewSQLiteStore creates the guardrail table and indexes if needed.
-func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
+func NewSQLiteStore(ctx context.Context, db *sql.DB) (*SQLiteStore, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context is required")
+	}
 	if db == nil {
 		return nil, fmt.Errorf("database connection is required")
 	}
@@ -34,7 +37,7 @@ func NewSQLiteStore(db *sql.DB) (*SQLiteStore, error) {
 		`CREATE INDEX IF NOT EXISTS idx_guardrail_definitions_updated_at ON guardrail_definitions(updated_at DESC)`,
 	}
 	for _, statement := range statements {
-		if _, err := db.Exec(statement); err != nil {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
 			if statement == `ALTER TABLE guardrail_definitions ADD COLUMN user_path TEXT` && isSQLiteDuplicateColumnError(err) {
 				continue
 			}

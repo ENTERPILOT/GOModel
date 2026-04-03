@@ -103,14 +103,31 @@ func TestServiceRefreshBuildsPipelineFromDefinitions(t *testing.T) {
 	}
 }
 
-func TestServiceEnsureSeedDefinitionsOnlySeedsEmptyStore(t *testing.T) {
-	store := newTestStore()
+func TestServiceUpsertDefinitions_UpdatesConfiguredSubsetAndPreservesCustomEntries(t *testing.T) {
+	store := newTestStore(
+		Definition{
+			Name: "policy",
+			Type: "system_prompt",
+			Config: rawConfig(t, map[string]any{
+				"mode":    "inject",
+				"content": "old policy text",
+			}),
+		},
+		Definition{
+			Name: "custom",
+			Type: "system_prompt",
+			Config: rawConfig(t, map[string]any{
+				"mode":    "inject",
+				"content": "custom",
+			}),
+		},
+	)
 	service, err := NewService(store)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 
-	seed := []Definition{
+	if err := service.UpsertDefinitions(context.Background(), []Definition{
 		{
 			Name: "policy",
 			Type: "system_prompt",
@@ -119,37 +136,62 @@ func TestServiceEnsureSeedDefinitionsOnlySeedsEmptyStore(t *testing.T) {
 				"content": "policy text",
 			}),
 		},
-	}
-
-	if err := service.EnsureSeedDefinitions(context.Background(), seed); err != nil {
-		t.Fatalf("EnsureSeedDefinitions() error = %v", err)
-	}
-	if got := service.Names(); len(got) != 1 || got[0] != "policy" {
-		t.Fatalf("Names() after seed = %v, want [policy]", got)
-	}
-
-	store.definitions["custom"] = Definition{
-		Name: "custom",
-		Type: "system_prompt",
-		Config: rawConfig(t, map[string]any{
-			"mode":    "inject",
-			"content": "custom",
-		}),
-	}
-	if err := service.EnsureSeedDefinitions(context.Background(), []Definition{
 		{
-			Name: "ignored",
+			Name: "policy-v2",
 			Type: "system_prompt",
 			Config: rawConfig(t, map[string]any{
 				"mode":    "inject",
-				"content": "ignored",
+				"content": "new policy",
 			}),
 		},
 	}); err != nil {
-		t.Fatalf("EnsureSeedDefinitions() second call error = %v", err)
+		t.Fatalf("UpsertDefinitions() error = %v", err)
 	}
-	if _, ok := store.definitions["ignored"]; ok {
-		t.Fatal("EnsureSeedDefinitions() seeded into non-empty store, want no-op")
+
+	if got := service.Names(); len(got) != 3 || got[0] != "custom" || got[1] != "policy" || got[2] != "policy-v2" {
+		t.Fatalf("Names() after upsert = %v, want [custom policy policy-v2]", got)
+	}
+
+	definition, ok := service.Get("policy")
+	if !ok || definition == nil {
+		t.Fatal("Get(policy) = missing, want updated guardrail")
+	}
+	var gotConfig map[string]any
+	if err := json.Unmarshal(definition.Config, &gotConfig); err != nil {
+		t.Fatalf("json.Unmarshal(policy.Config) error = %v", err)
+	}
+	if gotConfig["mode"] != "override" || gotConfig["content"] != "policy text" {
+		t.Fatalf("policy.Config = %#v, want updated config", gotConfig)
+	}
+
+	if _, ok := store.definitions["custom"]; !ok {
+		t.Fatal("custom guardrail missing after UpsertDefinitions(), want preserved entry")
+	}
+}
+
+func TestServiceUpsertRejectsInvalidSystemPromptMode(t *testing.T) {
+	store := newTestStore()
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	err = service.Upsert(context.Background(), Definition{
+		Name: "policy",
+		Type: "system_prompt",
+		Config: rawConfig(t, map[string]any{
+			"mode":    "invalid",
+			"content": "policy text",
+		}),
+	})
+	if err == nil {
+		t.Fatal("Upsert() error = nil, want validation error")
+	}
+	if !IsValidationError(err) {
+		t.Fatalf("Upsert() error = %v, want validation error", err)
+	}
+	if len(store.definitions) != 0 {
+		t.Fatalf("len(store.definitions) = %d, want 0", len(store.definitions))
 	}
 }
 

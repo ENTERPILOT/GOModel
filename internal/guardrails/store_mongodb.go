@@ -33,12 +33,15 @@ type MongoDBStore struct {
 }
 
 // NewMongoDBStore creates collection indexes if needed.
-func NewMongoDBStore(database *mongo.Database) (*MongoDBStore, error) {
+func NewMongoDBStore(ctx context.Context, database *mongo.Database) (*MongoDBStore, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("context is required")
+	}
 	if database == nil {
 		return nil, fmt.Errorf("database is required")
 	}
 	coll := database.Collection("guardrail_definitions")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	indexes := []mongo.IndexModel{

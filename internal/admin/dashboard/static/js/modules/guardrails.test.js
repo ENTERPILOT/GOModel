@@ -52,6 +52,21 @@ test('normalizeGuardrailConfig merges stored config over type defaults', () => {
     assert.equal(JSON.stringify(config), JSON.stringify({ mode: 'inject', content: 'be careful' }));
 });
 
+test('normalizeGuardrailConfig returns the input config for unknown types', () => {
+    const module = createGuardrailsModule();
+    module.guardrailTypes = [
+        {
+            type: 'system_prompt',
+            defaults: { mode: 'inject', content: '' },
+            fields: []
+        }
+    ];
+
+    const config = module.normalizeGuardrailConfig({ content: 'test' }, 'unknown_type');
+
+    assert.equal(JSON.stringify(config), JSON.stringify({ content: 'test' }));
+});
+
 test('filteredGuardrails matches user_path values', () => {
     const module = createGuardrailsModule();
     module.guardrails = [

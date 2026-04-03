@@ -31,7 +31,7 @@ func TestNewSQLiteStore_AddsMissingUserPathColumn(t *testing.T) {
 		t.Fatalf("create guardrail_definitions table: %v", err)
 	}
 
-	store, err := NewSQLiteStore(db)
+	store, err := NewSQLiteStore(context.Background(), db)
 	if err != nil {
 		t.Fatalf("NewSQLiteStore() error = %v", err)
 	}
@@ -77,7 +77,7 @@ func TestSQLiteStore_UpsertAndListRoundTripsUserPath(t *testing.T) {
 	}
 	defer db.Close()
 
-	store, err := NewSQLiteStore(db)
+	store, err := NewSQLiteStore(context.Background(), db)
 	if err != nil {
 		t.Fatalf("NewSQLiteStore() error = %v", err)
 	}

@@ -1,7 +1,7 @@
 package executionplans
 
 import (
-	"fmt"
+	"net/http"
 
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
@@ -69,7 +69,7 @@ func (c *compiler) compileGuardrails(steps []guardrails.StepReference) (*guardra
 		return nil, "", nil
 	}
 	if c == nil || c.registry == nil {
-		return nil, "", fmt.Errorf("guardrails are enabled but no guardrail registry is configured")
+		return nil, "", core.NewProviderError("", http.StatusBadGateway, "guardrails are enabled but no guardrail registry is configured", nil)
 	}
 	return c.registry.BuildPipeline(steps)
 }
