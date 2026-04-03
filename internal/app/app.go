@@ -575,7 +575,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 8. Close audit logging (flushes pending logs)
+	// 9. Close audit logging (flushes pending logs)
 	if a.audit != nil {
 		if err := a.audit.Close(); err != nil {
 			slog.Error("audit logger close error", "error", err)

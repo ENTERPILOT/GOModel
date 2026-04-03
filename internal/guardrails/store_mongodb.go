@@ -130,6 +130,58 @@ func (s *MongoDBStore) Upsert(ctx context.Context, definition Definition) error 
 	return nil
 }
 
+func (s *MongoDBStore) UpsertMany(ctx context.Context, definitions []Definition) error {
+	if len(definitions) == 0 {
+		return nil
+	}
+
+	session, err := s.collection.Database().Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("start guardrail upsert session: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sessionCtx context.Context) (any, error) {
+		now := time.Now().UTC()
+		for _, definition := range definitions {
+			normalized, err := normalizeDefinition(definition)
+			if err != nil {
+				return nil, err
+			}
+			if normalized.CreatedAt.IsZero() {
+				normalized.CreatedAt = now
+			}
+			normalized.UpdatedAt = now
+
+			configDoc, err := mongoConfigFromRaw(normalized.Config)
+			if err != nil {
+				return nil, fmt.Errorf("upsert guardrail %q: %w", normalized.Name, err)
+			}
+
+			update := bson.M{
+				"$set": bson.M{
+					"type":        normalized.Type,
+					"description": normalized.Description,
+					"user_path":   normalized.UserPath,
+					"config":      configDoc,
+					"updated_at":  normalized.UpdatedAt,
+				},
+				"$setOnInsert": bson.M{
+					"created_at": normalized.CreatedAt,
+				},
+			}
+			if _, err := s.collection.UpdateOne(sessionCtx, mongoDefinitionIDFilter{ID: normalized.Name}, update, options.UpdateOne().SetUpsert(true)); err != nil {
+				return nil, fmt.Errorf("upsert guardrail %q: %w", normalized.Name, err)
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return fmt.Errorf("upsert guardrails: %w", err)
+	}
+	return nil
+}
+
 func (s *MongoDBStore) Delete(ctx context.Context, name string) error {
 	result, err := s.collection.DeleteOne(ctx, mongoDefinitionIDFilter{ID: normalizeDefinitionName(name)})
 	if err != nil {

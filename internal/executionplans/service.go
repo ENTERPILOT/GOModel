@@ -178,6 +178,7 @@ func (s *Service) refreshLocked(ctx context.Context) error {
 
 // EnsureDefaultGlobal seeds or reconciles the managed active global execution plan.
 func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) error {
+	input.Managed = true
 	normalized, _, planHash, err := normalizeCreateInput(input)
 	if err != nil {
 		return err
@@ -207,6 +208,7 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 			if !normalized.Activate {
 				normalized.Activate = true
 			}
+			normalized.Managed = true
 			if _, err := s.Create(ctx, normalized); err != nil {
 				return fmt.Errorf("update default global execution plan: %w", err)
 			}
@@ -217,6 +219,7 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 	if !normalized.Activate {
 		normalized.Activate = true
 	}
+	normalized.Managed = true
 	if _, err := s.store.Create(ctx, normalized); err != nil {
 		return fmt.Errorf("seed default global execution plan: %w", err)
 	}
@@ -224,8 +227,7 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 }
 
 func isManagedDefaultGlobal(version Version) bool {
-	return strings.TrimSpace(version.Name) == ManagedDefaultGlobalName &&
-		strings.TrimSpace(version.Description) == ManagedDefaultGlobalDescription
+	return version.Managed
 }
 
 // Create inserts a new immutable execution-plan version and refreshes the

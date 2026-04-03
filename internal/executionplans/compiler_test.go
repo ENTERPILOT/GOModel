@@ -1,6 +1,7 @@
 package executionplans
 
 import (
+	"errors"
 	"testing"
 
 	"gomodel/internal/core"
@@ -129,5 +130,52 @@ func TestCompilerCompile_DefaultsFallbackEnabledWhenUnset(t *testing.T) {
 	}
 	if !compiled.Policy.Features.Fallback {
 		t.Fatal("Policy.Features.Fallback = false, want true")
+	}
+}
+
+func TestCompilerCompile_ReturnsGatewayErrorWhenGuardrailsCatalogIsEmpty(t *testing.T) {
+	_, err := NewCompiler(guardrails.NewRegistry()).Compile(Version{
+		ID:      "plan-1",
+		Scope:   Scope{},
+		Version: 1,
+		Name:    "global",
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: true},
+			Guardrails: []GuardrailStep{
+				{Ref: "policy-system", Step: 10},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("Compile() error = nil, want gateway error")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("Compile() error = %T, want *core.GatewayError", err)
+	}
+}
+
+func TestCompilerCompile_WrapsBuildPipelineErrorsAsGatewayErrors(t *testing.T) {
+	registry := guardrails.NewRegistry()
+	_, err := NewCompiler(registry).Compile(Version{
+		ID:      "plan-1",
+		Scope:   Scope{},
+		Version: 1,
+		Name:    "global",
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: true},
+			Guardrails: []GuardrailStep{
+				{Ref: "missing", Step: 10},
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("Compile() error = nil, want gateway error")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("Compile() error = %T, want *core.GatewayError", err)
 	}
 }

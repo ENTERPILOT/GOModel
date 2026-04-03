@@ -105,6 +105,49 @@ func (s *PostgreSQLStore) Upsert(ctx context.Context, definition Definition) err
 	return nil
 }
 
+func (s *PostgreSQLStore) UpsertMany(ctx context.Context, definitions []Definition) error {
+	if len(definitions) == 0 {
+		return nil
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin guardrail upsert transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	now := time.Now().UTC().Unix()
+	for _, definition := range definitions {
+		normalized, err := normalizeDefinition(definition)
+		if err != nil {
+			return err
+		}
+		if normalized.CreatedAt.IsZero() {
+			normalized.CreatedAt = time.Unix(now, 0).UTC()
+		}
+		normalized.UpdatedAt = time.Unix(now, 0).UTC()
+
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO guardrail_definitions (name, type, description, user_path, config, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			ON CONFLICT(name) DO UPDATE SET
+				type = excluded.type,
+				description = excluded.description,
+				user_path = excluded.user_path,
+				config = excluded.config,
+				updated_at = excluded.updated_at
+		`, normalized.Name, normalized.Type, normalized.Description, nullableString(normalized.UserPath), normalized.Config, normalized.CreatedAt.Unix(), normalized.UpdatedAt.Unix()); err != nil {
+			return fmt.Errorf("upsert guardrail %q: %w", normalized.Name, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit guardrail upsert transaction: %w", err)
+	}
+	return nil
+}
+
 func (s *PostgreSQLStore) Delete(ctx context.Context, name string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM guardrail_definitions WHERE name = $1`, normalizeDefinitionName(name))
 	if err != nil {

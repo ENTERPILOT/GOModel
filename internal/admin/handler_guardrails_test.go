@@ -48,6 +48,13 @@ func (s *guardrailTestStore) Upsert(_ context.Context, definition guardrails.Def
 	return nil
 }
 
+func (s *guardrailTestStore) UpsertMany(_ context.Context, definitions []guardrails.Definition) error {
+	for _, definition := range definitions {
+		s.definitions[definition.Name] = definition
+	}
+	return nil
+}
+
 func (s *guardrailTestStore) Delete(_ context.Context, name string) error {
 	if _, ok := s.definitions[name]; !ok {
 		return guardrails.ErrNotFound

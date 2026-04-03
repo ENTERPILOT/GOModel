@@ -17,9 +17,9 @@ import (
 
 // Result holds the initialized guardrail service and any owned resources.
 type Result struct {
-	Service *Service
-	Store   Store
-	Storage storage.Storage
+	Service       *Service
+	Store         Store
+	Storage       storage.Storage
 	RefreshErrors <-chan error
 
 	stopRefresh func()
@@ -94,7 +94,7 @@ func newResult(ctx context.Context, storeConn storage.Storage, refreshInterval t
 	if err := service.Refresh(ctx); err != nil {
 		return nil, err
 	}
-	stopRefresh, refreshErrors := service.StartBackgroundRefresh(ctx, refreshInterval)
+	stopRefresh, refreshErrors := startGuardrailRefreshLoop(ctx, service, refreshInterval)
 	return &Result{
 		Service:       service,
 		Store:         store,
@@ -110,4 +110,49 @@ func createStore(ctx context.Context, store storage.Storage) (Store, error) {
 		func(pool *pgxpool.Pool) (Store, error) { return NewPostgreSQLStore(ctx, pool) },
 		func(db *mongo.Database) (Store, error) { return NewMongoDBStore(ctx, db) },
 	)
+}
+
+func startGuardrailRefreshLoop(parent context.Context, service *Service, interval time.Duration) (func(), <-chan error) {
+	if parent == nil || service == nil {
+		errs := make(chan error)
+		close(errs)
+		return func() {}, errs
+	}
+	if interval <= 0 {
+		interval = time.Minute
+	}
+
+	ctx, cancel := context.WithCancel(parent)
+	done := make(chan struct{})
+	errs := make(chan error, 1)
+	var once sync.Once
+
+	go func() {
+		defer close(done)
+		defer close(errs)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
+				if err := service.Refresh(refreshCtx); err != nil {
+					select {
+					case errs <- err:
+					default:
+					}
+				}
+				refreshCancel()
+			}
+		}
+	}()
+
+	return func() {
+		once.Do(func() {
+			cancel()
+			<-done
+		})
+	}, errs
 }

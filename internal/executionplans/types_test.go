@@ -68,6 +68,48 @@ func TestNormalizeCreateInput_AllowsEmptyName(t *testing.T) {
 	}
 }
 
+func TestNormalizeCreateInput_RejectsReservedManagedDefaultIdentityForUserPlans(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := normalizeCreateInput(CreateInput{
+		Scope:       Scope{},
+		Activate:    true,
+		Name:        ManagedDefaultGlobalName,
+		Description: ManagedDefaultGlobalDescription,
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+		},
+	})
+	if err == nil {
+		t.Fatal("normalizeCreateInput() error = nil, want validation error")
+	}
+	if !IsValidationError(err) {
+		t.Fatalf("normalizeCreateInput() error = %T, want validation error", err)
+	}
+}
+
+func TestNormalizeCreateInput_RejectsManagedDefaultForNonGlobalScope(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := normalizeCreateInput(CreateInput{
+		Scope:    Scope{Provider: "openai"},
+		Activate: true,
+		Managed:  true,
+		Name:     ManagedDefaultGlobalName,
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+		},
+	})
+	if err == nil {
+		t.Fatal("normalizeCreateInput() error = nil, want validation error")
+	}
+	if !IsValidationError(err) {
+		t.Fatalf("normalizeCreateInput() error = %T, want validation error", err)
+	}
+}
+
 func TestFeatureFlagsRuntimeFeatures_FallbackDefaultsToTrue(t *testing.T) {
 	features := FeatureFlags{
 		Cache:      true,

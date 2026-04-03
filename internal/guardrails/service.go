@@ -2,10 +2,13 @@ package guardrails
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"sync"
-	"time"
+
+	"gomodel/internal/core"
 )
 
 type serviceSnapshot struct {
@@ -18,8 +21,9 @@ type serviceSnapshot struct {
 type Service struct {
 	store Store
 
-	mu       sync.RWMutex
-	snapshot serviceSnapshot
+	refreshMu sync.Mutex
+	mu        sync.RWMutex
+	snapshot  serviceSnapshot
 }
 
 // NewService creates a guardrail service backed by the provided store.
@@ -39,32 +43,21 @@ func NewService(store Store) (*Service, error) {
 
 // Refresh reloads guardrails from storage and atomically swaps the in-memory snapshot.
 func (s *Service) Refresh(ctx context.Context) error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	return s.refreshLocked(ctx)
+}
+
+func (s *Service) refreshLocked(ctx context.Context) error {
 	definitions, err := s.store.List(ctx)
 	if err != nil {
-		return fmt.Errorf("list guardrails: %w", err)
+		return guardrailServiceError("list guardrails", err)
 	}
-
-	next := serviceSnapshot{
-		definitions: make(map[string]Definition, len(definitions)),
-		order:       make([]string, 0, len(definitions)),
-		registry:    NewRegistry(),
+	next, err := buildSnapshot(definitions)
+	if err != nil {
+		return guardrailServiceError("load guardrails", err)
 	}
-	for _, definition := range definitions {
-		normalized, err := normalizeDefinition(definition)
-		if err != nil {
-			return fmt.Errorf("load guardrail %q: %w", definition.Name, err)
-		}
-		instance, descriptor, err := buildDefinition(normalized)
-		if err != nil {
-			return fmt.Errorf("load guardrail %q: %w", normalized.Name, err)
-		}
-		if err := next.registry.Register(instance, descriptor); err != nil {
-			return fmt.Errorf("register guardrail %q: %w", normalized.Name, err)
-		}
-		next.definitions[normalized.Name] = normalized
-		next.order = append(next.order, normalized.Name)
-	}
-	sort.Strings(next.order)
 
 	s.mu.Lock()
 	s.snapshot = next
@@ -72,22 +65,43 @@ func (s *Service) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// UpsertDefinitions validates and upserts a definition set, then refreshes once.
+// UpsertDefinitions validates and upserts a definition set, then swaps the snapshot on success.
 func (s *Service) UpsertDefinitions(ctx context.Context, definitions []Definition) error {
 	if s == nil || len(definitions) == 0 {
 		return nil
 	}
 
+	normalized := make([]Definition, 0, len(definitions))
 	for _, definition := range definitions {
-		normalized, err := normalizeDefinition(definition)
+		normalizedDefinition, err := normalizeDefinition(definition)
 		if err != nil {
 			return err
 		}
-		if err := s.store.Upsert(ctx, normalized); err != nil {
-			return fmt.Errorf("upsert guardrail %q: %w", normalized.Name, err)
-		}
+		normalized = append(normalized, normalizedDefinition)
 	}
-	return s.Refresh(ctx)
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	currentDefinitions, err := s.store.List(ctx)
+	if err != nil {
+		return guardrailServiceError("list guardrails", err)
+	}
+	nextDefinitions := definitionMap(currentDefinitions)
+	for _, definition := range normalized {
+		nextDefinitions[definition.Name] = definition
+	}
+	next, err := buildSnapshot(definitionsFromMap(nextDefinitions))
+	if err != nil {
+		return err
+	}
+	if err := s.store.UpsertMany(ctx, normalized); err != nil {
+		return guardrailServiceError("upsert guardrails", err)
+	}
+	s.mu.Lock()
+	s.snapshot = next
+	s.mu.Unlock()
+	return nil
 }
 
 // List returns all cached guardrail definitions sorted by name.
@@ -129,33 +143,61 @@ func (s *Service) Get(name string) (*Definition, bool) {
 	return &copy, true
 }
 
-// Upsert validates and stores a guardrail definition, then refreshes the snapshot.
+// Upsert validates and stores a guardrail definition, then swaps the snapshot on success.
 func (s *Service) Upsert(ctx context.Context, definition Definition) error {
 	normalized, err := normalizeDefinition(definition)
 	if err != nil {
 		return err
 	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	currentDefinitions, err := s.store.List(ctx)
+	if err != nil {
+		return guardrailServiceError("list guardrails", err)
+	}
+	nextDefinitions := definitionMap(currentDefinitions)
+	nextDefinitions[normalized.Name] = normalized
+	next, err := buildSnapshot(definitionsFromMap(nextDefinitions))
+	if err != nil {
+		return err
+	}
 	if err := s.store.Upsert(ctx, normalized); err != nil {
-		return fmt.Errorf("upsert guardrail: %w", err)
+		return guardrailServiceError("upsert guardrail", err)
 	}
-	if err := s.Refresh(ctx); err != nil {
-		return fmt.Errorf("refresh guardrails: %w", err)
-	}
+	s.mu.Lock()
+	s.snapshot = next
+	s.mu.Unlock()
 	return nil
 }
 
-// Delete removes a guardrail definition from storage and refreshes the snapshot.
+// Delete removes a guardrail definition from storage and swaps the snapshot on success.
 func (s *Service) Delete(ctx context.Context, name string) error {
 	name = normalizeDefinitionName(name)
 	if name == "" {
 		return newValidationError("guardrail name is required", nil)
 	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	currentDefinitions, err := s.store.List(ctx)
+	if err != nil {
+		return guardrailServiceError("list guardrails", err)
+	}
+	nextDefinitions := definitionMap(currentDefinitions)
+	delete(nextDefinitions, name)
+	next, err := buildSnapshot(definitionsFromMap(nextDefinitions))
+	if err != nil {
+		return err
+	}
 	if err := s.store.Delete(ctx, name); err != nil {
-		return fmt.Errorf("delete guardrail: %w", err)
+		return guardrailServiceError("delete guardrail", err)
 	}
-	if err := s.Refresh(ctx); err != nil {
-		return fmt.Errorf("refresh guardrails: %w", err)
-	}
+	s.mu.Lock()
+	s.snapshot = next
+	s.mu.Unlock()
 	return nil
 }
 
@@ -193,49 +235,56 @@ func (s *Service) BuildPipeline(steps []StepReference) (*Pipeline, string, error
 	return registry.BuildPipeline(steps)
 }
 
-// StartBackgroundRefresh periodically reloads guardrails from storage until stopped.
-// Callers can observe background failures on the returned error channel.
-func (s *Service) StartBackgroundRefresh(parent context.Context, interval time.Duration) (func(), <-chan error) {
-	if parent == nil {
-		errs := make(chan error)
-		close(errs)
-		return func() {}, errs
+func buildSnapshot(definitions []Definition) (serviceSnapshot, error) {
+	next := serviceSnapshot{
+		definitions: make(map[string]Definition, len(definitions)),
+		order:       make([]string, 0, len(definitions)),
+		registry:    NewRegistry(),
 	}
-	if interval <= 0 {
-		interval = time.Minute
-	}
-
-	ctx, cancel := context.WithCancel(parent)
-	done := make(chan struct{})
-	errs := make(chan error, 1)
-	var once sync.Once
-
-	go func() {
-		defer close(done)
-		defer close(errs)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
-				if err := s.Refresh(refreshCtx); err != nil {
-					select {
-					case errs <- fmt.Errorf("refresh guardrails: %w", err):
-					default:
-					}
-				}
-				refreshCancel()
-			}
+	for _, definition := range definitions {
+		normalized, err := normalizeDefinition(definition)
+		if err != nil {
+			return serviceSnapshot{}, fmt.Errorf("load guardrail %q: %w", definition.Name, err)
 		}
-	}()
+		instance, descriptor, err := buildDefinition(normalized)
+		if err != nil {
+			return serviceSnapshot{}, fmt.Errorf("load guardrail %q: %w", normalized.Name, err)
+		}
+		if err := next.registry.Register(instance, descriptor); err != nil {
+			return serviceSnapshot{}, fmt.Errorf("register guardrail %q: %w", normalized.Name, err)
+		}
+		next.definitions[normalized.Name] = normalized
+		next.order = append(next.order, normalized.Name)
+	}
+	sort.Strings(next.order)
+	return next, nil
+}
 
-	return func() {
-		once.Do(func() {
-			cancel()
-			<-done
-		})
-	}, errs
+func definitionMap(definitions []Definition) map[string]Definition {
+	next := make(map[string]Definition, len(definitions))
+	for _, definition := range definitions {
+		next[definition.Name] = cloneDefinition(definition)
+	}
+	return next
+}
+
+func definitionsFromMap(definitions map[string]Definition) []Definition {
+	result := make([]Definition, 0, len(definitions))
+	for _, definition := range definitions {
+		result = append(result, definition)
+	}
+	return result
+}
+
+func guardrailServiceError(message string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if gatewayErr, ok := errors.AsType[*core.GatewayError](err); ok {
+		return gatewayErr
+	}
+	if IsValidationError(err) {
+		return core.NewInvalidRequestError(message+": "+err.Error(), err)
+	}
+	return core.NewProviderError("", http.StatusBadGateway, message+": "+err.Error(), err)
 }

@@ -73,6 +73,7 @@ type Version struct {
 	ScopeKey    string    `json:"scope_key" bson:"scope_key"`
 	Version     int       `json:"version" bson:"version"`
 	Active      bool      `json:"active" bson:"active"`
+	Managed     bool      `json:"managed_default,omitempty" bson:"managed_default,omitempty"`
 	Name        string    `json:"name" bson:"name"`
 	Description string    `json:"description,omitempty" bson:"description,omitempty"`
 	Payload     Payload   `json:"plan_payload" bson:"plan_payload"`
@@ -84,6 +85,7 @@ type Version struct {
 type CreateInput struct {
 	Scope       Scope
 	Activate    bool
+	Managed     bool
 	Name        string
 	Description string
 	Payload     Payload
@@ -189,5 +191,13 @@ func normalizeCreateInput(input CreateInput) (CreateInput, string, string, error
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
 	input.Payload = payload
+	if input.Managed && (scope.Provider != "" || scope.Model != "" || scope.UserPath != "") {
+		return CreateInput{}, "", "", newValidationError("managed default workflow must use global scope", nil)
+	}
+	if !input.Managed &&
+		input.Name == ManagedDefaultGlobalName &&
+		input.Description == ManagedDefaultGlobalDescription {
+		return CreateInput{}, "", "", newValidationError("managed default workflow name/description is reserved", nil)
+	}
 	return input, scopeKey, planHash, nil
 }

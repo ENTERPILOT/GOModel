@@ -20,6 +20,7 @@ type mongoVersionDocument struct {
 	ScopeKey      string    `bson:"scope_key"`
 	Version       int       `bson:"version"`
 	Active        bool      `bson:"active"`
+	Managed       bool      `bson:"managed_default,omitempty"`
 	Name          string    `bson:"name"`
 	Description   string    `bson:"description,omitempty"`
 	PlanPayload   Payload   `bson:"plan_payload"`
@@ -57,6 +58,17 @@ func NewMongoDBStore(database *mongo.Database) (*MongoDBStore, error) {
 	}
 	if _, err := collection.Indexes().CreateMany(ctx, indexes); err != nil {
 		return nil, fmt.Errorf("create execution plan indexes: %w", err)
+	}
+	if _, err := collection.UpdateMany(ctx,
+		bson.D{
+			{Key: "managed_default", Value: bson.D{{Key: "$ne", Value: true}}},
+			{Key: "scope_key", Value: "global"},
+			{Key: "name", Value: ManagedDefaultGlobalName},
+			{Key: "description", Value: ManagedDefaultGlobalDescription},
+		},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "managed_default", Value: true}}}},
+	); err != nil {
+		return nil, fmt.Errorf("backfill managed execution plan defaults: %w", err)
 	}
 
 	return &MongoDBStore{collection: collection}, nil
@@ -136,6 +148,7 @@ func (s *MongoDBStore) Create(ctx context.Context, input CreateInput) (*Version,
 			ScopeKey:    scopeKey,
 			Version:     latest.Version + 1,
 			Active:      input.Activate,
+			Managed:     input.Managed,
 			Name:        input.Name,
 			Description: input.Description,
 			Payload:     input.Payload,
@@ -151,6 +164,7 @@ func (s *MongoDBStore) Create(ctx context.Context, input CreateInput) (*Version,
 			ScopeKey:      version.ScopeKey,
 			Version:       version.Version,
 			Active:        version.Active,
+			Managed:       version.Managed,
 			Name:          version.Name,
 			Description:   version.Description,
 			PlanPayload:   version.Payload,
@@ -205,6 +219,7 @@ func versionFromMongo(doc mongoVersionDocument) Version {
 		ScopeKey:    doc.ScopeKey,
 		Version:     doc.Version,
 		Active:      doc.Active,
+		Managed:     doc.Managed,
 		Name:        doc.Name,
 		Description: doc.Description,
 		Payload:     doc.PlanPayload,

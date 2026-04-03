@@ -3,11 +3,18 @@ package guardrails
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
+
+	"gomodel/internal/core"
 )
 
 type testStore struct {
-	definitions map[string]Definition
+	definitions   map[string]Definition
+	listErr       error
+	upsertErr     error
+	upsertManyErr error
+	deleteErr     error
 }
 
 func newTestStore(definitions ...Definition) *testStore {
@@ -19,6 +26,9 @@ func newTestStore(definitions ...Definition) *testStore {
 }
 
 func (s *testStore) List(context.Context) ([]Definition, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
 	result := make([]Definition, 0, len(s.definitions))
 	for _, definition := range s.definitions {
 		result = append(result, definition)
@@ -36,11 +46,27 @@ func (s *testStore) Get(_ context.Context, name string) (*Definition, error) {
 }
 
 func (s *testStore) Upsert(_ context.Context, definition Definition) error {
+	if s.upsertErr != nil {
+		return s.upsertErr
+	}
 	s.definitions[definition.Name] = definition
 	return nil
 }
 
+func (s *testStore) UpsertMany(_ context.Context, definitions []Definition) error {
+	if s.upsertManyErr != nil {
+		return s.upsertManyErr
+	}
+	for _, definition := range definitions {
+		s.definitions[definition.Name] = definition
+	}
+	return nil
+}
+
 func (s *testStore) Delete(_ context.Context, name string) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
 	if _, ok := s.definitions[name]; !ok {
 		return ErrNotFound
 	}
@@ -100,6 +126,26 @@ func TestServiceRefreshBuildsPipelineFromDefinitions(t *testing.T) {
 	}
 	if len(msgs) != 2 || msgs[0].Role != "system" || msgs[0].Content != "be safe" {
 		t.Fatalf("Process() messages = %#v, want injected system prompt", msgs)
+	}
+}
+
+func TestServiceRefresh_ReturnsGatewayErrorOnStoreFailure(t *testing.T) {
+	store := &testStore{
+		definitions: map[string]Definition{},
+		listErr:     errors.New("boom"),
+	}
+
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	err = service.Refresh(context.Background())
+	if err == nil {
+		t.Fatal("Refresh() error = nil, want gateway error")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("Refresh() error = %T, want *core.GatewayError", err)
 	}
 }
 
@@ -166,6 +212,43 @@ func TestServiceUpsertDefinitions_UpdatesConfiguredSubsetAndPreservesCustomEntri
 
 	if _, ok := store.definitions["custom"]; !ok {
 		t.Fatal("custom guardrail missing after UpsertDefinitions(), want preserved entry")
+	}
+}
+
+func TestServiceUpsertDefinitions_LeavesSnapshotUnchangedWhenPersistenceFails(t *testing.T) {
+	store := newTestStore(Definition{
+		Name: "policy",
+		Type: "system_prompt",
+		Config: rawConfig(t, map[string]any{
+			"mode":    "inject",
+			"content": "policy text",
+		}),
+	})
+	service, err := NewService(store)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	store.upsertManyErr = errors.New("boom")
+	err = service.UpsertDefinitions(context.Background(), []Definition{
+		{
+			Name: "policy-v2",
+			Type: "system_prompt",
+			Config: rawConfig(t, map[string]any{
+				"mode":    "inject",
+				"content": "new policy",
+			}),
+		},
+	})
+	if err == nil {
+		t.Fatal("UpsertDefinitions() error = nil, want persistence failure")
+	}
+
+	if got := service.Names(); len(got) != 1 || got[0] != "policy" {
+		t.Fatalf("Names() after failed UpsertDefinitions = %v, want unchanged [policy]", got)
 	}
 }
 

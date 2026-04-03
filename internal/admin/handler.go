@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/labstack/echo/v5"
@@ -37,6 +38,8 @@ type Handler struct {
 	guardrails    guardrails.Catalog
 	guardrailDefs *guardrails.Service
 	runtimeConfig DashboardConfigResponse
+
+	mutationMu sync.Mutex
 }
 
 // Option configures the admin API handler.
@@ -991,6 +994,9 @@ func (h *Handler) UpsertGuardrail(c *echo.Context) error {
 		return handleError(c, err)
 	}
 
+	h.mutationMu.Lock()
+	defer h.mutationMu.Unlock()
+
 	if err := h.guardrailDefs.Upsert(c.Request().Context(), guardrails.Definition{
 		Name:        name,
 		Type:        req.Type,
@@ -1021,6 +1027,9 @@ func (h *Handler) DeleteGuardrail(c *echo.Context) error {
 	if name == "" {
 		return handleError(c, core.NewInvalidRequestError("guardrail name is required", nil))
 	}
+
+	h.mutationMu.Lock()
+	defer h.mutationMu.Unlock()
 
 	referencingWorkflows, err := h.activeWorkflowGuardrailReferences(c.Request().Context(), name)
 	if err != nil {
@@ -1114,6 +1123,9 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 		return handleError(c, err)
 	}
 
+	h.mutationMu.Lock()
+	defer h.mutationMu.Unlock()
+
 	version, err := h.plans.Create(c.Request().Context(), executionplans.CreateInput{
 		Scope: executionplans.Scope{
 			Provider: req.ScopeProvider,
@@ -1136,14 +1148,25 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 
 // DeactivateExecutionPlan handles POST /admin/api/v1/execution-plans/:id/deactivate
 func (h *Handler) DeactivateExecutionPlan(c *echo.Context) error {
-	var unavailableErr error
-	var deactivate func(context.Context, string) error
 	if h.plans == nil {
-		unavailableErr = h.executionPlansUnavailableError()
-	} else {
-		deactivate = h.plans.Deactivate
+		return handleError(c, h.executionPlansUnavailableError())
 	}
-	return deactivateByID(c, unavailableErr, "execution plan", executionplans.ErrNotFound, "workflow not found: ", deactivate, executionPlanWriteError)
+
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
+		return handleError(c, core.NewInvalidRequestError("execution plan id is required", nil))
+	}
+
+	h.mutationMu.Lock()
+	defer h.mutationMu.Unlock()
+
+	if err := h.plans.Deactivate(c.Request().Context(), id); err != nil {
+		if errors.Is(err, executionplans.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("workflow not found: "+id))
+		}
+		return handleError(c, executionPlanWriteError(err))
+	}
+	return c.NoContent(http.StatusNoContent)
 }
 
 func (h *Handler) refreshExecutionPlansAfterGuardrailChange(ctx context.Context) error {

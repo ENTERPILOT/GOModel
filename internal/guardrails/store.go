@@ -45,6 +45,7 @@ type Store interface {
 	List(ctx context.Context) ([]Definition, error)
 	Get(ctx context.Context, name string) (*Definition, error)
 	Upsert(ctx context.Context, definition Definition) error
+	UpsertMany(ctx context.Context, definitions []Definition) error
 	Delete(ctx context.Context, name string) error
 	Close() error
 }

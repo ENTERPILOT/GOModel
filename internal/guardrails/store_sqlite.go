@@ -105,6 +105,49 @@ func (s *SQLiteStore) Upsert(ctx context.Context, definition Definition) error {
 	return nil
 }
 
+func (s *SQLiteStore) UpsertMany(ctx context.Context, definitions []Definition) error {
+	if len(definitions) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin guardrail upsert transaction: %w", err)
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	now := time.Now().UTC().Unix()
+	for _, definition := range definitions {
+		normalized, err := normalizeDefinition(definition)
+		if err != nil {
+			return err
+		}
+		if normalized.CreatedAt.IsZero() {
+			normalized.CreatedAt = time.Unix(now, 0).UTC()
+		}
+		normalized.UpdatedAt = time.Unix(now, 0).UTC()
+
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO guardrail_definitions (name, type, description, user_path, config, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(name) DO UPDATE SET
+				type = excluded.type,
+				description = excluded.description,
+				user_path = excluded.user_path,
+				config = excluded.config,
+				updated_at = excluded.updated_at
+		`, normalized.Name, normalized.Type, normalized.Description, nullableString(normalized.UserPath), string(normalized.Config), normalized.CreatedAt.Unix(), normalized.UpdatedAt.Unix()); err != nil {
+			return fmt.Errorf("upsert guardrail %q: %w", normalized.Name, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit guardrail upsert transaction: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteStore) Delete(ctx context.Context, name string) error {
 	result, err := s.db.ExecContext(ctx, `DELETE FROM guardrail_definitions WHERE name = ?`, normalizeDefinitionName(name))
 	if err != nil {

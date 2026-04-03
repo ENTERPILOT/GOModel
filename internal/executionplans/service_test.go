@@ -51,6 +51,7 @@ func (s *staticStore) Create(_ context.Context, input CreateInput) (*Version, er
 		ScopeKey:    scopeKey,
 		Version:     1,
 		Active:      input.Activate,
+		Managed:     input.Managed,
 		Name:        input.Name,
 		Description: input.Description,
 		Payload:     input.Payload,
@@ -123,6 +124,7 @@ func (s *concurrentStore) Create(_ context.Context, input CreateInput) (*Version
 		ScopeKey:    scopeKey,
 		Version:     len(s.versions) + 1,
 		Active:      input.Activate,
+		Managed:     input.Managed,
 		Name:        input.Name,
 		Description: input.Description,
 		Payload:     input.Payload,
@@ -370,6 +372,9 @@ func TestServiceEnsureDefaultGlobal_CreatesWhenMissing(t *testing.T) {
 	if got := store.versions[0].ScopeKey; got != "global" {
 		t.Fatalf("ScopeKey = %q, want global", got)
 	}
+	if !store.versions[0].Managed {
+		t.Fatal("Managed = false, want true for managed default global")
+	}
 }
 
 func TestServiceEnsureDefaultGlobal_ReconcilesManagedDefault(t *testing.T) {
@@ -381,6 +386,7 @@ func TestServiceEnsureDefaultGlobal_ReconcilesManagedDefault(t *testing.T) {
 				ScopeKey:    "global",
 				Version:     1,
 				Active:      true,
+				Managed:     true,
 				Name:        ManagedDefaultGlobalName,
 				Description: ManagedDefaultGlobalDescription,
 				Payload: Payload{
@@ -419,6 +425,9 @@ func TestServiceEnsureDefaultGlobal_ReconcilesManagedDefault(t *testing.T) {
 	}
 	if !store.versions[1].Active {
 		t.Fatal("store.versions[1].Active = false, want updated managed default active")
+	}
+	if !store.versions[1].Managed {
+		t.Fatal("store.versions[1].Managed = false, want updated managed default marker")
 	}
 	if !store.versions[1].Payload.Features.Cache {
 		t.Fatal("store.versions[1].Payload.Features.Cache = false, want updated payload")

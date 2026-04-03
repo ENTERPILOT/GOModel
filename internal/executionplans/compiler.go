@@ -1,6 +1,7 @@
 package executionplans
 
 import (
+	"errors"
 	"net/http"
 
 	"gomodel/internal/core"
@@ -71,5 +72,15 @@ func (c *compiler) compileGuardrails(steps []guardrails.StepReference) (*guardra
 	if c == nil || c.registry == nil {
 		return nil, "", core.NewProviderError("", http.StatusBadGateway, "guardrails are enabled but no guardrail registry is configured", nil)
 	}
-	return c.registry.BuildPipeline(steps)
+	if c.registry.Len() == 0 {
+		return nil, "", core.NewProviderError("", http.StatusBadGateway, "guardrails are enabled but no guardrails are loaded", nil)
+	}
+	pipeline, hash, err := c.registry.BuildPipeline(steps)
+	if err == nil {
+		return pipeline, hash, nil
+	}
+	if gatewayErr, ok := errors.AsType[*core.GatewayError](err); ok {
+		return nil, "", gatewayErr
+	}
+	return nil, "", core.NewProviderError("", http.StatusBadGateway, "compile guardrails: "+err.Error(), err)
 }
