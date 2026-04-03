@@ -1,0 +1,365 @@
+(function(global) {
+    function dashboardGuardrailsModule() {
+        return {
+            guardrails: [],
+            guardrailTypes: [],
+            guardrailsAvailable: true,
+            guardrailsLoading: false,
+            guardrailTypesLoading: false,
+            guardrailError: '',
+            guardrailNotice: '',
+            guardrailFilter: '',
+            guardrailFormOpen: false,
+            guardrailFormSubmitting: false,
+            guardrailDeletingName: '',
+            guardrailFormMode: 'create',
+            guardrailFormOriginalName: '',
+            guardrailForm: {
+                name: '',
+                type: '',
+                description: '',
+                config: {}
+            },
+
+            cloneGuardrailJSON(value) {
+                try {
+                    const cloned = JSON.parse(JSON.stringify(value || {}));
+                    return cloned && typeof cloned === 'object' && !Array.isArray(cloned) ? cloned : {};
+                } catch (_) {
+                    return {};
+                }
+            },
+
+            defaultGuardrailType() {
+                if (Array.isArray(this.guardrailTypes) && this.guardrailTypes.length > 0) {
+                    return String(this.guardrailTypes[0].type || '').trim() || 'system_prompt';
+                }
+                return 'system_prompt';
+            },
+
+            guardrailTypeDefinition(type) {
+                const normalized = String(type || '').trim();
+                return (this.guardrailTypes || []).find((item) => String(item && item.type || '').trim() === normalized) || null;
+            },
+
+            defaultGuardrailConfig(type) {
+                const definition = this.guardrailTypeDefinition(type);
+                if (!definition || !definition.defaults) {
+                    return {};
+                }
+                return this.cloneGuardrailJSON(definition.defaults);
+            },
+
+            normalizeGuardrailConfig(config, type) {
+                return {
+                    ...this.defaultGuardrailConfig(type),
+                    ...this.cloneGuardrailJSON(config)
+                };
+            },
+
+            defaultGuardrailForm(type) {
+                const resolvedType = String(type || '').trim() || this.defaultGuardrailType();
+                return {
+                    name: '',
+                    type: resolvedType,
+                    description: '',
+                    user_path: '',
+                    config: this.defaultGuardrailConfig(resolvedType)
+                };
+            },
+
+            get filteredGuardrails() {
+                if (!this.guardrailFilter) {
+                    return this.guardrails;
+                }
+                const filter = this.guardrailFilter.toLowerCase();
+                return (this.guardrails || []).filter((guardrail) => {
+                    const fields = [
+                        guardrail.name,
+                        guardrail.type,
+                        guardrail.user_path,
+                        guardrail.description,
+                        guardrail.summary
+                    ];
+                    return fields.some((value) => String(value || '').toLowerCase().includes(filter));
+                });
+            },
+
+            guardrailTypeLabel(type) {
+                const definition = this.guardrailTypeDefinition(type);
+                return definition && definition.label ? definition.label : (type || 'Unknown');
+            },
+
+            guardrailTypeFields(type) {
+                const definition = this.guardrailTypeDefinition(type);
+                return Array.isArray(definition && definition.fields) ? definition.fields : [];
+            },
+
+            guardrailFieldValue(field) {
+                if (!field || !this.guardrailForm || !this.guardrailForm.config) {
+                    return '';
+                }
+                const value = this.guardrailForm.config[field.key];
+                if (value === null || value === undefined) {
+                    return '';
+                }
+                return value;
+            },
+
+            setGuardrailFieldValue(field, value) {
+                if (!field) {
+                    return;
+                }
+                const nextConfig = this.cloneGuardrailJSON(this.guardrailForm.config);
+                if (field.input === 'number') {
+                    const trimmed = String(value || '').trim();
+                    if (trimmed === '') {
+                        delete nextConfig[field.key];
+                    } else {
+                        const parsed = Number(trimmed);
+                        nextConfig[field.key] = Number.isFinite(parsed) ? parsed : trimmed;
+                    }
+                } else {
+                    nextConfig[field.key] = value;
+                }
+                this.guardrailForm = {
+                    ...this.guardrailForm,
+                    config: nextConfig
+                };
+            },
+
+            guardrailsRuntimeEnabled() {
+                if (typeof this.executionPlanRuntimeBooleanFlag === 'function') {
+                    return this.executionPlanRuntimeBooleanFlag('GUARDRAILS_ENABLED', true);
+                }
+                return true;
+            },
+
+            openGuardrailCreate() {
+                this.guardrailFormMode = 'create';
+                this.guardrailFormOriginalName = '';
+                this.guardrailError = '';
+                this.guardrailNotice = '';
+                this.guardrailForm = this.defaultGuardrailForm(this.defaultGuardrailType());
+                this.guardrailFormOpen = true;
+            },
+
+            openGuardrailEdit(guardrail) {
+                const resolvedType = String(guardrail && guardrail.type || '').trim() || this.defaultGuardrailType();
+                this.guardrailFormMode = 'edit';
+                this.guardrailFormOriginalName = String(guardrail && guardrail.name || '').trim();
+                this.guardrailError = '';
+                this.guardrailNotice = '';
+                this.guardrailForm = {
+                    name: this.guardrailFormOriginalName,
+                    type: resolvedType,
+                    description: String(guardrail && guardrail.description || '').trim(),
+                    user_path: String(guardrail && guardrail.user_path || '').trim(),
+                    config: this.normalizeGuardrailConfig(guardrail && guardrail.config, resolvedType)
+                };
+                this.guardrailFormOpen = true;
+            },
+
+            closeGuardrailForm() {
+                this.guardrailFormOpen = false;
+                this.guardrailFormMode = 'create';
+                this.guardrailFormOriginalName = '';
+                this.guardrailError = '';
+                this.guardrailForm = this.defaultGuardrailForm(this.defaultGuardrailType());
+            },
+
+            onGuardrailTypeChange() {
+                const resolvedType = String(this.guardrailForm.type || '').trim() || this.defaultGuardrailType();
+                this.guardrailForm = {
+                    ...this.guardrailForm,
+                    type: resolvedType,
+                    config: this.defaultGuardrailConfig(resolvedType)
+                };
+            },
+
+            async guardrailResponseMessage(res, fallback) {
+                try {
+                    const payload = await res.json();
+                    if (payload && payload.error && payload.error.message) {
+                        return payload.error.message;
+                    }
+                } catch (_) {
+                    // Ignore invalid or empty responses and return the fallback message.
+                }
+                return fallback;
+            },
+
+            async fetchGuardrailTypes() {
+                this.guardrailTypesLoading = true;
+                try {
+                    const res = await fetch('/admin/api/v1/guardrails/types', { headers: this.headers() });
+                    if (res.status === 503) {
+                        this.guardrailsAvailable = false;
+                        this.guardrailTypes = [];
+                        return;
+                    }
+                    this.guardrailsAvailable = true;
+                    if (!this.handleFetchResponse(res, 'guardrail types')) {
+                        this.guardrailTypes = [];
+                        return;
+                    }
+                    const payload = await res.json();
+                    this.guardrailTypes = Array.isArray(payload) ? payload : [];
+                    if (!this.guardrailForm.type) {
+                        this.guardrailForm = this.defaultGuardrailForm(this.defaultGuardrailType());
+                    }
+                } catch (e) {
+                    console.error('Failed to fetch guardrail types:', e);
+                    this.guardrailTypes = [];
+                    this.guardrailError = 'Unable to load guardrail types.';
+                } finally {
+                    this.guardrailTypesLoading = false;
+                }
+            },
+
+            async fetchGuardrails() {
+                this.guardrailsLoading = true;
+                this.guardrailError = '';
+                try {
+                    const res = await fetch('/admin/api/v1/guardrails', { headers: this.headers() });
+                    if (res.status === 503) {
+                        this.guardrailsAvailable = false;
+                        this.guardrails = [];
+                        return;
+                    }
+                    this.guardrailsAvailable = true;
+                    if (!this.handleFetchResponse(res, 'guardrails')) {
+                        this.guardrails = [];
+                        return;
+                    }
+                    const payload = await res.json();
+                    this.guardrails = Array.isArray(payload) ? payload : [];
+                } catch (e) {
+                    console.error('Failed to fetch guardrails:', e);
+                    this.guardrails = [];
+                    this.guardrailError = 'Unable to load guardrails.';
+                } finally {
+                    this.guardrailsLoading = false;
+                }
+            },
+
+            async fetchGuardrailsPage() {
+                await Promise.all([
+                    this.fetchGuardrailTypes(),
+                    this.fetchGuardrails()
+                ]);
+            },
+
+            async submitGuardrailForm() {
+                const name = String(this.guardrailForm.name || '').trim();
+                const type = String(this.guardrailForm.type || '').trim();
+                if (!name) {
+                    this.guardrailError = 'Name is required.';
+                    return;
+                }
+                if (!type) {
+                    this.guardrailError = 'Type is required.';
+                    return;
+                }
+
+                this.guardrailError = '';
+                this.guardrailNotice = '';
+                this.guardrailFormSubmitting = true;
+
+                const payload = {
+                    type,
+                    description: String(this.guardrailForm.description || '').trim() || undefined,
+                    user_path: String(this.guardrailForm.user_path || '').trim() || undefined,
+                    config: this.cloneGuardrailJSON(this.guardrailForm.config)
+                };
+
+                try {
+                    const res = await fetch('/admin/api/v1/guardrails/' + encodeURIComponent(name), {
+                        method: 'PUT',
+                        headers: this.headers(),
+                        body: JSON.stringify(payload)
+                    });
+                    if (res.status === 503) {
+                        this.guardrailsAvailable = false;
+                        this.guardrailError = 'Guardrails feature is unavailable.';
+                        return;
+                    }
+                    if (res.status === 401) {
+                        this.authError = true;
+                        this.needsAuth = true;
+                        this.guardrailError = 'Authentication required.';
+                        return;
+                    }
+                    if (res.status !== 200) {
+                        this.guardrailError = await this.guardrailResponseMessage(res, 'Failed to save guardrail.');
+                        return;
+                    }
+
+                    await this.fetchGuardrails();
+                    if (typeof this.fetchExecutionPlanGuardrails === 'function') {
+                        this.fetchExecutionPlanGuardrails();
+                    }
+                    this.guardrailNotice = 'Guardrail "' + name + '" saved.';
+                    this.closeGuardrailForm();
+                } catch (e) {
+                    console.error('Failed to save guardrail:', e);
+                    this.guardrailError = 'Failed to save guardrail.';
+                } finally {
+                    this.guardrailFormSubmitting = false;
+                }
+            },
+
+            async deleteGuardrail(guardrail) {
+                const name = String(guardrail && guardrail.name || '').trim();
+                if (!name || this.guardrailDeletingName) {
+                    return;
+                }
+                if (!window.confirm('Delete guardrail "' + name + '"? Workflows that still reference it must be updated first.')) {
+                    return;
+                }
+
+                this.guardrailDeletingName = name;
+                this.guardrailError = '';
+                this.guardrailNotice = '';
+
+                try {
+                    const res = await fetch('/admin/api/v1/guardrails/' + encodeURIComponent(name), {
+                        method: 'DELETE',
+                        headers: this.headers()
+                    });
+                    if (res.status === 503) {
+                        this.guardrailsAvailable = false;
+                        this.guardrailError = 'Guardrails feature is unavailable.';
+                        return;
+                    }
+                    if (res.status === 401) {
+                        this.authError = true;
+                        this.needsAuth = true;
+                        this.guardrailError = 'Authentication required.';
+                        return;
+                    }
+                    if (res.status !== 204) {
+                        this.guardrailError = await this.guardrailResponseMessage(res, 'Failed to delete guardrail.');
+                        return;
+                    }
+
+                    await this.fetchGuardrails();
+                    if (typeof this.fetchExecutionPlanGuardrails === 'function') {
+                        this.fetchExecutionPlanGuardrails();
+                    }
+                    if (this.guardrailFormOpen && this.guardrailFormOriginalName === name) {
+                        this.closeGuardrailForm();
+                    }
+                    this.guardrailNotice = 'Guardrail "' + name + '" deleted.';
+                } catch (e) {
+                    console.error('Failed to delete guardrail:', e);
+                    this.guardrailError = 'Failed to delete guardrail.';
+                } finally {
+                    this.guardrailDeletingName = '';
+                }
+            }
+        };
+    }
+
+    global.dashboardGuardrailsModule = dashboardGuardrailsModule;
+})(window);

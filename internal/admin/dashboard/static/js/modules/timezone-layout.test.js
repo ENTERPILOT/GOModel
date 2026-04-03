@@ -32,7 +32,12 @@ test('dashboard templates expose a settings page and timezone context in activit
     const helperTemplate = readFixture('../../../templates/helper-disclosure.html');
     const css = readFixture('../../css/dashboard.css');
 
-    assert.match(template, /<div x-show="page==='settings'">[\s\S]*<h2>User Settings<\/h2>/);
+    assert.match(template, /<div x-show="page==='settings'">[\s\S]*<h2>Settings<\/h2>/);
+    assert.match(template, /@click="navigateSettings\('general'\)"/);
+    assert.match(template, /@click="navigateSettings\('guardrails'\)"/);
+    assert.match(template, /Guardrail Library/);
+    assert.match(template, /x-model="guardrailForm\.user_path"[^>]*aria-label="Guardrail user path"/);
+    assert.match(template, /Reserved for future UI visibility scoping\. It does not affect runtime execution yet\./);
     assert.match(template, /x-ref="timezoneOverrideSelect"/);
     assert.match(template, /x-model="timezoneOverride"/);
     assert.match(template, /x-effect="timezoneOptions\.length; timezoneOverride; \$nextTick\(\(\) => syncTimezoneOverrideSelectValue\(\)\)"/);

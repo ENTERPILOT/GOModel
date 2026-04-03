@@ -3,11 +3,13 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -32,7 +34,8 @@ type Handler struct {
 	authKeys      *authkeys.Service
 	aliases       *aliases.Service
 	plans         *executionplans.Service
-	guardrails    *guardrails.Registry
+	guardrails    guardrails.Catalog
+	guardrailDefs *guardrails.Service
 	runtimeConfig DashboardConfigResponse
 }
 
@@ -89,9 +92,17 @@ func WithExecutionPlans(service *executionplans.Service) Option {
 }
 
 // WithGuardrailsRegistry enables listing valid guardrail references for plan authoring.
-func WithGuardrailsRegistry(registry *guardrails.Registry) Option {
+func WithGuardrailsRegistry(registry guardrails.Catalog) Option {
 	return func(h *Handler) {
 		h.guardrails = registry
+	}
+}
+
+// WithGuardrailService enables full guardrail definition administration endpoints.
+func WithGuardrailService(service *guardrails.Service) Option {
+	return func(h *Handler) {
+		h.guardrails = service
+		h.guardrailDefs = service
 	}
 }
 
@@ -694,6 +705,13 @@ type upsertAliasRequest struct {
 	Enabled        *bool  `json:"enabled,omitempty"`
 }
 
+type upsertGuardrailRequest struct {
+	Type        string          `json:"type"`
+	Description string          `json:"description,omitempty"`
+	UserPath    string          `json:"user_path,omitempty"`
+	Config      json.RawMessage `json:"config"`
+}
+
 type createExecutionPlanRequest struct {
 	ScopeProvider string                 `json:"scope_provider,omitempty"`
 	ScopeModel    string                 `json:"scope_model,omitempty"`
@@ -721,6 +739,10 @@ func (h *Handler) aliasesUnavailableError() error {
 
 func (h *Handler) authKeysUnavailableError() error {
 	return featureUnavailableError("auth keys feature is unavailable")
+}
+
+func (h *Handler) guardrailsUnavailableError() error {
+	return featureUnavailableError("guardrails feature is unavailable")
 }
 
 func (h *Handler) executionPlansUnavailableError() error {
@@ -752,6 +774,16 @@ func authKeyWriteError(err error) error {
 		return nil
 	}
 	if authkeys.IsValidationError(err) {
+		return core.NewInvalidRequestError(err.Error(), err)
+	}
+	return err
+}
+
+func guardrailWriteError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if guardrails.IsValidationError(err) {
 		return core.NewInvalidRequestError(err.Error(), err)
 	}
 	return err
@@ -918,6 +950,99 @@ func (h *Handler) DeleteAlias(c *echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
+// ListGuardrailTypes handles GET /admin/api/v1/guardrails/types
+func (h *Handler) ListGuardrailTypes(c *echo.Context) error {
+	if h.guardrailDefs == nil {
+		return handleError(c, h.guardrailsUnavailableError())
+	}
+	return c.JSON(http.StatusOK, h.guardrailDefs.TypeDefinitions())
+}
+
+// ListGuardrails handles GET /admin/api/v1/guardrails
+func (h *Handler) ListGuardrails(c *echo.Context) error {
+	if h.guardrailDefs == nil {
+		return handleError(c, h.guardrailsUnavailableError())
+	}
+	views := h.guardrailDefs.ListViews()
+	if views == nil {
+		views = []guardrails.View{}
+	}
+	return c.JSON(http.StatusOK, views)
+}
+
+// UpsertGuardrail handles PUT /admin/api/v1/guardrails/{name}
+func (h *Handler) UpsertGuardrail(c *echo.Context) error {
+	if h.guardrailDefs == nil {
+		return handleError(c, h.guardrailsUnavailableError())
+	}
+
+	name := strings.TrimSpace(c.Param("name"))
+	if name == "" {
+		return handleError(c, core.NewInvalidRequestError("guardrail name is required", nil))
+	}
+
+	var req upsertGuardrailRequest
+	if err := c.Bind(&req); err != nil {
+		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
+	}
+
+	userPath, err := normalizeUserPathQueryParam("user_path", req.UserPath)
+	if err != nil {
+		return handleError(c, err)
+	}
+
+	if err := h.guardrailDefs.Upsert(c.Request().Context(), guardrails.Definition{
+		Name:        name,
+		Type:        req.Type,
+		Description: req.Description,
+		UserPath:    userPath,
+		Config:      req.Config,
+	}); err != nil {
+		return handleError(c, guardrailWriteError(err))
+	}
+	if err := h.refreshExecutionPlansAfterGuardrailChange(c.Request().Context()); err != nil {
+		return handleError(c, err)
+	}
+
+	definition, ok := h.guardrailDefs.Get(name)
+	if !ok {
+		return c.NoContent(http.StatusNoContent)
+	}
+	return c.JSON(http.StatusOK, guardrails.ViewFromDefinition(*definition))
+}
+
+// DeleteGuardrail handles DELETE /admin/api/v1/guardrails/{name}
+func (h *Handler) DeleteGuardrail(c *echo.Context) error {
+	if h.guardrailDefs == nil {
+		return handleError(c, h.guardrailsUnavailableError())
+	}
+
+	name := strings.TrimSpace(c.Param("name"))
+	if name == "" {
+		return handleError(c, core.NewInvalidRequestError("guardrail name is required", nil))
+	}
+
+	referencingWorkflows, err := h.activeWorkflowGuardrailReferences(c.Request().Context(), name)
+	if err != nil {
+		return handleError(c, err)
+	}
+	if len(referencingWorkflows) > 0 {
+		return handleError(c, core.NewInvalidRequestError("guardrail is used by active workflows: "+strings.Join(referencingWorkflows, ", "), nil))
+	}
+
+	if err := h.guardrailDefs.Delete(c.Request().Context(), name); err != nil {
+		if errors.Is(err, guardrails.ErrNotFound) {
+			return handleError(c, core.NewNotFoundError("guardrail not found: "+name))
+		}
+		return handleError(c, guardrailWriteError(err))
+	}
+	if err := h.refreshExecutionPlansAfterGuardrailChange(c.Request().Context()); err != nil {
+		return handleError(c, err)
+	}
+
+	return c.NoContent(http.StatusNoContent)
+}
+
 // ListExecutionPlans handles GET /admin/api/v1/execution-plans
 func (h *Handler) ListExecutionPlans(c *echo.Context) error {
 	if h.plans == nil {
@@ -1019,6 +1144,45 @@ func (h *Handler) DeactivateExecutionPlan(c *echo.Context) error {
 		deactivate = h.plans.Deactivate
 	}
 	return deactivateByID(c, unavailableErr, "execution plan", executionplans.ErrNotFound, "workflow not found: ", deactivate, executionPlanWriteError)
+}
+
+func (h *Handler) refreshExecutionPlansAfterGuardrailChange(ctx context.Context) error {
+	if h.plans == nil {
+		return nil
+	}
+	if err := h.plans.Refresh(ctx); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (h *Handler) activeWorkflowGuardrailReferences(ctx context.Context, name string) ([]string, error) {
+	if h.plans == nil {
+		return nil, nil
+	}
+
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil, nil
+	}
+
+	views, err := h.plans.ListViews(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	references := make([]string, 0)
+	for _, view := range views {
+		for _, step := range view.Payload.Guardrails {
+			if strings.TrimSpace(step.Ref) != name {
+				continue
+			}
+			references = append(references, view.ScopeDisplay)
+			break
+		}
+	}
+	sort.Strings(references)
+	return references, nil
 }
 
 func (h *Handler) validateExecutionPlanGuardrails(payload executionplans.Payload) error {

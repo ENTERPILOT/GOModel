@@ -8,18 +8,18 @@ import (
 )
 
 type compiler struct {
-	registry    *guardrails.Registry
+	registry    guardrails.Catalog
 	featureCaps core.ExecutionFeatures
 }
 
 // NewCompiler creates the default execution-plan compiler for the v1 payload.
-func NewCompiler(registry *guardrails.Registry) Compiler {
+func NewCompiler(registry guardrails.Catalog) Compiler {
 	return NewCompilerWithFeatureCaps(registry, core.DefaultExecutionFeatures())
 }
 
 // NewCompilerWithFeatureCaps creates the default execution-plan compiler for the
 // v1 payload with process-level feature caps applied at compile time.
-func NewCompilerWithFeatureCaps(registry *guardrails.Registry, featureCaps core.ExecutionFeatures) Compiler {
+func NewCompilerWithFeatureCaps(registry guardrails.Catalog, featureCaps core.ExecutionFeatures) Compiler {
 	return &compiler{
 		registry:    registry,
 		featureCaps: featureCaps,

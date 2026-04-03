@@ -72,7 +72,7 @@ test('dashboard layout pins Chart.js to 4.5.0', () => {
     );
     assert.match(
         template,
-        /<script src="\/admin\/static\/js\/modules\/conversation-helpers\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/clipboard\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/audit-list\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/auth-keys\.js"><\/script>/
+        /<script src="\/admin\/static\/js\/modules\/conversation-helpers\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/clipboard\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/audit-list\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/auth-keys\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/guardrails\.js"><\/script>/
     );
 });
 
@@ -104,6 +104,14 @@ test('auth key expirations render as a UTC date with the full UTC timestamp in t
     assert.match(indexTemplate, /:disabled="authKeyFormSubmitting"/);
     assert.match(indexTemplate, /@click="if \(!authKeyFormSubmitting\) openAuthKeyForm\(\)"/);
     assert.match(indexTemplate, /x-show="authKeys\.length === 0 && !authKeysLoading && !authError && !authKeyError && authKeysAvailable"/);
+});
+
+test('workflow guardrail warning links directly to the guardrails settings subpage', () => {
+    const indexTemplate = readFixture('../../../templates/index.html');
+
+    assert.match(indexTemplate, /No named guardrails are currently registered on this deployment\./);
+    assert.match(indexTemplate, /class="alert alert-warning alert-inline-actions" x-show="guardrailRefs\.length === 0"/);
+    assert.match(indexTemplate, /@click="navigateSettings\('guardrails'\)">Open Guardrails<\/button>/);
 });
 
 test('usage and audit pages reuse a shared pagination template', () => {

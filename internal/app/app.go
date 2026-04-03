@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -40,6 +41,7 @@ type App struct {
 	batch          *batch.Result
 	aliases        *aliases.Result
 	authKeys       *authkeys.Result
+	guardrails     *guardrails.Result
 	executionPlans *executionplans.Result
 	server         *server.Server
 
@@ -166,60 +168,73 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	}
 	app.aliases = aliasResult
 
+	refreshInterval := executionPlanRefreshInterval(appCfg)
+
+	// Initialize reusable guardrail definitions using shared storage when already available.
+	var guardrailResult *guardrails.Result
+	sharedGuardrailStorage := firstSharedStorage(auditResult.Storage, usageResult.Storage, batchResult.Storage, aliasResult.Storage)
+	if sharedGuardrailStorage != nil {
+		guardrailResult, err = guardrails.NewWithSharedStorage(ctx, sharedGuardrailStorage, refreshInterval)
+	} else {
+		guardrailResult, err = guardrails.New(ctx, appCfg, refreshInterval)
+	}
+	if err != nil {
+		closeErr := errors.Join(app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to initialize guardrails: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to initialize guardrails: %w", err)
+	}
+	app.guardrails = guardrailResult
+
+	seedGuardrails, err := configGuardrailDefinitions(appCfg.Guardrails)
+	if err != nil {
+		closeErr := errors.Join(app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to prepare guardrail definitions: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to prepare guardrail definitions: %w", err)
+	}
+	if err := guardrailResult.Service.EnsureSeedDefinitions(ctx, seedGuardrails); err != nil {
+		closeErr := errors.Join(app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		if closeErr != nil {
+			return nil, fmt.Errorf("failed to seed guardrails: %w (also: close error: %v)", err, closeErr)
+		}
+		return nil, fmt.Errorf("failed to seed guardrails: %w", err)
+	}
+
 	// Build runtime execution dependencies. Policy is passed explicitly into the
 	// server; the live provider dependency remains the bare router.
 	var provider core.RoutableProvider = app.providers.Router
 	var translatedRequestPatcher server.TranslatedRequestPatcher
 	var batchRequestPreparers []server.BatchRequestPreparer
 	featureCaps := runtimeExecutionFeatureCaps(appCfg)
-	var guardrailRegistry *guardrails.Registry
-	if featureCaps.Guardrails {
-		guardrailRegistry, err = buildGuardrailRegistry(appCfg.Guardrails)
-		if err != nil {
-			var (
-				aliasCloseErr error
-				batchCloseErr error
-			)
-			if app.aliases != nil {
-				aliasCloseErr = app.aliases.Close()
-			}
-			if app.batch != nil {
-				batchCloseErr = app.batch.Close()
-			}
-			closeErr := errors.Join(aliasCloseErr, batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
-			if closeErr != nil {
-				return nil, fmt.Errorf("failed to build guardrails: %w (also: close error: %v)", err, closeErr)
-			}
-			return nil, fmt.Errorf("failed to build guardrails: %w", err)
-		}
-	}
 
 	var executionPlanResult *executionplans.Result
-	sharedExecutionPlanStorage := firstSharedStorage(auditResult.Storage, usageResult.Storage, batchResult.Storage, aliasResult.Storage)
-	executionPlanCompiler := executionplans.NewCompilerWithFeatureCaps(guardrailRegistry, featureCaps)
-	refreshInterval := executionPlanRefreshInterval(appCfg)
+	sharedExecutionPlanStorage := firstSharedStorage(auditResult.Storage, usageResult.Storage, batchResult.Storage, aliasResult.Storage, guardrailResult.Storage)
+	executionPlanCompiler := executionplans.NewCompilerWithFeatureCaps(guardrailResult.Service, featureCaps)
 	if sharedExecutionPlanStorage != nil {
 		executionPlanResult, err = executionplans.NewWithSharedStorage(ctx, sharedExecutionPlanStorage, executionPlanCompiler, refreshInterval)
 	} else {
 		executionPlanResult, err = executionplans.New(ctx, appCfg, executionPlanCompiler, refreshInterval)
 	}
 	if err != nil {
-		closeErr := errors.Join(app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		closeErr := errors.Join(app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to initialize execution plans: %w (also: close error: %v)", err, closeErr)
 		}
 		return nil, fmt.Errorf("failed to initialize execution plans: %w", err)
 	}
-	defaultExecutionPlan := defaultExecutionPlanInput(appCfg)
+	defaultExecutionPlan := defaultExecutionPlanInput(appCfg, guardrailResult.Service.Names())
 	if err := executionPlanResult.Service.EnsureDefaultGlobal(ctx, defaultExecutionPlan); err != nil {
-		closeErr := errors.Join(executionPlanResult.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		closeErr := errors.Join(executionPlanResult.Close(), app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to seed execution plans: %w (also: close error: %v)", err, closeErr)
 		}
 		return nil, fmt.Errorf("failed to seed execution plans: %w", err)
 	}
 	if err := executionPlanResult.Service.Refresh(ctx); err != nil {
-		closeErr := errors.Join(executionPlanResult.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		closeErr := errors.Join(executionPlanResult.Close(), app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to load execution plans: %w (also: close error: %v)", err, closeErr)
 		}
@@ -233,6 +248,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		usageResult.Storage,
 		batchResult.Storage,
 		aliasResult.Storage,
+		guardrailResult.Storage,
 		executionPlanResult.Storage,
 	)
 	if sharedAuthKeyStorage != nil {
@@ -241,7 +257,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		authKeyResult, err = authkeys.New(ctx, appCfg)
 	}
 	if err != nil {
-		closeErr := errors.Join(executionPlanResult.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+		closeErr := errors.Join(executionPlanResult.Close(), app.guardrails.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to initialize auth keys: %w (also: close error: %v)", err, closeErr)
 		}
@@ -254,14 +270,14 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	app.logStartupInfo()
 
 	if featureCaps.Guardrails {
-		if guardrailRegistry != nil && guardrailRegistry.Len() > 0 {
+		if app.guardrails != nil && app.guardrails.Service != nil && app.guardrails.Service.Len() > 0 {
 			translatedRequestPatcher = guardrails.NewPlannedRequestPatcher(executionPlanResult.Service)
 			if appCfg.Guardrails.EnableForBatchProcessing {
 				batchRequestPreparers = append(batchRequestPreparers, guardrails.NewPlannedBatchPreparer(provider, executionPlanResult.Service))
 			}
 			slog.Info(
 				"guardrails enabled",
-				"count", guardrailRegistry.Len(),
+				"count", app.guardrails.Service.Len(),
 				"enable_for_batch_processing", appCfg.Guardrails.EnableForBatchProcessing,
 			)
 		}
@@ -272,8 +288,6 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		}, batchRequestPreparers...)
 	}
 	batchRequestPreparer := server.ComposeBatchRequestPreparers(providerAsNativeFileRouter(provider), batchRequestPreparers...)
-
-	guardrailsHash := computeGuardrailsHashFromConfig(appCfg.Guardrails)
 
 	// Create server
 	allowPassthroughV1Alias := appCfg.Server.AllowPassthroughV1Alias
@@ -291,7 +305,6 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		FallbackResolver:             fallback.NewResolver(appCfg.Fallback, providerResult.Registry),
 		ExecutionPolicyResolver:      executionPlanResult.Service,
 		TranslatedRequestPatcher:     translatedRequestPatcher,
-		GuardrailsHash:               guardrailsHash,
 		BatchRequestPreparer:         batchRequestPreparer,
 		ExposedModelLister:           app.aliases.Service,
 		PassthroughSemanticEnrichers: cfg.Factory.PassthroughSemanticEnrichers(),
@@ -318,7 +331,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			authKeyResult.Service,
 			app.aliases.Service,
 			executionPlanResult.Service,
-			guardrailRegistry,
+			app.guardrails.Service,
 			dashboardRuntimeConfig(appCfg, usageEnabledForDashboard),
 			adminCfg.UIEnabled,
 		)
@@ -354,12 +367,16 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	if err != nil {
 		var (
 			executionPlansCloseErr error
+			guardrailsCloseErr     error
 			authKeysCloseErr       error
 			aliasCloseErr          error
 			batchCloseErr          error
 		)
 		if app.executionPlans != nil {
 			executionPlansCloseErr = app.executionPlans.Close()
+		}
+		if app.guardrails != nil {
+			guardrailsCloseErr = app.guardrails.Close()
 		}
 		if app.authKeys != nil {
 			authKeysCloseErr = app.authKeys.Close()
@@ -370,7 +387,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		if app.batch != nil {
 			batchCloseErr = app.batch.Close()
 		}
-		closeErr := errors.Join(executionPlansCloseErr, authKeysCloseErr, aliasCloseErr, batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
+		closeErr := errors.Join(executionPlansCloseErr, guardrailsCloseErr, authKeysCloseErr, aliasCloseErr, batchCloseErr, app.usage.Close(), app.audit.Close(), app.providers.Close())
 		if closeErr != nil {
 			return nil, fmt.Errorf("failed to initialize response cache: %w (also: close error: %v)", err, closeErr)
 		}
@@ -526,7 +543,15 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 5. Close managed auth keys subsystem.
+	// 5. Close reusable guardrails subsystem.
+	if a.guardrails != nil {
+		if err := a.guardrails.Close(); err != nil {
+			slog.Error("guardrails close error", "error", err)
+			errs = append(errs, fmt.Errorf("guardrails close: %w", err))
+		}
+	}
+
+	// 6. Close managed auth keys subsystem.
 	if a.authKeys != nil {
 		if err := a.authKeys.Close(); err != nil {
 			slog.Error("auth keys close error", "error", err)
@@ -534,7 +559,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 6. Close batch store (flushes pending entries)
+	// 7. Close batch store (flushes pending entries)
 	if a.batch != nil {
 		if err := a.batch.Close(); err != nil {
 			slog.Error("batch store close error", "error", err)
@@ -542,7 +567,7 @@ func (a *App) Shutdown(ctx context.Context) error {
 		}
 	}
 
-	// 7. Close usage tracking (flushes pending entries)
+	// 8. Close usage tracking (flushes pending entries)
 	if a.usage != nil {
 		if err := a.usage.Close(); err != nil {
 			slog.Error("usage logger close error", "error", err)
@@ -627,7 +652,7 @@ func initAdmin(
 	authKeyService *authkeys.Service,
 	aliasService *aliases.Service,
 	executionPlanService *executionplans.Service,
-	guardrailRegistry *guardrails.Registry,
+	guardrailService *guardrails.Service,
 	runtimeConfig admin.DashboardConfigResponse,
 	uiEnabled bool,
 ) (*admin.Handler, *dashboard.Handler, error) {
@@ -667,7 +692,7 @@ func initAdmin(
 		admin.WithAuthKeys(authKeyService),
 		admin.WithAliases(aliasService),
 		admin.WithExecutionPlans(executionPlanService),
-		admin.WithGuardrailsRegistry(guardrailRegistry),
+		admin.WithGuardrailService(guardrailService),
 		admin.WithDashboardRuntimeConfig(runtimeConfig),
 	)
 
@@ -683,93 +708,59 @@ func initAdmin(
 	return adminHandler, dashHandler, nil
 }
 
-func buildGuardrailRegistry(cfg config.GuardrailsConfig) (*guardrails.Registry, error) {
-	registry := guardrails.NewRegistry()
+func configGuardrailDefinitions(cfg config.GuardrailsConfig) ([]guardrails.Definition, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
 
+	definitions := make([]guardrails.Definition, 0, len(cfg.Rules))
 	for i, rule := range cfg.Rules {
-		g, err := buildGuardrail(rule)
+		rawConfig, err := json.Marshal(map[string]any{
+			"mode":    rule.SystemPrompt.Mode,
+			"content": rule.SystemPrompt.Content,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("guardrail rule #%d (%q): %w", i, rule.Name, err)
+			return nil, fmt.Errorf("guardrail rule #%d (%q): marshal config: %w", i, rule.Name, err)
 		}
-		if err := registry.Register(g, responsecache.GuardrailRuleDescriptor{
-			Type:    rule.Type,
-			Order:   rule.Order,
-			Mode:    effectiveSystemPromptMode(rule.SystemPrompt.Mode),
-			Content: rule.SystemPrompt.Content,
-		}); err != nil {
-			return nil, fmt.Errorf("register guardrail %q: %w", rule.Name, err)
-		}
-		slog.Info("guardrail registered", "name", rule.Name, "type", rule.Type, "order", rule.Order)
+		definitions = append(definitions, guardrails.Definition{
+			Name:   rule.Name,
+			Type:   rule.Type,
+			Config: rawConfig,
+		})
 	}
-
-	return registry, nil
+	return definitions, nil
 }
 
-// buildGuardrail creates a single Guardrail instance from a rule config.
-func buildGuardrail(rule config.GuardrailRuleConfig) (guardrails.Guardrail, error) {
-	if rule.Name == "" {
-		return nil, fmt.Errorf("name is required")
-	}
-
-	switch rule.Type {
-	case "system_prompt":
-		mode := guardrails.SystemPromptMode(effectiveSystemPromptMode(rule.SystemPrompt.Mode))
-		return guardrails.NewSystemPromptGuardrail(rule.Name, mode, rule.SystemPrompt.Content)
-
-	default:
-		return nil, fmt.Errorf("unknown guardrail type: %q", rule.Type)
-	}
-}
-
-// computeGuardrailsHashFromConfig computes a stable hash of all configured guardrail rules.
-// The hash is stored in the Echo context post-patch so the semantic cache can include it
-// in params_hash, ensuring automatic cache invalidation when guardrail policy changes.
-func computeGuardrailsHashFromConfig(cfg config.GuardrailsConfig) string {
-	if !cfg.Enabled || len(cfg.Rules) == 0 {
-		return ""
-	}
-	rules := make([]responsecache.GuardrailRuleDescriptor, len(cfg.Rules))
-	for i, r := range cfg.Rules {
-		rules[i] = responsecache.GuardrailRuleDescriptor{
-			Name:    r.Name,
-			Type:    r.Type,
-			Order:   r.Order,
-			Mode:    effectiveSystemPromptMode(r.SystemPrompt.Mode),
-			Content: r.SystemPrompt.Content,
-		}
-	}
-	return responsecache.ComputeGuardrailsHash(rules)
-}
-
-func effectiveSystemPromptMode(mode string) string {
-	resolved := guardrails.SystemPromptMode(mode)
-	if resolved == "" {
-		return string(guardrails.SystemPromptInject)
-	}
-	return string(resolved)
-}
-
-func defaultExecutionPlanInput(cfg *config.Config) executionplans.CreateInput {
+func defaultExecutionPlanInput(cfg *config.Config, availableGuardrails []string) executionplans.CreateInput {
 	fallbackEnabled := fallbackFeatureEnabledGlobally(cfg)
 	payload := executionplans.Payload{
 		SchemaVersion: 1,
 		Features: executionplans.FeatureFlags{
-			Cache:      responseCacheConfigured(cfg.Cache.Response),
-			Audit:      cfg.Logging.Enabled,
-			Usage:      cfg.Usage.Enabled,
-			Guardrails: cfg.Guardrails.Enabled && len(cfg.Guardrails.Rules) > 0,
-			Fallback:   &fallbackEnabled,
+			Cache:    responseCacheConfigured(cfg.Cache.Response),
+			Audit:    cfg.Logging.Enabled,
+			Usage:    cfg.Usage.Enabled,
+			Fallback: &fallbackEnabled,
 		},
 	}
-	if payload.Features.Guardrails {
+	available := make(map[string]struct{}, len(availableGuardrails))
+	for _, name := range availableGuardrails {
+		available[strings.TrimSpace(name)] = struct{}{}
+	}
+	if cfg.Guardrails.Enabled && len(cfg.Guardrails.Rules) > 0 {
 		payload.Guardrails = make([]executionplans.GuardrailStep, 0, len(cfg.Guardrails.Rules))
 		for _, rule := range cfg.Guardrails.Rules {
+			if len(available) > 0 {
+				if _, ok := available[strings.TrimSpace(rule.Name)]; !ok {
+					continue
+				}
+			}
 			payload.Guardrails = append(payload.Guardrails, executionplans.GuardrailStep{
 				Ref:  rule.Name,
 				Step: rule.Order,
 			})
 		}
 	}
+	payload.Features.Guardrails = len(payload.Guardrails) > 0
 
 	return executionplans.CreateInput{
 		Scope:       executionplans.Scope{},

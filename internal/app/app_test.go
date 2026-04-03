@@ -30,12 +30,33 @@ func TestDefaultExecutionPlanInput_SetsFallbackFeature(t *testing.T) {
 		},
 	}
 
-	input := defaultExecutionPlanInput(cfg)
+	input := defaultExecutionPlanInput(cfg, nil)
 	if input.Payload.Features.Fallback == nil {
 		t.Fatal("defaultExecutionPlanInput().Payload.Features.Fallback = nil, want non-nil")
 	}
 	if !*input.Payload.Features.Fallback {
 		t.Fatal("defaultExecutionPlanInput().Payload.Features.Fallback = false, want true")
+	}
+}
+
+func TestConfigGuardrailDefinitions_DisabledIgnoresInvalidRules(t *testing.T) {
+	definitions, err := configGuardrailDefinitions(config.GuardrailsConfig{
+		Enabled: false,
+		Rules: []config.GuardrailRuleConfig{
+			{
+				Name: "draft-rule",
+				Type: "future_guardrail_type",
+				SystemPrompt: config.SystemPromptSettings{
+					Content: "",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("configGuardrailDefinitions() error = %v, want nil", err)
+	}
+	if len(definitions) != 0 {
+		t.Fatalf("len(configGuardrailDefinitions()) = %d, want 0", len(definitions))
 	}
 }
 
