@@ -715,10 +715,17 @@ func configGuardrailDefinitions(cfg config.GuardrailsConfig) ([]guardrails.Defin
 
 	definitions := make([]guardrails.Definition, 0, len(cfg.Rules))
 	for i, rule := range cfg.Rules {
-		rawConfig, err := json.Marshal(map[string]any{
-			"mode":    rule.SystemPrompt.Mode,
-			"content": rule.SystemPrompt.Content,
-		})
+		var rawConfig []byte
+		var err error
+		switch strings.TrimSpace(rule.Type) {
+		case "system_prompt":
+			rawConfig, err = json.Marshal(map[string]any{
+				"mode":    rule.SystemPrompt.Mode,
+				"content": rule.SystemPrompt.Content,
+			})
+		default:
+			return nil, fmt.Errorf("guardrail rule #%d (%q): unsupported type %q", i, rule.Name, rule.Type)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("guardrail rule #%d (%q): marshal config: %w", i, rule.Name, err)
 		}

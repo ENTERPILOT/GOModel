@@ -198,18 +198,26 @@ func (s *MongoDBStore) Close() error {
 }
 
 func mongoConfigFromRaw(raw json.RawMessage) (bson.M, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return bson.M{}, nil
 	}
 	var doc bson.M
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	if err := json.Unmarshal(trimmed, &doc); err != nil {
 		return nil, fmt.Errorf("decode guardrail config: %w", err)
+	}
+	if doc == nil {
+		return bson.M{}, nil
 	}
 	return doc, nil
 }
 
 func definitionFromMongo(doc mongoDefinitionDocument) (Definition, error) {
-	raw, err := json.Marshal(doc.Config)
+	config := doc.Config
+	if config == nil {
+		config = bson.M{}
+	}
+	raw, err := json.Marshal(config)
 	if err != nil {
 		return Definition{}, fmt.Errorf("encode guardrail config %q: %w", doc.Name, err)
 	}

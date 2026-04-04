@@ -60,9 +60,19 @@ test('async label stays inline on the right side of the branch', () => {
         template,
         /<div class="ep-async-row">[\s\S]*ep-node-async-usage[\s\S]*ep-conn-async[\s\S]*ep-node-async-audit[\s\S]*<\/div>\s*<div class="ep-async-turn"><\/div>\s*<span class="ep-async-label">Async<\/span>/
     );
+    assert.match(
+        template,
+        /<div class="ep-conn ep-conn-async" x-show="{{\.}}\.showAudit"><\/div>\s*<div class="ep-node ep-node-feature ep-node-async ep-node-async-audit" x-show="{{\.}}\.showAudit">/
+    );
 
     const asyncLabelRule = readCSSRule(css, '.ep-async-label');
     assert.doesNotMatch(asyncLabelRule, /position:\s*absolute/);
+
+    const asyncUsageRule = readCSSRule(css, '.ep-node-async-usage');
+    assert.match(asyncUsageRule, /--accent:\s*var\(--success\)/);
+
+    const asyncAuditRule = readCSSRule(css, '.ep-node-async-audit');
+    assert.match(asyncAuditRule, /--accent:\s*var\(--warning\)/);
 });
 
 test('workflow nodes use endpoint and feature color groups consistently', () => {

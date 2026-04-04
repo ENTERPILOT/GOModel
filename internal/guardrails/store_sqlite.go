@@ -3,6 +3,7 @@ package guardrails
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -69,7 +70,7 @@ func (s *SQLiteStore) Get(ctx context.Context, name string) (*Definition, error)
 	`, normalizeDefinitionName(name))
 	definition, err := scanSQLiteDefinition(row)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err

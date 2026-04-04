@@ -90,6 +90,21 @@ func TestConfigGuardrailDefinitions_DisabledIgnoresInvalidRules(t *testing.T) {
 	}
 }
 
+func TestConfigGuardrailDefinitions_EnabledRejectsUnknownType(t *testing.T) {
+	_, err := configGuardrailDefinitions(config.GuardrailsConfig{
+		Enabled: true,
+		Rules: []config.GuardrailRuleConfig{
+			{
+				Name: "draft-rule",
+				Type: "future_guardrail_type",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("configGuardrailDefinitions() error = nil, want unsupported type error")
+	}
+}
+
 func TestDashboardRuntimeConfig_ExposesFallbackMode(t *testing.T) {
 	cfg := &config.Config{
 		Fallback: config.FallbackConfig{

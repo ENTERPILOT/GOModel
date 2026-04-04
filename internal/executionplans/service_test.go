@@ -375,6 +375,16 @@ func TestServiceEnsureDefaultGlobal_CreatesWhenMissing(t *testing.T) {
 	if !store.versions[0].Managed {
 		t.Fatal("Managed = false, want true for managed default global")
 	}
+	policy, err := service.Match(core.NewExecutionPlanSelector("openai", "gpt-5"))
+	if err != nil {
+		t.Fatalf("Match() error = %v", err)
+	}
+	if policy == nil {
+		t.Fatal("Match() returned nil policy")
+	}
+	if policy.VersionID != store.versions[0].ID {
+		t.Fatalf("Match().VersionID = %q, want %q", policy.VersionID, store.versions[0].ID)
+	}
 }
 
 func TestServiceEnsureDefaultGlobal_ReconcilesManagedDefault(t *testing.T) {

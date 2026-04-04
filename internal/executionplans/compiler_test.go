@@ -158,7 +158,19 @@ func TestCompilerCompile_ReturnsGatewayErrorWhenGuardrailsCatalogIsEmpty(t *test
 
 func TestCompilerCompile_WrapsBuildPipelineErrorsAsGatewayErrors(t *testing.T) {
 	registry := guardrails.NewRegistry()
-	_, err := NewCompiler(registry).Compile(Version{
+	rule, err := guardrails.NewSystemPromptGuardrail("present", guardrails.SystemPromptInject, "be precise")
+	if err != nil {
+		t.Fatalf("NewSystemPromptGuardrail() error = %v", err)
+	}
+	if err := registry.Register(rule, responsecache.GuardrailRuleDescriptor{
+		Name:    "present",
+		Type:    "system_prompt",
+		Mode:    string(guardrails.SystemPromptInject),
+		Content: "be precise",
+	}); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+	_, err = NewCompiler(registry).Compile(Version{
 		ID:      "plan-1",
 		Scope:   Scope{},
 		Version: 1,

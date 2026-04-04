@@ -149,6 +149,19 @@ func TestServiceRefresh_ReturnsGatewayErrorOnStoreFailure(t *testing.T) {
 	}
 }
 
+func TestServiceBuildPipeline_ReturnsGatewayErrorWhenCatalogMissing(t *testing.T) {
+	service := &Service{}
+
+	_, _, err := service.BuildPipeline([]StepReference{{Ref: "policy", Step: 10}})
+	if err == nil {
+		t.Fatal("BuildPipeline() error = nil, want gateway error")
+	}
+	var gatewayErr *core.GatewayError
+	if !errors.As(err, &gatewayErr) {
+		t.Fatalf("BuildPipeline() error = %T, want *core.GatewayError", err)
+	}
+}
+
 func TestServiceUpsertDefinitions_UpdatesConfiguredSubsetAndPreservesCustomEntries(t *testing.T) {
 	store := newTestStore(
 		Definition{

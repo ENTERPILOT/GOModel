@@ -220,7 +220,7 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 		normalized.Activate = true
 	}
 	normalized.Managed = true
-	if _, err := s.store.Create(ctx, normalized); err != nil {
+	if _, err := s.Create(ctx, normalized); err != nil {
 		return fmt.Errorf("seed default global execution plan: %w", err)
 	}
 	return nil

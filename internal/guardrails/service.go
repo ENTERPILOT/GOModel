@@ -230,7 +230,7 @@ func (s *Service) BuildPipeline(steps []StepReference) (*Pipeline, string, error
 	registry := s.snapshot.registry
 	s.mu.RUnlock()
 	if registry == nil {
-		return nil, "", fmt.Errorf("guardrail catalog is not loaded")
+		return nil, "", core.NewProviderError("", http.StatusBadGateway, "guardrail catalog is not loaded", nil)
 	}
 	return registry.BuildPipeline(steps)
 }
