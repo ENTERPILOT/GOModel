@@ -580,6 +580,40 @@ func TestServiceEnsureDefaultGlobal_LoadsPreservedCustomGlobalIntoSnapshot(t *te
 	}
 }
 
+func TestServiceEnsureDefaultGlobal_ValidatesBeforeStoreMutation(t *testing.T) {
+	store := &concurrentStore{
+		createCalled: make(chan struct{}, 1),
+	}
+	service, err := NewService(store, &previewEmptyCompiler{delegate: NewCompiler(nil)})
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+
+	err = service.EnsureDefaultGlobal(context.Background(), CreateInput{
+		Activate:    true,
+		Name:        ManagedDefaultGlobalName,
+		Description: ManagedDefaultGlobalDescription,
+		Payload: Payload{
+			SchemaVersion: 1,
+			Features:      FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+		},
+	})
+	if err == nil {
+		t.Fatal("EnsureDefaultGlobal() error = nil, want validation error")
+	}
+	if !IsValidationError(err) {
+		t.Fatalf("EnsureDefaultGlobal() error = %v, want validation error", err)
+	}
+	if len(store.versions) != 0 {
+		t.Fatalf("len(store.versions) = %d, want 0", len(store.versions))
+	}
+	select {
+	case <-store.createCalled:
+		t.Fatal("EnsureDefaultGlobal() mutated store before validation")
+	default:
+	}
+}
+
 func TestServiceCreate_RefreshesSnapshot(t *testing.T) {
 	store := &staticStore{
 		versions: []Version{

@@ -16,6 +16,7 @@ func TestNewSQLiteStore_AddsMissingUserPathColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
+	db.SetMaxOpenConns(1)
 	defer db.Close()
 
 	_, err = db.Exec(`
@@ -76,6 +77,7 @@ func TestSQLiteStore_UpsertAndListRoundTripsUserPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}
+	db.SetMaxOpenConns(1)
 	defer db.Close()
 
 	store, err := NewSQLiteStore(context.Background(), db)

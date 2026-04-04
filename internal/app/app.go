@@ -715,23 +715,32 @@ func configGuardrailDefinitions(cfg config.GuardrailsConfig) ([]guardrails.Defin
 
 	definitions := make([]guardrails.Definition, 0, len(cfg.Rules))
 	for i, rule := range cfg.Rules {
+		name := strings.TrimSpace(rule.Name)
+		ruleType := strings.ToLower(strings.TrimSpace(rule.Type))
+		if name == "" {
+			return nil, fmt.Errorf("guardrail rule #%d: name is required", i)
+		}
+		if ruleType == "" {
+			return nil, fmt.Errorf("guardrail rule #%d (%q): type is required", i, name)
+		}
+
 		var rawConfig []byte
 		var err error
-		switch strings.TrimSpace(rule.Type) {
+		switch ruleType {
 		case "system_prompt":
 			rawConfig, err = json.Marshal(map[string]any{
 				"mode":    rule.SystemPrompt.Mode,
 				"content": rule.SystemPrompt.Content,
 			})
 		default:
-			return nil, fmt.Errorf("guardrail rule #%d (%q): unsupported type %q", i, rule.Name, rule.Type)
+			return nil, fmt.Errorf("guardrail rule #%d (%q): unsupported type %q", i, name, ruleType)
 		}
 		if err != nil {
-			return nil, fmt.Errorf("guardrail rule #%d (%q): marshal config: %w", i, rule.Name, err)
+			return nil, fmt.Errorf("guardrail rule #%d (%q): marshal config: %w", i, name, err)
 		}
 		definitions = append(definitions, guardrails.Definition{
-			Name:   rule.Name,
-			Type:   rule.Type,
+			Name:   name,
+			Type:   ruleType,
 			Config: rawConfig,
 		})
 	}

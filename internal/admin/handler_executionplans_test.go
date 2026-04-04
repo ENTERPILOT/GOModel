@@ -3,6 +3,8 @@ package admin
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +74,10 @@ func (s *executionPlanTestStore) Create(_ context.Context, input executionplans.
 			scopeKey = "provider_model_path:" + input.Scope.Provider + ":" + input.Scope.Model + ":" + input.Scope.UserPath
 		}
 	}
-	planHash := "hash-created"
+	planHash, err := executionPlanTestPlanHash(input.Payload)
+	if err != nil {
+		return nil, err
+	}
 
 	version := executionplans.Version{
 		ID:          "plan-created",
@@ -98,7 +103,7 @@ func (s *executionPlanTestStore) Create(_ context.Context, input executionplans.
 	return &version, nil
 }
 
-func (s *executionPlanTestStore) EnsureManagedDefaultGlobal(ctx context.Context, input executionplans.CreateInput, _ string) (*executionplans.Version, error) {
+func (s *executionPlanTestStore) EnsureManagedDefaultGlobal(ctx context.Context, input executionplans.CreateInput, planHash string) (*executionplans.Version, error) {
 	for _, version := range s.versions {
 		if !version.Active || version.ScopeKey != "global" {
 			continue
@@ -106,7 +111,7 @@ func (s *executionPlanTestStore) EnsureManagedDefaultGlobal(ctx context.Context,
 		if !version.Managed {
 			return nil, nil
 		}
-		if version.Name == input.Name && version.Description == input.Description {
+		if version.Name == input.Name && version.Description == input.Description && version.PlanHash == planHash {
 			return nil, nil
 		}
 		break
@@ -125,6 +130,15 @@ func (s *executionPlanTestStore) Deactivate(_ context.Context, id string) error 
 }
 
 func (s *executionPlanTestStore) Close() error { return nil }
+
+func executionPlanTestPlanHash(payload executionplans.Payload) (string, error) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:]), nil
+}
 
 func newExecutionPlanRegistry(t *testing.T) *guardrails.Registry {
 	t.Helper()

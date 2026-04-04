@@ -191,6 +191,10 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 		normalized.Activate = true
 	}
 	normalized.Managed = true
+	previewCompiled, err := s.validateCreateCandidate(normalized, "global", planHash)
+	if err != nil {
+		return err
+	}
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
 
@@ -207,19 +211,8 @@ func (s *Service) EnsureDefaultGlobal(ctx context.Context, input CreateInput) er
 		return nil
 	}
 
-	compiled, err := s.compiler.Compile(*version)
-	if err != nil {
-		return fmt.Errorf("compile default global execution plan %q: %w", version.ID, err)
-	}
-	if compiled == nil || compiled.Policy == nil {
-		return newValidationError("compiled plan is empty or missing policy", nil)
-	}
-	s.storeActivatedCompiledLocked(compiledPlanForVersion(compiled, *version))
+	s.storeActivatedCompiledLocked(compiledPlanForVersion(previewCompiled, *version))
 	return nil
-}
-
-func isManagedDefaultGlobal(version Version) bool {
-	return version.Managed
 }
 
 // Create inserts a new immutable execution-plan version and refreshes the

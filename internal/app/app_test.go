@@ -128,6 +128,62 @@ func TestConfigGuardrailDefinitions_EnabledRejectsUnknownType(t *testing.T) {
 	}
 }
 
+func TestConfigGuardrailDefinitions_TrimAndCanonicalizeRuleIdentity(t *testing.T) {
+	definitions, err := configGuardrailDefinitions(config.GuardrailsConfig{
+		Enabled: true,
+		Rules: []config.GuardrailRuleConfig{
+			{
+				Name: "  policy-system  ",
+				Type: "  SYSTEM_PROMPT  ",
+				SystemPrompt: config.SystemPromptSettings{
+					Mode:    "inject",
+					Content: "be precise",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("configGuardrailDefinitions() error = %v", err)
+	}
+	if len(definitions) != 1 {
+		t.Fatalf("len(configGuardrailDefinitions()) = %d, want 1", len(definitions))
+	}
+	if definitions[0].Name != "policy-system" {
+		t.Fatalf("definitions[0].Name = %q, want policy-system", definitions[0].Name)
+	}
+	if definitions[0].Type != "system_prompt" {
+		t.Fatalf("definitions[0].Type = %q, want system_prompt", definitions[0].Type)
+	}
+}
+
+func TestConfigGuardrailDefinitions_RejectsBlankNameOrType(t *testing.T) {
+	_, err := configGuardrailDefinitions(config.GuardrailsConfig{
+		Enabled: true,
+		Rules: []config.GuardrailRuleConfig{
+			{
+				Name: "   ",
+				Type: "system_prompt",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("configGuardrailDefinitions() error = nil, want name validation error")
+	}
+
+	_, err = configGuardrailDefinitions(config.GuardrailsConfig{
+		Enabled: true,
+		Rules: []config.GuardrailRuleConfig{
+			{
+				Name: "policy-system",
+				Type: "   ",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("configGuardrailDefinitions() error = nil, want type validation error")
+	}
+}
+
 func TestDashboardRuntimeConfig_ExposesFallbackMode(t *testing.T) {
 	cfg := &config.Config{
 		Fallback: config.FallbackConfig{
