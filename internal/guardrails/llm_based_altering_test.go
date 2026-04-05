@@ -152,11 +152,13 @@ func TestLLMBasedAltering_Process_UsesInternalGuardrailOriginAndUserPath(t *test
 }
 
 func TestLLMBasedAltering_Process_SkipsPrefix(t *testing.T) {
+	called := false
 	g, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{
 		Model:             "gpt-4o-mini",
 		SkipContentPrefix: "### safe",
 	}, mockChatCompletionExecutor{
 		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+			called = true
 			return nil, fmt.Errorf("should not be called")
 		},
 	})
@@ -171,6 +173,9 @@ func TestLLMBasedAltering_Process_SkipsPrefix(t *testing.T) {
 	}
 	if got[0].Content != msgs[0].Content {
 		t.Fatalf("Content = %q, want unchanged", got[0].Content)
+	}
+	if called {
+		t.Fatal("expected skip prefix to bypass auxiliary executor")
 	}
 }
 

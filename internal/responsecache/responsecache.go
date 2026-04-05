@@ -242,9 +242,9 @@ func internalRequestHeaders(ctx context.Context) http.Header {
 func internalCacheType(headerValue string) string {
 	headerValue = strings.TrimSpace(headerValue)
 	switch headerValue {
-	case "HIT (exact)":
+	case CacheHeaderExact:
 		return CacheTypeExact
-	case "HIT (semantic)":
+	case CacheHeaderSemantic:
 		return CacheTypeSemantic
 	default:
 		return ""

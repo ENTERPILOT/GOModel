@@ -1149,7 +1149,31 @@ func patchResponsesInputMap(original map[string]any, patched core.ResponsesInput
 	for key, value := range updated {
 		cloned[key] = value
 	}
+	if patched.Type == "function_call_output" {
+		cloned["output"] = restoreResponsesInputOutputValue(original["output"], patched.Output)
+	}
 	return cloned, nil
+}
+
+func restoreResponsesInputOutputValue(original any, rewritten string) any {
+	if _, ok := original.(string); ok {
+		return rewritten
+	}
+	if strings.TrimSpace(rewritten) == "" {
+		if original == nil {
+			return nil
+		}
+		return original
+	}
+
+	var decoded any
+	if err := json.Unmarshal([]byte(rewritten), &decoded); err == nil {
+		return decoded
+	}
+	if original == nil {
+		return nil
+	}
+	return original
 }
 
 func responsesInputElementAsMap(element core.ResponsesInputElement) (map[string]any, error) {

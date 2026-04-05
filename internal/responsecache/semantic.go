@@ -387,17 +387,17 @@ func extractTextFromContent(content any) string {
 // (e.g. "/v1/chat/completions") and isolates entries across distinct endpoints.
 func computeParamsHash(body []byte, endpointPath string, plan *core.ExecutionPlan, guardrailsHash, embedderIdentity string) string {
 	var req struct {
-		Model             string              `json:"model"`
-		Temperature       *float64            `json:"temperature"`
-		TopP              *float64            `json:"top_p"`
-		MaxTokens         *int                `json:"max_tokens"`
-		MaxOutputTokens   *int                `json:"max_output_tokens"`
-		Tools             []map[string]any    `json:"tools"`
-		ResponseFormat    any                 `json:"response_format"`
-		Stream            bool                `json:"stream,omitempty"`
-		StreamOptions     *core.StreamOptions `json:"stream_options"`
-		Reasoning         json.RawMessage     `json:"reasoning"`
-		Instructions      string              `json:"instructions"`
+		Model           string              `json:"model"`
+		Temperature     *float64            `json:"temperature"`
+		TopP            *float64            `json:"top_p"`
+		MaxTokens       *int                `json:"max_tokens"`
+		MaxOutputTokens *int                `json:"max_output_tokens"`
+		Tools           []map[string]any    `json:"tools"`
+		ResponseFormat  any                 `json:"response_format"`
+		Stream          bool                `json:"stream,omitempty"`
+		StreamOptions   *core.StreamOptions `json:"stream_options"`
+		Reasoning       json.RawMessage     `json:"reasoning"`
+		Instructions    string              `json:"instructions"`
 	}
 	_ = json.Unmarshal(body, &req)
 
@@ -576,9 +576,11 @@ func WithGuardrailsHash(ctx context.Context, hash string) context.Context {
 
 // CacheTypeHeader values for X-Cache-Type.
 const (
-	CacheTypeExact    = "exact"
-	CacheTypeSemantic = "semantic"
-	CacheTypeBoth     = "both"
+	CacheTypeExact      = "exact"
+	CacheTypeSemantic   = "semantic"
+	CacheTypeBoth       = "both"
+	CacheHeaderExact    = "HIT (exact)"
+	CacheHeaderSemantic = "HIT (semantic)"
 )
 
 // ShouldSkipExactCache reports whether the X-Cache-Type header requests semantic-only mode.

@@ -2253,6 +2253,82 @@ func TestApplyMessagesToResponses_PreservesSystemRoleInputItems(t *testing.T) {
 	}
 }
 
+func TestApplyMessagesToResponses_PreservesTypedFunctionCallOutputMapEnvelope(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "gpt-4",
+		Input: []map[string]any{
+			{
+				"type":    "function_call_output",
+				"call_id": "call_123",
+				"output": map[string]any{
+					"patient": "John Smith",
+					"score":   float64(1),
+				},
+			},
+		},
+	}
+	msgs := []Message{{
+		Role:       "tool",
+		ToolCallID: "call_123",
+		Content:    `{"patient":"[|---|](PERSON_1)","score":1}`,
+	}}
+
+	result, err := applyMessagesToResponses(req, msgs)
+	if err != nil {
+		t.Fatalf("applyMessagesToResponses() error = %v", err)
+	}
+
+	input, ok := result.Input.([]map[string]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("Input = %#v, want []map[string]any len=1", result.Input)
+	}
+	output, ok := input[0]["output"].(map[string]any)
+	if !ok {
+		t.Fatalf("output = %#v, want map[string]any", input[0]["output"])
+	}
+	if output["patient"] != "[|---|](PERSON_1)" {
+		t.Fatalf("patient = %#v, want rewritten redaction", output["patient"])
+	}
+	if output["score"] != float64(1) {
+		t.Fatalf("score = %#v, want 1", output["score"])
+	}
+}
+
+func TestApplyMessagesToResponses_PreservesStringFunctionCallOutputMapEnvelope(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "gpt-4",
+		Input: []map[string]any{
+			{
+				"type":    "function_call_output",
+				"call_id": "call_123",
+				"output":  `{"patient":"John Smith"}`,
+			},
+		},
+	}
+	msgs := []Message{{
+		Role:       "tool",
+		ToolCallID: "call_123",
+		Content:    `{"patient":"[|---|](PERSON_1)"}`,
+	}}
+
+	result, err := applyMessagesToResponses(req, msgs)
+	if err != nil {
+		t.Fatalf("applyMessagesToResponses() error = %v", err)
+	}
+
+	input, ok := result.Input.([]map[string]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("Input = %#v, want []map[string]any len=1", result.Input)
+	}
+	output, ok := input[0]["output"].(string)
+	if !ok {
+		t.Fatalf("output = %#v, want string", input[0]["output"])
+	}
+	if output != `{"patient":"[|---|](PERSON_1)"}` {
+		t.Fatalf("Output = %q, want rewritten JSON string preserved as string", output)
+	}
+}
+
 func TestApplyMessagesToResponses_PreservesArrayEnvelopeForAnyInput(t *testing.T) {
 	req := &core.ResponsesRequest{
 		Model: "gpt-4",

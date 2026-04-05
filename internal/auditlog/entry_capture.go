@@ -93,13 +93,11 @@ func CaptureInternalJSONExchange(
 		return
 	}
 
-	if req := internalJSONAuditRequest(ctx, method, path, requestIDForEntry(entry), requestBody); req != nil {
+	if req := internalJSONAuditRequest(ctx, method, path, requestIDForEntry(entry), requestBody, cfg.LogBodies); req != nil {
 		PopulateRequestData(entry, req, cfg)
 	}
-	headers, body, truncated, ok := internalJSONAuditResponse(responseBody, responseErr, requestIDForEntry(entry))
-	if ok {
-		PopulateResponseData(entry, headers, body, truncated, cfg)
-	}
+	headers, body, truncated := internalJSONAuditResponse(responseBody, responseErr, requestIDForEntry(entry), cfg.LogBodies)
+	PopulateResponseData(entry, headers, body, truncated, cfg)
 }
 
 func ensureLogData(entry *LogEntry) *LogData {
@@ -116,40 +114,47 @@ func requestIDForEntry(entry *LogEntry) string {
 	return strings.TrimSpace(entry.RequestID)
 }
 
-func internalJSONAuditRequest(ctx context.Context, method, path, requestID string, bodyValue any) *http.Request {
-	if bodyValue == nil {
-		return nil
-	}
-	body, err := json.Marshal(bodyValue)
-	if err != nil {
-		return nil
-	}
-
+func internalJSONAuditRequest(ctx context.Context, method, path, requestID string, bodyValue any, logBodies bool) *http.Request {
 	headers := internalJSONAuditHeaders(ctx, requestID)
-	capturedBody, bodyTooBig := boundedAuditBody(body, false)
-	snapshot := core.NewRequestSnapshot(
-		method,
-		path,
-		nil,
-		nil,
-		headers,
-		headers.Get("Content-Type"),
-		capturedBody,
-		bodyTooBig,
-		requestID,
-		nil,
-		core.UserPathFromContext(ctx),
-	)
-	reqCtx := core.WithRequestSnapshot(ctx, snapshot)
 	req := &http.Request{
 		Method: method,
 		URL:    &url.URL{Path: path},
 		Header: headers,
 	}
+	reqCtx := ctx
+	if logBodies && bodyValue != nil {
+		if body, err := json.Marshal(bodyValue); err == nil {
+			capturedBody, bodyTooBig := boundedAuditBody(body, false)
+			snapshot := core.NewRequestSnapshot(
+				method,
+				path,
+				nil,
+				nil,
+				headers,
+				headers.Get("Content-Type"),
+				capturedBody,
+				bodyTooBig,
+				requestID,
+				nil,
+				core.UserPathFromContext(ctx),
+			)
+			reqCtx = core.WithRequestSnapshot(ctx, snapshot)
+		}
+	}
 	return req.WithContext(reqCtx)
 }
 
-func internalJSONAuditResponse(bodyValue any, responseErr error, requestID string) (http.Header, []byte, bool, bool) {
+func internalJSONAuditResponse(bodyValue any, responseErr error, requestID string, logBodies bool) (http.Header, []byte, bool) {
+	headers := make(http.Header)
+	headers.Set("Content-Type", "application/json")
+	if requestID != "" {
+		headers.Set("X-Request-ID", requestID)
+	}
+
+	if !logBodies {
+		return headers, nil, false
+	}
+
 	var (
 		body []byte
 		err  error
@@ -165,19 +170,13 @@ func internalJSONAuditResponse(bodyValue any, responseErr error, requestID strin
 			body, err = json.Marshal(core.NewProviderError("", http.StatusInternalServerError, responseErr.Error(), responseErr).ToJSON())
 		}
 	default:
-		return nil, nil, false, false
+		return headers, nil, false
 	}
 	if err != nil {
-		return nil, nil, false, false
-	}
-
-	headers := make(http.Header)
-	headers.Set("Content-Type", "application/json")
-	if requestID != "" {
-		headers.Set("X-Request-ID", requestID)
+		return headers, nil, false
 	}
 	capturedBody, truncated := boundedAuditBody(body, true)
-	return headers, capturedBody, truncated, true
+	return headers, capturedBody, truncated
 }
 
 func internalJSONAuditHeaders(ctx context.Context, requestID string) http.Header {

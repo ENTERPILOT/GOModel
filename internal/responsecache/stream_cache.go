@@ -133,22 +133,34 @@ func isEventStreamContentType(contentType string) bool {
 }
 
 func writeCachedResponse(c *echo.Context, path string, requestBody, cached []byte, cacheType string) error {
+	cacheHeader := cacheHeaderValue(cacheType)
 	if isStreamingRequest(path, requestBody) {
 		auditlog.EnrichEntryWithStream(c, true)
 		c.Response().Header().Set("Content-Type", "text/event-stream")
 		c.Response().Header().Set("Cache-Control", "no-cache")
 		c.Response().Header().Set("Connection", "keep-alive")
-		c.Response().Header().Set("X-Cache", "HIT ("+cacheType+")")
+		c.Response().Header().Set("X-Cache", cacheHeader)
 		c.Response().WriteHeader(http.StatusOK)
 		_, _ = c.Response().Write(cached)
 		return nil
 	}
 
 	c.Response().Header().Set("Content-Type", "application/json")
-	c.Response().Header().Set("X-Cache", "HIT ("+cacheType+")")
+	c.Response().Header().Set("X-Cache", cacheHeader)
 	c.Response().WriteHeader(http.StatusOK)
 	_, _ = c.Response().Write(cached)
 	return nil
+}
+
+func cacheHeaderValue(cacheType string) string {
+	switch cacheType {
+	case CacheTypeExact:
+		return CacheHeaderExact
+	case CacheTypeSemantic:
+		return CacheHeaderSemantic
+	default:
+		return "HIT (" + cacheType + ")"
+	}
 }
 
 func renderCachedChatStream(requestBody, cached []byte) ([]byte, error) {
