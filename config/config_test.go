@@ -168,8 +168,8 @@ func TestBuildDefaultConfig(t *testing.T) {
 	if cfg.Guardrails.EnableForBatchProcessing {
 		t.Error("expected Guardrails.EnableForBatchProcessing=false")
 	}
-	if cfg.Fallback.DefaultMode != FallbackModeOff {
-		t.Errorf("expected Fallback.DefaultMode=off, got %q", cfg.Fallback.DefaultMode)
+	if cfg.Fallback.DefaultMode != FallbackModeAuto {
+		t.Errorf("expected Fallback.DefaultMode=auto, got %q", cfg.Fallback.DefaultMode)
 	}
 	if cfg.Cache.Response.Simple != nil {
 		t.Errorf("expected Cache.Response.Simple=nil in defaults, got %+v", cfg.Cache.Response.Simple)
@@ -560,6 +560,28 @@ func TestLoad_FeatureFallbackModeEnvOverridesFallbackDefaultMode(t *testing.T) {
 	t.Setenv("FEATURE_FALLBACK_MODE", "auto")
 
 	withTempDir(t, func(_ string) {
+		result, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+		if result.Config.Fallback.DefaultMode != FallbackModeAuto {
+			t.Fatalf("Fallback.DefaultMode = %q, want %q", result.Config.Fallback.DefaultMode, FallbackModeAuto)
+		}
+	})
+}
+
+func TestLoad_BlankFallbackDefaultModeResolvesToAuto(t *testing.T) {
+	clearAllConfigEnvVars(t)
+
+	withTempDir(t, func(dir string) {
+		yaml := `
+fallback:
+  default_mode: ""
+`
+		if err := os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(yaml), 0644); err != nil {
+			t.Fatalf("Failed to write config.yaml: %v", err)
+		}
+
 		result, err := Load()
 		if err != nil {
 			t.Fatalf("Load() failed: %v", err)

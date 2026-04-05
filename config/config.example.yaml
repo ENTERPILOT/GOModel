@@ -153,7 +153,7 @@ guardrails:
     #     # prompt: "Custom rewrite instructions here."
 
 fallback:
-  default_mode: "off" # "off", "manual", or "auto"
+  default_mode: "auto" # "off", "manual", or "auto"
   manual_rules_path: "config/fallback.example.json" # optional JSON map: {"model": ["fallback-1", "provider/model"]}; required when fallback.default_mode or any fallback.overrides.*.mode is "manual"
   overrides:
     "gpt-4o":
