@@ -18,26 +18,10 @@ func (p *contextCapturingProvider) ChatCompletion(ctx context.Context, req *core
 	return p.capturingProvider.ChatCompletion(ctx, req)
 }
 
-type countingTranslatedRequestPatcher struct {
-	chatCalls int
-}
-
-func (p *countingTranslatedRequestPatcher) PatchChatRequest(_ context.Context, req *core.ChatRequest) (*core.ChatRequest, error) {
-	p.chatCalls++
-	cloned := *req
-	cloned.Messages = append([]core.Message{{Role: "system", Content: "patched"}}, req.Messages...)
-	return &cloned, nil
-}
-
-func (p *countingTranslatedRequestPatcher) PatchResponsesRequest(_ context.Context, req *core.ResponsesRequest) (*core.ResponsesRequest, error) {
-	return req, nil
-}
-
-func TestInternalChatCompletionExecutor_UsesTranslatedPathAndSkipsGuardrailPatching(t *testing.T) {
+func TestInternalChatCompletionExecutor_UsesTranslatedPlanAndAuditMetadata(t *testing.T) {
 	logger := &capturingAuditLogger{
 		config: auditlog.Config{Enabled: true},
 	}
-	patcher := &countingTranslatedRequestPatcher{}
 	provider := &contextCapturingProvider{
 		capturingProvider: capturingProvider{
 			mockProvider: mockProvider{
@@ -82,8 +66,7 @@ func TestInternalChatCompletionExecutor_UsesTranslatedPathAndSkipsGuardrailPatch
 				},
 			}, nil
 		}),
-		TranslatedRequestPatcher: patcher,
-		AuditLogger:              logger,
+		AuditLogger: logger,
 	})
 
 	ctx := core.WithRequestSnapshot(context.Background(), &core.RequestSnapshot{
@@ -104,9 +87,6 @@ func TestInternalChatCompletionExecutor_UsesTranslatedPathAndSkipsGuardrailPatch
 	}
 	if capturedSelector.UserPath != "/team/alpha/guardrails/privacy" {
 		t.Fatalf("selector.UserPath = %q, want /team/alpha/guardrails/privacy", capturedSelector.UserPath)
-	}
-	if patcher.chatCalls != 0 {
-		t.Fatalf("patcher chat calls = %d, want 0 because guardrails should be skipped", patcher.chatCalls)
 	}
 	if provider.capturedChatReq == nil {
 		t.Fatal("expected provider chat request to be captured")

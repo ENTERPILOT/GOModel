@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"strings"
 
 	"github.com/labstack/echo/v5"
@@ -108,27 +109,43 @@ func translatedExecutionPlanForRequest(
 		c.SetRequest(c.Request().WithContext(ctx))
 	}
 
-	desc := core.DescribeEndpoint(c.Request().Method, c.Request().URL.Path)
+	return translatedExecutionPlan(
+		c.Request().Context(),
+		requestID,
+		core.DescribeEndpoint(c.Request().Method, c.Request().URL.Path),
+		resolution,
+		policyResolver,
+	)
+}
 
-	plan := core.GetExecutionPlan(c.Request().Context())
-	if plan != nil {
-		cloned := *plan
-		plan = &cloned
-	} else {
-		plan = &core.ExecutionPlan{}
+func translatedExecutionPlan(
+	ctx context.Context,
+	requestID string,
+	endpoint core.EndpointDescriptor,
+	resolution *core.RequestModelResolution,
+	policyResolver RequestExecutionPolicyResolver,
+) (*core.ExecutionPlan, error) {
+	plan := &core.ExecutionPlan{
+		RequestID:    strings.TrimSpace(requestID),
+		Endpoint:     endpoint,
+		Mode:         core.ExecutionModeTranslated,
+		Capabilities: core.CapabilitiesForEndpoint(endpoint),
+	}
+	if resolution != nil {
+		plan.ProviderType = strings.TrimSpace(resolution.ProviderType)
+		plan.Resolution = resolution
 	}
 
-	if requestID != "" {
-		plan.RequestID = requestID
+	selector := core.ExecutionPlanSelector{}
+	if resolution != nil {
+		selector = core.NewExecutionPlanSelector(
+			plan.ProviderType,
+			resolution.ResolvedSelector.Model,
+			core.UserPathFromContext(ctx),
+		)
 	}
-	plan.Endpoint = desc
-	plan.Mode = core.ExecutionModeTranslated
-	plan.Capabilities = core.CapabilitiesForEndpoint(desc)
-	plan.ProviderType = strings.TrimSpace(resolution.ProviderType)
-	plan.Resolution = resolution
-	if err := applyExecutionPolicy(c.Request().Context(), plan, policyResolver, core.NewExecutionPlanSelector(plan.ProviderType, resolution.ResolvedSelector.Model, core.UserPathFromContext(c.Request().Context()))); err != nil {
+	if err := applyExecutionPolicy(ctx, plan, policyResolver, selector); err != nil {
 		return nil, err
 	}
-
 	return plan, nil
 }

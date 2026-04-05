@@ -378,6 +378,13 @@ func EnrichEntryWithExecutionPlan(c *echo.Context, plan *core.ExecutionPlan) {
 	enrichEntryWithExecutionPlan(entry, plan)
 }
 
+// EnrichLogEntryWithExecutionPlan attaches execution-plan metadata directly to
+// an existing log entry. Internal translated executors can use this without
+// depending on Echo middleware state.
+func EnrichLogEntryWithExecutionPlan(entry *LogEntry, plan *core.ExecutionPlan) {
+	enrichEntryWithExecutionPlan(entry, plan)
+}
+
 // EnrichEntryWithCacheType attaches cache-hit metadata to the live audit entry.
 // The value is intentionally sourced directly from the cache middleware, not
 // inferred from response headers after the fact.
@@ -455,6 +462,12 @@ func EnrichEntryWithUserPath(c *echo.Context, userPath string) {
 		return
 	}
 	entry.UserPath = userPath
+}
+
+// EnrichLogEntryWithRequestContext attaches auth and effective user-path
+// metadata from context directly to an existing log entry.
+func EnrichLogEntryWithRequestContext(entry *LogEntry, ctx context.Context) {
+	applyAuthentication(entry, ctx)
 }
 
 func auditEnabledForContext(ctx context.Context) bool {

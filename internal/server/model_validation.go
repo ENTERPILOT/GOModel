@@ -126,12 +126,7 @@ func deriveExecutionPlanWithPolicy(
 			}
 			return plan, nil
 		}
-		plan.ProviderType = resolution.ProviderType
-		plan.Resolution = resolution
-		if err := applyExecutionPolicy(c.Request().Context(), plan, policyResolver, core.NewExecutionPlanSelector(resolution.ProviderType, resolution.ResolvedSelector.Model, userPath)); err != nil {
-			return nil, err
-		}
-		return plan, nil
+		return translatedExecutionPlan(c.Request().Context(), requestID, desc, resolution, policyResolver)
 
 	default:
 		return nil, nil

@@ -400,14 +400,12 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	serverCfg.ResponseCacheMiddleware = rcm
 
 	internalGuardrailExecutor := server.NewInternalChatCompletionExecutor(provider, server.InternalChatCompletionExecutorConfig{
-		ModelResolver:            app.aliases.Service,
-		ExecutionPolicyResolver:  executionPlanResult.Service,
-		FallbackResolver:         serverCfg.FallbackResolver,
-		TranslatedRequestPatcher: translatedRequestPatcher,
-		AuditLogger:              auditResult.Logger,
-		UsageLogger:              usageResult.Logger,
-		PricingResolver:          providerResult.Registry,
-		ResponseCacheMiddleware:  rcm,
+		ModelResolver:           app.aliases.Service,
+		ExecutionPolicyResolver: executionPlanResult.Service,
+		FallbackResolver:        serverCfg.FallbackResolver,
+		AuditLogger:             auditResult.Logger,
+		UsageLogger:             usageResult.Logger,
+		PricingResolver:         providerResult.Registry,
 	})
 	if err := guardrailResult.Service.SetExecutor(ctx, internalGuardrailExecutor); err != nil {
 		closeErr := errors.Join(app.executionPlans.Close(), app.guardrails.Close(), app.authKeys.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())

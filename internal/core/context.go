@@ -51,18 +51,6 @@ const (
 	RequestOriginGuardrail RequestOrigin = "guardrail"
 )
 
-type maskedContext struct {
-	context.Context
-	masked map[any]struct{}
-}
-
-func (c maskedContext) Value(key any) any {
-	if _, ok := c.masked[key]; ok {
-		return nil
-	}
-	return c.Context.Value(key)
-}
-
 // WithRequestID returns a new context with the request ID attached.
 func WithRequestID(ctx context.Context, requestID string) context.Context {
 	return context.WithValue(ctx, requestIDKey, requestID)
@@ -232,23 +220,4 @@ func GetRequestOrigin(ctx context.Context) RequestOrigin {
 		}
 	}
 	return RequestOriginExternal
-}
-
-// WithoutRequestExecutionState masks request-local execution state so nested
-// internal requests inherit cancellation and identity metadata without
-// reusing the caller's resolved plan, cache markers, or batch prep state.
-func WithoutRequestExecutionState(ctx context.Context) context.Context {
-	if ctx == nil {
-		return nil
-	}
-	return maskedContext{
-		Context: ctx,
-		masked: map[any]struct{}{
-			executionPlanKey:             {},
-			batchPreparationMetadataKey:  {},
-			enforceReturningUsageDataKey: {},
-			guardrailsHashKey:            {},
-			fallbackUsedKey:              {},
-		},
-	}
 }
