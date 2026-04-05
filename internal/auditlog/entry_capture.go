@@ -167,8 +167,6 @@ func internalJSONAuditResponse(ctx context.Context, bodyValue any, responseErr e
 		err  error
 	)
 	switch {
-	case bodyValue != nil:
-		body, err = json.Marshal(bodyValue)
 	case responseErr != nil:
 		var gatewayErr *core.GatewayError
 		if errors.As(responseErr, &gatewayErr) && gatewayErr != nil {
@@ -176,6 +174,8 @@ func internalJSONAuditResponse(ctx context.Context, bodyValue any, responseErr e
 		} else {
 			body, err = json.Marshal(core.NewProviderError("", http.StatusInternalServerError, responseErr.Error(), responseErr).ToJSON())
 		}
+	case bodyValue != nil:
+		body, err = json.Marshal(bodyValue)
 	default:
 		return headers, nil, false
 	}

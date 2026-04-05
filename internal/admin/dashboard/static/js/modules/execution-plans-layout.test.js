@@ -62,7 +62,7 @@ test('async label stays inline on the right side of the branch', () => {
     );
     assert.match(
         template,
-        /<div class="ep-conn ep-conn-async" x-show="{{\.}}\.showAudit"><\/div>\s*<div class="ep-node ep-node-feature ep-node-async ep-node-async-audit" x-show="{{\.}}\.showAudit" :class="{{\.}}\.auditNodeClass">/
+        /<div class="ep-conn ep-conn-async" x-show="{{\.}}\.showUsage && {{\.}}\.showAudit"><\/div>\s*<div class="ep-node ep-node-feature ep-node-async ep-node-async-audit" x-show="{{\.}}\.showAudit" :class="{{\.}}\.auditNodeClass">/
     );
     assert.match(
         template,

@@ -484,6 +484,9 @@ func (g *LLMBasedAlteringGuardrail) rewriteText(ctx context.Context, text string
 	if resp == nil || len(resp.Choices) == 0 {
 		return "", fmt.Errorf("llm_based_altering returned no choices")
 	}
+	if finishReason := strings.TrimSpace(resp.Choices[0].FinishReason); finishReason != "" && finishReason != "stop" {
+		return "", fmt.Errorf("llm_based_altering returned non-terminal finish_reason %q", finishReason)
+	}
 
 	content := core.ExtractTextContent(resp.Choices[0].Message.Content)
 	if len(resp.Choices[0].Message.ToolCalls) > 0 {

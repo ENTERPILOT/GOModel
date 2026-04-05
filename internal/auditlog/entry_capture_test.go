@@ -136,6 +136,32 @@ func TestCaptureInternalJSONExchange_PreservesHeadersWhenBodyMarshalFails(t *tes
 		}
 	})
 
+	t.Run("response error takes precedence over body payload", func(t *testing.T) {
+		entry := &LogEntry{
+			RequestID: "req_456_err_body",
+			Data:      &LogData{},
+		}
+		ctx := core.WithEffectiveUserPath(context.Background(), "/team/beta")
+		responseErr := core.NewProviderError("openai", http.StatusBadGateway, "upstream failed", fmt.Errorf("boom"))
+
+		CaptureInternalJSONExchange(entry, ctx, "POST", "/v1/chat/completions", map[string]any{"ok": true}, map[string]any{"status": "completed"}, responseErr, Config{
+			LogHeaders: true,
+			LogBodies:  true,
+		})
+
+		body, ok := entry.Data.ResponseBody.(map[string]any)
+		if !ok {
+			t.Fatalf("ResponseBody = %T, want synthesized error envelope", entry.Data.ResponseBody)
+		}
+		errorBody, ok := body["error"].(map[string]any)
+		if !ok {
+			t.Fatalf("ResponseBody[error] = %#v, want object", body["error"])
+		}
+		if got := errorBody["message"]; got != "upstream failed" {
+			t.Fatalf("ResponseBody.error.message = %#v, want upstream failed", got)
+		}
+	})
+
 	t.Run("oversized payload preserves headers and sets truncation flags", func(t *testing.T) {
 		entry := &LogEntry{
 			RequestID: "req_456_big",

@@ -779,6 +779,9 @@ func assertPipelineRewrite(t *testing.T, pipeline *guardrails.Pipeline, want str
 	if len(msgs) != 1 {
 		t.Fatalf("len(msgs) = %d, want 1", len(msgs))
 	}
+	if msgs[0].Role != "user" {
+		t.Fatalf("msgs[0].Role = %q, want user", msgs[0].Role)
+	}
 	if msgs[0].Content != want {
 		t.Fatalf("msgs[0].Content = %q, want %q", msgs[0].Content, want)
 	}

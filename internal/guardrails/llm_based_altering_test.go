@@ -297,6 +297,38 @@ func TestLLMBasedAltering_Process_FailsOpenOnToolCallCompletion(t *testing.T) {
 	}
 }
 
+func TestLLMBasedAltering_Process_FailsOpenOnNonTerminalFinishReason(t *testing.T) {
+	g, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{
+		Model: "gpt-4o-mini",
+	}, mockChatCompletionExecutor{
+		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+			return &core.ChatResponse{
+				Choices: []core.Choice{
+					{
+						FinishReason: "length",
+						Message: core.ResponseMessage{
+							Role:    "assistant",
+							Content: "[|---|](PERSON_1)",
+						},
+					},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMBasedAlteringGuardrail() error = %v", err)
+	}
+
+	msgs := []Message{{Role: "user", Content: "John says hello"}}
+	got, err := g.Process(context.Background(), msgs)
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if got[0].Content != msgs[0].Content {
+		t.Fatalf("Content = %q, want original content after non-terminal completion", got[0].Content)
+	}
+}
+
 func TestUnwrapAlteredText_StripsOnlyOuterWrapper(t *testing.T) {
 	wrapped := wrapAlteringText("sensitive text")
 	if got := unwrapAlteredText(wrapped); got != "sensitive text" {

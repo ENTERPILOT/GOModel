@@ -242,9 +242,9 @@ func internalCacheType(headerValue string) string {
 		headerValue = strings.TrimSpace(headerValue[len("HIT (") : len(headerValue)-1])
 	}
 	switch headerValue {
-	case CacheTypeExact, CacheHeaderExact:
+	case CacheTypeExact:
 		return CacheTypeExact
-	case CacheTypeSemantic, CacheHeaderSemantic:
+	case CacheTypeSemantic:
 		return CacheTypeSemantic
 	default:
 		return ""
