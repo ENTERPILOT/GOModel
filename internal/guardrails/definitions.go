@@ -91,6 +91,9 @@ func normalizeDefinition(def Definition) (Definition, error) {
 	if def.Name == "" {
 		return Definition{}, newValidationError("guardrail name is required", nil)
 	}
+	if strings.Contains(def.Name, "/") {
+		return Definition{}, newValidationError("guardrail name cannot contain '/'", nil)
+	}
 	if def.Type == "" {
 		return Definition{}, newValidationError("guardrail type is required", nil)
 	}
@@ -229,7 +232,7 @@ func decodeLLMBasedAlteringDefinitionConfig(raw json.RawMessage) (llmBasedAlteri
 	return cfg, nil
 }
 
-func llmBasedAlteringRuntimeConfig(cfg llmBasedAlteringDefinitionConfig) (LLMBasedAlteringConfig, error) {
+func llmBasedAlteringRuntimeConfig(cfg llmBasedAlteringDefinitionConfig, userPath string) (LLMBasedAlteringConfig, error) {
 	selector, err := core.ParseModelSelector(cfg.Model, cfg.Provider)
 	if err != nil {
 		return LLMBasedAlteringConfig{}, newValidationError("invalid llm_based_altering model selector: "+err.Error(), err)
@@ -237,6 +240,7 @@ func llmBasedAlteringRuntimeConfig(cfg llmBasedAlteringDefinitionConfig) (LLMBas
 	return NormalizeLLMBasedAlteringConfig(LLMBasedAlteringConfig{
 		Model:             selector.Model,
 		Provider:          selector.Provider,
+		UserPath:          userPath,
 		Prompt:            cfg.Prompt,
 		Roles:             cfg.Roles,
 		SkipContentPrefix: cfg.SkipContentPrefix,
@@ -267,7 +271,7 @@ func buildDefinition(def Definition, executor ChatCompletionExecutor) (Guardrail
 		if err != nil {
 			return nil, responsecache.GuardrailRuleDescriptor{}, err
 		}
-		runtimeCfg, err := llmBasedAlteringRuntimeConfig(cfg)
+		runtimeCfg, err := llmBasedAlteringRuntimeConfig(cfg, def.UserPath)
 		if err != nil {
 			return nil, responsecache.GuardrailRuleDescriptor{}, newValidationError("build llm_based_altering guardrail: "+err.Error(), err)
 		}
@@ -313,7 +317,7 @@ func summarizeDefinition(def Definition) string {
 		if err != nil {
 			return ""
 		}
-		runtimeCfg, err := llmBasedAlteringRuntimeConfig(cfg)
+		runtimeCfg, err := llmBasedAlteringRuntimeConfig(cfg, def.UserPath)
 		if err != nil {
 			return ""
 		}
@@ -435,6 +439,7 @@ func llmBasedAlteringDescriptor(name string, cfg LLMBasedAlteringConfig) respons
 		Content: strings.Join([]string{
 			cfg.Model,
 			cfg.Provider,
+			cfg.UserPath,
 			cfg.SkipContentPrefix,
 			fmt.Sprintf("%d", cfg.MaxTokens),
 			cfg.Prompt,

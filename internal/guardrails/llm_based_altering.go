@@ -231,6 +231,7 @@ Output ONLY the processed text content - do NOT include the wrapper tags in your
 type LLMBasedAlteringConfig struct {
 	Model             string
 	Provider          string
+	UserPath          string
 	Prompt            string
 	Roles             []string
 	SkipContentPrefix string
@@ -298,6 +299,11 @@ func NormalizeLLMBasedAlteringConfig(cfg LLMBasedAlteringConfig) (LLMBasedAlteri
 		return LLMBasedAlteringConfig{}, fmt.Errorf("llm_based_altering.model is required")
 	}
 	cfg.Provider = strings.TrimSpace(cfg.Provider)
+	userPath, err := core.NormalizeUserPath(cfg.UserPath)
+	if err != nil {
+		return LLMBasedAlteringConfig{}, fmt.Errorf("invalid llm_based_altering user_path: %w", err)
+	}
+	cfg.UserPath = userPath
 	cfg.Prompt = ResolveLLMBasedAlteringPrompt(cfg.Prompt)
 	cfg.SkipContentPrefix = strings.TrimSpace(cfg.SkipContentPrefix)
 	cfg.MaxTokens = EffectiveLLMBasedAlteringMaxTokens(cfg.MaxTokens)
@@ -316,6 +322,7 @@ type LLMBasedAlteringGuardrail struct {
 	name              string
 	model             string
 	provider          string
+	userPath          string
 	prompt            string
 	roles             map[string]struct{}
 	skipContentPrefix string
@@ -335,6 +342,9 @@ func NewLLMBasedAlteringGuardrail(name string, cfg LLMBasedAlteringConfig, execu
 	if strings.TrimSpace(name) == "" {
 		name = defaultLLMBasedAlteringName
 	}
+	if err := validateGuardrailPathSegment(name); err != nil {
+		return nil, err
+	}
 
 	roleSet := make(map[string]struct{}, len(cfg.Roles))
 	for _, role := range cfg.Roles {
@@ -345,6 +355,7 @@ func NewLLMBasedAlteringGuardrail(name string, cfg LLMBasedAlteringConfig, execu
 		name:              name,
 		model:             cfg.Model,
 		provider:          cfg.Provider,
+		userPath:          cfg.UserPath,
 		prompt:            cfg.Prompt,
 		roles:             roleSet,
 		skipContentPrefix: cfg.SkipContentPrefix,
@@ -446,6 +457,13 @@ func (g *LLMBasedAlteringGuardrail) rewriteTexts(ctx context.Context, texts []st
 }
 
 func (g *LLMBasedAlteringGuardrail) rewriteText(ctx context.Context, text string) (string, error) {
+	internalUserPath, err := g.executionUserPath(ctx)
+	if err != nil {
+		return "", err
+	}
+	ctx = core.WithRequestOrigin(ctx, core.RequestOriginGuardrail)
+	ctx = core.WithEffectiveUserPath(ctx, internalUserPath)
+
 	temperature := 0.0
 	maxTokens := g.maxTokens
 	resp, err := g.executor.ChatCompletion(ctx, &core.ChatRequest{
@@ -470,6 +488,51 @@ func (g *LLMBasedAlteringGuardrail) rewriteText(ctx context.Context, text string
 		return "", fmt.Errorf("llm_based_altering returned empty content")
 	}
 	return unwrapAlteredText(content), nil
+}
+
+func (g *LLMBasedAlteringGuardrail) executionUserPath(ctx context.Context) (string, error) {
+	base := strings.TrimSpace(g.userPath)
+	if base == "" {
+		base = core.UserPathFromContext(ctx)
+	}
+	if base == "" {
+		base = "/"
+	}
+	return appendGuardrailUserPath(base, g.name)
+}
+
+func appendGuardrailUserPath(basePath, name string) (string, error) {
+	basePath, err := core.NormalizeUserPath(basePath)
+	if err != nil {
+		return "", err
+	}
+	segments := []string{"guardrails", strings.TrimSpace(name)}
+	for _, segment := range segments {
+		if err := validateGuardrailPathSegment(segment); err != nil {
+			return "", err
+		}
+		if basePath == "/" {
+			basePath = "/" + segment
+			continue
+		}
+		basePath += "/" + segment
+	}
+	return basePath, nil
+}
+
+func validateGuardrailPathSegment(segment string) error {
+	segment = strings.TrimSpace(segment)
+	switch segment {
+	case "", ".", "..":
+		return fmt.Errorf("invalid guardrail path segment %q", segment)
+	}
+	if strings.Contains(segment, "/") {
+		return fmt.Errorf("guardrail path segment %q cannot contain '/'", segment)
+	}
+	if strings.Contains(segment, ":") {
+		return fmt.Errorf("guardrail path segment %q cannot contain ':'", segment)
+	}
+	return nil
 }
 
 func wrapAlteringText(text string) string {

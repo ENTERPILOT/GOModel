@@ -290,6 +290,28 @@ func TestUpsertGuardrailLLMBasedAlteringNormalizesProviderHintIntoModel(t *testi
 	}
 }
 
+func TestUpsertGuardrailRejectsSlashInName(t *testing.T) {
+	h := newGuardrailHandler(t)
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPut, "/admin/api/v1/guardrails/privacy/redactor", bytes.NewBufferString(`{
+		"type":"llm_based_altering",
+		"config":{"model":"gpt-4o-mini","roles":["user"]}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/admin/api/v1/guardrails/:name")
+	c.SetPathValues(echo.PathValues{{Name: "name", Value: "privacy/redactor"}})
+
+	if err := h.UpsertGuardrail(c); err != nil {
+		t.Fatalf("UpsertGuardrail() error = %v", err)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
 func TestDeleteGuardrailRejectsActiveWorkflowReference(t *testing.T) {
 	guardrailService := newGuardrailService(t, guardrails.Definition{
 		Name: "policy-system",

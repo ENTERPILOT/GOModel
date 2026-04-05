@@ -384,7 +384,7 @@
                 <label class="alias-form-field">
                     <span>User Path</span>
                     <input type="text" class="filter-input" placeholder="/team/alpha" x-model="guardrailForm.user_path" aria-label="Guardrail user path">
-                    <small class="alias-form-hint">Reserved for future UI visibility scoping. It does not affect runtime execution yet.</small>
+                    <small class="alias-form-hint">Optional base user path for internal auxiliary rewrite requests. When empty, the caller user path is reused.</small>
                 </label>
 
                 <template x-for="field in guardrailTypeFields(guardrailForm.type)" :key="field.key">

@@ -37,10 +37,32 @@ func TestNormalizeLLMBasedAlteringConfig_Defaults(t *testing.T) {
 	}
 }
 
+func TestNormalizeLLMBasedAlteringConfig_NormalizesUserPath(t *testing.T) {
+	cfg, err := NormalizeLLMBasedAlteringConfig(LLMBasedAlteringConfig{
+		Model:    "gpt-4o-mini",
+		UserPath: "team/privacy",
+	})
+	if err != nil {
+		t.Fatalf("NormalizeLLMBasedAlteringConfig() error = %v", err)
+	}
+	if cfg.UserPath != "/team/privacy" {
+		t.Fatalf("UserPath = %q, want /team/privacy", cfg.UserPath)
+	}
+}
+
 func TestNewLLMBasedAlteringGuardrail_RequiresModel(t *testing.T) {
 	_, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{}, mockChatCompletionExecutor{})
 	if err == nil {
 		t.Fatal("expected error for missing model")
+	}
+}
+
+func TestNewLLMBasedAlteringGuardrail_RejectsSlashInName(t *testing.T) {
+	_, err := NewLLMBasedAlteringGuardrail("privacy/redactor", LLMBasedAlteringConfig{
+		Model: "gpt-4o-mini",
+	}, mockChatCompletionExecutor{})
+	if err == nil {
+		t.Fatal("expected error for slash in guardrail name")
 	}
 }
 
@@ -84,6 +106,45 @@ func TestLLMBasedAltering_Process_RewritesConfiguredRoles(t *testing.T) {
 	}
 	if got[2].Content != "leave me alone" {
 		t.Fatalf("assistant content = %q, want unchanged content", got[2].Content)
+	}
+}
+
+func TestLLMBasedAltering_Process_UsesInternalGuardrailOriginAndUserPath(t *testing.T) {
+	var (
+		gotOrigin   core.RequestOrigin
+		gotUserPath string
+	)
+	g, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{
+		Model:    "gpt-4o-mini",
+		UserPath: "/team/privacy",
+	}, mockChatCompletionExecutor{
+		chatFn: func(ctx context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+			gotOrigin = core.GetRequestOrigin(ctx)
+			gotUserPath = core.UserPathFromContext(ctx)
+			return &core.ChatResponse{
+				Choices: []core.Choice{
+					{Message: core.ResponseMessage{Role: "assistant", Content: "[|---|](PERSON_1)"}},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMBasedAlteringGuardrail() error = %v", err)
+	}
+
+	parentCtx := core.WithRequestSnapshot(context.Background(), &core.RequestSnapshot{
+		UserPath: "/team/caller",
+	})
+
+	_, err = g.Process(parentCtx, []Message{{Role: "user", Content: "John Smith"}})
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if gotOrigin != core.RequestOriginGuardrail {
+		t.Fatalf("request origin = %q, want %q", gotOrigin, core.RequestOriginGuardrail)
+	}
+	if gotUserPath != "/team/privacy/guardrails/privacy" {
+		t.Fatalf("user path = %q, want /team/privacy/guardrails/privacy", gotUserPath)
 	}
 }
 

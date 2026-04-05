@@ -55,6 +55,32 @@ func (s *Service) Refresh(ctx context.Context) error {
 	return s.refreshLocked(ctx)
 }
 
+// SetExecutor swaps the auxiliary chat executor used by llm_based_altering
+// guardrails and rebuilds the in-memory snapshot atomically.
+func (s *Service) SetExecutor(ctx context.Context, executor ChatCompletionExecutor) error {
+	if s == nil {
+		return nil
+	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	definitions, err := s.store.List(ctx)
+	if err != nil {
+		return guardrailServiceError("list guardrails", err)
+	}
+	next, err := buildSnapshot(definitions, executor)
+	if err != nil {
+		return guardrailServiceError("load guardrails", err)
+	}
+
+	s.mu.Lock()
+	s.executor = executor
+	s.snapshot = next
+	s.mu.Unlock()
+	return nil
+}
+
 func (s *Service) refreshLocked(ctx context.Context) error {
 	definitions, err := s.store.List(ctx)
 	if err != nil {

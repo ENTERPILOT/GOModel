@@ -176,6 +176,10 @@ type GuardrailRuleConfig struct {
 	// Type selects the guardrail implementation: "system_prompt" or "llm_based_altering"
 	Type string `yaml:"type"`
 
+	// UserPath scopes internal auxiliary guardrail requests for workflow
+	// selection and audit logging. When empty, the caller user path is used.
+	UserPath string `yaml:"user_path"`
+
 	// Order controls execution ordering relative to other guardrails.
 	// Guardrails with the same order run in parallel; different orders run sequentially.
 	// Default: 0

@@ -143,6 +143,7 @@ guardrails:
     # implement other LLM-based rewrites.
     # - name: "privacy-rewrite"
     #   type: "llm_based_altering"
+    #   user_path: "/team/privacy" # optional base path for internal rewrite calls and audit logs
     #   order: 1
     #   llm_based_altering:
     #     model: "gpt-4o-mini"
