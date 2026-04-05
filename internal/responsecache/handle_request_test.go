@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -120,13 +121,14 @@ func TestInternalRequestHeaders_AllowlistsSafeSnapshotHeaders(t *testing.T) {
 		nil,
 		nil,
 		http.Header{
-			"Accept":       []string{"application/json"},
+			"Accept":        []string{"application/json"},
 			"Authorization": []string{"Bearer secret"},
-			"Baggage":      []string{"user_id=123"},
-			"Cookie":       []string{"session=secret"},
-			"Traceparent":  []string{"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"},
-			"User-Agent":   []string{"gomodel-test"},
-			"X-Api-Key":    []string{"secret-key"},
+			"Baggage":       []string{"user_id=123"},
+			"Cache-Control": []string{"no-store"},
+			"Cookie":        []string{"session=secret"},
+			"Traceparent":   []string{"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"},
+			"User-Agent":    []string{"gomodel-test"},
+			"X-Api-Key":     []string{"secret-key"},
 		},
 		"application/json",
 		nil,
@@ -149,6 +151,9 @@ func TestInternalRequestHeaders_AllowlistsSafeSnapshotHeaders(t *testing.T) {
 	}
 	if got := headers.Get("Baggage"); got != "user_id=123" {
 		t.Fatalf("Baggage = %q, want user_id=123", got)
+	}
+	if got := headers.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 	if got := headers.Get("Content-Type"); got != "application/json" {
 		t.Fatalf("Content-Type = %q, want application/json default", got)
@@ -186,6 +191,32 @@ func TestHandleInternalRequest_RejectsNilMiddleware(t *testing.T) {
 	}
 	if gatewayErr.HTTPStatusCode() != http.StatusInternalServerError {
 		t.Fatalf("status code = %d, want %d", gatewayErr.HTTPStatusCode(), http.StatusInternalServerError)
+	}
+}
+
+func TestHandleInternalRequest_NormalizesNonGatewayErrors(t *testing.T) {
+	m := NewResponseCacheMiddlewareWithStore(cache.NewMapStore(), time.Hour)
+	originalErr := errors.New("cache executor failed")
+
+	_, err := m.HandleInternalRequest(context.Background(), http.MethodPost, "/v1/chat/completions", []byte(`{}`), func(*echo.Context) error {
+		return originalErr
+	})
+	if err == nil {
+		t.Fatal("HandleInternalRequest() error = nil, want provider error")
+	}
+
+	gatewayErr, ok := err.(*core.GatewayError)
+	if !ok {
+		t.Fatalf("HandleInternalRequest() error = %T, want *core.GatewayError", err)
+	}
+	if gatewayErr.Type != core.ErrorTypeProvider {
+		t.Fatalf("error type = %q, want %q", gatewayErr.Type, core.ErrorTypeProvider)
+	}
+	if gatewayErr.Message != originalErr.Error() {
+		t.Fatalf("message = %q, want %q", gatewayErr.Message, originalErr.Error())
+	}
+	if !errors.Is(gatewayErr, originalErr) {
+		t.Fatal("expected wrapped gateway error to preserve original cause")
 	}
 }
 

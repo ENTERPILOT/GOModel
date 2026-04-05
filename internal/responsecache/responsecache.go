@@ -3,6 +3,7 @@ package responsecache
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,7 @@ const responseCachePrefix = "gomodel:response:"
 var internalRequestHeaderAllowlist = map[string]struct{}{
 	http.CanonicalHeaderKey("Accept"):                     {},
 	http.CanonicalHeaderKey("Baggage"):                    {},
+	http.CanonicalHeaderKey("Cache-Control"):              {},
 	http.CanonicalHeaderKey("Content-Type"):               {},
 	http.CanonicalHeaderKey("Request-Id"):                 {},
 	http.CanonicalHeaderKey("Traceparent"):                {},
@@ -204,7 +206,11 @@ func (m *ResponseCacheMiddleware) HandleInternalRequest(
 
 	err := m.HandleRequest(c, body, func() error { return next(c) })
 	if err != nil {
-		return nil, err
+		var gatewayErr *core.GatewayError
+		if errors.As(err, &gatewayErr) && gatewayErr != nil {
+			return nil, gatewayErr
+		}
+		return nil, core.NewProviderError("", http.StatusInternalServerError, err.Error(), err)
 	}
 
 	return &InternalHandleResult{
