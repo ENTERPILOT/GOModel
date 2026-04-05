@@ -14,6 +14,7 @@ import (
 const (
 	defaultLLMBasedAlteringName      = "llm_based_altering"
 	DefaultLLMBasedAlteringMaxTokens = 4096
+	maxConcurrentRewrites            = 8
 	alteringTextWrapperStart         = "<TEXT_TO_ALTER>"
 	alteringTextWrapperEnd           = "</TEXT_TO_ALTER>"
 )
@@ -432,6 +433,7 @@ func (g *LLMBasedAlteringGuardrail) shouldRewrite(msg Message) bool {
 func (g *LLMBasedAlteringGuardrail) rewriteTexts(ctx context.Context, texts []string) ([]string, error) {
 	rewritten := make([]string, len(texts))
 	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxConcurrentRewrites)
 
 	for i, text := range texts {
 		i := i
@@ -484,7 +486,10 @@ func (g *LLMBasedAlteringGuardrail) rewriteText(ctx context.Context, text string
 	}
 
 	content := core.ExtractTextContent(resp.Choices[0].Message.Content)
-	if content == "" && len(resp.Choices[0].Message.ToolCalls) == 0 {
+	if len(resp.Choices[0].Message.ToolCalls) > 0 {
+		return "", fmt.Errorf("llm_based_altering returned tool calls instead of plain text")
+	}
+	if content == "" {
 		return "", fmt.Errorf("llm_based_altering returned empty content")
 	}
 	return unwrapAlteredText(content), nil

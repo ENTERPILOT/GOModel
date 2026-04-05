@@ -9,9 +9,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/responsecache"
 	"gomodel/internal/usage"
 )
 
@@ -24,6 +26,7 @@ type InternalChatCompletionExecutorConfig struct {
 	AuditLogger             auditlog.LoggerInterface
 	UsageLogger             usage.LoggerInterface
 	PricingResolver         usage.PricingResolver
+	ResponseCache           *responsecache.ResponseCacheMiddleware
 }
 
 // InternalChatCompletionExecutor executes internal translated chat requests
@@ -47,6 +50,7 @@ func NewInternalChatCompletionExecutor(provider core.RoutableProvider, cfg Inter
 		logger:                  cfg.AuditLogger,
 		usageLogger:             cfg.UsageLogger,
 		pricingResolver:         cfg.PricingResolver,
+		responseCache:           cfg.ResponseCache,
 	}
 
 	return &InternalChatCompletionExecutor{
@@ -76,8 +80,9 @@ func (e *InternalChatCompletionExecutor) ChatCompletion(ctx context.Context, req
 	start := time.Now()
 	entry := e.newAuditEntry(ctx, requestID, requested)
 	var plan *core.ExecutionPlan
+	var cacheType string
 	defer func() {
-		e.finishAuditEntry(ctx, entry, start, plan, req, resp, err)
+		e.finishAuditEntry(ctx, entry, start, plan, req, resp, err, cacheType)
 	}()
 
 	resolution, err := resolveRequestModel(e.provider, e.modelResolver, requested)
@@ -95,16 +100,67 @@ func (e *InternalChatCompletionExecutor) ChatCompletion(ctx context.Context, req
 		return nil, err
 	}
 
+	ctx = e.service.withCacheRequestContext(ctx, plan)
 	execReq := cloneChatRequestForSelector(req, resolution.ResolvedSelector)
-	resp, providerType, _, err := e.service.executeChatCompletion(ctx, plan, execReq)
+	resp, providerType, _, cacheType, err := e.executeChatCompletion(ctx, plan, execReq)
 	if err != nil {
 		return nil, err
 	}
 
-	e.service.logUsage(ctx, plan, resp.Model, providerType, func(pricing *core.ModelPricing) *usage.UsageEntry {
-		return usage.ExtractFromChatResponse(resp, requestID, providerType, "/v1/chat/completions", pricing)
-	})
+	if cacheType == "" {
+		e.service.logUsage(ctx, plan, resp.Model, providerType, func(pricing *core.ModelPricing) *usage.UsageEntry {
+			return usage.ExtractFromChatResponse(resp, requestID, providerType, "/v1/chat/completions", pricing)
+		})
+	}
 	return resp, nil
+}
+
+func (e *InternalChatCompletionExecutor) executeChatCompletion(
+	ctx context.Context,
+	plan *core.ExecutionPlan,
+	req *core.ChatRequest,
+) (*core.ChatResponse, string, bool, string, error) {
+	if e.service.responseCache == nil || (plan != nil && !plan.CacheEnabled()) {
+		resp, providerType, usedFallback, err := e.service.executeChatCompletion(ctx, plan, req)
+		return resp, providerType, usedFallback, "", err
+	}
+
+	body, err := marshalRequestBody(req)
+	if err != nil {
+		resp, providerType, usedFallback, execErr := e.service.executeChatCompletion(ctx, plan, req)
+		if execErr != nil {
+			return nil, "", false, "", execErr
+		}
+		return resp, providerType, usedFallback, "", nil
+	}
+
+	var (
+		resp         *core.ChatResponse
+		providerType string
+		usedFallback bool
+	)
+	result, err := e.service.responseCache.HandleInternalRequest(ctx, http.MethodPost, "/v1/chat/completions", body, func(c *echo.Context) error {
+		var execErr error
+		resp, providerType, usedFallback, execErr = e.service.executeChatCompletion(c.Request().Context(), plan, req)
+		if execErr != nil {
+			return execErr
+		}
+		if usedFallback {
+			c.SetRequest(c.Request().WithContext(core.WithFallbackUsed(c.Request().Context())))
+		}
+		return c.JSON(http.StatusOK, resp)
+	})
+	if err != nil {
+		return nil, "", false, "", err
+	}
+	if result != nil && result.CacheType != "" {
+		var cached core.ChatResponse
+		if err := json.Unmarshal(result.Body, &cached); err != nil {
+			return nil, "", false, "", err
+		}
+		return &cached, plan.ProviderType, false, result.CacheType, nil
+	}
+	return resp, providerType, usedFallback, "", nil
 }
 
 func (e *InternalChatCompletionExecutor) newAuditEntry(
@@ -144,6 +200,7 @@ func (e *InternalChatCompletionExecutor) finishAuditEntry(
 	req *core.ChatRequest,
 	resp *core.ChatResponse,
 	err error,
+	cacheType string,
 ) {
 	if entry == nil || e.logger == nil || !e.logger.Config().Enabled {
 		return
@@ -157,11 +214,9 @@ func (e *InternalChatCompletionExecutor) finishAuditEntry(
 	}
 
 	cfg := e.logger.Config()
-	if cfg.LogBodies && entry.Data != nil {
-		entry.Data.RequestBody = auditJSONBody(req)
-		if resp != nil {
-			entry.Data.ResponseBody = auditJSONBody(resp)
-		}
+	auditlog.CaptureInternalJSONExchange(entry, ctx, http.MethodPost, "/v1/chat/completions", req, resp, err, cfg)
+	if cacheType != "" {
+		entry.CacheType = cacheType
 	}
 
 	if err != nil {
@@ -184,19 +239,4 @@ func (e *InternalChatCompletionExecutor) finishAuditEntry(
 	}
 
 	e.logger.Write(entry)
-}
-
-func auditJSONBody(value any) any {
-	if value == nil {
-		return nil
-	}
-	body, err := json.Marshal(value)
-	if err != nil {
-		return nil
-	}
-	var decoded any
-	if err := json.Unmarshal(body, &decoded); err != nil {
-		return string(body)
-	}
-	return decoded
 }

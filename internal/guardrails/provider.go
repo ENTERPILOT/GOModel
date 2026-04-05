@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"maps"
+	"reflect"
 	"strings"
 
 	"gomodel/internal/core"
@@ -300,6 +301,7 @@ func rewriteGuardedResponsesBatchBody(originalBody json.RawMessage, modified *co
 
 	body, err := patchJSONObjectFields(originalBody, map[string]jsonFieldPatch{
 		"instructions": {value: modified.Instructions, omitWhenEmpty: modified.Instructions == ""},
+		"input":        {value: modified.Input},
 	})
 	if err == nil {
 		return body, nil
@@ -798,7 +800,30 @@ func rewriteStructuredContentWithTextRewrite(originalContent any, rewrittenText 
 }
 
 func normalizeGuardrailMessageText(content any) (string, error) {
-	normalized, err := core.NormalizeMessageContent(content)
+	normalizedContent := content
+	switch typed := content.(type) {
+	case []map[string]any:
+		parts := make([]any, len(typed))
+		for i, part := range typed {
+			parts[i] = part
+		}
+		normalizedContent = parts
+	default:
+		value := reflect.ValueOf(content)
+		if value.IsValid() && (value.Kind() == reflect.Slice || value.Kind() == reflect.Array) {
+			switch content.(type) {
+			case []any, []core.ContentPart:
+			default:
+				parts := make([]any, value.Len())
+				for i := 0; i < value.Len(); i++ {
+					parts[i] = value.Index(i).Interface()
+				}
+				normalizedContent = parts
+			}
+		}
+	}
+
+	normalized, err := core.NormalizeMessageContent(normalizedContent)
 	if err != nil {
 		return "", err
 	}
@@ -941,21 +966,23 @@ func stringifyResponsesValue(value any) (string, error) {
 // messages applied back to the original Responses envelope.
 func applyMessagesToResponses(req *core.ResponsesRequest, msgs []Message) (*core.ResponsesRequest, error) {
 	result := *req
-	var instructions string
-	nonSystem := make([]Message, 0, len(msgs))
-	for _, m := range msgs {
-		if m.Role == "system" {
-			if instructions != "" {
-				instructions += "\n"
-			}
-			instructions += m.Content
-			continue
-		}
-		nonSystem = append(nonSystem, m)
+	originalInputMsgs, err := responsesInputToMessages(req.Input)
+	if err != nil {
+		return nil, err
 	}
-	result.Instructions = instructions
 
-	input, err := applyMessagesToResponsesInput(req.Input, nonSystem)
+	inputMsgs := msgs
+	switch {
+	case len(msgs) == len(originalInputMsgs):
+		result.Instructions = ""
+	case len(msgs) == len(originalInputMsgs)+1 && len(msgs) > 0 && msgs[0].Role == "system":
+		result.Instructions = msgs[0].Content
+		inputMsgs = msgs[1:]
+	default:
+		return nil, core.NewInvalidRequestError("guardrails cannot add or remove responses input items", nil)
+	}
+
+	input, err := applyMessagesToResponsesInput(req.Input, inputMsgs)
 	if err != nil {
 		return nil, err
 	}
@@ -989,7 +1016,11 @@ func applyMessagesToResponsesInput(original any, msgs []Message) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return applyMessagesToResponsesElements(elements, msgs)
+	patched, err := applyMessagesToResponsesElements(elements, msgs)
+	if err != nil {
+		return nil, err
+	}
+	return patchResponsesInputEnvelope(original, patched)
 }
 
 func applyMessagesToResponsesElements(elements []core.ResponsesInputElement, msgs []Message) ([]core.ResponsesInputElement, error) {
@@ -1053,15 +1084,114 @@ func applyGuardedResponsesContentToOriginal(originalContent any, rewrittenText s
 	return rewrittenText, nil
 }
 
-func isResponsesStructuredContent(content any) bool {
-	switch typed := content.(type) {
+func patchResponsesInputEnvelope(original any, patched []core.ResponsesInputElement) (any, error) {
+	switch typed := original.(type) {
+	case []core.ResponsesInputElement:
+		result := make([]core.ResponsesInputElement, len(patched))
+		copy(result, patched)
+		return result, nil
+	case []map[string]any:
+		return patchResponsesInputMapSlice(typed, patched)
 	case []any:
-		return len(typed) > 0
-	case []core.ContentPart:
-		return len(typed) > 0
+		return patchResponsesInputInterfaceSlice(typed, patched)
 	default:
+		return patched, nil
+	}
+}
+
+func patchResponsesInputMapSlice(original []map[string]any, patched []core.ResponsesInputElement) ([]map[string]any, error) {
+	if len(original) != len(patched) {
+		return nil, core.NewInvalidRequestError("guardrails cannot add or remove responses input items", nil)
+	}
+	result := make([]map[string]any, len(original))
+	for i := range original {
+		item, err := patchResponsesInputMap(original[i], patched[i])
+		if err != nil {
+			return nil, err
+		}
+		result[i] = item
+	}
+	return result, nil
+}
+
+func patchResponsesInputInterfaceSlice(original []any, patched []core.ResponsesInputElement) ([]any, error) {
+	if len(original) != len(patched) {
+		return nil, core.NewInvalidRequestError("guardrails cannot add or remove responses input items", nil)
+	}
+	result := make([]any, len(original))
+	for i := range original {
+		item, err := patchResponsesInputInterfaceElement(original[i], patched[i])
+		if err != nil {
+			return nil, err
+		}
+		result[i] = item
+	}
+	return result, nil
+}
+
+func patchResponsesInputInterfaceElement(original any, patched core.ResponsesInputElement) (any, error) {
+	if originalMap, ok := original.(map[string]any); ok {
+		return patchResponsesInputMap(originalMap, patched)
+	}
+	return responsesInputElementAsAny(patched)
+}
+
+func patchResponsesInputMap(original map[string]any, patched core.ResponsesInputElement) (map[string]any, error) {
+	cloned := cloneStringAnyMap(original)
+	updated, err := responsesInputElementAsMap(patched)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, key := range []string{"type", "role", "status", "content", "call_id", "id", "name", "arguments", "output"} {
+		delete(cloned, key)
+	}
+	for key, value := range updated {
+		cloned[key] = value
+	}
+	return cloned, nil
+}
+
+func responsesInputElementAsMap(element core.ResponsesInputElement) (map[string]any, error) {
+	value, err := responsesInputElementAsAny(element)
+	if err != nil {
+		return nil, err
+	}
+	itemMap, ok := value.(map[string]any)
+	if !ok {
+		return nil, core.NewInvalidRequestError("invalid responses input item", nil)
+	}
+	return itemMap, nil
+}
+
+func responsesInputElementAsAny(element core.ResponsesInputElement) (any, error) {
+	raw, err := json.Marshal(element)
+	if err != nil {
+		return nil, core.NewInvalidRequestError("invalid responses input item", err)
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, core.NewInvalidRequestError("invalid responses input item", err)
+	}
+	return value, nil
+}
+
+func isResponsesStructuredContent(content any) bool {
+	if content == nil {
 		return false
 	}
+	switch typed := content.(type) {
+	case []any:
+		return true
+	case []core.ContentPart:
+		return true
+	case []map[string]any:
+		return true
+	default:
+		_ = typed
+	}
+	contentType := reflect.TypeOf(content)
+	return contentType.Kind() == reflect.Slice || contentType.Kind() == reflect.Array
 }
 
 func rewriteStructuredResponsesContentWithTextRewrite(originalContent any, rewrittenText string) (any, error) {
@@ -1070,8 +1200,18 @@ func rewriteStructuredResponsesContentWithTextRewrite(originalContent any, rewri
 		return rewriteStructuredResponsesTypedContentParts(typed, rewrittenText)
 	case []any:
 		return rewriteStructuredResponsesInterfaceContentParts(typed, rewrittenText)
+	case []map[string]any:
+		return rewriteStructuredResponsesMapContentParts(typed, rewrittenText)
 	default:
-		return nil, core.NewInvalidRequestError("unsupported structured responses content", nil)
+		value := reflect.ValueOf(originalContent)
+		if !value.IsValid() || (value.Kind() != reflect.Slice && value.Kind() != reflect.Array) {
+			return nil, core.NewInvalidRequestError("unsupported structured responses content", nil)
+		}
+		parts := make([]any, value.Len())
+		for i := 0; i < value.Len(); i++ {
+			parts[i] = value.Index(i).Interface()
+		}
+		return rewriteStructuredResponsesInterfaceContentParts(parts, rewrittenText)
 	}
 }
 
@@ -1088,10 +1228,12 @@ func rewriteStructuredResponsesTypedContentParts(parts []core.ContentPart, rewri
 
 	if len(textIndexes) == 0 {
 		if rewrittenText == "" {
+			if len(parts) == 0 {
+				return []core.ContentPart{}, nil
+			}
 			return cloneContentParts(parts), nil
 		}
-		prepended := make([]core.ContentPart, 0, len(parts)+1)
-		prepended = append(prepended, core.ContentPart{Type: "input_text", Text: rewrittenText})
+		prepended := []core.ContentPart{{Type: "input_text", Text: rewrittenText}}
 		prepended = append(prepended, cloneContentParts(parts)...)
 		return prepended, nil
 	}
@@ -1157,10 +1299,12 @@ func rewriteStructuredResponsesInterfaceContentParts(parts []any, rewrittenText 
 
 	if len(textIndexes) == 0 {
 		if rewrittenText == "" {
+			if len(parts) == 0 {
+				return []any{}, nil
+			}
 			return cloneResponsesInterfaceParts(parts), nil
 		}
-		prepended := make([]any, 0, len(parts)+1)
-		prepended = append(prepended, map[string]any{"type": "input_text", "text": rewrittenText})
+		prepended := []any{map[string]any{"type": "input_text", "text": rewrittenText}}
 		prepended = append(prepended, cloneResponsesInterfaceParts(parts)...)
 		return prepended, nil
 	}
@@ -1217,6 +1361,35 @@ func rewriteStructuredResponsesInterfaceContentParts(parts []any, rewrittenText 
 		return nil, core.NewInvalidRequestError("guardrails produced empty structured responses content after rewrite", nil)
 	}
 	return merged, nil
+}
+
+func rewriteStructuredResponsesMapContentParts(parts []map[string]any, rewrittenText string) (any, error) {
+	if len(parts) == 0 && rewrittenText == "" {
+		return []map[string]any{}, nil
+	}
+
+	interfaceParts := make([]any, len(parts))
+	for i, part := range parts {
+		interfaceParts[i] = part
+	}
+	rewritten, err := rewriteStructuredResponsesInterfaceContentParts(interfaceParts, rewrittenText)
+	if err != nil {
+		return nil, err
+	}
+	rewrittenParts, ok := rewritten.([]any)
+	if !ok {
+		return nil, core.NewInvalidRequestError("unsupported structured responses content", nil)
+	}
+
+	result := make([]map[string]any, len(rewrittenParts))
+	for i, part := range rewrittenParts {
+		partMap, ok := part.(map[string]any)
+		if !ok {
+			return nil, core.NewInvalidRequestError("guardrails cannot rewrite non-object responses content part", nil)
+		}
+		result[i] = cloneStringAnyMap(partMap)
+	}
+	return result, nil
 }
 
 func isResponsesTextPartType(partType string) bool {

@@ -1,7 +1,11 @@
 package responsecache
 
 import (
+	"bytes"
+	"context"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -9,6 +13,7 @@ import (
 
 	"gomodel/config"
 	"gomodel/internal/cache"
+	"gomodel/internal/core"
 	"gomodel/internal/embedding"
 	"gomodel/internal/usage"
 )
@@ -19,6 +24,15 @@ const responseCachePrefix = "gomodel:response:"
 type ResponseCacheMiddleware struct {
 	simple   *simpleCacheMiddleware
 	semantic *semanticCacheMiddleware
+}
+
+// InternalHandleResult is the buffered result of running the cache middleware
+// for a transport-free internal JSON request.
+type InternalHandleResult struct {
+	StatusCode int
+	Headers    http.Header
+	Body       []byte
+	CacheType  string
 }
 
 // NewResponseCacheMiddleware creates middleware from config.
@@ -143,6 +157,43 @@ func (m *ResponseCacheMiddleware) HandleRequest(c *echo.Context, body []byte, ne
 	return innerNext()
 }
 
+// HandleInternalRequest runs the normal cache middleware for a transport-free
+// internal request using a minimal synthetic HTTP/Echo context.
+func (m *ResponseCacheMiddleware) HandleInternalRequest(
+	ctx context.Context,
+	method, path string,
+	body []byte,
+	next func(*echo.Context) error,
+) (*InternalHandleResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	req := httptest.NewRequest(method, path, bytes.NewReader(body))
+	req.Header = internalRequestHeaders(ctx)
+	req = req.WithContext(ctx)
+
+	rec := httptest.NewRecorder()
+	c := echo.New().NewContext(req, rec)
+
+	var err error
+	if m == nil {
+		err = next(c)
+	} else {
+		err = m.HandleRequest(c, body, func() error { return next(c) })
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &InternalHandleResult{
+		StatusCode: rec.Code,
+		Headers:    rec.Header().Clone(),
+		Body:       bytes.Clone(rec.Body.Bytes()),
+		CacheType:  internalCacheType(rec.Header().Get("X-Cache")),
+	}, nil
+}
+
 // Close waits for any in-flight cache writes to complete, then releases cache resources.
 func (m *ResponseCacheMiddleware) Close() error {
 	if m == nil {
@@ -159,6 +210,36 @@ func (m *ResponseCacheMiddleware) Close() error {
 		return simErr
 	}
 	return semErr
+}
+
+func internalRequestHeaders(ctx context.Context) http.Header {
+	headers := make(http.Header)
+	if snapshot := core.GetRequestSnapshot(ctx); snapshot != nil {
+		for key, values := range snapshot.GetHeaders() {
+			for _, value := range values {
+				headers.Add(key, value)
+			}
+		}
+	}
+	if headers.Get("Content-Type") == "" {
+		headers.Set("Content-Type", "application/json")
+	}
+	if requestID := strings.TrimSpace(core.GetRequestID(ctx)); requestID != "" && headers.Get("X-Request-ID") == "" {
+		headers.Set("X-Request-ID", requestID)
+	}
+	return headers
+}
+
+func internalCacheType(headerValue string) string {
+	headerValue = strings.TrimSpace(headerValue)
+	switch headerValue {
+	case "HIT (exact)":
+		return CacheTypeExact
+	case "HIT (semantic)":
+		return CacheTypeSemantic
+	default:
+		return ""
+	}
 }
 
 // NewResponseCacheMiddlewareWithStore creates middleware with a custom store (for testing).

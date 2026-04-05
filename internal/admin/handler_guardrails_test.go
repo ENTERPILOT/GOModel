@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -163,7 +162,11 @@ func TestListGuardrailTypes(t *testing.T) {
 		if err := json.Unmarshal(typeDef.Defaults, &defaults); err != nil {
 			t.Fatalf("json.Unmarshal(defaults) error = %v", err)
 		}
-		if got := strings.TrimSpace(fmt.Sprint(defaults["prompt"])); got == "" {
+		prompt, ok := defaults["prompt"].(string)
+		if !ok {
+			t.Fatalf("llm_based_altering defaults.prompt = %#v, want string", defaults["prompt"])
+		}
+		if got := strings.TrimSpace(prompt); got == "" {
 			t.Fatalf("llm_based_altering defaults.prompt = %q, want built-in prompt", got)
 		}
 		for _, field := range typeDef.Fields {

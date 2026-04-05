@@ -3,7 +3,9 @@ package guardrails
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"gomodel/internal/core"
 )
@@ -211,5 +213,95 @@ func TestLLMBasedAltering_Process_PropagatesContextCancellation(t *testing.T) {
 	_, err = g.Process(ctx, []Message{{Role: "user", Content: "John says hello"}})
 	if err == nil {
 		t.Fatal("expected context cancellation error")
+	}
+}
+
+func TestLLMBasedAltering_Process_FailsOpenOnToolCallCompletion(t *testing.T) {
+	g, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{
+		Model: "gpt-4o-mini",
+	}, mockChatCompletionExecutor{
+		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+			return &core.ChatResponse{
+				Choices: []core.Choice{
+					{
+						Message: core.ResponseMessage{
+							Role: "assistant",
+							ToolCalls: []core.ToolCall{
+								{
+									ID:   "call_1",
+									Type: "function",
+									Function: core.FunctionCall{
+										Name:      "lookup_patient",
+										Arguments: "{}",
+									},
+								},
+							},
+						},
+					},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMBasedAlteringGuardrail() error = %v", err)
+	}
+
+	msgs := []Message{{Role: "user", Content: "John says hello"}}
+	got, err := g.Process(context.Background(), msgs)
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if got[0].Content != msgs[0].Content {
+		t.Fatalf("Content = %q, want original content after tool-call failure", got[0].Content)
+	}
+}
+
+func TestLLMBasedAltering_Process_LimitsConcurrentRewrites(t *testing.T) {
+	var (
+		inFlight     int32
+		maxInFlight  int32
+		requestsSeen int32
+		messageCount = maxConcurrentRewrites*3 + 1
+	)
+	g, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{
+		Model: "gpt-4o-mini",
+	}, mockChatCompletionExecutor{
+		chatFn: func(_ context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+			current := atomic.AddInt32(&inFlight, 1)
+			defer atomic.AddInt32(&inFlight, -1)
+			atomic.AddInt32(&requestsSeen, 1)
+
+			for {
+				previous := atomic.LoadInt32(&maxInFlight)
+				if current <= previous || atomic.CompareAndSwapInt32(&maxInFlight, previous, current) {
+					break
+				}
+			}
+
+			time.Sleep(10 * time.Millisecond)
+			return &core.ChatResponse{
+				Choices: []core.Choice{
+					{Message: core.ResponseMessage{Role: "assistant", Content: core.ExtractTextContent(req.Messages[1].Content)}},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMBasedAlteringGuardrail() error = %v", err)
+	}
+
+	msgs := make([]Message, messageCount)
+	for i := range msgs {
+		msgs[i] = Message{Role: "user", Content: fmt.Sprintf("text-%d", i)}
+	}
+
+	if _, err := g.Process(context.Background(), msgs); err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if got := atomic.LoadInt32(&requestsSeen); got != int32(messageCount) {
+		t.Fatalf("requests seen = %d, want %d", got, messageCount)
+	}
+	if got := atomic.LoadInt32(&maxInFlight); got > int32(maxConcurrentRewrites) {
+		t.Fatalf("max concurrent rewrites = %d, want <= %d", got, maxConcurrentRewrites)
 	}
 }

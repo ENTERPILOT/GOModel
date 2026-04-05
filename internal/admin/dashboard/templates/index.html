@@ -388,33 +388,41 @@
                 </label>
 
                 <template x-for="field in guardrailTypeFields(guardrailForm.type)" :key="field.key">
-                    <label class="alias-form-field alias-form-field-wide">
-                        <span x-text="field.label"></span>
-                        <template x-if="field.input === 'select'">
-                            <select class="usage-log-select settings-select" :value="guardrailFieldValue(field)" @change="setGuardrailFieldValue(field, $event.target.value)">
-                                <template x-for="option in field.options" :key="option.value">
-                                    <option :value="option.value" x-text="option.label"></option>
+                    <div>
+                        <template x-if="field.input !== 'checkboxes'">
+                            <label class="alias-form-field alias-form-field-wide">
+                                <span x-text="field.label"></span>
+                                <template x-if="field.input === 'select'">
+                                    <select class="usage-log-select settings-select" :value="guardrailFieldValue(field)" @change="setGuardrailFieldValue(field, $event.target.value)">
+                                        <template x-for="option in field.options" :key="option.value">
+                                            <option :value="option.value" x-text="option.label"></option>
+                                        </template>
+                                    </select>
                                 </template>
-                            </select>
-                        </template>
-                        <template x-if="field.input === 'textarea'">
-                            <textarea class="settings-guardrail-textarea" :placeholder="field.placeholder || ''" :value="guardrailFieldValue(field)" @input="setGuardrailFieldValue(field, $event.target.value)"></textarea>
+                                <template x-if="field.input === 'textarea'">
+                                    <textarea class="settings-guardrail-textarea" :placeholder="field.placeholder || ''" :value="guardrailFieldValue(field)" @input="setGuardrailFieldValue(field, $event.target.value)"></textarea>
+                                </template>
+                                <template x-if="field.input !== 'select' && field.input !== 'textarea'">
+                                    <input :type="field.input || 'text'" class="filter-input" :placeholder="field.placeholder || ''" :value="guardrailFieldValue(field)" @input="setGuardrailFieldValue(field, $event.target.value)">
+                                </template>
+                                <small class="alias-form-hint" x-show="field.help" x-text="field.help"></small>
+                            </label>
                         </template>
                         <template x-if="field.input === 'checkboxes'">
-                            <div class="execution-plan-feature-toggles">
-                                <template x-for="option in field.options" :key="field.key + '-' + option.value">
-                                    <label class="execution-plan-feature-toggle">
-                                        <input type="checkbox" :checked="guardrailArrayFieldSelected(field, option.value)" @change="toggleGuardrailArrayFieldValue(field, option.value, $event.target.checked)">
-                                        <span x-text="option.label"></span>
-                                    </label>
-                                </template>
+                            <div class="alias-form-field alias-form-field-wide">
+                                <span x-text="field.label"></span>
+                                <div class="execution-plan-feature-toggles">
+                                    <template x-for="option in field.options" :key="field.key + '-' + option.value">
+                                        <label class="execution-plan-feature-toggle">
+                                            <input type="checkbox" :checked="guardrailArrayFieldSelected(field, option.value)" @change="toggleGuardrailArrayFieldValue(field, option.value, $event.target.checked)">
+                                            <span x-text="option.label"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                                <small class="alias-form-hint" x-show="field.help" x-text="field.help"></small>
                             </div>
                         </template>
-                        <template x-if="field.input !== 'select' && field.input !== 'textarea' && field.input !== 'checkboxes'">
-                            <input :type="field.input || 'text'" class="filter-input" :placeholder="field.placeholder || ''" :value="guardrailFieldValue(field)" @input="setGuardrailFieldValue(field, $event.target.value)">
-                        </template>
-                        <small class="alias-form-hint" x-show="field.help" x-text="field.help"></small>
-                    </label>
+                    </div>
                 </template>
             </div>
 

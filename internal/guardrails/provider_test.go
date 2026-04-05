@@ -1666,6 +1666,70 @@ func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_PreservesOpaqueRespo
 	}
 }
 
+func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_RewritesResponsesInput(t *testing.T) {
+	inner := &mockRoutableProvider{}
+	pipeline := NewPipeline()
+
+	g, err := NewLLMBasedAlteringGuardrail("privacy", LLMBasedAlteringConfig{
+		Model: "gpt-4o-mini",
+	}, mockChatCompletionExecutor{
+		chatFn: func(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
+			return &core.ChatResponse{
+				Choices: []core.Choice{
+					{Message: core.ResponseMessage{Role: "assistant", Content: "[|---|](PERSON_1)"}},
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewLLMBasedAlteringGuardrail() error = %v", err)
+	}
+	pipeline.Add(g, 0)
+
+	guarded := NewGuardedProviderWithOptions(inner, pipeline, Options{EnableForBatchProcessing: true})
+	req := &core.BatchRequest{
+		Endpoint: "/v1/responses",
+		Requests: []core.BatchRequestItem{
+			{
+				Method: http.MethodPost,
+				URL:    "/v1/responses",
+				Body: json.RawMessage(`{
+					"model":"gpt-4",
+					"input":[{"type":"message","role":"user","content":"John Smith","x_trace":{"id":"trace-1"}}]
+				}`),
+			},
+		},
+	}
+
+	_, err = guarded.CreateBatch(context.Background(), "mock", req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inner.batchReq == nil || len(inner.batchReq.Requests) != 1 {
+		t.Fatalf("expected delegated batch request")
+	}
+
+	var body map[string]any
+	if err := json.Unmarshal(inner.batchReq.Requests[0].Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	input, ok := body["input"].([]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("input = %#v, want 1 entry", body["input"])
+	}
+	inputMsg, ok := input[0].(map[string]any)
+	if !ok {
+		t.Fatalf("input[0] = %#v, want object", input[0])
+	}
+	if inputMsg["content"] != "[|---|](PERSON_1)" {
+		t.Fatalf("input[0].content = %#v, want rewritten content", inputMsg["content"])
+	}
+	xTrace, ok := inputMsg["x_trace"].(map[string]any)
+	if !ok || xTrace["id"] != "trace-1" {
+		t.Fatalf("input[0].x_trace = %#v, want preserved nested metadata", inputMsg["x_trace"])
+	}
+}
+
 func TestGuardedProvider_CreateBatch_BatchGuardrailsEnabled_NormalizesFullURLResponsesEndpoint(t *testing.T) {
 	inner := &mockRoutableProvider{}
 	pipeline := NewPipeline()
@@ -2157,6 +2221,140 @@ func TestApplyMessagesToResponses_RewritesStringInput(t *testing.T) {
 	}
 	if result.Input != "[|---|](PERSON_1)" {
 		t.Fatalf("Input = %#v, want rewritten string input", result.Input)
+	}
+}
+
+func TestApplyMessagesToResponses_PreservesSystemRoleInputItems(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "gpt-4",
+		Input: []core.ResponsesInputElement{
+			{Role: "system", Content: "follow hospital policy"},
+			{Role: "user", Content: "hello"},
+		},
+	}
+	msgs := []Message{
+		{Role: "system", Content: "follow hospital policy"},
+		{Role: "user", Content: "hello"},
+	}
+
+	result, err := applyMessagesToResponses(req, msgs)
+	if err != nil {
+		t.Fatalf("applyMessagesToResponses() error = %v", err)
+	}
+	if result.Instructions != "" {
+		t.Fatalf("Instructions = %q, want empty", result.Instructions)
+	}
+	input, ok := result.Input.([]core.ResponsesInputElement)
+	if !ok || len(input) != 2 {
+		t.Fatalf("Input = %#v, want []ResponsesInputElement len=2", result.Input)
+	}
+	if input[0].Role != "system" || input[0].Content != "follow hospital policy" {
+		t.Fatalf("first input item = %#v, want preserved system-role item", input[0])
+	}
+}
+
+func TestApplyMessagesToResponses_PreservesArrayEnvelopeForAnyInput(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "gpt-4",
+		Input: []any{
+			map[string]any{
+				"type":    "message",
+				"role":    "user",
+				"content": "John Smith",
+				"meta":    "keep-me",
+			},
+		},
+	}
+	msgs := []Message{{Role: "user", Content: "[|---|](PERSON_1)"}}
+
+	result, err := applyMessagesToResponses(req, msgs)
+	if err != nil {
+		t.Fatalf("applyMessagesToResponses() error = %v", err)
+	}
+
+	input, ok := result.Input.([]any)
+	if !ok || len(input) != 1 {
+		t.Fatalf("Input = %#v, want []any len=1", result.Input)
+	}
+	item, ok := input[0].(map[string]any)
+	if !ok {
+		t.Fatalf("Input[0] = %#v, want map[string]any", input[0])
+	}
+	if item["meta"] != "keep-me" {
+		t.Fatalf("extra field meta = %#v, want keep-me", item["meta"])
+	}
+	if item["content"] != "[|---|](PERSON_1)" {
+		t.Fatalf("content = %#v, want rewritten content", item["content"])
+	}
+}
+
+func TestApplyMessagesToResponses_RewritesStructuredMapContentPreservingArrayShape(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "gpt-4",
+		Input: []core.ResponsesInputElement{
+			{
+				Role: "user",
+				Content: []map[string]any{
+					{"type": "input_text", "text": "John Smith", "meta": "keep"},
+					{"type": "input_image", "image_url": map[string]any{"url": "https://example.com/image.png"}},
+				},
+			},
+		},
+	}
+	msgs := []Message{{Role: "user", Content: "[|---|](PERSON_1)"}}
+
+	result, err := applyMessagesToResponses(req, msgs)
+	if err != nil {
+		t.Fatalf("applyMessagesToResponses() error = %v", err)
+	}
+
+	input, ok := result.Input.([]core.ResponsesInputElement)
+	if !ok || len(input) != 1 {
+		t.Fatalf("Input = %#v, want []ResponsesInputElement len=1", result.Input)
+	}
+	content, ok := input[0].Content.([]map[string]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("Content = %#v, want []map[string]any len=2", input[0].Content)
+	}
+	if content[0]["text"] != "[|---|](PERSON_1)" {
+		t.Fatalf("rewritten text = %#v, want rewritten content", content[0]["text"])
+	}
+	if content[0]["meta"] != "keep" {
+		t.Fatalf("extra field meta = %#v, want keep", content[0]["meta"])
+	}
+}
+
+func TestApplyMessagesToResponses_RewritesEmptyStructuredArrayInputPreservingArrayShape(t *testing.T) {
+	req := &core.ResponsesRequest{
+		Model: "gpt-4",
+		Input: []core.ResponsesInputElement{
+			{
+				Role:    "user",
+				Content: []any{},
+			},
+		},
+	}
+	msgs := []Message{{Role: "user", Content: "[|---|](PERSON_1)"}}
+
+	result, err := applyMessagesToResponses(req, msgs)
+	if err != nil {
+		t.Fatalf("applyMessagesToResponses() error = %v", err)
+	}
+
+	input, ok := result.Input.([]core.ResponsesInputElement)
+	if !ok || len(input) != 1 {
+		t.Fatalf("Input = %#v, want []ResponsesInputElement len=1", result.Input)
+	}
+	content, ok := input[0].Content.([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("Content = %#v, want []any len=1", input[0].Content)
+	}
+	part, ok := content[0].(map[string]any)
+	if !ok {
+		t.Fatalf("Content[0] = %#v, want map[string]any", content[0])
+	}
+	if part["type"] != "input_text" || part["text"] != "[|---|](PERSON_1)" {
+		t.Fatalf("prepended content part = %#v, want input_text with rewritten text", part)
 	}
 }
 

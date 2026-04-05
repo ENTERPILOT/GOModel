@@ -223,19 +223,26 @@ func enrichEntryWithExecutionPlan(entry *LogEntry, plan *core.ExecutionPlan) {
 }
 
 func captureLoggedRequestBody(entry *LogEntry, bodyBytes []byte) {
+	entry.Data.RequestBody = captureLoggedBody(bodyBytes)
+}
+
+func captureLoggedResponseBody(entry *LogEntry, bodyBytes []byte) {
+	entry.Data.ResponseBody = captureLoggedBody(bodyBytes)
+}
+
+func captureLoggedBody(bodyBytes []byte) any {
 	if len(bodyBytes) == 0 {
-		return
+		return nil
 	}
 
 	// Parse JSON to any for native BSON storage in MongoDB
 	var parsed any
 	if jsonErr := json.Unmarshal(bodyBytes, &parsed); jsonErr == nil {
-		entry.Data.RequestBody = parsed
-		return
+		return parsed
 	}
 
 	// Fallback: store as valid UTF-8 string if not valid JSON
-	entry.Data.RequestBody = toValidUTF8String(bodyBytes)
+	return toValidUTF8String(bodyBytes)
 }
 
 // responseBodyCapture wraps http.ResponseWriter to capture the response body.

@@ -406,6 +406,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 		AuditLogger:             auditResult.Logger,
 		UsageLogger:             usageResult.Logger,
 		PricingResolver:         providerResult.Registry,
+		ResponseCache:           rcm,
 	})
 	if err := guardrailResult.Service.SetExecutor(ctx, internalGuardrailExecutor); err != nil {
 		closeErr := errors.Join(app.executionPlans.Close(), app.guardrails.Close(), app.authKeys.Close(), app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())

@@ -94,16 +94,14 @@ func (g *SystemPromptGuardrail) inject(msgs []Message) []Message {
 			return msgs // already has a system message, leave untouched
 		}
 	}
-	result := make([]Message, 0, len(msgs)+1)
-	result = append(result, Message{Role: "system", Content: g.content})
+	result := []Message{{Role: "system", Content: g.content}}
 	result = append(result, msgs...)
 	return result
 }
 
 // override replaces all system messages with a single one at the beginning.
 func (g *SystemPromptGuardrail) override(msgs []Message) []Message {
-	result := make([]Message, 0, len(msgs)+1)
-	result = append(result, Message{Role: "system", Content: g.content})
+	result := []Message{{Role: "system", Content: g.content}}
 	for _, m := range msgs {
 		if m.Role != "system" {
 			result = append(result, m)
@@ -127,8 +125,7 @@ func (g *SystemPromptGuardrail) decorate(msgs []Message) []Message {
 	}
 
 	if !found {
-		prepended := make([]Message, 0, len(result)+1)
-		prepended = append(prepended, Message{Role: "system", Content: g.content})
+		prepended := []Message{{Role: "system", Content: g.content}}
 		prepended = append(prepended, result...)
 		return prepended
 	}
