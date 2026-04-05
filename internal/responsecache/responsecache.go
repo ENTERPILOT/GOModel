@@ -175,26 +175,19 @@ func (m *ResponseCacheMiddleware) HandleInternalRequest(
 	req.Header = internalRequestHeaders(ctx)
 	req = req.WithContext(ctx)
 
-	rec := httptest.NewRecorder()
-	var e *echo.Echo
-	switch {
-	case m == nil:
+	if m == nil {
 		slog.Error("response cache: HandleInternalRequest called on nil middleware")
 		return nil, core.NewProviderError("", http.StatusInternalServerError, "response cache middleware is not initialized", nil)
-	case m.echo == nil:
+	}
+	if m.echo == nil {
 		slog.Error("response cache: HandleInternalRequest called with uninitialized Echo instance")
 		return nil, core.NewProviderError("", http.StatusInternalServerError, "response cache middleware is not initialized", nil)
-	default:
-		e = m.echo
 	}
-	c := e.NewContext(req, rec)
 
-	var err error
-	if m == nil {
-		err = next(c)
-	} else {
-		err = m.HandleRequest(c, body, func() error { return next(c) })
-	}
+	rec := httptest.NewRecorder()
+	c := m.echo.NewContext(req, rec)
+
+	err := m.HandleRequest(c, body, func() error { return next(c) })
 	if err != nil {
 		return nil, err
 	}
