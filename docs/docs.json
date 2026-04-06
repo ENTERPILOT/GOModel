@@ -24,6 +24,7 @@
                 "pages": [
                     "guides/openclaw",
                     "guides/oracle",
+                    "guides/multiple-ollama",
                     "guides/claude-code",
                     "guides/codex",
                     "guides/opencode-and-other-agents"
