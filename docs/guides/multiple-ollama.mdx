@@ -71,8 +71,10 @@ curl -s http://localhost:8080/v1/chat/completions \
   }'
 ```
 
-If multiple Ollama providers expose the same raw model ID, use the qualified
-form such as `ollama-a/llama3.2` or `ollama-b/llama3.2` to avoid ambiguity.
+If you send only the bare model name such as `llama3.2` and both providers
+expose it, GoModel will route the request to one provider based on provider
+registration order. To choose a specific Ollama backend, use the qualified form
+such as `ollama-a/llama3.2` or `ollama-b/llama3.2`.
 
 ## Validated on April 6, 2026
 
