@@ -21,16 +21,6 @@ type RequestFallbackResolver interface {
 	ResolveFallbacks(resolution *core.RequestModelResolution, op core.Operation) []core.ModelSelector
 }
 
-func effectiveRequestModelResolver(provider core.RoutableProvider, resolver RequestModelResolver) RequestModelResolver {
-	if resolver != nil {
-		return resolver
-	}
-	if providerResolver, ok := provider.(RequestModelResolver); ok {
-		return providerResolver
-	}
-	return nil
-}
-
 func resolvedProviderName(provider core.RoutableProvider, selector core.ModelSelector, fallback string) string {
 	fallback = strings.TrimSpace(fallback)
 	if provider == nil {
