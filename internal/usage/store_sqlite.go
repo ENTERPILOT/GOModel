@@ -16,7 +16,7 @@ import (
 const (
 	maxSQLiteParams      = 999
 	columnsPerUsageEntry = 18
-	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 58 entries
+	maxEntriesPerBatch   = maxSQLiteParams / columnsPerUsageEntry // 55 entries
 )
 
 // SQLiteStore implements UsageStore for SQLite databases.

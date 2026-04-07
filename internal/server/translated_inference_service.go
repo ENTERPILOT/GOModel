@@ -562,14 +562,17 @@ func (s *translatedInferenceService) fallbackSelectors(plan *core.ExecutionPlan)
 
 func (s *translatedInferenceService) providerTypeForSelector(selector core.ModelSelector, fallback string) string {
 	fallback = strings.TrimSpace(fallback)
-	if provider := strings.TrimSpace(selector.Provider); provider != "" {
-		return provider
-	}
 	if s.provider == nil {
+		if provider := strings.TrimSpace(selector.Provider); provider != "" {
+			return provider
+		}
 		return fallback
 	}
 	if providerType := strings.TrimSpace(s.provider.GetProviderType(selector.QualifiedModel())); providerType != "" {
 		return providerType
+	}
+	if provider := strings.TrimSpace(selector.Provider); provider != "" {
+		return provider
 	}
 	return fallback
 }
@@ -685,7 +688,7 @@ func qualifyModelWithProvider(model, providerName string) string {
 	if model == "" {
 		return ""
 	}
-	if providerName == "" || strings.Contains(model, "/") {
+	if providerName == "" || strings.HasPrefix(model, providerName+"/") {
 		return model
 	}
 	return providerName + "/" + model
