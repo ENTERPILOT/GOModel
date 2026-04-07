@@ -1,4 +1,0 @@
-providers:
-  openai_test:
-    type: openai
-    api_key: "${OPENAI_API_KEY}"
