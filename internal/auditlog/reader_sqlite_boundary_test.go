@@ -18,22 +18,22 @@ func TestSQLiteReaderGetLogs_IncludesFractionalStartBoundaryAndExcludesFractiona
 	ctx := context.Background()
 	err = store.WriteBatch(ctx, []*LogEntry{
 		{
-			ID:        "start-boundary",
-			Timestamp: time.Date(2026, 1, 15, 23, 0, 0, 123_000_000, time.UTC),
-			Model:     "gpt-5",
-			Provider:  "openai",
+			ID:             "start-boundary",
+			Timestamp:      time.Date(2026, 1, 15, 23, 0, 0, 123_000_000, time.UTC),
+			RequestedModel: "gpt-5",
+			Provider:       "openai",
 		},
 		{
-			ID:        "inside-range",
-			Timestamp: time.Date(2026, 1, 16, 12, 0, 0, 0, time.UTC),
-			Model:     "gpt-5",
-			Provider:  "openai",
+			ID:             "inside-range",
+			Timestamp:      time.Date(2026, 1, 16, 12, 0, 0, 0, time.UTC),
+			RequestedModel: "gpt-5",
+			Provider:       "openai",
 		},
 		{
-			ID:        "after-end-boundary",
-			Timestamp: time.Date(2026, 1, 16, 23, 0, 0, 123_000_000, time.UTC),
-			Model:     "gpt-5",
-			Provider:  "openai",
+			ID:             "after-end-boundary",
+			Timestamp:      time.Date(2026, 1, 16, 23, 0, 0, 123_000_000, time.UTC),
+			RequestedModel: "gpt-5",
+			Provider:       "openai",
 		},
 	})
 	if err != nil {
@@ -88,18 +88,18 @@ func TestSQLiteReaderGetLogs_SearchMatchesUserPath(t *testing.T) {
 	ctx := context.Background()
 	if err := store.WriteBatch(ctx, []*LogEntry{
 		{
-			ID:        "team-match",
-			Timestamp: time.Date(2026, 1, 16, 12, 0, 0, 0, time.UTC),
-			Model:     "gpt-5",
-			Provider:  "openai",
-			UserPath:  "/team/alpha",
+			ID:             "team-match",
+			Timestamp:      time.Date(2026, 1, 16, 12, 0, 0, 0, time.UTC),
+			RequestedModel: "gpt-5",
+			Provider:       "openai",
+			UserPath:       "/team/alpha",
 		},
 		{
-			ID:        "other-team",
-			Timestamp: time.Date(2026, 1, 16, 11, 0, 0, 0, time.UTC),
-			Model:     "gpt-5",
-			Provider:  "openai",
-			UserPath:  "/org/beta",
+			ID:             "other-team",
+			Timestamp:      time.Date(2026, 1, 16, 11, 0, 0, 0, time.UTC),
+			RequestedModel: "gpt-5",
+			Provider:       "openai",
+			UserPath:       "/org/beta",
 		},
 	}); err != nil {
 		t.Fatalf("failed to seed audit logs: %v", err)

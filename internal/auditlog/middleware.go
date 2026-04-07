@@ -190,14 +190,14 @@ func enrichEntryWithExecutionPlan(entry *LogEntry, plan *core.ExecutionPlan) {
 		entry.RequestID = requestID
 	}
 	if requestedModel := plan.RequestedQualifiedModel(); requestedModel != "" {
-		entry.Model = requestedModel
+		entry.RequestedModel = requestedModel
 	}
 	if resolvedModel := resolvedModelForAuditLog(plan); resolvedModel != "" {
 		entry.ResolvedModel = resolvedModel
 	}
 	if plan.Mode == core.ExecutionModePassthrough && plan.Passthrough != nil {
 		if model := strings.TrimSpace(plan.Passthrough.Model); model != "" {
-			entry.Model = model
+			entry.RequestedModel = model
 		}
 	}
 	if providerType := strings.TrimSpace(plan.ProviderType); providerType != "" {
@@ -384,7 +384,7 @@ func EnrichEntry(c *echo.Context, model, provider string) {
 		return
 	}
 
-	entry.Model = model
+	entry.RequestedModel = model
 	entry.Provider = provider
 }
 

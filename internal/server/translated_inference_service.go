@@ -267,7 +267,7 @@ func (s *translatedInferenceService) tryFastPathStreamingChatPassthrough(c *echo
 		usageLogger:     s.usageLogger,
 		pricingResolver: s.pricingResolver,
 	}
-	return true, passthrough.proxyPassthroughResponse(c, providerType, endpoint, info, resp)
+	return true, passthrough.proxyPassthroughResponse(c, providerType, providerNameFromPlan(plan), endpoint, info, resp)
 }
 
 func (s *translatedInferenceService) canFastPathStreamingChatPassthrough(plan *core.ExecutionPlan, req *core.ChatRequest) bool {

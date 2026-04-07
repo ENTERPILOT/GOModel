@@ -54,10 +54,11 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 		return nil, err
 	}
 	where := buildWhereClause(conditions)
+	providerNameExpr := usageGroupedProviderNameSQL("provider_name", "provider")
 
 	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
-	query := `SELECT model, provider, provider_name, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
-			FROM "usage"` + where + ` GROUP BY model, provider, provider_name`
+	query := `SELECT model, provider, ` + providerNameExpr + ` AS provider_name, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)` + costCols + `
+			FROM "usage"` + where + ` GROUP BY model, provider, ` + providerNameExpr
 
 	rows, err := r.pool.Query(ctx, query, args...)
 	if err != nil {
@@ -68,14 +69,8 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	result := make([]ModelUsage, 0)
 	for rows.Next() {
 		var m ModelUsage
-		var providerName *string
-		if err := rows.Scan(&m.Model, &m.Provider, &providerName, &m.InputTokens, &m.OutputTokens, &m.InputCost, &m.OutputCost, &m.TotalCost); err != nil {
+		if err := rows.Scan(&m.Model, &m.Provider, &m.ProviderName, &m.InputTokens, &m.OutputTokens, &m.InputCost, &m.OutputCost, &m.TotalCost); err != nil {
 			return nil, fmt.Errorf("failed to scan usage by model row: %w", err)
-		}
-		if providerName != nil {
-			m.ProviderName = displayUsageProviderName(*providerName, m.Provider)
-		} else {
-			m.ProviderName = displayUsageProviderName("", m.Provider)
 		}
 		result = append(result, m)
 	}

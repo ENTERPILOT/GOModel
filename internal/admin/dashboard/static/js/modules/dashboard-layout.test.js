@@ -132,14 +132,14 @@ test('workflow guardrail warning links directly to the top-level guardrails page
     assert.match(indexTemplate, /id="guardrail-filter"[^>]*aria-label="Guardrail filter"[^>]*x-model="guardrailFilter"/);
 });
 
-test('audit toolbar uses a single broad search input plus a white clear button below the select row', () => {
+test('audit toolbar uses a full-width search row above the select row with a right-aligned clear button', () => {
     const indexTemplate = readFixture('../../../templates/index.html');
     const iconTemplate = readFixture('../../../templates/x-icon.html');
     const css = readFixture('../../css/dashboard.css');
 
     assert.match(
         indexTemplate,
-        /<div class="audit-filter-row audit-filter-row-selects">[\s\S]*id="audit-filter-method"[\s\S]*id="audit-filter-status"[\s\S]*id="audit-filter-stream"[\s\S]*<\/div>\s*<div class="audit-filter-row audit-filter-row-search">/
+        /<div class="audit-filter-row audit-filter-row-search">[\s\S]*id="audit-filter-search"[\s\S]*<\/div>\s*<div class="audit-filter-row audit-filter-row-controls">[\s\S]*id="audit-filter-method"[\s\S]*id="audit-filter-status"[\s\S]*id="audit-filter-stream"[\s\S]*class="pagination-btn audit-clear-btn" @click="clearAuditFilters\(\)"/
     );
     assert.match(
         indexTemplate,
@@ -155,6 +155,13 @@ test('audit toolbar uses a single broad search input plus a white clear button b
     const clearRule = readCSSRule(css, '.audit-clear-btn');
     assert.match(clearRule, /background:\s*#fff/);
     assert.match(clearRule, /color:\s*#111110/);
+
+    const searchRule = readCSSRule(css, '.audit-filter-row-search .filter-input');
+    assert.match(searchRule, /grid-column:\s*1\s*\/\s*-1/);
+
+    const controlsRule = readCSSRule(css, '.audit-filter-row-controls .pagination-btn');
+    assert.match(controlsRule, /grid-column:\s*11\s*\/\s*-1/);
+    assert.match(controlsRule, /justify-self:\s*end/);
 
     const modelsFilterRule = readCSSRule(css, '.models-filter-input');
     assert.match(modelsFilterRule, /max-width:\s*840px/);

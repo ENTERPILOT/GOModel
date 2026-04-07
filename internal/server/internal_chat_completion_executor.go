@@ -190,7 +190,7 @@ func (e *InternalChatCompletionExecutor) newAuditEntry(
 		Data:      &auditlog.LogData{},
 	}
 	if requestedModel := requested.RequestedQualifiedModel(); requestedModel != "" {
-		entry.Model = requestedModel
+		entry.RequestedModel = requestedModel
 	}
 	return entry
 }

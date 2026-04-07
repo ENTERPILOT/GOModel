@@ -47,7 +47,7 @@ type LogEntry struct {
 	DurationNs int64 `json:"duration_ns" bson:"duration_ns"`
 
 	// Core fields (indexed for queries)
-	Model                  string `json:"model" bson:"model"`
+	RequestedModel         string `json:"requested_model" bson:"requested_model,omitempty"`
 	ResolvedModel          string `json:"resolved_model,omitempty" bson:"resolved_model,omitempty"`
 	Provider               string `json:"provider" bson:"provider"` // canonical provider type used for routing and filters
 	ProviderName           string `json:"provider_name,omitempty" bson:"provider_name,omitempty"`

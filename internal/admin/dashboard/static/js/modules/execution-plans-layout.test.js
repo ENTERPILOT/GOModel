@@ -313,9 +313,16 @@ test('workflow id pill expands on hover and turns green with a clipboard icon af
     const copiedRule = readCSSRule(css, '.exec-pipeline-meta-copied,\n.exec-pipeline-meta-copied:hover,\n.exec-pipeline-meta-copied:focus-visible');
     assert.match(copiedRule, /color:\s*var\(--success\)/);
 
+    const baseIconRule = readCSSRule(css, '.exec-pipeline-meta-icon');
+    assert.match(baseIconRule, /display:\s*inline-flex/);
+    assert.match(baseIconRule, /align-items:\s*center/);
+    assert.match(baseIconRule, /height:\s*14px/);
+    assert.match(baseIconRule, /transform:\s*translateX\(4px\) translateY\(1px\) scale\(0\.84\)/);
+
     const iconRule = readCSSRule(css, '.exec-pipeline-meta-copied .exec-pipeline-meta-icon');
     assert.match(iconRule, /opacity:\s*1/);
     assert.match(iconRule, /width:\s*14px/);
+    assert.match(iconRule, /transform:\s*translateY\(1px\)/);
 });
 
 test('execution pipeline main row is flattened without ep-left or ep-right wrappers', () => {

@@ -1282,7 +1282,7 @@
                     cacheHit,
                     cacheType: normalizedCacheType || null,
                     provider: entry.provider || null,
-                    model: entry.model || null,
+                    model: entry.requested_model || entry.model || null,
                     statusCode,
                     responseSuccess,
                     aiSuccess: responseSuccess && !cacheHit,

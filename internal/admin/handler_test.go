@@ -667,15 +667,15 @@ func TestAuditLog_Success(t *testing.T) {
 		logResult: &auditlog.LogListResult{
 			Entries: []auditlog.LogEntry{
 				{
-					ID:         "log-1",
-					Timestamp:  now,
-					DurationNs: 12_000_000,
-					Model:      "gpt-4o",
-					Provider:   "openai",
-					StatusCode: 200,
-					RequestID:  "req-1",
-					Method:     http.MethodPost,
-					Path:       "/v1/chat/completions",
+					ID:             "log-1",
+					Timestamp:      now,
+					DurationNs:     12_000_000,
+					RequestedModel: "gpt-4o",
+					Provider:       "openai",
+					StatusCode:     200,
+					RequestID:      "req-1",
+					Method:         http.MethodPost,
+					Path:           "/v1/chat/completions",
 					Data: &auditlog.LogData{
 						RequestBody: map[string]any{
 							"model": "gpt-4o",
@@ -726,13 +726,13 @@ func TestAuditLog_PreservesProviderName(t *testing.T) {
 		logResult: &auditlog.LogListResult{
 			Entries: []auditlog.LogEntry{
 				{
-					ID:            "log-1",
-					Timestamp:     now,
-					Model:         "smart",
-					ResolvedModel: "primary-openai/gpt-4o",
-					Provider:      "openai",
-					ProviderName:  "primary-openai",
-					StatusCode:    200,
+					ID:             "log-1",
+					Timestamp:      now,
+					RequestedModel: "smart",
+					ResolvedModel:  "primary-openai/gpt-4o",
+					Provider:       "openai",
+					ProviderName:   "primary-openai",
+					StatusCode:     200,
 				},
 			},
 			Total: 1,
@@ -784,8 +784,8 @@ func TestAuditLog_WithFilters(t *testing.T) {
 		t.Errorf("expected 200, got %d", rec.Code)
 	}
 
-	if reader.lastQuery.Model != "gpt-4" {
-		t.Errorf("expected model filter gpt-4, got %q", reader.lastQuery.Model)
+	if reader.lastQuery.RequestedModel != "gpt-4" {
+		t.Errorf("expected requested model filter gpt-4, got %q", reader.lastQuery.RequestedModel)
 	}
 	if reader.lastQuery.Provider != "openai" {
 		t.Errorf("expected provider filter openai, got %q", reader.lastQuery.Provider)

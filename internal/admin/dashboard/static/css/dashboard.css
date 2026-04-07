@@ -1514,17 +1514,18 @@ td.col-price {
     min-width: 0;
 }
 
-.audit-filter-row-selects .audit-filter-select {
-    grid-column: span 2;
-}
-
 .audit-filter-row-search .filter-input {
-    grid-column: span 10;
+    grid-column: 1 / -1;
     max-width: none;
 }
 
-.audit-filter-row-search .pagination-btn {
+.audit-filter-row-controls .audit-filter-select {
     grid-column: span 2;
+}
+
+.audit-filter-row-controls .pagination-btn {
+    grid-column: 11 / -1;
+    justify-self: end;
     min-width: 108px;
 }
 
@@ -2823,7 +2824,6 @@ body.conversation-drawer-open {
 .exec-pipeline-meta-copy {
     appearance: none;
     cursor: pointer;
-    font: inherit;
     text-align: left;
     overflow: hidden;
     transition: background-color 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
@@ -2884,12 +2884,17 @@ body.conversation-drawer-open {
 }
 
 .exec-pipeline-meta-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex: 0 0 auto;
     width: 0;
+    height: 14px;
     margin-left: 0;
     overflow: hidden;
     opacity: 0;
-    transform: translateX(4px) scale(0.84);
+    line-height: 0;
+    transform: translateX(4px) translateY(1px) scale(0.84);
     transition: width 0.18s ease, margin-left 0.18s ease, opacity 0.15s ease, transform 0.18s ease;
 }
 
@@ -2915,7 +2920,7 @@ body.conversation-drawer-open {
     width: 14px;
     margin-left: 6px;
     opacity: 1;
-    transform: none;
+    transform: translateY(1px);
 }
 
 .exec-pipeline-meta-error,

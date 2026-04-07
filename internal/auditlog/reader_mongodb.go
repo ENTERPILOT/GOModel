@@ -22,7 +22,8 @@ type mongoLogRow struct {
 	ID                     string    `bson:"_id"`
 	Timestamp              time.Time `bson:"timestamp"`
 	DurationNs             int64     `bson:"duration_ns"`
-	Model                  string    `bson:"model"`
+	RequestedModel         string    `bson:"requested_model"`
+	LegacyModel            string    `bson:"model"`
 	ResolvedModel          string    `bson:"resolved_model"`
 	Provider               string    `bson:"provider"`
 	ProviderName           string    `bson:"provider_name"`
@@ -47,7 +48,7 @@ func (r mongoLogRow) toLogEntry() *LogEntry {
 		ID:                     r.ID,
 		Timestamp:              r.Timestamp,
 		DurationNs:             r.DurationNs,
-		Model:                  r.Model,
+		RequestedModel:         firstNonEmpty(r.RequestedModel, r.LegacyModel),
 		ResolvedModel:          r.ResolvedModel,
 		Provider:               r.Provider,
 		ProviderName:           displayAuditProviderName(r.ProviderName, r.Provider),
@@ -115,12 +116,18 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 	if tsFilter := mongoDateRangeFilter(params.QueryParams); tsFilter != nil {
 		matchFilters = append(matchFilters, bson.E{Key: "timestamp", Value: tsFilter})
 	}
-	if params.Model != "" {
+	if params.RequestedModel != "" {
 		matchFilters = append(matchFilters, bson.E{
-			Key: "model",
-			Value: bson.D{
-				{Key: "$regex", Value: regexp.QuoteMeta(params.Model)},
-				{Key: "$options", Value: "i"},
+			Key: "$or",
+			Value: bson.A{
+				bson.D{{Key: "requested_model", Value: bson.D{
+					{Key: "$regex", Value: regexp.QuoteMeta(params.RequestedModel)},
+					{Key: "$options", Value: "i"},
+				}}},
+				bson.D{{Key: "model", Value: bson.D{
+					{Key: "$regex", Value: regexp.QuoteMeta(params.RequestedModel)},
+					{Key: "$options", Value: "i"},
+				}}},
 			},
 		})
 	}
@@ -172,6 +179,7 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 		matchFilters = append(matchFilters, bson.E{Key: "$or", Value: bson.A{
 			bson.D{{Key: "request_id", Value: regex}},
 			bson.D{{Key: "auth_key_id", Value: regex}},
+			bson.D{{Key: "requested_model", Value: regex}},
 			bson.D{{Key: "model", Value: regex}},
 			bson.D{{Key: "provider", Value: regex}},
 			bson.D{{Key: "provider_name", Value: regex}},
@@ -241,6 +249,15 @@ func (r *MongoDBReader) GetLogs(ctx context.Context, params LogQueryParams) (*Lo
 		Limit:   limit,
 		Offset:  offset,
 	}, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 // GetLogByID returns a single audit log entry by ID.

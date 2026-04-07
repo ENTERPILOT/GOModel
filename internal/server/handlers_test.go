@@ -2061,6 +2061,53 @@ func TestChatCompletionStreaming_FastPathUsesPassthroughForOpenAICompatibleProvi
 	}
 }
 
+func TestChatCompletionStreaming_FastPathUsageCarriesResolvedProviderName(t *testing.T) {
+	streamData := "data: {\"id\":\"chatcmpl-123\",\"model\":\"gpt-4o-mini\",\"usage\":{\"prompt_tokens\":7,\"completion_tokens\":3,\"total_tokens\":10}}\n\ndata: [DONE]\n\n"
+	usageLog := &collectingUsageLogger{
+		config: usage.Config{Enabled: true},
+	}
+	mock := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerTypes: map[string]string{
+			"gpt-4o-mini": "openai",
+		},
+		providerNames: map[string]string{
+			"gpt-4o-mini": "openai_test",
+		},
+		passthroughResponse: &core.PassthroughResponse{
+			StatusCode: http.StatusOK,
+			Headers: map[string][]string{
+				"Content-Type": {"text/event-stream"},
+			},
+			Body: io.NopCloser(strings.NewReader(streamData)),
+		},
+	}
+
+	e := echo.New()
+	handler := NewHandler(mock, nil, usageLog, nil)
+
+	reqBody := `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"Hi"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := handler.ChatCompletion(c)
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if len(usageLog.entries) != 1 {
+		t.Fatalf("usage entries = %d, want 1", len(usageLog.entries))
+	}
+	if got := usageLog.entries[0].ProviderName; got != "openai_test" {
+		t.Fatalf("ProviderName = %q, want openai_test", got)
+	}
+}
+
 func TestChatCompletionStreaming_FastPathSkipsQualifiedModelRewrite(t *testing.T) {
 	streamData := "data: {\"id\":\"chatcmpl-123\",\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n\ndata: [DONE]\n\n"
 	provider := &capturingProvider{
@@ -5570,8 +5617,8 @@ func TestProviderPassthrough_UsesPassthroughModelForAuditEntry(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if entry.Model != "gpt-5-mini" {
-		t.Fatalf("audit entry model = %q, want gpt-5-mini", entry.Model)
+	if entry.RequestedModel != "gpt-5-mini" {
+		t.Fatalf("audit entry requested model = %q, want gpt-5-mini", entry.RequestedModel)
 	}
 	if entry.Provider != "openai" {
 		t.Fatalf("audit entry provider = %q, want openai", entry.Provider)

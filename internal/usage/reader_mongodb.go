@@ -96,11 +96,12 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
 	}
 
+	providerNameExpr := mongoUsageGroupedProviderNameExpr()
 	pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.D{
 		{Key: "_id", Value: bson.D{
 			{Key: "model", Value: "$model"},
 			{Key: "provider", Value: "$provider"},
-			{Key: "provider_name", Value: "$provider_name"},
+			{Key: "provider_name", Value: providerNameExpr},
 		}},
 		{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
 		{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
@@ -154,6 +155,17 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 	}
 
 	return result, nil
+}
+
+func mongoUsageGroupedProviderNameExpr() bson.D {
+	trimmedProviderName := bson.D{{Key: "$trim", Value: bson.D{
+		{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$provider_name", ""}}}},
+	}}}
+	return bson.D{{Key: "$cond", Value: bson.A{
+		bson.D{{Key: "$ne", Value: bson.A{trimmedProviderName, ""}}},
+		trimmedProviderName,
+		bson.D{{Key: "$trim", Value: bson.D{{Key: "input", Value: "$provider"}}}},
+	}}}
 }
 
 // GetUsageLog returns a paginated list of individual usage log entries.
