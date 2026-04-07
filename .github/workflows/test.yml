@@ -28,8 +28,14 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-      - name: Run linter
-        run: make lint
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.10
+          # Temporary workaround: config verification fetches the remote JSON schema and
+          # intermittently times out in CI before lint runs. Re-enable by 2026-04-01 once
+          # the schema fetch is reliable again; track in this PR/branch discussion.
+          verify: false
 
   test-unit:
     name: Unit Tests
