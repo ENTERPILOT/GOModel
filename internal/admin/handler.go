@@ -1133,13 +1133,14 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 	if scopeProviderName == "" {
 		scopeProviderName = strings.TrimSpace(req.LegacyScopeProvider)
 	}
+	scopeModel := strings.TrimSpace(req.ScopeModel)
 
 	scopeUserPath, err := normalizeUserPathQueryParam("scope_user_path", req.ScopeUserPath)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	scopeProviderName, err = h.validateExecutionPlanScope(scopeProviderName, req.ScopeModel)
+	scopeProviderName, err = h.validateExecutionPlanScope(scopeProviderName, scopeModel)
 	if err != nil {
 		return handleError(c, err)
 	}
@@ -1154,7 +1155,7 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 	version, err := h.plans.Create(c.Request().Context(), executionplans.CreateInput{
 		Scope: executionplans.Scope{
 			Provider: scopeProviderName,
-			Model:    req.ScopeModel,
+			Model:    scopeModel,
 			UserPath: scopeUserPath,
 		},
 		Activate:    true,

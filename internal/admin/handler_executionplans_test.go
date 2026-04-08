@@ -573,6 +573,94 @@ func TestCreateExecutionPlan(t *testing.T) {
 	}
 }
 
+func TestCreateExecutionPlan_StoresCanonicalScopeModel(t *testing.T) {
+	tests := []struct {
+		name         string
+		body         string
+		wantModel    string
+		wantScopeKey string
+	}{
+		{
+			name: "trimmed model",
+			body: `{
+				"scope_provider_name":"openai",
+				"scope_model":"  gpt-5  ",
+				"name":"trimmed model",
+				"plan_payload":{
+					"schema_version":1,
+					"features":{"cache":true,"audit":true,"usage":true,"guardrails":false},
+					"guardrails":[]
+				}
+			}`,
+			wantModel:    "gpt-5",
+			wantScopeKey: "provider_model:openai:gpt-5",
+		},
+		{
+			name: "whitespace only model keeps provider-only scope",
+			body: `{
+				"scope_provider_name":"openai",
+				"scope_model":"   ",
+				"name":"provider only",
+				"plan_payload":{
+					"schema_version":1,
+					"features":{"cache":true,"audit":true,"usage":true,"guardrails":false},
+					"guardrails":[]
+				}
+			}`,
+			wantModel:    "",
+			wantScopeKey: "provider:openai",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &executionPlanTestStore{
+				versions: []executionplans.Version{
+					{
+						ID:       "global-plan",
+						Scope:    executionplans.Scope{},
+						ScopeKey: "global",
+						Version:  1,
+						Active:   true,
+						Name:     "global",
+						Payload: executionplans.Payload{
+							SchemaVersion: 1,
+							Features:      executionplans.FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+						},
+						PlanHash: "hash-global",
+					},
+				},
+			}
+
+			h := newExecutionPlanHandler(t, store, nil)
+			e := echo.New()
+
+			req := httptest.NewRequest(http.MethodPost, "/admin/api/v1/execution-plans", bytes.NewBufferString(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			if err := h.CreateExecutionPlan(c); err != nil {
+				t.Fatalf("CreateExecutionPlan() error = %v", err)
+			}
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("status = %d, want 201", rec.Code)
+			}
+
+			var body executionplans.Version
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body.Scope.Model != tt.wantModel {
+				t.Fatalf("Scope.Model = %q, want %q", body.Scope.Model, tt.wantModel)
+			}
+			if body.ScopeKey != tt.wantScopeKey {
+				t.Fatalf("ScopeKey = %q, want %q", body.ScopeKey, tt.wantScopeKey)
+			}
+		})
+	}
+}
+
 func TestCreateExecutionPlan_LegacyProviderTypeResolvesToConfiguredProviderName(t *testing.T) {
 	store := &executionPlanTestStore{
 		versions: []executionplans.Version{
