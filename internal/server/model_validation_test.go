@@ -285,7 +285,10 @@ func TestModelValidation_StoresExecutionPlan(t *testing.T) {
 }
 
 func TestModelValidation_StoresMatchedExecutionPolicy(t *testing.T) {
-	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerNames:   map[string]string{"gpt-4o-mini": "mock"},
+	}
 
 	e := echo.New()
 	var capturedPlan *core.ExecutionPlan
@@ -335,7 +338,10 @@ func TestModelValidation_StoresMatchedExecutionPolicy(t *testing.T) {
 }
 
 func TestModelValidation_PassesUserPathToExecutionPolicyResolver(t *testing.T) {
-	provider := &mockProvider{supportedModels: []string{"gpt-4o-mini"}}
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-4o-mini"},
+		providerNames:   map[string]string{"gpt-4o-mini": "mock"},
+	}
 
 	e := echo.New()
 	var capturedSelector core.ExecutionPlanSelector

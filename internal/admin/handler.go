@@ -1139,7 +1139,8 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 		return handleError(c, err)
 	}
 
-	if err := h.validateExecutionPlanScope(scopeProviderName, req.ScopeModel); err != nil {
+	scopeProviderName, err = h.validateExecutionPlanScope(scopeProviderName, req.ScopeModel)
+	if err != nil {
 		return handleError(c, err)
 	}
 
@@ -1259,32 +1260,37 @@ func (h *Handler) validateExecutionPlanGuardrails(payload executionplans.Payload
 	return nil
 }
 
-func (h *Handler) validateExecutionPlanScope(scopeProviderName, scopeModel string) error {
+func (h *Handler) validateExecutionPlanScope(scopeProviderName, scopeModel string) (string, error) {
 	scopeProviderName = strings.TrimSpace(scopeProviderName)
 	scopeModel = strings.TrimSpace(scopeModel)
 
 	if scopeProviderName == "" {
 		if scopeModel != "" {
-			return core.NewInvalidRequestError("scope_model requires scope_provider_name", nil)
+			return "", core.NewInvalidRequestError("scope_model requires scope_provider_name", nil)
 		}
-		return nil
+		return "", nil
 	}
 	if h.registry == nil {
-		return core.NewInvalidRequestError("provider registry is unavailable for workflow provider-name validation", nil)
+		return "", core.NewInvalidRequestError("provider registry is unavailable for workflow provider-name validation", nil)
 	}
 	if !slices.Contains(h.registry.ProviderNames(), scopeProviderName) {
-		return core.NewInvalidRequestError("unknown provider name: "+scopeProviderName, nil)
+		if resolvedProviderName := strings.TrimSpace(h.registry.GetProviderNameForType(scopeProviderName)); resolvedProviderName != "" {
+			scopeProviderName = resolvedProviderName
+		}
+	}
+	if !slices.Contains(h.registry.ProviderNames(), scopeProviderName) {
+		return "", core.NewInvalidRequestError("unknown provider name: "+scopeProviderName, nil)
 	}
 	if scopeModel == "" {
-		return nil
+		return scopeProviderName, nil
 	}
 
 	for _, model := range h.registry.ListModelsWithProvider() {
 		if model.ProviderName == scopeProviderName && model.Model.ID == scopeModel {
-			return nil
+			return scopeProviderName, nil
 		}
 	}
-	return core.NewInvalidRequestError("unknown model for provider name "+scopeProviderName+": "+scopeModel, nil)
+	return "", core.NewInvalidRequestError("unknown model for provider name "+scopeProviderName+": "+scopeModel, nil)
 }
 
 func decodeAliasPathName(raw string) (string, error) {

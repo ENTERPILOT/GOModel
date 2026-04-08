@@ -573,6 +573,71 @@ func TestCreateExecutionPlan(t *testing.T) {
 	}
 }
 
+func TestCreateExecutionPlan_LegacyProviderTypeResolvesToConfiguredProviderName(t *testing.T) {
+	store := &executionPlanTestStore{
+		versions: []executionplans.Version{
+			{
+				ID:       "global-plan",
+				Scope:    executionplans.Scope{},
+				ScopeKey: "global",
+				Version:  1,
+				Active:   true,
+				Name:     "global",
+				Payload: executionplans.Payload{
+					SchemaVersion: 1,
+					Features:      executionplans.FeatureFlags{Cache: true, Audit: true, Usage: true, Guardrails: false},
+				},
+				PlanHash: "hash-global",
+			},
+		},
+	}
+
+	modelRegistry := providers.NewModelRegistry()
+	modelRegistry.RegisterProviderWithNameAndType(&handlerMockProvider{
+		models: &core.ModelsResponse{
+			Object: "list",
+			Data: []core.Model{
+				{ID: "gpt-5", Object: "model", OwnedBy: "openai"},
+			},
+		},
+	}, "primary-openai", "openai")
+	if err := modelRegistry.Initialize(context.Background()); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+
+	h := newExecutionPlanHandlerWithModelRegistry(t, store, modelRegistry, nil)
+	e := echo.New()
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/api/v1/execution-plans", bytes.NewBufferString(`{
+		"scope_provider":"openai",
+		"scope_model":"gpt-5",
+		"name":"legacy provider type scope",
+		"plan_payload":{
+			"schema_version":1,
+			"features":{"cache":true,"audit":true,"usage":true,"guardrails":false},
+			"guardrails":[]
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	if err := h.CreateExecutionPlan(c); err != nil {
+		t.Fatalf("CreateExecutionPlan() error = %v", err)
+	}
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", rec.Code)
+	}
+
+	var body executionplans.Version
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body.Scope.Provider != "primary-openai" || body.Scope.Model != "gpt-5" {
+		t.Fatalf("scope = %#v, want primary-openai/gpt-5", body.Scope)
+	}
+}
+
 func TestCreateExecutionPlan_AllowsEmptyName(t *testing.T) {
 	store := &executionPlanTestStore{
 		versions: []executionplans.Version{

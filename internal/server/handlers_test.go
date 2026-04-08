@@ -424,12 +424,6 @@ func (m *mockProvider) GetProviderName(model string) string {
 			return providerName
 		}
 	}
-	if providerType := m.GetProviderType(model); providerType != "" {
-		return providerType
-	}
-	if m.Supports(model) {
-		return "mock"
-	}
 	return ""
 }
 
@@ -439,17 +433,14 @@ func (m *mockProvider) GetProviderNameForType(providerType string) string {
 		return ""
 	}
 	if len(m.providerNames) == 0 {
-		return providerType
+		return ""
 	}
 	for qualifiedModel, providerName := range m.providerNames {
-		if providerName == "" {
-			continue
-		}
 		if strings.TrimSpace(m.providerTypes[qualifiedModel]) == providerType {
 			return providerName
 		}
 	}
-	return providerType
+	return ""
 }
 
 func inferQualifiedProviderValue(values map[string]string, model string) (string, bool) {
