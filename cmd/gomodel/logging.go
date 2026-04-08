@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/lmittmann/tint"
 )
 
@@ -18,8 +17,6 @@ const (
 )
 
 func configureLogging(w io.Writer, isTTY bool) error {
-	_ = godotenv.Load()
-
 	level, err := parseLogLevel(os.Getenv(envLogLevel))
 	if err != nil {
 		return err

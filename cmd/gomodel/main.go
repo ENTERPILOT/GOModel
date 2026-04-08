@@ -28,6 +28,7 @@ import (
 	"gomodel/internal/providers/xai"
 	"gomodel/internal/version"
 
+	"github.com/joho/godotenv"
 	"golang.org/x/term"
 )
 
@@ -84,6 +85,8 @@ func main() {
 		fmt.Println(version.Info())
 		os.Exit(0)
 	}
+
+	_ = godotenv.Load()
 
 	if err := configureLogging(os.Stderr, term.IsTerminal(int(os.Stderr.Fd()))); err != nil {
 		fmt.Fprintf(os.Stderr, "failed to configure logging: %v\n", err)
