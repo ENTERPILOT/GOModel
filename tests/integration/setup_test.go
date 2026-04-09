@@ -89,11 +89,13 @@ func SetupTestServer(t *testing.T, cfg TestServerConfig) *TestServerFixture {
 	// Create mock LLM server
 	mockLLM := NewMockLLMServer()
 
-	// Find available port
-	port, err := findAvailablePort()
+	// Reserve a loopback listener up front so the port cannot be stolen before
+	// the application starts accepting connections.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err, "failed to find available port")
 
 	// Build app config
+	port := listener.Addr().(*net.TCPAddr).Port
 	appCfg := buildAppConfig(t, cfg, mockLLM.URL(), port)
 
 	// Create provider factory
@@ -112,10 +114,9 @@ func SetupTestServer(t *testing.T, cfg TestServerConfig) *TestServerFixture {
 	require.NoError(t, err, "failed to create app")
 
 	// Start server in background
-	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	serverURL := "http://" + listener.Addr().String()
 	go func() {
-		addr := fmt.Sprintf("127.0.0.1:%d", port)
-		_ = application.Start(context.Background(), addr)
+		_ = application.StartWithListener(context.Background(), listener)
 	}()
 
 	// Wait for server to be healthy
@@ -330,16 +331,6 @@ func waitForServer(healthURL string) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("server did not become healthy within timeout")
-}
-
-// findAvailablePort finds an available TCP port on loopback.
-func findAvailablePort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
 // MockLLMServer is a mock LLM server for testing.

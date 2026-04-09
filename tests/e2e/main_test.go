@@ -41,13 +41,13 @@ func TestMain(m *testing.M) {
 	_ = os.Setenv("TEST_MOCK_LLM_URL", mockLLMURL)
 	_ = os.Setenv("MOCK_API_KEY", "sk-test-key-12345")
 
-	// 3. Find available port for gateway
-	gatewayPort, err := findAvailablePort()
+	// 3. Reserve a loopback listener for the gateway
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		fmt.Printf("Failed to find available port: %v\n", err)
+		fmt.Printf("Failed to reserve listener: %v\n", err)
 		os.Exit(1)
 	}
-	gatewayURL = fmt.Sprintf("http://127.0.0.1:%d", gatewayPort)
+	gatewayURL = "http://" + listener.Addr().String()
 
 	// 4. Create a test provider and registry
 	testProvider := NewTestProvider(mockLLMURL, "sk-test-key-12345")
@@ -71,8 +71,7 @@ func TestMain(m *testing.M) {
 	testServer = server.New(router, &server.Config{})
 	serverDone = make(chan error, 1)
 	go func() {
-		addr := fmt.Sprintf("127.0.0.1:%d", gatewayPort)
-		serverDone <- testServer.Start(testContext, addr)
+		serverDone <- testServer.StartWithListener(testContext, listener)
 	}()
 
 	// 6. Wait for server to be healthy
@@ -122,16 +121,6 @@ func waitForServer(healthURL string) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("server did not become healthy within timeout")
-}
-
-// findAvailablePort finds an available TCP port on loopback.
-func findAvailablePort() (int, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = listener.Close() }()
-	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
 // TestProvider is a test provider that forwards requests to the mock LLM server.

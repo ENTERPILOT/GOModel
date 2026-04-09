@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -491,6 +492,24 @@ func providerAsNativeFileRouter(provider core.RoutableProvider) core.NativeFileR
 // Start starts the HTTP server on the given address.
 // This is a blocking call that returns when the server stops.
 func (a *App) Start(ctx context.Context, addr string) error {
+	return a.startServer(ctx, addr, func(serverCtx context.Context) error {
+		return a.server.Start(serverCtx, addr)
+	})
+}
+
+// StartWithListener starts the HTTP server on a pre-bound listener.
+// This is primarily useful for tests that need to reserve a loopback port
+// before handing control to the server.
+func (a *App) StartWithListener(ctx context.Context, listener net.Listener) error {
+	if listener == nil {
+		return fmt.Errorf("listener is required")
+	}
+	return a.startServer(ctx, listener.Addr().String(), func(serverCtx context.Context) error {
+		return a.server.StartWithListener(serverCtx, listener)
+	})
+}
+
+func (a *App) startServer(ctx context.Context, address string, start func(context.Context) error) error {
 	if a.server == nil {
 		return fmt.Errorf("server is not initialized")
 	}
@@ -506,8 +525,8 @@ func (a *App) Start(ctx context.Context, addr string) error {
 	a.serverDone = done
 	a.serverMu.Unlock()
 
-	slog.Info("starting server", "address", addr)
-	err := a.server.Start(serverCtx, addr)
+	slog.Info("starting server", "address", address)
+	err := start(serverCtx)
 
 	a.serverMu.Lock()
 	if a.serverDone == done {
