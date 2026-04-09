@@ -2,6 +2,7 @@ package modeloverrides
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -42,6 +43,22 @@ func (s *testStore) Delete(_ context.Context, selector string) error {
 }
 
 func (s *testStore) Close() error { return nil }
+
+type flakyListStore struct {
+	*testStore
+	listErr error
+}
+
+func newFlakyListStore(items ...Override) *flakyListStore {
+	return &flakyListStore{testStore: newTestStore(items...)}
+}
+
+func (s *flakyListStore) List(ctx context.Context) ([]Override, error) {
+	if s.listErr != nil {
+		return nil, s.listErr
+	}
+	return s.testStore.List(ctx)
+}
 
 type testCatalog struct {
 	providerNames []string
@@ -181,5 +198,83 @@ func TestService_ForceDisabledOverridesBroaderEnable(t *testing.T) {
 	}
 	if allowed.ForceDisabled {
 		t.Fatal("EffectiveState().ForceDisabled = true, want false")
+	}
+}
+
+func TestService_ExactEnableClearsBroaderForceDisabled(t *testing.T) {
+	service, err := NewService(
+		newTestStore(
+			Override{Selector: "openai/", ForceDisabled: true},
+			Override{Selector: "openai/gpt-4o", Enabled: boolPtr(true)},
+		),
+		testCatalog{providerNames: []string{"openai"}},
+		true,
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	state := service.EffectiveState(core.ModelSelector{Provider: "openai", Model: "gpt-4o"})
+	if !state.Enabled {
+		t.Fatal("EffectiveState().Enabled = false, want true when exact enable overrides broader force_disabled")
+	}
+	if state.ForceDisabled {
+		t.Fatal("EffectiveState().ForceDisabled = true, want false after exact enable override")
+	}
+	if err := service.ValidateModelAccess(context.Background(), core.ModelSelector{Provider: "openai", Model: "gpt-4o"}); err != nil {
+		t.Fatalf("ValidateModelAccess() error = %v, want nil", err)
+	}
+}
+
+func TestService_UpsertRollsBackStorageOnRefreshFailure(t *testing.T) {
+	store := newFlakyListStore(
+		Override{Selector: "openai/gpt-4o", Enabled: boolPtr(true)},
+	)
+	service, err := NewService(store, testCatalog{providerNames: []string{"openai"}}, true)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	store.listErr = errors.New("list failed")
+	err = service.Upsert(context.Background(), Override{Selector: "openai/gpt-5", Enabled: boolPtr(true)})
+	if err == nil {
+		t.Fatal("Upsert() error = nil, want refresh failure")
+	}
+	if _, ok := store.items["openai/gpt-5"]; ok {
+		t.Fatal("store mutated after failed refresh; expected rollback to remove openai/gpt-5")
+	}
+	if _, ok := service.Get("openai/gpt-5"); ok {
+		t.Fatal("service cache mutated after failed refresh; expected openai/gpt-5 to remain absent")
+	}
+}
+
+func TestService_DeleteRollsBackStorageOnRefreshFailure(t *testing.T) {
+	store := newFlakyListStore(
+		Override{Selector: "openai/gpt-4o", Enabled: boolPtr(true)},
+	)
+	service, err := NewService(store, testCatalog{providerNames: []string{"openai"}}, true)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	store.listErr = errors.New("list failed")
+	err = service.Delete(context.Background(), "openai/gpt-4o")
+	if err == nil {
+		t.Fatal("Delete() error = nil, want refresh failure")
+	}
+	if _, ok := store.items["openai/gpt-4o"]; !ok {
+		t.Fatal("store lost openai/gpt-4o after failed refresh; expected rollback to restore it")
+	}
+	if _, ok := service.Get("openai/gpt-4o"); !ok {
+		t.Fatal("service cache lost openai/gpt-4o after failed refresh")
 	}
 }

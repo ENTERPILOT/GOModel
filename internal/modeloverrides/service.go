@@ -3,6 +3,7 @@ package modeloverrides
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"sort"
@@ -73,40 +74,18 @@ func (s *Service) EnabledByDefault() bool {
 func (s *Service) Refresh(ctx context.Context) error {
 	s.refreshMu.Lock()
 	defer s.refreshMu.Unlock()
+	return s.refreshLocked(ctx)
+}
 
+func (s *Service) refreshLocked(ctx context.Context) error {
 	overrides, err := s.store.List(ctx)
 	if err != nil {
 		return fmt.Errorf("list model overrides: %w", err)
 	}
-
-	next := snapshot{
-		order:         make([]string, 0, len(overrides)),
-		bySelector:    make(map[string]Override, len(overrides)),
-		modelWide:     make(map[string]compiledOverride),
-		providerWide:  make(map[string]compiledOverride),
-		exact:         make(map[string]compiledOverride),
-		defaultEnable: s.defaultEnabled,
+	next, err := s.buildSnapshot(overrides)
+	if err != nil {
+		return err
 	}
-
-	for _, override := range overrides {
-		normalized, err := normalizeStoredOverride(override)
-		if err != nil {
-			return fmt.Errorf("load model override %q: %w", override.Selector, err)
-		}
-		next.order = append(next.order, normalized.Selector)
-		next.bySelector[normalized.Selector] = normalized
-
-		compiled := compiledOverride{override: normalized}
-		switch normalized.ScopeKind() {
-		case ScopeProviderModel:
-			next.exact[exactMatchKey(normalized.ProviderName, normalized.Model)] = compiled
-		case ScopeProvider:
-			next.providerWide[normalized.ProviderName] = compiled
-		default:
-			next.modelWide[normalized.Model] = compiled
-		}
-	}
-	sort.Strings(next.order)
 	s.current.Store(next)
 	return nil
 }
@@ -123,6 +102,77 @@ func (s *Service) snapshot() snapshot {
 		}
 	}
 	return s.current.Load().(snapshot)
+}
+
+func (s *Service) buildSnapshot(overrides []Override) (snapshot, error) {
+	next := snapshot{
+		order:         make([]string, 0, len(overrides)),
+		bySelector:    make(map[string]Override, len(overrides)),
+		modelWide:     make(map[string]compiledOverride),
+		providerWide:  make(map[string]compiledOverride),
+		exact:         make(map[string]compiledOverride),
+		defaultEnable: s.defaultEnabled,
+	}
+
+	for _, override := range overrides {
+		normalized, err := normalizeStoredOverride(override)
+		if err != nil {
+			return snapshot{}, fmt.Errorf("load model override %q: %w", override.Selector, err)
+		}
+		next.order = append(next.order, normalized.Selector)
+		next.bySelector[normalized.Selector] = normalized
+
+		compiled := compiledOverride{override: normalized}
+		switch normalized.ScopeKind() {
+		case ScopeProviderModel:
+			next.exact[exactMatchKey(normalized.ProviderName, normalized.Model)] = compiled
+		case ScopeProvider:
+			next.providerWide[normalized.ProviderName] = compiled
+		default:
+			next.modelWide[normalized.Model] = compiled
+		}
+	}
+	sort.Strings(next.order)
+	return next, nil
+}
+
+func cloneOverride(override Override) Override {
+	override.Enabled = cloneEnabled(override.Enabled)
+	override.AllowedOnlyForUserPaths = append([]string(nil), override.AllowedOnlyForUserPaths...)
+	return override
+}
+
+func snapshotOverrides(snap snapshot) []Override {
+	result := make([]Override, 0, len(snap.order))
+	for _, selector := range snap.order {
+		result = append(result, cloneOverride(snap.bySelector[selector]))
+	}
+	return result
+}
+
+func upsertOverride(overrides []Override, next Override) []Override {
+	for i := range overrides {
+		if overrides[i].Selector == next.Selector {
+			overrides[i] = cloneOverride(next)
+			return overrides
+		}
+	}
+	return append(overrides, cloneOverride(next))
+}
+
+func deleteOverride(overrides []Override, selector string) []Override {
+	result := make([]Override, 0, len(overrides))
+	for _, override := range overrides {
+		if override.Selector == selector {
+			continue
+		}
+		result = append(result, cloneOverride(override))
+	}
+	return result
+}
+
+func rollbackContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), 30*time.Second)
 }
 
 // List returns all cached overrides sorted by selector.
@@ -182,10 +232,31 @@ func (s *Service) Upsert(ctx context.Context, override Override) error {
 	if normalized.Enabled != nil && !*normalized.Enabled {
 		return newValidationError("enabled=false is not supported; use force_disabled=true or omit enabled", nil)
 	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	current := s.snapshot()
+	if _, err := s.buildSnapshot(upsertOverride(snapshotOverrides(current), normalized)); err != nil {
+		return fmt.Errorf("validate model overrides: %w", err)
+	}
+	previous, existed := current.bySelector[normalized.Selector]
 	if err := s.store.Upsert(ctx, normalized); err != nil {
 		return fmt.Errorf("upsert model override: %w", err)
 	}
-	if err := s.Refresh(ctx); err != nil {
+	if err := s.refreshLocked(ctx); err != nil {
+		rollbackCtx, cancel := rollbackContext()
+		defer cancel()
+
+		var rollbackErr error
+		if existed {
+			rollbackErr = s.store.Upsert(rollbackCtx, previous)
+		} else {
+			rollbackErr = s.store.Delete(rollbackCtx, normalized.Selector)
+		}
+		if rollbackErr != nil {
+			return fmt.Errorf("refresh model overrides: %w (rollback failed: %v)", err, rollbackErr)
+		}
 		return fmt.Errorf("refresh model overrides: %w", err)
 	}
 	return nil
@@ -193,14 +264,36 @@ func (s *Service) Upsert(ctx context.Context, override Override) error {
 
 // Delete removes one override and refreshes the in-memory snapshot.
 func (s *Service) Delete(ctx context.Context, selector string) error {
+	if s == nil {
+		return fmt.Errorf("model override service is required")
+	}
+
 	normalized, _, _, err := normalizeSelectorInput(selectorProviderNames(s.catalog), selector)
 	if err != nil {
 		return err
 	}
+
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+
+	current := s.snapshot()
+	if _, err := s.buildSnapshot(deleteOverride(snapshotOverrides(current), normalized)); err != nil {
+		return fmt.Errorf("validate model overrides: %w", err)
+	}
+	previous, existed := current.bySelector[normalized]
 	if err := s.store.Delete(ctx, normalized); err != nil {
 		return fmt.Errorf("delete model override: %w", err)
 	}
-	if err := s.Refresh(ctx); err != nil {
+	if err := s.refreshLocked(ctx); err != nil {
+		if !existed {
+			return fmt.Errorf("refresh model overrides: %w", err)
+		}
+
+		rollbackCtx, cancel := rollbackContext()
+		defer cancel()
+		if rollbackErr := s.store.Upsert(rollbackCtx, previous); rollbackErr != nil {
+			return fmt.Errorf("refresh model overrides: %w (rollback failed: %v)", err, rollbackErr)
+		}
 		return fmt.Errorf("refresh model overrides: %w", err)
 	}
 	return nil
@@ -226,7 +319,9 @@ func (s *Service) StartBackgroundRefresh(interval time.Duration) func() {
 				return
 			case <-ticker.C:
 				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
-				_ = s.Refresh(refreshCtx)
+				if err := s.Refresh(refreshCtx); err != nil {
+					slog.Error("failed to refresh model overrides", "error", err)
+				}
 				refreshCancel()
 			}
 		}
@@ -331,6 +426,7 @@ func (snap snapshot) effectiveState(selector core.ModelSelector) EffectiveState 
 		}
 		if rule.override.Enabled != nil && *rule.override.Enabled {
 			state.Enabled = true
+			state.ForceDisabled = false
 		}
 		if rule.override.ForceDisabled {
 			state.Enabled = false

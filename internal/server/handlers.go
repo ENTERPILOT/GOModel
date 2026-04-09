@@ -248,7 +248,19 @@ func (h *Handler) ListModels(c *echo.Context) error {
 				return h.modelAuthorizer.AllowsModel(c.Request().Context(), selector)
 			}))
 		} else {
-			resp = mergeExposedModelsResponse(resp, h.exposedModelLister.ExposedModels())
+			exposed := h.exposedModelLister.ExposedModels()
+			if h.modelAuthorizer != nil {
+				filtered := make([]core.Model, 0, len(exposed))
+				for _, model := range exposed {
+					selector, err := core.ParseModelSelector(model.ID, "")
+					if err != nil || !h.modelAuthorizer.AllowsModel(c.Request().Context(), selector) {
+						continue
+					}
+					filtered = append(filtered, model)
+				}
+				exposed = filtered
+			}
+			resp = mergeExposedModelsResponse(resp, exposed)
 		}
 	}
 

@@ -209,7 +209,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e.Use(RequestSnapshotCapture())
 
 	if cfg != nil && len(cfg.PassthroughSemanticEnrichers) > 0 {
-		e.Use(PassthroughSemanticEnrichment(cfg.PassthroughSemanticEnrichers, passthroughV1PrefixNormalizationEnabled(cfg)))
+		e.Use(PassthroughSemanticEnrichment(provider, cfg.PassthroughSemanticEnrichers, passthroughV1PrefixNormalizationEnabled(cfg)))
 	}
 
 	// Audit logging runs before request planning so early planning/validation
