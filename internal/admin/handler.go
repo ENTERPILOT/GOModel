@@ -806,12 +806,13 @@ type upsertGuardrailRequest struct {
 }
 
 type createExecutionPlanRequest struct {
-	ScopeProvider string                 `json:"scope_provider,omitempty"`
-	ScopeModel    string                 `json:"scope_model,omitempty"`
-	ScopeUserPath string                 `json:"scope_user_path,omitempty"`
-	Name          string                 `json:"name"`
-	Description   string                 `json:"description,omitempty"`
-	Payload       executionplans.Payload `json:"plan_payload"`
+	ScopeProviderName   string                 `json:"scope_provider_name,omitempty"`
+	LegacyScopeProvider string                 `json:"scope_provider,omitempty"`
+	ScopeModel          string                 `json:"scope_model,omitempty"`
+	ScopeUserPath       string                 `json:"scope_user_path,omitempty"`
+	Name                string                 `json:"name"`
+	Description         string                 `json:"description,omitempty"`
+	Payload             executionplans.Payload `json:"plan_payload"`
 }
 
 type createAuthKeyRequest struct {
@@ -1308,13 +1309,19 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return handleError(c, core.NewInvalidRequestError("invalid request body: "+err.Error(), err))
 	}
+	scopeProviderName := strings.TrimSpace(req.ScopeProviderName)
+	if scopeProviderName == "" {
+		scopeProviderName = strings.TrimSpace(req.LegacyScopeProvider)
+	}
+	scopeModel := strings.TrimSpace(req.ScopeModel)
 
 	scopeUserPath, err := normalizeUserPathQueryParam("scope_user_path", req.ScopeUserPath)
 	if err != nil {
 		return handleError(c, err)
 	}
 
-	if err := h.validateExecutionPlanScope(req.ScopeProvider, req.ScopeModel); err != nil {
+	scopeProviderName, err = h.validateExecutionPlanScope(scopeProviderName, scopeModel)
+	if err != nil {
 		return handleError(c, err)
 	}
 
@@ -1327,8 +1334,8 @@ func (h *Handler) CreateExecutionPlan(c *echo.Context) error {
 
 	version, err := h.plans.Create(c.Request().Context(), executionplans.CreateInput{
 		Scope: executionplans.Scope{
-			Provider: req.ScopeProvider,
-			Model:    req.ScopeModel,
+			Provider: scopeProviderName,
+			Model:    scopeModel,
 			UserPath: scopeUserPath,
 		},
 		Activate:    true,
@@ -1434,32 +1441,37 @@ func (h *Handler) validateExecutionPlanGuardrails(payload executionplans.Payload
 	return nil
 }
 
-func (h *Handler) validateExecutionPlanScope(scopeProvider, scopeModel string) error {
-	scopeProvider = strings.TrimSpace(scopeProvider)
+func (h *Handler) validateExecutionPlanScope(scopeProviderName, scopeModel string) (string, error) {
+	scopeProviderName = strings.TrimSpace(scopeProviderName)
 	scopeModel = strings.TrimSpace(scopeModel)
 
-	if scopeProvider == "" {
+	if scopeProviderName == "" {
 		if scopeModel != "" {
-			return core.NewInvalidRequestError("scope_model requires scope_provider", nil)
+			return "", core.NewInvalidRequestError("scope_model requires scope_provider_name", nil)
 		}
-		return nil
+		return "", nil
 	}
 	if h.registry == nil {
-		return core.NewInvalidRequestError("provider registry is unavailable for workflow scope validation", nil)
+		return "", core.NewInvalidRequestError("provider registry is unavailable for workflow provider-name validation", nil)
 	}
-	if !slices.Contains(h.registry.ProviderTypes(), scopeProvider) {
-		return core.NewInvalidRequestError("unknown provider type: "+scopeProvider, nil)
+	if !slices.Contains(h.registry.ProviderNames(), scopeProviderName) {
+		if resolvedProviderName := strings.TrimSpace(h.registry.GetProviderNameForType(scopeProviderName)); resolvedProviderName != "" {
+			scopeProviderName = resolvedProviderName
+		}
+	}
+	if !slices.Contains(h.registry.ProviderNames(), scopeProviderName) {
+		return "", core.NewInvalidRequestError("unknown provider name: "+scopeProviderName, nil)
 	}
 	if scopeModel == "" {
-		return nil
+		return scopeProviderName, nil
 	}
 
 	for _, model := range h.registry.ListModelsWithProvider() {
-		if model.ProviderType == scopeProvider && model.Model.ID == scopeModel {
-			return nil
+		if model.ProviderName == scopeProviderName && model.Model.ID == scopeModel {
+			return scopeProviderName, nil
 		}
 	}
-	return core.NewInvalidRequestError("unknown model for provider "+scopeProvider+": "+scopeModel, nil)
+	return "", core.NewInvalidRequestError("unknown model for provider name "+scopeProviderName+": "+scopeModel, nil)
 }
 
 func decodeAliasPathName(raw string) (string, error) {
