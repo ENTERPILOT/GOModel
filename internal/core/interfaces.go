@@ -123,11 +123,12 @@ type ProviderNameTypeResolver interface {
 	GetProviderTypeForName(providerName string) string
 }
 
-// AvailabilityChecker is an optional interface for providers that need
-// to verify service availability before registration.
+// AvailabilityChecker is an optional interface for providers that can report
+// backend reachability during startup diagnostics.
 type AvailabilityChecker interface {
 	// CheckAvailability verifies the provider's backend service is reachable.
-	// Returns nil if available, error otherwise.
+	// Returns nil if available, error otherwise. Initialization logs failures but
+	// keeps the provider registered so later refreshes can retry discovery.
 	CheckAvailability(ctx context.Context) error
 }
 

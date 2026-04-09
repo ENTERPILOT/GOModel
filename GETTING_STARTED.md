@@ -221,7 +221,7 @@ The env var override walk skips maps. `RETRY_MAX_RETRIES` changes the global def
 Setting `CIRCUIT_BREAKER_TIMEOUT=60s` in the environment overrides whatever `timeout` is written in `config.yaml`, regardless of order or file contents.
 
 **Ollama is always active.**
-Ollama requires no API key. Even with no YAML and no `OLLAMA_BASE_URL` set, an Ollama provider is registered pointing at `http://localhost:11434/v1`. If you do not want Ollama, make sure no Ollama instance is reachable at that address (the gateway's availability check will remove it from routing if it cannot be reached).
+Ollama requires no API key. Even with no YAML and no `OLLAMA_BASE_URL` set, an Ollama provider is registered pointing at `http://localhost:11434/v1`. If it is unreachable at startup, the gateway still starts and keeps retrying model discovery on the configured refresh interval.
 
 **Azure requires both key and base URL.**
 `AZURE_API_KEY` alone is not enough for auto-discovery. Set `AZURE_BASE_URL` to the Azure deployment endpoint as well, otherwise the provider is ignored.

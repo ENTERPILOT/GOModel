@@ -3,11 +3,14 @@ package providers
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"sync/atomic"
 	"testing"
 
+	"gomodel/config"
 	"gomodel/internal/cache/modelcache"
+	"gomodel/internal/core"
 )
 
 type mockInitCache struct {
@@ -70,5 +73,137 @@ func TestInitResultClose_NilReceiver(t *testing.T) {
 	var result *InitResult
 	if err := result.Close(); err != nil {
 		t.Fatalf("Close() error = %v, want nil", err)
+	}
+}
+
+type initTestProvider struct {
+	availabilityErr error
+	listModelsErr   error
+	modelsResponse  *core.ModelsResponse
+}
+
+func (p *initTestProvider) CheckAvailability(context.Context) error {
+	return p.availabilityErr
+}
+
+func (p *initTestProvider) ChatCompletion(context.Context, *core.ChatRequest) (*core.ChatResponse, error) {
+	return &core.ChatResponse{}, nil
+}
+
+func (p *initTestProvider) StreamChatCompletion(context.Context, *core.ChatRequest) (io.ReadCloser, error) {
+	return io.NopCloser(nil), nil
+}
+
+func (p *initTestProvider) ListModels(context.Context) (*core.ModelsResponse, error) {
+	if p.listModelsErr != nil {
+		return nil, p.listModelsErr
+	}
+	if p.modelsResponse != nil {
+		return p.modelsResponse, nil
+	}
+	return &core.ModelsResponse{Object: "list"}, nil
+}
+
+func (p *initTestProvider) Responses(context.Context, *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	return &core.ResponsesResponse{}, nil
+}
+
+func (p *initTestProvider) StreamResponses(context.Context, *core.ResponsesRequest) (io.ReadCloser, error) {
+	return io.NopCloser(nil), nil
+}
+
+func (p *initTestProvider) Embeddings(context.Context, *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return &core.EmbeddingResponse{}, nil
+}
+
+func TestInit_AllowsStartupWhenProviderIsUnavailable(t *testing.T) {
+	provider := &initTestProvider{
+		availabilityErr: errors.New("startup unavailable"),
+		listModelsErr:   errors.New("models unavailable"),
+	}
+
+	factory := NewProviderFactory()
+	factory.Add(Registration{
+		Type: "test",
+		New: func(ProviderConfig, ProviderOptions) core.Provider {
+			return provider
+		},
+	})
+
+	result, err := Init(context.Background(), &config.LoadResult{
+		Config: &config.Config{
+			Cache: config.CacheConfig{
+				Model: config.ModelCacheConfig{
+					RefreshInterval: 1,
+					Local: &config.LocalCacheConfig{
+						CacheDir: t.TempDir(),
+					},
+				},
+			},
+		},
+		RawProviders: map[string]config.RawProviderConfig{
+			"test": {
+				Type:   "test",
+				APIKey: "sk-test",
+			},
+		},
+	}, factory)
+	if err != nil {
+		t.Fatalf("Init() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		_ = result.Close()
+	})
+
+	if got := result.Registry.ProviderCount(); got != 1 {
+		t.Fatalf("ProviderCount() = %d, want 1", got)
+	}
+	if got := result.Registry.ProviderByType("test"); got != provider {
+		t.Fatal("ProviderByType(test) = nil or wrong provider, want registered unavailable provider")
+	}
+}
+
+func TestInitializeProviders_UnavailableProviderCanRefreshLater(t *testing.T) {
+	provider := &initTestProvider{
+		availabilityErr: errors.New("startup unavailable"),
+		listModelsErr:   errors.New("models unavailable"),
+	}
+
+	factory := NewProviderFactory()
+	factory.Add(Registration{
+		Type: "test",
+		New: func(ProviderConfig, ProviderOptions) core.Provider {
+			return provider
+		},
+	})
+
+	registry := NewModelRegistry()
+	count, err := initializeProviders(map[string]ProviderConfig{
+		"test": {Type: "test", APIKey: "sk-test"},
+	}, factory, registry)
+	if err != nil {
+		t.Fatalf("initializeProviders() error = %v, want nil", err)
+	}
+	if count != 1 {
+		t.Fatalf("initializeProviders() count = %d, want 1", count)
+	}
+
+	if err := registry.Refresh(context.Background()); err == nil {
+		t.Fatal("Refresh() error = nil, want startup failure while provider models are unavailable")
+	}
+
+	provider.listModelsErr = nil
+	provider.modelsResponse = &core.ModelsResponse{
+		Object: "list",
+		Data: []core.Model{
+			{ID: "later-model", Object: "model", OwnedBy: "test"},
+		},
+	}
+
+	if err := registry.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() after recovery error = %v, want nil", err)
+	}
+	if !registry.Supports("later-model") {
+		t.Fatal("expected later-model to be discoverable after refresh")
 	}
 }
