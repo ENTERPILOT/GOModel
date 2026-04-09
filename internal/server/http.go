@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	httppprof "net/http/pprof"
@@ -36,6 +37,7 @@ type Server struct {
 const (
 	inboundServerReadTimeout       = 30 * time.Second
 	inboundServerReadHeaderTimeout = 10 * time.Second
+	inboundServerWriteTimeout      = 30 * time.Second
 )
 
 // Config holds server configuration options
@@ -207,6 +209,7 @@ func New(provider core.RoutableProvider, cfg *Config) *Server {
 			return next(c)
 		}
 	})
+	e.Use(modelInteractionWriteDeadlineMiddleware())
 
 	// Ingress capture (before auth/audit/model validation so they can consume shared raw request state)
 	e.Use(RequestSnapshotCapture())
@@ -336,7 +339,7 @@ func passthroughV1PrefixNormalizationEnabled(cfg *Config) bool {
 
 // Start starts the HTTP server on the given address and exits when ctx is canceled.
 func (s *Server) Start(ctx context.Context, addr string) error {
-	return newGatewayStartConfig(addr, 0).Start(ctx, s.echo)
+	return newGatewayStartConfig(addr).Start(ctx, s.echo)
 }
 
 // Shutdown releases server resources. The HTTP server itself is stopped by
@@ -354,28 +357,45 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.echo.ServeHTTP(w, r)
 }
 
-func newGatewayStartConfig(addr string, writeTimeout time.Duration) echo.StartConfig {
+func newGatewayStartConfig(addr string) echo.StartConfig {
 	return echo.StartConfig{
 		Address:    addr,
 		HideBanner: true,
 		BeforeServeFunc: func(server *http.Server) error {
-			return configureGatewayHTTPServer(server, writeTimeout)
+			return configureGatewayHTTPServer(server)
 		},
 	}
 }
 
-func configureGatewayHTTPServer(server *http.Server, writeTimeout time.Duration) error {
+func configureGatewayHTTPServer(server *http.Server) error {
 	if server == nil {
 		return nil
 	}
 
-	// Long-running model inference and SSE streams regularly exceed Echo's
-	// default 30s write deadline, which causes clients to see "empty reply from
-	// server" even after the provider has produced a valid response.
+	// Keep an explicit server-wide write timeout for ordinary routes. Long-lived
+	// model interaction routes clear it per request before provider work begins.
 	server.ReadTimeout = inboundServerReadTimeout
 	server.ReadHeaderTimeout = inboundServerReadHeaderTimeout
-	server.WriteTimeout = writeTimeout
+	server.WriteTimeout = inboundServerWriteTimeout
 	return nil
+}
+
+func modelInteractionWriteDeadlineMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c *echo.Context) error {
+			if !core.IsModelInteractionPath(c.Request().URL.Path) {
+				return next(c)
+			}
+			if err := http.NewResponseController(c.Response()).SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, http.ErrNotSupported) {
+				slog.Warn("failed to clear write deadline for model interaction",
+					"path", c.Request().URL.Path,
+					"request_id", requestIDFromContextOrHeader(c.Request()),
+					"error", err,
+				)
+			}
+			return next(c)
+		}
+	}
 }
 
 func parseBodySizeLimitBytes(limit string) int64 {
