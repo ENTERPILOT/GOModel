@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	httppprof "net/http/pprof"
 	"path"
@@ -62,12 +63,20 @@ type Config struct {
 	SwaggerEnabled               bool                                   // Whether to expose the Swagger UI at /swagger/index.html
 	ResponseCacheMiddleware      *responsecache.ResponseCacheMiddleware // Optional: response cache middleware for cacheable endpoints
 	GuardrailsHash               string                                 // Optional: SHA-256 hash of active guardrail rules; stored in context post-patch for semantic cache
+	IPExtractor                  echo.IPExtractor                       // Optional: trusted client IP extraction strategy for proxied deployments
 }
 
 // New creates a new HTTP server
 func New(provider core.RoutableProvider, cfg *Config) *Server {
 	e := echo.New()
 	e.Logger = slog.Default()
+	// Keep client IP handling explicit after Echo v5.1.0 changed RealIP defaults.
+	// Direct extraction is the safe baseline unless a caller opts into trusted
+	// proxy header handling via Config.IPExtractor.
+	e.IPExtractor = echo.ExtractIPDirect()
+	if cfg != nil && cfg.IPExtractor != nil {
+		e.IPExtractor = cfg.IPExtractor
+	}
 
 	// Get loggers from config (may be nil)
 	var auditLogger auditlog.LoggerInterface
@@ -333,6 +342,16 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	sc := echo.StartConfig{
 		Address:    addr,
 		HideBanner: true,
+	}
+	return sc.Start(ctx, s.echo)
+}
+
+// StartWithListener starts the HTTP server using a pre-bound listener.
+// This is useful in tests that need an already-reserved loopback port.
+func (s *Server) StartWithListener(ctx context.Context, listener net.Listener) error {
+	sc := echo.StartConfig{
+		HideBanner: true,
+		Listener:   listener,
 	}
 	return sc.Start(ctx, s.echo)
 }

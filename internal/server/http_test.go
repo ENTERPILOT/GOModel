@@ -1,17 +1,22 @@
 package server
 
 import (
+	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"gomodel/internal/admin"
 	"gomodel/internal/admin/dashboard"
 	"gomodel/internal/core"
 
 	_ "gomodel/cmd/gomodel/docs"
+
+	"github.com/labstack/echo/v5"
 )
 
 func TestRequestIDMiddleware(t *testing.T) {
@@ -53,6 +58,96 @@ func TestRequestIDMiddleware(t *testing.T) {
 			t.Errorf("expected response header X-Request-ID to be %q, got %q", "my-custom-id", respID)
 		}
 	})
+}
+
+func TestServerUsesDirectIPExtractorByDefault(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, nil)
+	srv.echo.GET("/debug/ip", func(c *echo.Context) error {
+		return c.String(http.StatusOK, c.RealIP())
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/ip", nil)
+	req.RemoteAddr = "203.0.113.7:4321"
+	req.Header.Set("X-Forwarded-For", "198.51.100.8")
+	req.Header.Set("X-Real-IP", "198.51.100.9")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Body.String(); got != "203.0.113.7" {
+		t.Fatalf("RealIP = %q, want remote address host", got)
+	}
+}
+
+func TestServerAllowsTrustedProxyIPExtractorOverride(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, &Config{
+		IPExtractor: echo.ExtractIPFromXFFHeader(),
+	})
+	srv.echo.GET("/debug/ip", func(c *echo.Context) error {
+		return c.String(http.StatusOK, c.RealIP())
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/debug/ip", nil)
+	req.RemoteAddr = "10.0.0.10:4321"
+	req.Header.Set("X-Forwarded-For", "198.51.100.8")
+	rec := httptest.NewRecorder()
+
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if got := rec.Body.String(); got != "198.51.100.8" {
+		t.Fatalf("RealIP = %q, want X-Forwarded-For client IP", got)
+	}
+}
+
+func TestStartWithListener(t *testing.T) {
+	mock := &mockProvider{}
+	srv := New(mock, nil)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- srv.StartWithListener(ctx, listener)
+	}()
+
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	url := "http://" + listener.Addr().String() + "/health"
+	var lastErr error
+	for i := 0; i < 20; i++ {
+		resp, err := client.Get(url)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				cancel()
+				if err := <-done; err != nil {
+					t.Fatalf("StartWithListener() error = %v", err)
+				}
+				return
+			}
+			lastErr = nil
+		} else {
+			lastErr = err
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("StartWithListener() error after timeout = %v", err)
+	}
+	t.Fatalf("health check never succeeded, last error: %v", lastErr)
 }
 
 func TestMetricsEndpoint(t *testing.T) {

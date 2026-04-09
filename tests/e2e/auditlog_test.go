@@ -100,11 +100,10 @@ func (m *mockLogStore) WaitForAPIEntries(count int, timeout time.Duration) []*au
 func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogStore) (string, func()) {
 	t.Helper()
 
-	// Find available port (bind to loopback only for security)
+	// Reserve a loopback listener up front so the port cannot be stolen before
+	// the server starts accepting connections.
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	port := listener.Addr().(*net.TCPAddr).Port
-	require.NoError(t, listener.Close())
 
 	// Create test provider and registry
 	testProvider := NewTestProvider(mockLLMURL, "sk-test-key-12345")
@@ -126,11 +125,11 @@ func setupAuditLogTestServer(t *testing.T, cfg auditlog.Config, store *mockLogSt
 	})
 
 	// Start server (bind to loopback only)
-	serverURL := fmt.Sprintf("http://127.0.0.1:%d", port)
+	serverURL := "http://" + listener.Addr().String()
 	serverCtx, cancel := context.WithCancel(context.Background())
 	serverDone := make(chan error, 1)
 	go func() {
-		serverDone <- srv.Start(serverCtx, fmt.Sprintf("127.0.0.1:%d", port))
+		serverDone <- srv.StartWithListener(serverCtx, listener)
 	}()
 
 	// Wait for server to be ready
