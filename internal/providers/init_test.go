@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -77,12 +78,16 @@ func TestInitResultClose_NilReceiver(t *testing.T) {
 }
 
 type initTestProvider struct {
-	availabilityErr error
-	listModelsErr   error
-	modelsResponse  *core.ModelsResponse
+	availabilityErr   error
+	checkAvailability func(context.Context) error
+	listModelsErr     error
+	modelsResponse    *core.ModelsResponse
 }
 
-func (p *initTestProvider) CheckAvailability(context.Context) error {
+func (p *initTestProvider) CheckAvailability(ctx context.Context) error {
+	if p.checkAvailability != nil {
+		return p.checkAvailability(ctx)
+	}
 	return p.availabilityErr
 }
 
@@ -91,7 +96,7 @@ func (p *initTestProvider) ChatCompletion(context.Context, *core.ChatRequest) (*
 }
 
 func (p *initTestProvider) StreamChatCompletion(context.Context, *core.ChatRequest) (io.ReadCloser, error) {
-	return io.NopCloser(nil), nil
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 
 func (p *initTestProvider) ListModels(context.Context) (*core.ModelsResponse, error) {
@@ -109,7 +114,7 @@ func (p *initTestProvider) Responses(context.Context, *core.ResponsesRequest) (*
 }
 
 func (p *initTestProvider) StreamResponses(context.Context, *core.ResponsesRequest) (io.ReadCloser, error) {
-	return io.NopCloser(nil), nil
+	return io.NopCloser(bytes.NewReader(nil)), nil
 }
 
 func (p *initTestProvider) Embeddings(context.Context, *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
@@ -117,6 +122,7 @@ func (p *initTestProvider) Embeddings(context.Context, *core.EmbeddingRequest) (
 }
 
 func TestInit_AllowsStartupWhenProviderIsUnavailable(t *testing.T) {
+	ctx := t.Context()
 	provider := &initTestProvider{
 		availabilityErr: errors.New("startup unavailable"),
 		listModelsErr:   errors.New("models unavailable"),
@@ -130,7 +136,7 @@ func TestInit_AllowsStartupWhenProviderIsUnavailable(t *testing.T) {
 		},
 	})
 
-	result, err := Init(context.Background(), &config.LoadResult{
+	result, err := Init(ctx, &config.LoadResult{
 		Config: &config.Config{
 			Cache: config.CacheConfig{
 				Model: config.ModelCacheConfig{
@@ -164,6 +170,7 @@ func TestInit_AllowsStartupWhenProviderIsUnavailable(t *testing.T) {
 }
 
 func TestInitializeProviders_UnavailableProviderCanRefreshLater(t *testing.T) {
+	ctx := t.Context()
 	provider := &initTestProvider{
 		availabilityErr: errors.New("startup unavailable"),
 		listModelsErr:   errors.New("models unavailable"),
@@ -178,7 +185,7 @@ func TestInitializeProviders_UnavailableProviderCanRefreshLater(t *testing.T) {
 	})
 
 	registry := NewModelRegistry()
-	count, err := initializeProviders(map[string]ProviderConfig{
+	count, err := initializeProviders(ctx, map[string]ProviderConfig{
 		"test": {Type: "test", APIKey: "sk-test"},
 	}, factory, registry)
 	if err != nil {
@@ -188,7 +195,7 @@ func TestInitializeProviders_UnavailableProviderCanRefreshLater(t *testing.T) {
 		t.Fatalf("initializeProviders() count = %d, want 1", count)
 	}
 
-	if err := registry.Refresh(context.Background()); err == nil {
+	if err := registry.Refresh(ctx); err == nil {
 		t.Fatal("Refresh() error = nil, want startup failure while provider models are unavailable")
 	}
 
@@ -200,10 +207,45 @@ func TestInitializeProviders_UnavailableProviderCanRefreshLater(t *testing.T) {
 		},
 	}
 
-	if err := registry.Refresh(context.Background()); err != nil {
+	if err := registry.Refresh(ctx); err != nil {
 		t.Fatalf("Refresh() after recovery error = %v, want nil", err)
 	}
 	if !registry.Supports("later-model") {
 		t.Fatal("expected later-model to be discoverable after refresh")
+	}
+}
+
+func TestInitializeProviders_AvailabilityCheckUsesCallerContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var checkErr error
+	provider := &initTestProvider{
+		checkAvailability: func(ctx context.Context) error {
+			checkErr = ctx.Err()
+			return ctx.Err()
+		},
+	}
+
+	factory := NewProviderFactory()
+	factory.Add(Registration{
+		Type: "test",
+		New: func(ProviderConfig, ProviderOptions) core.Provider {
+			return provider
+		},
+	})
+
+	registry := NewModelRegistry()
+	count, err := initializeProviders(ctx, map[string]ProviderConfig{
+		"test": {Type: "test", APIKey: "sk-test"},
+	}, factory, registry)
+	if err != nil {
+		t.Fatalf("initializeProviders() error = %v, want nil", err)
+	}
+	if count != 1 {
+		t.Fatalf("initializeProviders() count = %d, want 1", count)
+	}
+	if !errors.Is(checkErr, context.Canceled) {
+		t.Fatalf("CheckAvailability() context error = %v, want %v", checkErr, context.Canceled)
 	}
 }

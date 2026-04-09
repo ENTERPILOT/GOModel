@@ -83,7 +83,7 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 	registry := NewModelRegistry()
 	registry.SetCache(modelCache)
 
-	count, err := initializeProviders(providerMap, factory, registry)
+	count, err := initializeProviders(ctx, providerMap, factory, registry)
 	if err != nil {
 		modelCache.Close()
 		return nil, err
@@ -194,7 +194,7 @@ func initCache(cfg *config.Config) (modelcache.Cache, error) {
 
 // initializeProviders instantiates and registers all resolved providers.
 // Returns the count of successfully registered providers.
-func initializeProviders(providerMap map[string]ProviderConfig, factory *ProviderFactory, registry *ModelRegistry) (int, error) {
+func initializeProviders(ctx context.Context, providerMap map[string]ProviderConfig, factory *ProviderFactory, registry *ModelRegistry) (int, error) {
 	// Sort provider names for deterministic initialization order
 	names := make([]string, 0, len(providerMap))
 	for name := range providerMap {
@@ -217,8 +217,12 @@ func initializeProviders(providerMap map[string]ProviderConfig, factory *Provide
 		// Availability checks are diagnostics only. Providers stay registered so
 		// async initialization and periodic refresh can discover them later.
 		if checker, ok := p.(core.AvailabilityChecker); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := checker.CheckAvailability(ctx); err != nil {
+			probeParent := ctx
+			if probeParent == nil {
+				probeParent = context.Background()
+			}
+			probeCtx, cancel := context.WithTimeout(probeParent, 5*time.Second)
+			if err := checker.CheckAvailability(probeCtx); err != nil {
 				slog.Warn("provider unavailable at startup; keeping registered for refresh",
 					"name", name,
 					"type", pCfg.Type,
