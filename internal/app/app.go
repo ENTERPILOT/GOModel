@@ -356,6 +356,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			auditResult.Storage,
 			usageResult.Storage,
 			providerResult.Registry,
+			providerResult.ConfiguredProviders,
 			authKeyResult.Service,
 			app.aliases.Service,
 			app.modelOverrides.Service,
@@ -733,6 +734,7 @@ func (a *App) logStartupInfo() {
 func initAdmin(
 	auditStorage, usageStorage storage.Storage,
 	registry *providers.ModelRegistry,
+	configuredProviders []providers.SanitizedProviderConfig,
 	authKeyService *authkeys.Service,
 	aliasService *aliases.Service,
 	modelOverrideService *modeloverrides.Service,
@@ -773,6 +775,7 @@ func initAdmin(
 	adminHandler := admin.NewHandler(
 		reader,
 		registry,
+		admin.WithConfiguredProviders(configuredProviders),
 		admin.WithAuditReader(auditReader),
 		admin.WithAuthKeys(authKeyService),
 		admin.WithAliases(aliasService),

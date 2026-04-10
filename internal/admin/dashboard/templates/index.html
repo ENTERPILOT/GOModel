@@ -17,6 +17,19 @@
     <!-- Auth Error Banner -->
     {{template "auth-banner" .}}
 
+    <div class="provider-status-strip" x-show="providerStatus.summary.total > 0">
+        <div class="provider-status-flag" :class="providerStatusSummaryClass()">
+            <div class="provider-status-flag-copy">
+                <span class="provider-status-flag-label">Provider Status</span>
+                <span class="provider-status-flag-note">Counted by configured provider name, not provider type.</span>
+            </div>
+            <div class="provider-status-flag-metric">
+                <span class="provider-status-flag-ratio" x-text="providerStatusRatioText()"></span>
+                <span class="provider-status-flag-text" x-text="providerStatusSummaryText()"></span>
+            </div>
+        </div>
+    </div>
+
     <!-- Summary Cards -->
     <div class="cards">
         <div class="card">
@@ -121,6 +134,85 @@
          x-show="calendarTooltip.show"
          x-text="calendarTooltip.text"
          :style="'left: ' + calendarTooltip.x + 'px; top: ' + (calendarTooltip.y - 40) + 'px'"></div>
+
+    <div class="provider-status-section" x-show="providerStatus.providers.length > 0">
+        <div class="provider-status-section-header">
+            <div>
+                <h3>Providers Overview</h3>
+            </div>
+            <button type="button"
+                    class="provider-status-toggle"
+                    role="switch"
+                    :aria-checked="providerStatusDetailsExpanded ? 'true' : 'false'"
+                    :title="providerStatusDetailsToggleLabel()"
+                    @click="toggleProviderStatusDetails()">
+                <span class="provider-status-toggle-copy" x-text="providerStatusDetailsToggleLabel()"></span>
+                <span class="provider-status-toggle-track" :class="{ 'is-active': providerStatusDetailsExpanded }">
+                    <span class="provider-status-toggle-thumb"></span>
+                </span>
+            </button>
+        </div>
+        <div class="provider-status-grid">
+            <template x-for="provider in providerStatus.providers" :key="provider.name">
+                <article class="provider-status-card">
+                    <div class="provider-status-card-head">
+                        <div>
+                            <h4 class="provider-status-name" x-text="provider.name"></h4>
+                            <p class="provider-status-type">
+                                <span x-text="provider.type || provider.config.type || '-'"></span>
+                            </p>
+                        </div>
+                        <span class="provider-status-pill" :class="providerStatusBadgeClass(provider.status)" x-text="provider.status_label"></span>
+                    </div>
+
+                    <div class="provider-status-meta">
+                        <div class="provider-status-meta-item">
+                            <span class="provider-status-meta-label">Models Available</span>
+                            <span class="provider-status-meta-value mono" x-text="formatNumber(provider.runtime.discovered_model_count)"></span>
+                        </div>
+                        <div class="provider-status-meta-item">
+                            <span class="provider-status-meta-label">Last Checked</span>
+                            <span class="provider-status-meta-value mono"
+                                  x-text="providerLastCheckedTime(provider)"
+                                  :title="providerLastCheckedTitle(provider)"></span>
+                        </div>
+                    </div>
+
+                    <div class="provider-status-details"
+                         :class="{ 'is-expanded': providerStatusDetailsExpanded, 'is-collapsed': !providerStatusDetailsExpanded }"
+                         :aria-hidden="providerStatusDetailsExpanded ? 'false' : 'true'">
+                        <div class="provider-status-details-inner">
+                            <p class="provider-status-reason" x-text="provider.status_reason"></p>
+                            <p class="provider-status-error" x-show="provider.last_error" x-text="provider.last_error"></p>
+
+                            <div class="provider-status-config">
+                                <div class="provider-status-config-row" x-show="provider.config.base_url">
+                                    <span class="provider-status-config-label">Base URL</span>
+                                    <code class="provider-status-config-value" x-text="provider.config.base_url"></code>
+                                </div>
+                                <div class="provider-status-config-row" x-show="provider.config.api_version">
+                                    <span class="provider-status-config-label">API Version</span>
+                                    <code class="provider-status-config-value" x-text="provider.config.api_version"></code>
+                                </div>
+                                <div class="provider-status-config-row">
+                                    <span class="provider-status-config-label">Configured Models</span>
+                                    <span class="provider-status-config-value" x-text="providerModelsSummary(provider)"></span>
+                                </div>
+                                <div class="provider-status-config-row">
+                                    <span class="provider-status-config-label">Retry</span>
+                                    <span class="provider-status-config-value" x-text="providerRetrySummary(provider)"></span>
+                                </div>
+                                <div class="provider-status-config-row">
+                                    <span class="provider-status-config-label">Circuit Breaker</span>
+                                    <span class="provider-status-config-value" x-text="providerCircuitBreakerSummary(provider)"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </article>
+            </template>
+        </div>
+    </div>
 </div>
 
 <!-- Usage Page -->
@@ -456,10 +548,13 @@
     <div class="page-header">
         <h2>API Keys</h2>
         <div class="page-header-controls">
-            <button type="button" class="pagination-btn pagination-btn-primary"
+            <button type="button" class="pagination-btn pagination-btn-primary pagination-btn-with-icon"
                 x-show="authKeysAvailable && !authError"
                 :disabled="authKeyFormSubmitting"
-                @click="if (!authKeyFormSubmitting) openAuthKeyForm()">Create API Key</button>
+                @click="if (!authKeyFormSubmitting) openAuthKeyForm()">
+                {{template "plus-icon"}}
+                <span>Create API Key</span>
+            </button>
         </div>
     </div>
 
@@ -475,7 +570,7 @@
         Managed API keys authenticate requests to the gateway. Deactivation is permanent — create a new key if access needs to be restored.
     </p>
 
-    <div class="model-alias-editor" x-show="authKeyFormOpen">
+    <div class="model-alias-editor auth-key-editor" x-show="authKeyFormOpen">
         <form class="alias-form" @submit.prevent="submitAuthKeyForm()">
             <div class="aliases-editor-header">
                 <div>
@@ -513,7 +608,7 @@
                 </div>
             </div>
 
-            <div x-show="!authKeyIssuedValue">
+            <div class="auth-key-form-fields" x-show="!authKeyIssuedValue">
                 <div class="alias-form-grid">
                     <label class="alias-form-field">
                         <span>Name <span class="alias-form-hint">(required)</span></span>
@@ -526,24 +621,28 @@
                     </label>
                 </div>
                 <label class="alias-form-field">
+                    <span>User Path (optional)</span>
+                    <input type="text" class="filter-input" placeholder="ex. /department1/team-a"
+                        x-model="authKeyForm.user_path" aria-label="API key user path" aria-describedby="auth-key-user-path-help-copy">
+                </label>
+                <div class="auth-key-inline-help">
+                    {{template "helper-disclosure" "{ heading: 'User Path Override', open: false, copyId: 'auth-key-user-path-help-copy', showLabel: 'Show API key user path help', hideLabel: 'Hide API key user path help', text: 'When set, this key overrides X-GoModel-User-Path for audit logging and downstream request context.' }"}}
+                </div>
+                <label class="alias-form-field">
                     <span>Description (optional)</span>
                     <textarea rows="2" class="alias-form-textarea"
                         placeholder="What is this key used for?"
                         x-model="authKeyForm.description"></textarea>
                 </label>
-                <label class="alias-form-field">
-                    <span>User Path (optional)</span>
-                    <input type="text" class="filter-input" placeholder="team/alpha or /team/alpha"
-                        x-model="authKeyForm.user_path" aria-label="API key user path">
-                </label>
-                <p class="alias-form-hint">
-                    When set, this key overrides <code>X-GoModel-User-Path</code> for audit logging and downstream request context.
-                </p>
                 <p class="alias-form-error" x-show="authKeyError" x-text="authKeyError"></p>
                 <div class="alias-form-actions">
-                    <button type="submit" class="pagination-btn pagination-btn-primary"
-                        :disabled="authKeyFormSubmitting"
-                        x-text="authKeyFormSubmitting ? 'Creating...' : 'Create API Key'"></button>
+                    <button type="submit" class="pagination-btn pagination-btn-primary pagination-btn-with-icon"
+                        :disabled="authKeyFormSubmitting">
+                        <span x-show="!authKeyFormSubmitting" aria-hidden="true">
+                            {{template "plus-icon"}}
+                        </span>
+                        <span x-text="authKeyFormSubmitting ? 'Creating...' : 'Create API Key'"></span>
+                    </button>
                 </div>
             </div>
         </form>
@@ -1525,25 +1624,28 @@
                         </div>
                     </summary>
                     <div class="audit-entry-details">
-                        <div class="audit-entry-context">
-                            <span class="provider-badge" x-text="providerDisplayValue(entry) || '-'"></span>
-                            <span class="provider-badge mono" x-text="entry.requested_model || entry.model || '-'"></span>
-                            <span class="provider-badge mono" x-text="entry.user_path || '-'"></span>
-                            <span class="provider-badge audit-alias-badge" x-show="entry.alias_used">alias</span>
-                            <span class="provider-badge mono" x-show="entry.alias_used && entry.resolved_model" x-text="'resolved: ' + qualifiedResolvedModelDisplay(entry)"></span>
-                            <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
-                            <span class="provider-badge mono" x-show="entry.auth_key_id" x-text="'auth_key_id: ' + entry.auth_key_id"></span>
-                            <span class="provider-badge mono" x-show="entry.client_ip" x-text="'ip: ' + entry.client_ip"></span>
-                            <span class="provider-badge" x-show="entry.stream">stream</span>
-                            <span class="provider-badge" x-show="entry.error_type" x-text="entry.error_type"></span>
-                        </div>
-
                         <!-- Execution Pipeline (workflow + runtime view) -->
                         {{template "execution-plan-chart" "executionPlanAuditChart(entry)"}}
 
                         <div class="audit-request-response">
                             {{template "audit-pane" "auditRequestPane(entry)"}}
                             {{template "audit-pane" "auditResponsePane(entry)"}}
+                        </div>
+
+                        <div class="audit-entry-metadata">
+                            <span class="audit-entry-metadata-label">Metadata:</span>
+                            <div class="audit-entry-context">
+                                <span class="provider-badge" x-text="providerDisplayValue(entry) || '-'"></span>
+                                <span class="provider-badge mono" x-text="entry.requested_model || entry.model || '-'"></span>
+                                <span class="provider-badge mono" x-show="entry.user_path" x-text="entry.user_path"></span>
+                                <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
+                                <span class="provider-badge mono" x-show="entry.client_ip" x-text="'ip: ' + entry.client_ip"></span>
+                                <span class="provider-badge mono" x-show="entry.auth_key_id" x-text="'auth_key_id: ' + entry.auth_key_id"></span>
+                                <span class="provider-badge audit-alias-badge" x-show="entry.alias_used">alias</span>
+                                <span class="provider-badge mono" x-show="entry.alias_used && entry.resolved_model" x-text="'resolved: ' + qualifiedResolvedModelDisplay(entry)"></span>
+                                <span class="provider-badge" x-show="entry.stream">stream</span>
+                                <span class="provider-badge" x-show="entry.error_type" x-text="entry.error_type"></span>
+                            </div>
                         </div>
                     </div>
                 </details>

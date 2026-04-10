@@ -37,11 +37,12 @@ type ModelRegistry struct {
 	providers        []core.Provider
 	providerTypes    map[core.Provider]string // provider -> type string
 	providerNames    map[core.Provider]string // provider -> configured provider instance name
-	cache            modelcache.Cache         // cache backend (local or redis)
-	initialized      bool                     // true when at least one successful network fetch completed
-	initMu           sync.Mutex               // protects initialized flag
-	modelList        *modeldata.ModelList     // parsed model list (nil = not loaded)
-	modelListRaw     json.RawMessage          // raw bytes for cache persistence
+	providerRuntime  map[string]providerRuntimeState
+	cache            modelcache.Cache     // cache backend (local or redis)
+	initialized      bool                 // true when at least one successful network fetch completed
+	initMu           sync.Mutex           // protects initialized flag
+	modelList        *modeldata.ModelList // parsed model list (nil = not loaded)
+	modelListRaw     json.RawMessage      // raw bytes for cache persistence
 
 	// Cached sorted slices, rebuilt lazily after models change.
 	// nil means cache needs rebuilding. Protected by mu.
@@ -71,6 +72,7 @@ func NewModelRegistry() *ModelRegistry {
 		modelsByProvider: make(map[string]map[string]*ModelInfo),
 		providerTypes:    make(map[core.Provider]string),
 		providerNames:    make(map[core.Provider]string),
+		providerRuntime:  make(map[string]providerRuntimeState),
 	}
 }
 
@@ -119,6 +121,10 @@ func (r *ModelRegistry) RegisterProviderWithNameAndType(provider core.Provider, 
 	r.providers = append(r.providers, provider)
 	r.providerTypes[provider] = providerType
 	r.providerNames[provider] = providerName
+
+	state := r.providerRuntime[providerName]
+	state.registered = true
+	r.providerRuntime[providerName] = state
 }
 
 // Initialize fetches models from all registered providers and populates the registry.
@@ -137,6 +143,7 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 	newModelsByProvider := make(map[string]map[string]*ModelInfo)
 	var totalModels int
 	var failedProviders int
+	runtimeUpdates := make(map[string]providerRuntimeState)
 
 	r.mu.RLock()
 	providerTypes := make(map[core.Provider]string, len(r.providerTypes))
@@ -155,13 +162,24 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 		}
 
 		resp, err := provider.ListModels(ctx)
+		fetchAt := time.Now().UTC()
 		if err != nil {
 			slog.Warn("failed to fetch models from provider",
 				"provider", providerName,
 				"error", err,
 			)
 			failedProviders++
+			runtimeUpdates[providerName] = providerRuntimeState{
+				registered:          true,
+				lastModelFetchAt:    fetchAt,
+				lastModelFetchError: err.Error(),
+			}
 			continue
+		}
+		runtimeUpdates[providerName] = providerRuntimeState{
+			registered:              true,
+			lastModelFetchAt:        fetchAt,
+			lastModelFetchSuccessAt: fetchAt,
 		}
 
 		if _, ok := newModelsByProvider[providerName]; !ok {
@@ -213,6 +231,20 @@ func (r *ModelRegistry) Initialize(ctx context.Context) error {
 	r.mu.Lock()
 	r.models = newModels
 	r.modelsByProvider = newModelsByProvider
+	for providerName, update := range runtimeUpdates {
+		current := r.providerRuntime[providerName]
+		current.registered = update.registered || current.registered
+		if !update.lastModelFetchAt.IsZero() {
+			current.lastModelFetchAt = update.lastModelFetchAt
+		}
+		if !update.lastModelFetchSuccessAt.IsZero() {
+			current.lastModelFetchSuccessAt = update.lastModelFetchSuccessAt
+			current.lastModelFetchError = ""
+		} else if strings.TrimSpace(update.lastModelFetchError) != "" {
+			current.lastModelFetchError = update.lastModelFetchError
+		}
+		r.providerRuntime[providerName] = current
+	}
 	r.invalidateSortedCaches()
 	r.mu.Unlock()
 
@@ -985,6 +1017,66 @@ func (r *ModelRegistry) ProviderCount() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return len(r.providers)
+}
+
+// RecordAvailabilityCheck stores the latest startup or explicit availability
+// probe result for a configured provider name.
+func (r *ModelRegistry) RecordAvailabilityCheck(providerName string, err error) {
+	providerName = strings.TrimSpace(providerName)
+	if providerName == "" {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	state := r.providerRuntime[providerName]
+	state.registered = true
+	state.lastAvailabilityCheckAt = time.Now().UTC()
+	if err != nil {
+		state.lastAvailabilityError = err.Error()
+	} else {
+		state.lastAvailabilityOKAt = state.lastAvailabilityCheckAt
+		state.lastAvailabilityError = ""
+	}
+	r.providerRuntime[providerName] = state
+}
+
+// ProviderRuntimeSnapshots returns runtime diagnostics for configured providers
+// keyed by configured provider name.
+func (r *ModelRegistry) ProviderRuntimeSnapshots() []ProviderRuntimeSnapshot {
+	r.mu.RLock()
+	result := make([]ProviderRuntimeSnapshot, 0, len(r.providers))
+	for _, provider := range r.providers {
+		providerName := strings.TrimSpace(r.providerNames[provider])
+		if providerName == "" {
+			continue
+		}
+		state := r.providerRuntime[providerName]
+		result = append(result, ProviderRuntimeSnapshot{
+			Name:                    providerName,
+			Type:                    strings.TrimSpace(r.providerTypes[provider]),
+			Registered:              state.registered,
+			DiscoveredModelCount:    len(r.modelsByProvider[providerName]),
+			LastModelFetchAt:        timePtrUTC(state.lastModelFetchAt),
+			LastModelFetchSuccessAt: timePtrUTC(state.lastModelFetchSuccessAt),
+			LastModelFetchError:     strings.TrimSpace(state.lastModelFetchError),
+			LastAvailabilityCheckAt: timePtrUTC(state.lastAvailabilityCheckAt),
+			LastAvailabilityOKAt:    timePtrUTC(state.lastAvailabilityOKAt),
+			LastAvailabilityError:   strings.TrimSpace(state.lastAvailabilityError),
+		})
+	}
+	r.mu.RUnlock()
+
+	initialized := r.IsInitialized()
+	for i := range result {
+		result[i].RegistryInitialized = initialized
+		result[i].UsingCachedModels = result[i].DiscoveredModelCount > 0 &&
+			!initialized &&
+			result[i].LastModelFetchSuccessAt == nil
+	}
+
+	return result
 }
 
 // SetModelList stores the parsed model list and its raw bytes for cache persistence.
