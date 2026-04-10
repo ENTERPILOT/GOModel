@@ -90,7 +90,7 @@ func Init(ctx context.Context, result *config.LoadResult, factory *ProviderFacto
 	}
 	if count == 0 {
 		modelCache.Close()
-		return nil, fmt.Errorf("no providers were successfully initialized")
+		return nil, fmt.Errorf("no providers were successfully registered")
 	}
 
 	slog.Info("starting non-blocking model registry initialization...")
