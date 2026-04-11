@@ -751,7 +751,7 @@ body {
     padding: 0;
     background: transparent;
     border: 0;
-    color: var(--accent-strong);
+    color: var(--accent-strong, var(--accent));
     font: inherit;
     font-size: 13px;
     font-weight: 600;
@@ -952,7 +952,7 @@ body {
 .provider-status-error {
     font-size: 12px;
     color: var(--danger);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .provider-status-meta {
@@ -1003,7 +1003,7 @@ body {
     display: block;
     font-size: 13px;
     color: var(--text);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 /* Summary Cards */
@@ -1198,7 +1198,7 @@ td.col-price {
 .audit-alias-badge {
     background: color-mix(in srgb, var(--accent) 14%, var(--bg));
     border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
-    color: var(--accent-strong);
+    color: var(--accent-strong, var(--accent));
 }
 
 .empty-state {
@@ -1240,7 +1240,7 @@ td.col-price {
 }
 
 .table-action-btn-active {
-    color: var(--accent-strong);
+    color: var(--accent-strong, var(--accent));
     background: color-mix(in srgb, var(--accent) 12%, var(--bg));
     border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
 }

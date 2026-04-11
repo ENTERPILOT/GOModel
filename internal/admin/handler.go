@@ -1153,7 +1153,10 @@ func (h *Handler) UpsertModelOverride(c *echo.Context) error {
 		Selector:  selector,
 		UserPaths: req.UserPaths,
 	}); err != nil {
-		return handleError(c, modelOverrideWriteError(err))
+		if modeloverrides.IsValidationError(err) {
+			return handleError(c, modelOverrideWriteError(err))
+		}
+		return handleError(c, core.NewProviderError("model_overrides", http.StatusBadGateway, err.Error(), err))
 	}
 
 	override, ok := h.modelOverrides.Get(selector)

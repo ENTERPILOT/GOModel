@@ -433,7 +433,18 @@ func TestModelOverrideWriteErrorsBubbleProviderErrors(t *testing.T) {
 	if err := h.UpsertModelOverride(c); err != nil {
 		t.Fatalf("UpsertModelOverride() error = %v", err)
 	}
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want 500", rec.Code)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", rec.Code)
+	}
+
+	var body map[string]map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := body["error"]["type"]; got != string(core.ErrorTypeProvider) {
+		t.Fatalf("error type = %v, want %s", got, core.ErrorTypeProvider)
+	}
+	if got := body["error"]["message"]; got != "upsert model override: boom" {
+		t.Fatalf("error message = %v, want upsert model override: boom", got)
 	}
 }
