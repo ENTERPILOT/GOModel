@@ -1,6 +1,7 @@
 {{define "index"}}
 <!-- Overview Page -->
-<div x-show="page==='overview'">
+<template x-if="page==='overview'">
+<div>
     <div class="page-header">
         <h2>Usage Overview</h2>
         <div class="page-header-controls">
@@ -212,9 +213,11 @@
         </div>
     </div>
 </div>
+</template>
 
 <!-- Usage Page -->
-<div x-show="page==='usage'">
+<template x-if="page==='usage'">
+<div>
     <div class="page-header">
         <h2>Usage Analytics</h2>
         <div class="page-header-controls">
@@ -316,9 +319,11 @@
         {{template "pagination" "usageLog"}}
     </div>
 </div>
+</template>
 
 <!-- Settings Page -->
-<div x-show="page==='settings'">
+<template x-if="page==='settings'">
+<div>
     <div class="page-header">
         <div>
             <h2>Settings</h2>
@@ -351,9 +356,11 @@
         </div>
     </div>
 </div>
+</template>
 
 <!-- Guardrails Page -->
-<div x-show="page==='guardrails'">
+<template x-if="page==='guardrails'">
+<div>
     <div class="page-header">
         <div>
             <h2>Guardrails</h2>
@@ -540,9 +547,11 @@
         </section>
     </div>
 </div>
+</template>
 
 <!-- API Keys Page -->
-<div x-show="page==='auth-keys'">
+<template x-if="page==='auth-keys'">
+<div>
     <div class="page-header">
         <h2>API Keys</h2>
         <div class="page-header-controls">
@@ -693,9 +702,11 @@
         No API keys yet. Issue a key to get started.
     </p>
 </div>
+</template>
 
 <!-- Models Page -->
-<div x-show="page==='models'">
+<template x-if="page==='models'">
+<div>
     <div class="page-header">
         <h2>Registered Models</h2>
         <div class="model-count" x-show="displayModels.length > 0">
@@ -831,7 +842,8 @@
     </div>
 
     <!-- Models Table: All / Text Generation -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && (activeCategory === 'all' || activeCategory === 'text_generation')">
+    <template x-if="(displayModels.length > 0 || modelFilter) && (activeCategory === 'all' || activeCategory === 'text_generation')">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -855,9 +867,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Embeddings -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'embedding'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'embedding'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -878,9 +892,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Image -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'image'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'image'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -901,9 +917,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Audio -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'audio'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'audio'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -925,9 +943,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Video -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'video'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'video'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -949,9 +969,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Utility -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'utility'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'utility'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -973,14 +995,17 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <p class="empty-state" x-show="displayModels.length === 0 && !loading && !authError && !modelFilter && (activeCategory === 'all' || !activeCategory)">No models registered.</p>
     <p class="empty-state" x-show="displayModels.length === 0 && !loading && !authError && !modelFilter && activeCategory && activeCategory !== 'all'">No models in this category.</p>
     <p class="empty-state" x-show="displayModels.length > 0 && filteredDisplayModels.length === 0 && modelFilter">No models match your filter.</p>
 </div>
+</template>
 
 <!-- Workflows Page -->
-<div x-show="page==='workflows'">
+<template x-if="page==='workflows'">
+<div>
     <div class="page-header">
         <div>
             <h2>Workflows</h2>
@@ -1248,9 +1273,11 @@
         </template>
     </datalist>
 </div>
+</template>
 
 <!-- Audit Logs Page -->
-<div x-show="page==='audit-logs'">
+<template x-if="page==='audit-logs'">
+<div>
     <div class="page-header">
         <h2>Audit Logs</h2>
         <div class="page-header-controls">
@@ -1415,4 +1442,5 @@
         </div>
     </aside>
 </div>
+</template>
 {{end}}

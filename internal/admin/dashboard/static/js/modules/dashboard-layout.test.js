@@ -70,7 +70,7 @@ test('mono utility only sets the font family and font-size-md carries the 13px s
     assert.match(fontSizeMdRule, /font-size:\s*13px/);
 });
 
-test('dashboard layout pins Chart.js to 4.5.0', () => {
+test('dashboard layout pins Chart.js to 4.5.0 and avoids unused htmx', () => {
     const template = readFixture('../../../templates/layout.html');
 
     assert.match(
@@ -85,10 +85,7 @@ test('dashboard layout pins Chart.js to 4.5.0', () => {
         template,
         /<script defer src="https:\/\/cdn\.jsdelivr\.net\/npm\/alpinejs@3\.15\.8\/dist\/cdn\.min\.js" integrity="sha384-LXWjKwDZz29o7TduNe\+r\/UxaolHh5FsSvy2W7bDHSZ8jJeGgDeuNnsDNHoxpSgDi" crossorigin="anonymous"><\/script>/
     );
-    assert.match(
-        template,
-        /<script src="https:\/\/unpkg\.com\/htmx\.org@2\.0\.8\/dist\/htmx\.min\.js" integrity="sha384-\/TgkGk7p307TH7EXJDuUlgG3Ce1UVolAOFopFekQkkXihi5u\/6OCvVKyz1W\+idaz" crossorigin="anonymous"><\/script>/
-    );
+    assert.doesNotMatch(template, /htmx/i);
     assert.match(
         template,
         /<script src="\/admin\/static\/js\/modules\/conversation-helpers\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/clipboard\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/providers\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/audit-list\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/auth-keys\.js"><\/script>[\s\S]*<script src="\/admin\/static\/js\/modules\/guardrails\.js"><\/script>/
@@ -146,7 +143,7 @@ test('dashboard pages reuse a shared auth banner template', () => {
 
     const authBannerCalls = indexTemplate.match(/{{template "auth-banner" \.}}/g) || [];
     assert.equal(authBannerCalls.length, 7);
-    assert.match(indexTemplate, /<div x-show="page==='guardrails'">[\s\S]*{{template "auth-banner" \.}}/);
+    assert.match(indexTemplate, /<template x-if="page==='guardrails'">\s*<div>[\s\S]*{{template "auth-banner" \.}}/);
     assert.doesNotMatch(
         indexTemplate,
         /<div class="alert alert-warning" x-show="authError">[\s\S]*Authentication required\. Enter your API key in the sidebar to view data\.[\s\S]*<\/div>/
@@ -286,6 +283,23 @@ test('audit entry metadata is rendered as a labeled pill row at the bottom of th
 
     const metadataContextRule = readCSSRule(css, '.audit-entry-context');
     assert.match(metadataContextRule, /flex-wrap:\s*wrap/);
+});
+
+test('model category tables lazy mount only the active table body', () => {
+    const indexTemplate = readFixture('../../../templates/index.html');
+    const modelsStart = indexTemplate.indexOf('<!-- Models Page -->');
+    const workflowsStart = indexTemplate.indexOf('<!-- Workflows Page -->');
+
+    assert.notEqual(modelsStart, -1, 'Expected models page block');
+    assert.notEqual(workflowsStart, -1, 'Expected workflows page block');
+
+    const modelsBlock = indexTemplate.slice(modelsStart, workflowsStart);
+    const lazyTableMounts = modelsBlock.match(/<template x-if="\([^"]*activeCategory[^"]*">\s*<div class="table-wrapper">/g) || [];
+
+    assert.equal(lazyTableMounts.length, 6);
+    assert.doesNotMatch(modelsBlock, /<div class="table-wrapper" x-show="\([^"]*activeCategory/);
+    assert.match(modelsBlock, /activeCategory === 'embedding'[\s\S]*{{template "model-table-body" \.}}/);
+    assert.match(modelsBlock, /activeCategory === 'utility'[\s\S]*{{template "model-table-body" \.}}/);
 });
 
 test('alias rows use a shared icon-only edit action', () => {

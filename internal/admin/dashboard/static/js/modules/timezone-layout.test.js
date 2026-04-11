@@ -32,7 +32,7 @@ test('dashboard templates expose a settings page and timezone context in activit
     const helperTemplate = readFixture('../../../templates/helper-disclosure.html');
     const css = readFixture('../../css/dashboard.css');
 
-    assert.match(template, /<div x-show="page==='settings'">[\s\S]*<h2>Settings<\/h2>/);
+    assert.match(template, /<template x-if="page==='settings'">\s*<div>[\s\S]*<h2>Settings<\/h2>/);
     assert.match(template, /@click="navigateSettings\('general'\)"/);
     assert.doesNotMatch(template, /@click="navigateSettings\('guardrails'\)"/);
     assert.match(template, /x-ref="timezoneOverrideSelect"/);
@@ -107,7 +107,7 @@ test('guardrails authoring moved to a top-level page while settings keeps the ge
     const css = readFixture('../../css/dashboard.css');
 
     assert.match(template, /<div class="settings-subnav">[\s\S]*class="settings-subnav-btn active"[\s\S]*>General<\/button>/);
-    assert.match(template, /<div x-show="page==='guardrails'">[\s\S]*<h2>Guardrails<\/h2>/);
+    assert.match(template, /<template x-if="page==='guardrails'">\s*<div>[\s\S]*<h2>Guardrails<\/h2>/);
     assert.match(template, /Guardrail Library/);
     assert.match(template, /x-ref="guardrailTypeSelect"/);
     assert.match(template, /x-model="guardrailForm\.type"/);
