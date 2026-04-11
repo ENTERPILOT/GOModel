@@ -1313,13 +1313,15 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 						slog.Warn("background model refresh failed", "error", err)
 					}
 				} else {
-					cacheCtx, cacheCancel := context.WithTimeout(ctx, 10*time.Second)
-					if err := r.SaveToCache(cacheCtx); err != nil {
-						if !isBenignBackgroundRefreshError(ctx, err) {
-							slog.Warn("failed to save models to cache after refresh", "error", err)
+					func() {
+						cacheCtx, cacheCancel := context.WithTimeout(ctx, 10*time.Second)
+						defer cacheCancel()
+						if err := r.SaveToCache(cacheCtx); err != nil {
+							if !isBenignBackgroundRefreshError(ctx, err) {
+								slog.Warn("failed to save models to cache after refresh", "error", err)
+							}
 						}
-					}
-					cacheCancel()
+					}()
 				}
 
 				// Also refresh model list if configured
