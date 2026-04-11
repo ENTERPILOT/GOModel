@@ -1,6 +1,7 @@
 {{define "index"}}
 <!-- Overview Page -->
-<div x-show="page==='overview'">
+<template x-if="page==='overview'">
+<div>
     <div class="page-header">
         <h2>Usage Overview</h2>
         <div class="page-header-controls">
@@ -212,9 +213,11 @@
         </div>
     </div>
 </div>
+</template>
 
 <!-- Usage Page -->
-<div x-show="page==='usage'">
+<template x-if="page==='usage'">
+<div>
     <div class="page-header">
         <h2>Usage Analytics</h2>
         <div class="page-header-controls">
@@ -316,9 +319,11 @@
         {{template "pagination" "usageLog"}}
     </div>
 </div>
+</template>
 
 <!-- Settings Page -->
-<div x-show="page==='settings'">
+<template x-if="page==='settings'">
+<div>
     <div class="page-header">
         <div>
             <h2>Settings</h2>
@@ -376,9 +381,11 @@
         </ul>
     </div>
 </div>
+</template>
 
 <!-- Guardrails Page -->
-<div x-show="page==='guardrails'">
+<template x-if="page==='guardrails'">
+<div>
     <div class="page-header">
         <div>
             <h2>Guardrails</h2>
@@ -565,9 +572,11 @@
         </section>
     </div>
 </div>
+</template>
 
 <!-- API Keys Page -->
-<div x-show="page==='auth-keys'">
+<template x-if="page==='auth-keys'">
+<div>
     <div class="page-header">
         <h2>API Keys</h2>
         <div class="page-header-controls">
@@ -718,9 +727,11 @@
         No API keys yet. Issue a key to get started.
     </p>
 </div>
+</template>
 
 <!-- Models Page -->
-<div x-show="page==='models'">
+<template x-if="page==='models'">
+<div>
     <div class="page-header">
         <h2>Registered Models</h2>
         <div class="model-count" x-show="displayModels.length > 0">
@@ -756,6 +767,11 @@
         <div class="table-toolbar-actions">
             <button type="button" class="pagination-btn pagination-btn-primary" x-show="aliasesAvailable" @click="openAliasCreate()">Create Alias</button>
         </div>
+    </div>
+
+    <div class="loading-state" x-show="modelsLoading && !authError" role="status" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span x-text="displayModels.length > 0 ? 'Refreshing models...' : 'Loading models...'"></span>
     </div>
 
     <div class="model-alias-editor" x-show="aliasFormOpen">
@@ -856,7 +872,8 @@
     </div>
 
     <!-- Models Table: All / Text Generation -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && (activeCategory === 'all' || activeCategory === 'text_generation')">
+    <template x-if="(displayModels.length > 0 || modelFilter) && (activeCategory === 'all' || activeCategory === 'text_generation')">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -880,9 +897,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Embeddings -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'embedding'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'embedding'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -903,9 +922,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Image -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'image'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'image'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -926,9 +947,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Audio -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'audio'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'audio'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -950,9 +973,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Video -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'video'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'video'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -974,9 +999,11 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <!-- Models Table: Utility -->
-    <div class="table-wrapper" x-show="(displayModels.length > 0 || modelFilter) && activeCategory === 'utility'">
+    <template x-if="(displayModels.length > 0 || modelFilter) && activeCategory === 'utility'">
+    <div class="table-wrapper">
         <table class="data-table">
             <thead>
                 <tr>
@@ -998,14 +1025,17 @@
             {{template "model-table-body" .}}
         </table>
     </div>
+    </template>
 
     <p class="empty-state" x-show="displayModels.length === 0 && !loading && !authError && !modelFilter && (activeCategory === 'all' || !activeCategory)">No models registered.</p>
     <p class="empty-state" x-show="displayModels.length === 0 && !loading && !authError && !modelFilter && activeCategory && activeCategory !== 'all'">No models in this category.</p>
     <p class="empty-state" x-show="displayModels.length > 0 && filteredDisplayModels.length === 0 && modelFilter">No models match your filter.</p>
 </div>
+</template>
 
 <!-- Workflows Page -->
-<div x-show="page==='workflows'">
+<template x-if="page==='workflows'">
+<div>
     <div class="page-header">
         <div>
             <h2>Workflows</h2>
@@ -1273,9 +1303,11 @@
         </template>
     </datalist>
 </div>
+</template>
 
 <!-- Audit Logs Page -->
-<div x-show="page==='audit-logs'">
+<template x-if="page==='audit-logs'">
+<div>
     <div class="page-header">
         <h2>Audit Logs</h2>
         <div class="page-header-controls">
@@ -1329,15 +1361,15 @@
 
         <div class="audit-log-list" x-show="auditLog.entries.length > 0">
             <template x-for="entry in auditLog.entries" :key="entry.id">
-                <details class="audit-entry" @toggle="handleAuditEntryToggle($event)">
+                <details class="audit-entry" @toggle="handleAuditEntryToggle($event, entry)">
                         <summary class="audit-entry-summary">
-                            <div class="audit-entry-main">
+                            <div class="audit-entry-left">
                                 <span class="audit-status-badge" :class="statusCodeClass(entry.status_code)" x-text="entry.status_code || '-'"></span>
                             <span class="audit-method-badge" x-text="entry.method || '-'"></span>
                             <span class="audit-provider-model mono" x-show="entry.requested_model || entry.model" x-text="entry.requested_model || entry.model"></span>
                             <span class="audit-path mono" x-text="entry.path || '-'"></span>
                             </div>
-                            <div class="audit-entry-meta">
+                            <div class="audit-entry-right">
                                 <span class="mono font-size-md" x-text="formatTimestamp(entry.timestamp)" :title="timestampTitle(entry.timestamp)"></span>
                                 <span class="mono font-size-md" x-text="formatDurationNs(entry.duration_ns)"></span>
                                 <button type="button" class="audit-conversation-trigger"
@@ -1351,31 +1383,33 @@
                             </button>
                         </div>
                     </summary>
-                    <div class="audit-entry-details">
-                        <!-- Execution Pipeline (workflow + runtime view) -->
-                        {{template "execution-plan-chart" "executionPlanAuditChart(entry)"}}
+                    <template x-if="isAuditEntryExpanded(entry)">
+                        <div class="audit-entry-details">
+                            <!-- Execution Pipeline (workflow + runtime view) -->
+                            {{template "execution-plan-chart" "executionPlanAuditChart(entry)"}}
 
-                        <div class="audit-request-response">
-                            {{template "audit-pane" "auditRequestPane(entry)"}}
-                            {{template "audit-pane" "auditResponsePane(entry)"}}
-                        </div>
+                            <div class="audit-request-response">
+                                {{template "audit-pane" "auditRequestPane(entry)"}}
+                                {{template "audit-pane" "auditResponsePane(entry)"}}
+                            </div>
 
-                        <div class="audit-entry-metadata">
-                            <span class="audit-entry-metadata-label">Metadata:</span>
-                            <div class="audit-entry-context">
-                                <span class="provider-badge" x-text="providerDisplayValue(entry) || '-'"></span>
-                                <span class="provider-badge mono" x-text="entry.requested_model || entry.model || '-'"></span>
-                                <span class="provider-badge mono" x-show="entry.user_path" x-text="entry.user_path"></span>
-                                <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
-                                <span class="provider-badge mono" x-show="entry.client_ip" x-text="'ip: ' + entry.client_ip"></span>
-                                <span class="provider-badge mono" x-show="entry.auth_key_id" x-text="'auth_key_id: ' + entry.auth_key_id"></span>
-                                <span class="provider-badge audit-alias-badge" x-show="entry.alias_used">alias</span>
-                                <span class="provider-badge mono" x-show="entry.alias_used && entry.resolved_model" x-text="'resolved: ' + qualifiedResolvedModelDisplay(entry)"></span>
-                                <span class="provider-badge" x-show="entry.stream">stream</span>
-                                <span class="provider-badge" x-show="entry.error_type" x-text="entry.error_type"></span>
+                            <div class="audit-entry-metadata">
+                                <span class="audit-entry-metadata-label">Metadata:</span>
+                                <div class="audit-entry-context">
+                                    <span class="provider-badge" x-text="providerDisplayValue(entry) || '-'"></span>
+                                    <span class="provider-badge mono" x-text="entry.requested_model || entry.model || '-'"></span>
+                                    <span class="provider-badge mono" x-show="entry.user_path" x-text="entry.user_path"></span>
+                                    <span class="provider-badge mono" x-text="'request_id: ' + (entry.request_id || '-')"></span>
+                                    <span class="provider-badge mono" x-show="entry.client_ip" x-text="'ip: ' + entry.client_ip"></span>
+                                    <span class="provider-badge mono" x-show="entry.auth_key_id" x-text="'auth_key_id: ' + entry.auth_key_id"></span>
+                                    <span class="provider-badge audit-alias-badge" x-show="entry.alias_used">alias</span>
+                                    <span class="provider-badge mono" x-show="entry.alias_used && entry.resolved_model" x-text="'resolved: ' + qualifiedResolvedModelDisplay(entry)"></span>
+                                    <span class="provider-badge" x-show="entry.stream">stream</span>
+                                    <span class="provider-badge" x-show="entry.error_type" x-text="entry.error_type"></span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </template>
                 </details>
             </template>
         </div>
@@ -1438,4 +1472,5 @@
         </div>
     </aside>
 </div>
+</template>
 {{end}}

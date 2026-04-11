@@ -16,7 +16,12 @@ RUN go mod download
 
 # Copy source and cross-compile for the target platform
 COPY . .
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} go build -ldflags="-s -w" -o /gomodel ./cmd/gomodel
+ARG VERSION=dev
+ARG COMMIT=none
+ARG DATE=unknown
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOARM=${TARGETVARIANT#v} go build \
+	-ldflags="-s -w -X gomodel/internal/version.Version=${VERSION} -X gomodel/internal/version.Commit=${COMMIT} -X gomodel/internal/version.Date=${DATE}" \
+	-o /gomodel ./cmd/gomodel
 
 # Create .cache and data directories for runtime (with placeholder for COPY)
 RUN mkdir -p /app/.cache /app/data && touch /app/.cache/.keep /app/data/.keep
