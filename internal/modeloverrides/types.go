@@ -11,12 +11,14 @@ import (
 // Override stores one persisted access-policy override for a model selector.
 //
 // Selector syntax:
+//   - /
 //   - model
 //   - provider/model
 //   - provider/
 //
 // The first slash separates provider name from model. When the prefix is not a
-// configured provider name, the full value is treated as a raw model ID.
+// configured provider name, the full value is treated as a raw model ID. The
+// bare slash selects every configured provider and model.
 type Override struct {
 	Selector                string    `json:"selector" bson:"_id"`
 	ProviderName            string    `json:"provider_name,omitempty" bson:"provider_name,omitempty"`
@@ -32,6 +34,7 @@ type Override struct {
 type ScopeKind string
 
 const (
+	ScopeGlobal        ScopeKind = "global"
 	ScopeModel         ScopeKind = "model"
 	ScopeProvider      ScopeKind = "provider"
 	ScopeProviderModel ScopeKind = "provider_model"
@@ -40,6 +43,8 @@ const (
 // ScopeKind reports the normalized selector scope for one override.
 func (o Override) ScopeKind() ScopeKind {
 	switch {
+	case isGlobalSelector(o.Selector):
+		return ScopeGlobal
 	case strings.TrimSpace(o.ProviderName) != "" && strings.TrimSpace(o.Model) != "":
 		return ScopeProviderModel
 	case strings.TrimSpace(o.ProviderName) != "":
@@ -97,6 +102,7 @@ func normalizeStoredOverride(override Override) (Override, error) {
 	override.Selector = strings.TrimSpace(override.Selector)
 	override.ProviderName = strings.TrimSpace(override.ProviderName)
 	override.Model = strings.TrimSpace(override.Model)
+	globalSelector := isGlobalSelector(override.Selector)
 
 	if override.Selector == "" {
 		override.Selector = selectorString(override.ProviderName, override.Model)
@@ -104,12 +110,12 @@ func normalizeStoredOverride(override Override) (Override, error) {
 	if override.Selector == "" {
 		return Override{}, newValidationError("selector is required", nil)
 	}
-	if override.ProviderName == "" && override.Model == "" {
+	if override.ProviderName == "" && override.Model == "" && !globalSelector {
 		providerName, model := parseStoredSelectorParts(override.Selector)
 		override.ProviderName = providerName
 		override.Model = model
 	}
-	if override.ProviderName == "" && override.Model == "" {
+	if override.ProviderName == "" && override.Model == "" && !isGlobalSelector(override.Selector) {
 		return Override{}, newValidationError("selector is required", nil)
 	}
 	if normalized := selectorString(override.ProviderName, override.Model); normalized != "" {
@@ -128,6 +134,9 @@ func normalizeSelectorInput(providerNames []string, raw string) (selector, provi
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "", "", "", newValidationError("selector is required", nil)
+	}
+	if isGlobalSelector(raw) {
+		return "/", "", "", nil
 	}
 
 	providerNameSet := make(map[string]struct{}, len(providerNames))
@@ -211,6 +220,10 @@ func selectorString(providerName, model string) string {
 	}
 }
 
+func isGlobalSelector(selector string) bool {
+	return strings.TrimSpace(selector) == "/"
+}
+
 func exactMatchKey(providerName, model string) string {
 	providerName = strings.TrimSpace(providerName)
 	model = strings.TrimSpace(model)
@@ -236,6 +249,9 @@ func splitFirst(value string) (prefix, rest string, ok bool) {
 func parseStoredSelectorParts(selector string) (providerName, model string) {
 	selector = strings.TrimSpace(selector)
 	if selector == "" {
+		return "", ""
+	}
+	if isGlobalSelector(selector) {
 		return "", ""
 	}
 	if strings.HasSuffix(selector, "/") {

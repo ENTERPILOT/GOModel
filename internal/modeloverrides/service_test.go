@@ -104,6 +104,16 @@ func TestNormalizeSelectorInput_UsesFirstSlashOnlyForKnownProviders(t *testing.T
 			t.Fatalf("normalizeSelectorInput() = (%q, %q, %q), want (%q, %q, %q)", selector, providerName, model, "anthropic/", "anthropic", "")
 		}
 	})
+
+	t.Run("slash selector becomes global scope", func(t *testing.T) {
+		selector, providerName, model, err := normalizeSelectorInput(providerNames, "/")
+		if err != nil {
+			t.Fatalf("normalizeSelectorInput() error = %v", err)
+		}
+		if selector != "/" || providerName != "" || model != "" {
+			t.Fatalf("normalizeSelectorInput() = (%q, %q, %q), want (%q, %q, %q)", selector, providerName, model, "/", "", "")
+		}
+	})
 }
 
 func TestService_DefaultDisabledRequiresExplicitEnableAndHonorsUserPaths(t *testing.T) {
@@ -226,6 +236,48 @@ func TestService_ExactEnableClearsBroaderForceDisabled(t *testing.T) {
 	}
 	if err := service.ValidateModelAccess(context.Background(), core.ModelSelector{Provider: "openai", Model: "gpt-4o"}); err != nil {
 		t.Fatalf("ValidateModelAccess() error = %v, want nil", err)
+	}
+}
+
+func TestService_GlobalOverrideActsAsBroadestMatch(t *testing.T) {
+	service, err := NewService(
+		newTestStore(
+			Override{Selector: "/", Enabled: boolPtr(true)},
+			Override{Selector: "openai/", ForceDisabled: true},
+			Override{Selector: "openai/gpt-4o", Enabled: boolPtr(true)},
+		),
+		testCatalog{providerNames: []string{"openai", "anthropic"}},
+		false,
+	)
+	if err != nil {
+		t.Fatalf("NewService() error = %v", err)
+	}
+	if err := service.Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+
+	globalOnly := service.EffectiveState(core.ModelSelector{Provider: "anthropic", Model: "claude-3-7-sonnet"})
+	if !globalOnly.Enabled {
+		t.Fatal("EffectiveState().Enabled = false, want true when global enable applies")
+	}
+	if globalOnly.ForceDisabled {
+		t.Fatal("EffectiveState().ForceDisabled = true, want false for global enable")
+	}
+
+	providerWide := service.EffectiveState(core.ModelSelector{Provider: "openai", Model: "gpt-5"})
+	if providerWide.Enabled {
+		t.Fatal("EffectiveState().Enabled = true, want false when provider-wide force_disabled overrides global enable")
+	}
+	if !providerWide.ForceDisabled {
+		t.Fatal("EffectiveState().ForceDisabled = false, want true for provider-wide force_disabled")
+	}
+
+	exact := service.EffectiveState(core.ModelSelector{Provider: "openai", Model: "gpt-4o"})
+	if !exact.Enabled {
+		t.Fatal("EffectiveState().Enabled = false, want true when exact enable overrides broader rules")
+	}
+	if exact.ForceDisabled {
+		t.Fatal("EffectiveState().ForceDisabled = true, want false after exact enable override")
 	}
 }
 

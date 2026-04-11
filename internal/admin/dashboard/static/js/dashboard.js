@@ -311,6 +311,9 @@ function dashboard() {
             if (typeof this.fetchAliases === 'function') {
                 requests.push(this.fetchAliases());
             }
+            if (typeof this.fetchModelOverrides === 'function') {
+                requests.push(this.fetchModelOverrides());
+            }
             if (typeof this.fetchExecutionPlansPage === 'function') {
                 requests.push(this.fetchExecutionPlansPage());
             }

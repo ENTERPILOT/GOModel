@@ -34,7 +34,11 @@ test('provider status summary and badge helpers map health states to stable clas
     assert.equal(module.providerStatusBadgeClass('healthy'), 'is-healthy');
     assert.equal(module.providerStatusBadgeClass('unhealthy'), 'is-unhealthy');
     assert.equal(module.providerStatusRatioText(), '1/2');
+    assert.equal(module.providerStatusHasIssues(), true);
     assert.equal(module.providerStatusSummaryText(), '1 provider needs attention');
+
+    module.providerStatus.summary = { total: 2, healthy: 2, degraded: 0, unhealthy: 0, overall_status: 'healthy' };
+    assert.equal(module.providerStatusHasIssues(), false);
 });
 
 test('provider helper methods format configured models and resilience summaries', () => {
@@ -67,6 +71,9 @@ test('provider helper methods format configured models and resilience summaries'
     assert.equal(module.providerRetrySummary(provider), '3 retries, 1s initial, 30s max, factor 2, jitter 0.1');
     assert.equal(module.providerCircuitBreakerSummary(provider), '5 fail, 2 success, 30s timeout');
     assert.equal(module.providerLastChecked(provider), '2026-04-10T12:00:00Z');
+    assert.equal(module.providerTypeLabel({ name: 'openai-primary', type: 'openai' }), 'openai');
+    assert.equal(module.providerTypeLabel({ name: 'openai', type: 'openai' }), '');
+    assert.equal(module.providerTypeLabel({ name: 'azure-east', config: { type: 'azure' } }), 'azure');
 });
 
 test('provider detail toggle persists in browser storage and last check formatting uses time-only text', () => {
@@ -103,4 +110,32 @@ test('provider detail toggle persists in browser storage and last check formatti
 
     assert.equal(module.providerLastCheckedTime(provider), '14:00:00');
     assert.equal(module.providerLastCheckedTitle(provider), '2026-04-10 14:00:00');
+});
+
+test('provider status summary scrolls to providers overview section', () => {
+    const calls = [];
+    const section = {
+        scrollIntoView(options) {
+            calls.push(['scrollIntoView', options]);
+        },
+        focus(options) {
+            calls.push(['focus', options]);
+        }
+    };
+    const module = createProvidersModule({
+        window: {
+            document: {
+                getElementById(id) {
+                    return id === 'provider-status-section' ? section : null;
+                }
+            }
+        }
+    });
+
+    module.scrollToProviderStatusSection();
+
+    assert.deepEqual(JSON.parse(JSON.stringify(calls)), [
+        ['scrollIntoView', { behavior: 'smooth', block: 'start' }],
+        ['focus', { preventScroll: true }]
+    ]);
 });

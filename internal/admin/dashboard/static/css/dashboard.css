@@ -723,20 +723,8 @@ body {
     font-size: 14px;
 }
 
-/* Provider status */
-.provider-status-strip {
-    margin-bottom: 24px;
-}
-
 .provider-status-flag {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 18px;
-    padding: 16px 18px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
+    grid-column: span 2;
 }
 
 .provider-status-flag.is-healthy {
@@ -754,47 +742,43 @@ body {
     background: color-mix(in srgb, var(--danger) 10%, var(--bg-surface));
 }
 
-.provider-status-flag-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.provider-status-value {
+    margin-bottom: 8px;
 }
 
-.provider-status-flag-label {
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-muted);
+.provider-status-card-link {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    color: var(--accent-strong);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
 }
 
-.provider-status-flag-note {
+.provider-status-card-link:hover {
+    color: var(--text);
+    text-decoration: underline;
+}
+
+.provider-status-card-link:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+.provider-status-card-note {
+    display: block;
     font-size: 13px;
     color: var(--text-muted);
-}
-
-.provider-status-flag-metric {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
-    min-width: 120px;
-}
-
-.provider-status-flag-ratio {
-    font-size: 30px;
-    font-weight: 700;
-    letter-spacing: -0.04em;
-}
-
-.provider-status-flag-text {
-    font-size: 13px;
-    color: var(--text-muted);
-    text-align: right;
 }
 
 .provider-status-section {
     margin-top: 28px;
+    scroll-margin-top: 24px;
 }
 
 .provider-status-section-header {
@@ -888,13 +872,16 @@ body {
 }
 
 .provider-status-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
     font-size: 16px;
     font-weight: 700;
     letter-spacing: -0.02em;
 }
 
-.provider-status-type {
-    margin-top: 4px;
+.provider-status-name-type {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -1160,6 +1147,13 @@ body {
     border-bottom: 1px solid var(--border);
 }
 
+.data-table th.model-actions-header {
+    text-align: right;
+    min-width: 156px;
+    width: 1%;
+    white-space: nowrap;
+}
+
 .data-table td {
     padding: 10px 16px;
     border-bottom: 1px solid var(--border);
@@ -1245,6 +1239,16 @@ td.col-price {
     border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
 }
 
+.table-action-btn-active {
+    color: var(--accent-strong);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg));
+    border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+}
+
+.table-action-btn-active:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--accent) 18%, var(--bg-surface-hover));
+}
+
 .table-icon-btn {
     width: 32px;
     min-width: 32px;
@@ -1252,6 +1256,22 @@ td.col-price {
     padding: 0;
     gap: 0;
     border-radius: 999px;
+}
+
+.table-icon-btn.table-action-btn-active {
+    position: relative;
+}
+
+.table-icon-btn.table-action-btn-active::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px var(--bg-surface);
 }
 
 .table-icon-svg {
@@ -1284,6 +1304,52 @@ td.col-price {
 .model-name-secondary {
     font-size: 12px;
     color: var(--text-muted);
+}
+
+.provider-group-row td {
+    background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.provider-group-row:hover td {
+    background: color-mix(in srgb, var(--accent) 8%, var(--bg));
+}
+
+.provider-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.provider-group-meta {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.provider-group-title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.provider-group-type,
+.provider-group-count,
+.provider-group-summary {
+    color: var(--text-muted);
+}
+
+.provider-group-type,
+.provider-group-count {
+    font-size: 12px;
+}
+
+.provider-group-summary {
+    font-size: 12px;
 }
 
 .alias-kind-badge {
@@ -1330,6 +1396,7 @@ td.col-price {
     flex-wrap: wrap;
     gap: 8px;
     align-items: center;
+    justify-content: flex-end;
 }
 
 .alias-toggle {
@@ -1518,6 +1585,7 @@ td.col-price {
 }
 
 .model-row-actions {
+    text-align: right;
     width: 170px;
 }
 
@@ -1536,6 +1604,10 @@ td.col-price {
     font-size: 12px;
     line-height: 1;
     white-space: nowrap;
+}
+
+.model-access-state-badge:empty {
+    display: none;
 }
 
 .model-access-state-badge.is-enabled {
@@ -2493,6 +2565,18 @@ body.conversation-drawer-open {
     border-color: color-mix(in srgb, var(--accent) 78%, #000 12%);
 }
 
+.pagination-btn-danger-outline {
+    color: var(--danger);
+    border-color: color-mix(in srgb, var(--danger) 55%, var(--border));
+    background: transparent;
+    font-weight: 600;
+}
+
+.pagination-btn-danger-outline:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--danger) 10%, var(--bg));
+    border-color: color-mix(in srgb, var(--danger) 75%, var(--border));
+}
+
 .pagination-btn-with-icon {
     display: inline-flex;
     align-items: center;
@@ -2641,11 +2725,6 @@ body.conversation-drawer-open {
 
 .contribution-calendar-summary {
     font-size: 12px;
-    color: var(--text-muted);
-}
-
-.contribution-calendar-timezone {
-    font-size: 11px;
     color: var(--text-muted);
 }
 
@@ -2974,17 +3053,7 @@ body.conversation-drawer-open {
     .cards { grid-template-columns: repeat(2, 1fr); }
 
     .provider-status-flag {
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .provider-status-flag-metric {
-        align-items: flex-start;
-        min-width: 0;
-    }
-
-    .provider-status-flag-text {
-        text-align: left;
+        grid-column: span 1;
     }
 
     .provider-status-meta {
@@ -3112,7 +3181,8 @@ body.conversation-drawer-open {
     }
     .alias-actions-cell,
     .aliases-editor-header,
-    .model-name-primary {
+    .model-name-primary,
+    .provider-group-header {
         flex-direction: column;
         align-items: flex-start;
     }

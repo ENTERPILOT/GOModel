@@ -99,21 +99,28 @@ test('overview page shows provider status summary and per-provider cards keyed b
     const indexTemplate = readFixture('../../../templates/index.html');
     const css = readFixture('../../css/dashboard.css');
 
-    assert.match(indexTemplate, /class="provider-status-strip" x-show="providerStatus\.summary\.total > 0"/);
-    assert.match(indexTemplate, /Provider Status/);
-    assert.match(indexTemplate, /Counted by configured provider name, not provider type\./);
-    assert.match(indexTemplate, /class="provider-status-section" x-show="providerStatus\.providers\.length > 0"/);
+    assert.doesNotMatch(indexTemplate, /class="provider-status-strip"/);
+    assert.match(indexTemplate, /class="card provider-status-flag" x-show="providerStatus\.summary\.total > 0"/);
+    assert.match(indexTemplate, /Local Cache Output Tokens[\s\S]*class="card provider-status-flag"[\s\S]*<!-- Usage Chart -->/);
+    assert.match(indexTemplate, /<div class="card-label">Provider Status<\/div>[\s\S]*class="card-value provider-status-value"[\s\S]*providerStatusRatioText\(\)/);
+    assert.match(indexTemplate, /class="provider-status-card-link"[\s\S]*x-show="providerStatusHasIssues\(\)"[\s\S]*@click="scrollToProviderStatusSection\(\)"/);
+    assert.doesNotMatch(indexTemplate, /Counted by configured provider name, not provider type\./);
+    assert.match(indexTemplate, /@click="scrollToProviderStatusSection\(\)"/);
+    assert.match(indexTemplate, /id="provider-status-section" class="provider-status-section" tabindex="-1" x-show="providerStatus\.providers\.length > 0"/);
     assert.match(indexTemplate, /<h3>Providers Overview<\/h3>/);
     assert.match(indexTemplate, /class="provider-status-toggle"[\s\S]*role="switch"[\s\S]*@click="toggleProviderStatusDetails\(\)"/);
-    assert.match(indexTemplate, /x-text="provider\.name"/);
-    assert.match(indexTemplate, /x-text="provider\.type \|\| provider\.config\.type \|\| '-'"/);
+    assert.match(indexTemplate, /class="provider-status-name"[\s\S]*x-text="provider\.name"[\s\S]*class="provider-status-name-type"[\s\S]*providerTypeLabel\(provider\)/);
+    assert.doesNotMatch(indexTemplate, /class="provider-status-type"/);
     assert.match(indexTemplate, /x-text="providerLastCheckedTime\(provider\)"/);
     assert.match(indexTemplate, /:title="providerLastCheckedTitle\(provider\)"/);
     assert.match(indexTemplate, /class="provider-status-details"[\s\S]*providerStatusDetailsExpanded/);
 
     const stripRule = readCSSRule(css, '.provider-status-flag');
-    assert.match(stripRule, /display:\s*flex/);
-    assert.match(stripRule, /justify-content:\s*space-between/);
+    assert.match(stripRule, /grid-column:\s*span 2/);
+
+    const linkRule = readCSSRule(css, '.provider-status-card-link');
+    assert.match(linkRule, /background:\s*transparent/);
+    assert.match(linkRule, /text-align:\s*left/);
 
     const gridRule = readCSSRule(css, '.provider-status-grid');
     assert.match(gridRule, /display:\s*grid/);
@@ -287,6 +294,9 @@ test('alias rows use a shared icon-only edit action', () => {
         indexTemplate,
         /class="table-action-btn table-icon-btn"[\s\S]*:aria-label="'Edit alias ' \+ row\.alias\.name"[\s\S]*@click="openAliasEdit\(row\.alias\)"[\s\S]*{{template "edit-icon"}}/
     );
+    assert.match(indexTemplate, /x-show="modelOverrideFormOpen" x-ref="modelOverrideEditor"/);
+    assert.doesNotMatch(indexTemplate, /Model overrides feature is unavailable\./);
+    assert.doesNotMatch(indexTemplate, /!modelOverridesAvailable && !authError/);
     assert.match(editIconTemplate, /{{define "edit-icon"}}/);
 });
 

@@ -22,6 +22,8 @@ type compiledOverride struct {
 type snapshot struct {
 	order         []string
 	bySelector    map[string]Override
+	global        compiledOverride
+	hasGlobal     bool
 	modelWide     map[string]compiledOverride
 	providerWide  map[string]compiledOverride
 	exact         map[string]compiledOverride
@@ -54,6 +56,8 @@ func NewService(store Store, catalog Catalog, defaultEnabled bool) (*Service, er
 	service.current.Store(snapshot{
 		order:         []string{},
 		bySelector:    map[string]Override{},
+		global:        compiledOverride{},
+		hasGlobal:     false,
 		modelWide:     map[string]compiledOverride{},
 		providerWide:  map[string]compiledOverride{},
 		exact:         map[string]compiledOverride{},
@@ -95,6 +99,8 @@ func (s *Service) snapshot() snapshot {
 		return snapshot{
 			order:         []string{},
 			bySelector:    map[string]Override{},
+			global:        compiledOverride{},
+			hasGlobal:     false,
 			modelWide:     map[string]compiledOverride{},
 			providerWide:  map[string]compiledOverride{},
 			exact:         map[string]compiledOverride{},
@@ -108,6 +114,8 @@ func (s *Service) buildSnapshot(overrides []Override) (snapshot, error) {
 	next := snapshot{
 		order:         make([]string, 0, len(overrides)),
 		bySelector:    make(map[string]Override, len(overrides)),
+		global:        compiledOverride{},
+		hasGlobal:     false,
 		modelWide:     make(map[string]compiledOverride),
 		providerWide:  make(map[string]compiledOverride),
 		exact:         make(map[string]compiledOverride),
@@ -124,6 +132,9 @@ func (s *Service) buildSnapshot(overrides []Override) (snapshot, error) {
 
 		compiled := compiledOverride{override: normalized}
 		switch normalized.ScopeKind() {
+		case ScopeGlobal:
+			next.global = compiled
+			next.hasGlobal = true
 		case ScopeProviderModel:
 			next.exact[exactMatchKey(normalized.ProviderName, normalized.Model)] = compiled
 		case ScopeProvider:
@@ -435,6 +446,9 @@ func (snap snapshot) effectiveState(selector core.ModelSelector) EffectiveState 
 		addAllowed(rule.override.AllowedOnlyForUserPaths)
 	}
 
+	if snap.hasGlobal {
+		apply(snap.global, true)
+	}
 	if modelWide, ok := snap.modelWide[model]; ok {
 		apply(modelWide, true)
 	}

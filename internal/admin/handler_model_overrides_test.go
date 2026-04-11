@@ -152,6 +152,92 @@ func TestListModels_IncludesModelAccessState(t *testing.T) {
 	}
 }
 
+func TestListModels_AppliesProviderWideOverrideToConcreteModels(t *testing.T) {
+	registry := newModelOverrideRegistry(t)
+	service := newModelOverrideService(t, newModelOverrideTestStore(modeloverrides.Override{
+		Selector:      "openai/",
+		ForceDisabled: true,
+	}), true)
+
+	h := NewHandler(nil, registry, WithModelOverrides(service))
+	c, rec := newHandlerContext("/admin/api/v1/models")
+
+	if err := h.ListModels(c); err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var body []modelInventoryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("len(body) = %d, want 1", len(body))
+	}
+
+	row := body[0]
+	if row.Access.Selector != "openai/gpt-4o" {
+		t.Fatalf("row.Access.Selector = %q, want openai/gpt-4o", row.Access.Selector)
+	}
+	if row.Access.DefaultEnabled != true {
+		t.Fatal("row.Access.DefaultEnabled = false, want true")
+	}
+	if row.Access.EffectiveEnabled {
+		t.Fatal("row.Access.EffectiveEnabled = true, want false")
+	}
+	if !row.Access.ForceDisabled {
+		t.Fatal("row.Access.ForceDisabled = false, want true")
+	}
+	if row.Access.Override != nil {
+		t.Fatalf("row.Access.Override = %#v, want nil for provider-wide override", row.Access.Override)
+	}
+}
+
+func TestListModels_AppliesGlobalOverrideToConcreteModels(t *testing.T) {
+	registry := newModelOverrideRegistry(t)
+	service := newModelOverrideService(t, newModelOverrideTestStore(modeloverrides.Override{
+		Selector:      "/",
+		ForceDisabled: true,
+	}), true)
+
+	h := NewHandler(nil, registry, WithModelOverrides(service))
+	c, rec := newHandlerContext("/admin/api/v1/models")
+
+	if err := h.ListModels(c); err != nil {
+		t.Fatalf("ListModels() error = %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var body []modelInventoryResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("len(body) = %d, want 1", len(body))
+	}
+
+	row := body[0]
+	if row.Access.Selector != "openai/gpt-4o" {
+		t.Fatalf("row.Access.Selector = %q, want openai/gpt-4o", row.Access.Selector)
+	}
+	if row.Access.DefaultEnabled != true {
+		t.Fatal("row.Access.DefaultEnabled = false, want true")
+	}
+	if row.Access.EffectiveEnabled {
+		t.Fatal("row.Access.EffectiveEnabled = true, want false")
+	}
+	if !row.Access.ForceDisabled {
+		t.Fatal("row.Access.ForceDisabled = false, want true")
+	}
+	if row.Access.Override != nil {
+		t.Fatalf("row.Access.Override = %#v, want nil for global override", row.Access.Override)
+	}
+}
+
 func TestModelOverrideEndpointsReturn503WhenServiceUnavailable(t *testing.T) {
 	h := NewHandler(nil, nil)
 	e := echo.New()
@@ -227,6 +313,90 @@ func TestUpsertAndDeleteModelOverride(t *testing.T) {
 	deleteRec := httptest.NewRecorder()
 	deleteCtx := e.NewContext(deleteReq, deleteRec)
 	deleteCtx.SetPathValues(echo.PathValues{{Name: "selector", Value: "openai/gpt-4o"}})
+
+	if err := h.DeleteModelOverride(deleteCtx); err != nil {
+		t.Fatalf("DeleteModelOverride() error = %v", err)
+	}
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204", deleteRec.Code)
+	}
+}
+
+func TestUpsertAndDeleteProviderWideModelOverride(t *testing.T) {
+	service := newModelOverrideService(t, newModelOverrideTestStore(), true)
+	h := NewHandler(nil, nil, WithModelOverrides(service))
+	e := echo.New()
+
+	putReq := httptest.NewRequest(http.MethodPut, "/admin/api/v1/model-overrides/openai%2F", bytes.NewBufferString(`{"force_disabled":true}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	putCtx := e.NewContext(putReq, putRec)
+	putCtx.SetPathValues(echo.PathValues{{Name: "selector", Value: "openai/"}})
+
+	if err := h.UpsertModelOverride(putCtx); err != nil {
+		t.Fatalf("UpsertModelOverride() error = %v", err)
+	}
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, want 200", putRec.Code)
+	}
+
+	var body modeloverrides.Override
+	if err := json.Unmarshal(putRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode upsert response: %v", err)
+	}
+	if body.Selector != "openai/" {
+		t.Fatalf("body.Selector = %q, want openai/", body.Selector)
+	}
+	if !body.ForceDisabled {
+		t.Fatal("body.ForceDisabled = false, want true")
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/api/v1/model-overrides/openai%2F", nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "selector", Value: "openai/"}})
+
+	if err := h.DeleteModelOverride(deleteCtx); err != nil {
+		t.Fatalf("DeleteModelOverride() error = %v", err)
+	}
+	if deleteRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204", deleteRec.Code)
+	}
+}
+
+func TestUpsertAndDeleteGlobalModelOverride(t *testing.T) {
+	service := newModelOverrideService(t, newModelOverrideTestStore(), true)
+	h := NewHandler(nil, nil, WithModelOverrides(service))
+	e := echo.New()
+
+	putReq := httptest.NewRequest(http.MethodPut, "/admin/api/v1/model-overrides/%2F", bytes.NewBufferString(`{"force_disabled":true}`))
+	putReq.Header.Set("Content-Type", "application/json")
+	putRec := httptest.NewRecorder()
+	putCtx := e.NewContext(putReq, putRec)
+	putCtx.SetPathValues(echo.PathValues{{Name: "selector", Value: "/"}})
+
+	if err := h.UpsertModelOverride(putCtx); err != nil {
+		t.Fatalf("UpsertModelOverride() error = %v", err)
+	}
+	if putRec.Code != http.StatusOK {
+		t.Fatalf("put status = %d, want 200", putRec.Code)
+	}
+
+	var body modeloverrides.Override
+	if err := json.Unmarshal(putRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode upsert response: %v", err)
+	}
+	if body.Selector != "/" {
+		t.Fatalf("body.Selector = %q, want /", body.Selector)
+	}
+	if !body.ForceDisabled {
+		t.Fatal("body.ForceDisabled = false, want true")
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/admin/api/v1/model-overrides/%2F", nil)
+	deleteRec := httptest.NewRecorder()
+	deleteCtx := e.NewContext(deleteReq, deleteRec)
+	deleteCtx.SetPathValues(echo.PathValues{{Name: "selector", Value: "/"}})
 
 	if err := h.DeleteModelOverride(deleteCtx); err != nil {
 		t.Fatalf("DeleteModelOverride() error = %v", err)

@@ -172,18 +172,23 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 	app.aliases = aliasResult
 
 	var modelOverrideResult *modeloverrides.Result
-	sharedModelOverrideStorage := firstSharedStorage(auditResult.Storage, usageResult.Storage, batchResult.Storage, aliasResult.Storage)
-	if sharedModelOverrideStorage != nil {
-		modelOverrideResult, err = modeloverrides.NewWithSharedStorage(ctx, appCfg, sharedModelOverrideStorage, providerResult.Registry)
-	} else {
-		modelOverrideResult, err = modeloverrides.New(ctx, appCfg, providerResult.Registry)
-	}
-	if err != nil {
-		closeErr := errors.Join(app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
-		if closeErr != nil {
-			return nil, fmt.Errorf("failed to initialize model overrides: %w (also: close error: %v)", err, closeErr)
+	if appCfg.Models.OverridesEnabled {
+		sharedModelOverrideStorage := firstSharedStorage(auditResult.Storage, usageResult.Storage, batchResult.Storage, aliasResult.Storage)
+		if sharedModelOverrideStorage != nil {
+			modelOverrideResult, err = modeloverrides.NewWithSharedStorage(ctx, appCfg, sharedModelOverrideStorage, providerResult.Registry)
+		} else {
+			modelOverrideResult, err = modeloverrides.New(ctx, appCfg, providerResult.Registry)
 		}
-		return nil, fmt.Errorf("failed to initialize model overrides: %w", err)
+		if err != nil {
+			closeErr := errors.Join(app.aliases.Close(), app.batch.Close(), app.usage.Close(), app.audit.Close(), app.providers.Close())
+			if closeErr != nil {
+				return nil, fmt.Errorf("failed to initialize model overrides: %w (also: close error: %v)", err, closeErr)
+			}
+			return nil, fmt.Errorf("failed to initialize model overrides: %w", err)
+		}
+	} else {
+		modelOverrideResult = &modeloverrides.Result{}
+		slog.Info("model overrides disabled")
 	}
 	app.modelOverrides = modelOverrideResult
 

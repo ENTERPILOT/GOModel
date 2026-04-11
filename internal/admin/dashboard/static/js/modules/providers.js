@@ -117,6 +117,13 @@
                 return String(summary.healthy || 0) + '/' + String(summary.total || 0);
             },
 
+            providerStatusHasIssues() {
+                const summary = this.providerStatus && this.providerStatus.summary ? this.providerStatus.summary : {};
+                const total = Number(summary.total || 0);
+                const healthy = Number(summary.healthy || 0);
+                return total > 0 && healthy < total;
+            },
+
             providerStatusSummaryText() {
                 const summary = this.providerStatus && this.providerStatus.summary ? this.providerStatus.summary : {};
                 const total = Number(summary.total || 0);
@@ -126,6 +133,23 @@
                 if (healthy === 0) return 'No configured providers are healthy';
                 return String(total - healthy) + ' provider' + (total - healthy === 1 ? '' : 's') +
                     ' need' + (total - healthy === 1 ? 's' : '') + ' attention';
+            },
+
+            scrollToProviderStatusSection() {
+                const doc = global.document;
+                if (!doc || typeof doc.getElementById !== 'function') {
+                    return;
+                }
+                const section = doc.getElementById('provider-status-section');
+                if (!section) {
+                    return;
+                }
+                if (typeof section.scrollIntoView === 'function') {
+                    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+                if (typeof section.focus === 'function') {
+                    section.focus({ preventScroll: true });
+                }
             },
 
             providerLastChecked(provider) {
@@ -157,6 +181,18 @@
                     return this.formatTimestamp(timestamp);
                 }
                 return String(timestamp);
+            },
+
+            providerTypeLabel(provider) {
+                if (!provider) {
+                    return '';
+                }
+                const name = String(provider.name || '').trim();
+                const type = String(provider.type || (provider.config && provider.config.type) || '').trim();
+                if (!type || type === name) {
+                    return '';
+                }
+                return type;
             },
 
             providerRetrySummary(provider) {
