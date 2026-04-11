@@ -143,3 +143,80 @@ test('renderBarChart prefers provider_name in model labels when available', () =
 
     assert.equal(JSON.stringify(module.usageBarChart.data.labels), JSON.stringify(['primary-openai/gpt-4o']));
 });
+
+test('renderUserPathChart recreates the user path chart and uses usage mode values', () => {
+    FakeChart.instances = [];
+    const { module } = createChartsContext();
+    module.page = 'usage';
+    module.usageMode = 'tokens';
+    module.userPathUsage = [
+        { user_path: '/team/alpha', input_tokens: 5, output_tokens: 7, total_tokens: 12, total_cost: 0.01 },
+        { user_path: '/team/beta', input_tokens: 11, output_tokens: 13, total_tokens: 24, total_cost: 0.02 }
+    ];
+
+    module.renderUserPathChart();
+
+    assert.equal(FakeChart.instances.length, 1);
+    const firstChart = module.usageUserPathChart;
+    assert.equal(JSON.stringify(firstChart.data.labels), JSON.stringify(['/team/beta', '/team/alpha']));
+    assert.equal(JSON.stringify(firstChart.data.datasets[0].data), JSON.stringify([24, 12]));
+
+    module.usageMode = 'costs';
+    module.userPathUsage = [
+        { user_path: '/team/alpha', input_tokens: 21, output_tokens: 34, total_tokens: 55, total_cost: 0.03 }
+    ];
+    module.renderUserPathChart();
+
+    assert.notStrictEqual(module.usageUserPathChart, firstChart);
+    assert.equal(FakeChart.instances.length, 2);
+    assert.equal(firstChart.destroyCalls, 1);
+    assert.equal(JSON.stringify(module.usageUserPathChart.data.labels), JSON.stringify(['/team/alpha']));
+    assert.equal(JSON.stringify(module.usageUserPathChart.data.datasets[0].data), JSON.stringify([0.03]));
+});
+
+test('usage chart table rows use the same selected metric ordering as charts', () => {
+    const { module } = createChartsContext();
+    module.usageMode = 'tokens';
+    module.modelUsage = [
+        { model: 'small', input_tokens: 1, output_tokens: 2, total_cost: 9 },
+        { model: 'large', input_tokens: 10, output_tokens: 20, total_cost: 1 }
+    ];
+
+    assert.equal(JSON.stringify(module.modelUsageTableRows().map((row) => row.model)), JSON.stringify(['large', 'small']));
+
+    module.usageMode = 'costs';
+
+    assert.equal(JSON.stringify(module.modelUsageTableRows().map((row) => row.model)), JSON.stringify(['small', 'large']));
+});
+
+test('toggleUsageChartView switches table and chart modes and rerenders chart views', () => {
+    FakeChart.instances = [];
+    const { module } = createChartsContext();
+    module.page = 'usage';
+    module.usageMode = 'tokens';
+    module.modelUsageView = 'chart';
+    module.userPathUsageView = 'chart';
+    module.modelUsage = [
+        { model: 'gpt-5', input_tokens: 10, output_tokens: 20, total_cost: 0.01 }
+    ];
+    module.userPathUsage = [
+        { user_path: '/team/alpha', input_tokens: 10, output_tokens: 20, total_tokens: 30, total_cost: 0.01 }
+    ];
+
+    module.renderBarChart();
+    const modelChart = module.usageBarChart;
+    module.toggleUsageChartView('model', 'table');
+    module.renderBarChart();
+
+    assert.equal(module.modelUsageView, 'table');
+    assert.equal(modelChart.destroyCalls, 1);
+    assert.equal(module.usageBarChart, null);
+
+    module.toggleUsageChartView('model', 'chart');
+
+    assert.equal(module.modelUsageView, 'chart');
+    assert.notEqual(module.usageBarChart, null);
+
+    module.toggleUsageChartView('userPath', 'table');
+    assert.equal(module.userPathUsageView, 'table');
+});

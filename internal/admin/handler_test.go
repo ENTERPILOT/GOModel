@@ -24,6 +24,7 @@ type mockUsageReader struct {
 	summary           *usage.UsageSummary
 	daily             []usage.DailyUsage
 	modelUsage        []usage.ModelUsage
+	userPathUsage     []usage.UserPathUsage
 	usageLog          *usage.UsageLogResult
 	cacheOverview     *usage.CacheOverview
 	lastUsageLog      usage.UsageLogParams
@@ -31,6 +32,7 @@ type mockUsageReader struct {
 	summaryErr        error
 	dailyErr          error
 	modelUsageErr     error
+	userPathUsageErr  error
 	usageLogErr       error
 	cacheErr          error
 }
@@ -66,6 +68,13 @@ func (m *mockUsageReader) GetUsageByModel(_ context.Context, _ usage.UsageQueryP
 		return nil, m.modelUsageErr
 	}
 	return m.modelUsage, nil
+}
+
+func (m *mockUsageReader) GetUsageByUserPath(_ context.Context, _ usage.UsageQueryParams) ([]usage.UserPathUsage, error) {
+	if m.userPathUsageErr != nil {
+		return nil, m.userPathUsageErr
+	}
+	return m.userPathUsage, nil
 }
 
 func (m *mockUsageReader) GetUsageLog(_ context.Context, params usage.UsageLogParams) (*usage.UsageLogResult, error) {
@@ -484,6 +493,72 @@ func TestUsageByModel_Error(t *testing.T) {
 	c, rec := newHandlerContext("/admin/api/v1/usage/models")
 
 	if err := h.UsageByModel(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("expected 500, got %d", rec.Code)
+	}
+}
+
+// --- UsageByUserPath handler tests ---
+
+func TestUsageByUserPath_NilReader(t *testing.T) {
+	h := NewHandler(nil, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/user-paths")
+
+	if err := h.UsageByUserPath(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	if rec.Body.String() != "[]\n" {
+		t.Errorf("expected empty JSON array, got: %q", rec.Body.String())
+	}
+}
+
+func TestUsageByUserPath_Success(t *testing.T) {
+	cost := 0.75
+	reader := &mockUsageReader{
+		userPathUsage: []usage.UserPathUsage{
+			{UserPath: "/team/alpha", InputTokens: 100, OutputTokens: 50, TotalTokens: 150, TotalCost: &cost},
+		},
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/user-paths?days=30")
+
+	if err := h.UsageByUserPath(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	var userPaths []usage.UserPathUsage
+	if err := json.Unmarshal(rec.Body.Bytes(), &userPaths); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if len(userPaths) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(userPaths))
+	}
+	if userPaths[0].UserPath != "/team/alpha" {
+		t.Errorf("expected user_path /team/alpha, got %s", userPaths[0].UserPath)
+	}
+	if userPaths[0].TotalTokens != 150 {
+		t.Errorf("expected total_tokens 150, got %d", userPaths[0].TotalTokens)
+	}
+	if userPaths[0].TotalCost == nil || *userPaths[0].TotalCost != 0.75 {
+		t.Errorf("expected total_cost 0.75, got %v", userPaths[0].TotalCost)
+	}
+}
+
+func TestUsageByUserPath_Error(t *testing.T) {
+	reader := &mockUsageReader{
+		userPathUsageErr: errors.New("db failure"),
+	}
+	h := NewHandler(reader, nil)
+	c, rec := newHandlerContext("/admin/api/v1/usage/user-paths")
+
+	if err := h.UsageByUserPath(c); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if rec.Code != http.StatusInternalServerError {

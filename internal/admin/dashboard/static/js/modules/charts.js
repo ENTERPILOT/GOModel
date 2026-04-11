@@ -234,36 +234,62 @@
                 ];
             },
 
-            _barData() {
-                const sorted = [...this.modelUsage].sort((a, b) => {
-                    if (this.usageMode === 'costs') {
-                        return ((b.total_cost || 0) - (a.total_cost || 0));
-                    }
-                    return ((b.input_tokens + b.output_tokens) - (a.input_tokens + a.output_tokens));
-                });
+            _usageAggregateValue(row) {
+                if (this.usageMode === 'costs') return row.total_cost || 0;
+                return this.usageRowTotalTokens(row);
+            },
+
+            usageRowTotalTokens(row) {
+                if (row && typeof row.total_tokens === 'number') return row.total_tokens;
+                return ((row && row.input_tokens) || 0) + ((row && row.output_tokens) || 0);
+            },
+
+            _barDataFrom(items, labelFor) {
+                const sorted = this._usageRowsBySelectedValue(items);
 
                 const top = sorted.slice(0, 10);
                 const rest = sorted.slice(10);
 
-                const labels = top.map((m) => typeof this.qualifiedModelDisplay === 'function'
-                    ? this.qualifiedModelDisplay(m)
-                    : m.model);
-                const values = top.map((m) => {
-                    if (this.usageMode === 'costs') return m.total_cost || 0;
-                    return m.input_tokens + m.output_tokens;
-                });
+                const labels = top.map(labelFor);
+                const values = top.map((row) => this._usageAggregateValue(row));
 
                 if (rest.length > 0) {
                     labels.push('Other');
                     let otherVal = 0;
-                    rest.forEach((m) => {
-                        if (this.usageMode === 'costs') otherVal += (m.total_cost || 0);
-                        else otherVal += m.input_tokens + m.output_tokens;
+                    rest.forEach((row) => {
+                        otherVal += this._usageAggregateValue(row);
                     });
                     values.push(otherVal);
                 }
 
                 return { labels, values };
+            },
+
+            _usageRowsBySelectedValue(items) {
+                return [...(items || [])].sort((a, b) => {
+                    if (this.usageMode === 'costs') {
+                        return ((b.total_cost || 0) - (a.total_cost || 0));
+                    }
+                    return this._usageAggregateValue(b) - this._usageAggregateValue(a);
+                });
+            },
+
+            modelUsageTableRows() {
+                return this._usageRowsBySelectedValue(this.modelUsage || []);
+            },
+
+            userPathUsageTableRows() {
+                return this._usageRowsBySelectedValue(this.userPathUsage || []);
+            },
+
+            _barData() {
+                return this._barDataFrom(this.modelUsage, (m) => typeof this.qualifiedModelDisplay === 'function'
+                    ? this.qualifiedModelDisplay(m)
+                    : m.model);
+            },
+
+            _userPathBarData() {
+                return this._barDataFrom(this.userPathUsage || [], (u) => u.user_path || '/');
             },
 
             barLegendItems() {
@@ -276,10 +302,23 @@
                 }));
             },
 
+            toggleUsageChartView(target, view) {
+                if (target === 'model') {
+                    this.modelUsageView = view;
+                    if (view === 'chart') this.renderBarChart();
+                    return;
+                }
+
+                if (target === 'userPath') {
+                    this.userPathUsageView = view;
+                    if (view === 'chart') this.renderUserPathChart();
+                }
+            },
+
             renderBarChart(retries) {
                 if (retries === undefined) retries = 3;
                 this.$nextTick(() => {
-                    if (this.modelUsage.length === 0 || this.page !== 'usage') {
+                    if (this.modelUsage.length === 0 || this.page !== 'usage' || (this.modelUsageView || 'chart') !== 'chart') {
                         if (this.usageBarChart) {
                             this.usageBarChart.destroy();
                             this.usageBarChart = null;
@@ -306,6 +345,39 @@
                     }
 
                     this.usageBarChart = new Chart(canvas, config);
+                });
+            },
+
+            renderUserPathChart(retries) {
+                if (retries === undefined) retries = 3;
+                this.$nextTick(() => {
+                    if (!this.userPathUsage || this.userPathUsage.length === 0 || this.page !== 'usage' || (this.userPathUsageView || 'chart') !== 'chart') {
+                        if (this.usageUserPathChart) {
+                            this.usageUserPathChart.destroy();
+                            this.usageUserPathChart = null;
+                        }
+                        return;
+                    }
+
+                    const canvas = document.getElementById('usageUserPathChart');
+                    if (!canvas || canvas.offsetWidth === 0) {
+                        if (retries > 0) {
+                            setTimeout(() => this.renderUserPathChart(retries - 1), 100);
+                        }
+                        return;
+                    }
+
+                    const colors = this.chartColors();
+                    const { labels, values } = this._userPathBarData();
+                    const palette = this._barColors();
+                    const config = this._barChartConfig(colors, labels, values, palette);
+
+                    if (this.usageUserPathChart) {
+                        this.usageUserPathChart.destroy();
+                        this.usageUserPathChart = null;
+                    }
+
+                    this.usageUserPathChart = new Chart(canvas, config);
                 });
             }
         };

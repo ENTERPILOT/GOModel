@@ -432,23 +432,30 @@ func (h *Handler) DailyUsage(c *echo.Context) error {
 // @Failure      401  {object}  core.GatewayError
 // @Router       /admin/api/v1/usage/models [get]
 func (h *Handler) UsageByModel(c *echo.Context) error {
-	if h.usageReader == nil {
-		return c.JSON(http.StatusOK, []usage.ModelUsage{})
-	}
+	return usageSliceResponse(c, h.usageReader, func(ctx context.Context, params usage.UsageQueryParams) ([]usage.ModelUsage, error) {
+		return h.usageReader.GetUsageByModel(ctx, params)
+	})
+}
 
-	params, err := parseUsageParams(c)
-	if err != nil {
-		return handleError(c, err)
-	}
-
-	values, err := h.usageReader.GetUsageByModel(c.Request().Context(), params)
-	if err != nil {
-		return handleError(c, err)
-	}
-	if values == nil {
-		values = []usage.ModelUsage{}
-	}
-	return c.JSON(http.StatusOK, values)
+// UsageByUserPath handles GET /admin/api/v1/usage/user-paths
+//
+// @Summary      Get usage breakdown by user path
+// @Tags         admin
+// @Produce      json
+// @Security     BearerAuth
+// @Param        days        query     int     false  "Number of days (default 30)"
+// @Param        start_date  query     string  false  "Start date (YYYY-MM-DD)"
+// @Param        end_date    query     string  false  "End date (YYYY-MM-DD)"
+// @Param        user_path   query     string  false  "Filter by tracked user path subtree"
+// @Param        cache_mode  query     string  false  "Cache mode filter: uncached, cached, all (default uncached)"
+// @Success      200  {array}   usage.UserPathUsage
+// @Failure      400  {object}  core.GatewayError
+// @Failure      401  {object}  core.GatewayError
+// @Router       /admin/api/v1/usage/user-paths [get]
+func (h *Handler) UsageByUserPath(c *echo.Context) error {
+	return usageSliceResponse(c, h.usageReader, func(ctx context.Context, params usage.UsageQueryParams) ([]usage.UserPathUsage, error) {
+		return h.usageReader.GetUsageByUserPath(ctx, params)
+	})
 }
 
 // UsageLog handles GET /admin/api/v1/usage/log

@@ -77,13 +77,17 @@ function dashboard() {
 
         // Usage page state
         usageMode: 'tokens',
+        modelUsageView: 'chart',
+        userPathUsageView: 'chart',
         modelUsage: [],
+        userPathUsage: [],
         usageLog: { entries: [], total: 0, limit: 50, offset: 0 },
         usageLogSearch: '',
         usageLogModel: '',
         usageLogProvider: '',
         usageLogUserPath: '',
         usageBarChart: null,
+        usageUserPathChart: null,
 
         // Audit page state
         auditLog: { entries: [], total: 0, limit: 25, offset: 0 },
@@ -220,6 +224,7 @@ function dashboard() {
             this.applyTheme();
             this.renderChart();
             this.renderBarChart();
+            this.renderUserPathChart();
         },
 
         toggleTheme() {

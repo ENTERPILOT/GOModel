@@ -144,12 +144,13 @@
             },
 
             async fetchUsagePage() {
-                const requests = [this.fetchModelUsage(), this.fetchUsageLog(true)];
+                const requests = [this.fetchModelUsage(), this.fetchUserPathUsage(), this.fetchUsageLog(true)];
                 if (this.cacheAnalyticsEnabled()) {
                     requests.push(this.fetchCacheOverview());
                 }
                 await Promise.all(requests);
                 this.renderBarChart();
+                this.renderUserPathChart();
             },
 
             async fetchModelUsage() {
@@ -181,6 +182,39 @@
                 } finally {
                     if (typeof this._clearAbortableRequest === 'function') {
                         this._clearAbortableRequest('_modelUsageFetchController', controller);
+                    }
+                }
+            },
+
+            async fetchUserPathUsage() {
+                const controller = typeof this._startAbortableRequest === 'function'
+                    ? this._startAbortableRequest('_userPathUsageFetchController')
+                    : null;
+                const options = { headers: this.headers() };
+                if (controller) {
+                    options.signal = controller.signal;
+                }
+
+                try {
+                    const res = await fetch('/admin/api/v1/usage/user-paths?' + this._usageQueryStr(), options);
+                    if (!this.handleFetchResponse(res, 'usage user paths')) {
+                        this.userPathUsage = [];
+                        return;
+                    }
+                    const payload = await res.json();
+                    if (controller && controller.signal.aborted) {
+                        return;
+                    }
+                    this.userPathUsage = Array.isArray(payload) ? payload : [];
+                } catch (e) {
+                    if (typeof this._isAbortError === 'function' && this._isAbortError(e)) {
+                        return;
+                    }
+                    console.error('Failed to fetch usage by user path:', e);
+                    this.userPathUsage = [];
+                } finally {
+                    if (typeof this._clearAbortableRequest === 'function') {
+                        this._clearAbortableRequest('_userPathUsageFetchController', controller);
                     }
                 }
             },
@@ -232,6 +266,7 @@
                 const url = mode === 'costs' ? '/admin/dashboard/usage/costs' : '/admin/dashboard/usage';
                 history.pushState(null, '', url);
                 this.renderBarChart();
+                this.renderUserPathChart();
             },
 
             usageLogNextPage() {

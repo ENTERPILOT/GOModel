@@ -79,7 +79,8 @@ swagger:
 	go run github.com/swaggo/swag/cmd/swag init --generalInfo main.go \
 		--dir cmd/gomodel,internal \
 		--output cmd/gomodel/docs \
-		--outputTypes go,json
+		--outputTypes go,json \
+		--parseDependency
 
 # Run linter
 lint:

@@ -28,6 +28,12 @@ func usageGroupedProviderNameSQL(providerNameColumn, providerColumn string) stri
 	return "COALESCE(NULLIF(TRIM(" + providerNameColumn + "), ''), " + providerColumn + ")"
 }
 
+// usageGroupedUserPathSQL returns a SQL expression that collapses blank
+// user_path values to the tracked root path before grouping.
+func usageGroupedUserPathSQL(userPathColumn string) string {
+	return "COALESCE(NULLIF(TRIM(" + userPathColumn + "), ''), '/')"
+}
+
 // clampLimitOffset normalises pagination parameters:
 //   - limit defaults to 50 and is capped at 200
 //   - offset floors at 0

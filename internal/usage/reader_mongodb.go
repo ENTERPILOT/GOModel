@@ -157,6 +157,73 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 	return result, nil
 }
 
+// GetUsageByUserPath returns token and cost totals grouped by tracked user path.
+func (r *MongoDBReader) GetUsageByUserPath(ctx context.Context, params UsageQueryParams) ([]UserPathUsage, error) {
+	pipeline := bson.A{}
+	matchFilters, err := mongoUsageMatchFilters(params)
+	if err != nil {
+		return nil, err
+	}
+	if len(matchFilters) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
+	}
+
+	pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.D{
+		{Key: "_id", Value: mongoUsageGroupedUserPathExpr()},
+		{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
+		{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
+		{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},
+		{Key: "input_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$input_cost", 0}}}}}},
+		{Key: "output_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$output_cost", 0}}}}}},
+		{Key: "total_cost", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$total_cost", 0}}}}}},
+		{Key: "has_costs", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$cond", Value: bson.A{bson.D{{Key: "$gt", Value: bson.A{"$total_cost", nil}}}, 1, 0}}}}}},
+	}}})
+
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to aggregate usage by user path: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	result := make([]UserPathUsage, 0)
+	for cursor.Next(ctx) {
+		var row struct {
+			UserPath     string  `bson:"_id"`
+			InputTokens  int64   `bson:"input_tokens"`
+			OutputTokens int64   `bson:"output_tokens"`
+			TotalTokens  int64   `bson:"total_tokens"`
+			InputCost    float64 `bson:"input_cost"`
+			OutputCost   float64 `bson:"output_cost"`
+			TotalCost    float64 `bson:"total_cost"`
+			HasCosts     int     `bson:"has_costs"`
+		}
+		if err := cursor.Decode(&row); err != nil {
+			return nil, fmt.Errorf("failed to decode usage by user path row: %w", err)
+		}
+		u := UserPathUsage{
+			UserPath:     row.UserPath,
+			InputTokens:  row.InputTokens,
+			OutputTokens: row.OutputTokens,
+			TotalTokens:  row.TotalTokens,
+		}
+		if u.UserPath == "" {
+			u.UserPath = "/"
+		}
+		if row.HasCosts > 0 {
+			u.InputCost = &row.InputCost
+			u.OutputCost = &row.OutputCost
+			u.TotalCost = &row.TotalCost
+		}
+		result = append(result, u)
+	}
+
+	if err := cursor.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage by user path cursor: %w", err)
+	}
+
+	return result, nil
+}
+
 func mongoUsageGroupedProviderNameExpr() bson.D {
 	trimmedProviderName := bson.D{{Key: "$trim", Value: bson.D{
 		{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$provider_name", ""}}}},
@@ -165,6 +232,17 @@ func mongoUsageGroupedProviderNameExpr() bson.D {
 		bson.D{{Key: "$ne", Value: bson.A{trimmedProviderName, ""}}},
 		trimmedProviderName,
 		bson.D{{Key: "$trim", Value: bson.D{{Key: "input", Value: "$provider"}}}},
+	}}}
+}
+
+func mongoUsageGroupedUserPathExpr() bson.D {
+	trimmedUserPath := bson.D{{Key: "$trim", Value: bson.D{
+		{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$user_path", ""}}}},
+	}}}
+	return bson.D{{Key: "$cond", Value: bson.A{
+		bson.D{{Key: "$ne", Value: bson.A{trimmedUserPath, ""}}},
+		trimmedUserPath,
+		"/",
 	}}}
 }
 

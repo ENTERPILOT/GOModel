@@ -82,6 +82,41 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 	return result, nil
 }
 
+// GetUsageByUserPath returns token and cost totals grouped by tracked user path.
+func (r *PostgreSQLReader) GetUsageByUserPath(ctx context.Context, params UsageQueryParams) ([]UserPathUsage, error) {
+	conditions, args, _, err := pgUsageConditions(params, 1)
+	if err != nil {
+		return nil, err
+	}
+	where := buildWhereClause(conditions)
+	userPathExpr := usageGroupedUserPathSQL("user_path")
+
+	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
+	query := `SELECT ` + userPathExpr + ` AS user_path, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
+			FROM "usage"` + where + ` GROUP BY ` + userPathExpr
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query usage by user path: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]UserPathUsage, 0)
+	for rows.Next() {
+		var u UserPathUsage
+		if err := rows.Scan(&u.UserPath, &u.InputTokens, &u.OutputTokens, &u.TotalTokens, &u.InputCost, &u.OutputCost, &u.TotalCost); err != nil {
+			return nil, fmt.Errorf("failed to scan usage by user path row: %w", err)
+		}
+		result = append(result, u)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating usage by user path rows: %w", err)
+	}
+
+	return result, nil
+}
+
 // GetUsageLog returns a paginated list of individual usage log entries.
 func (r *PostgreSQLReader) GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error) {
 	limit, offset := clampLimitOffset(params.Limit, params.Offset)

@@ -559,6 +559,123 @@ func TestSQLiteReaderGetUsageByModel_CollapsesBlankProviderNameIntoProviderGroup
 	}
 }
 
+func TestSQLiteReaderGetUsageByUserPath_GroupsByTrackedPath(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open sqlite database: %v", err)
+	}
+	defer db.Close()
+
+	store, err := NewSQLiteStore(db, 0)
+	if err != nil {
+		t.Fatalf("failed to create sqlite store: %v", err)
+	}
+
+	ctx := context.Background()
+	err = store.WriteBatch(ctx, []*UsageEntry{
+		{
+			ID:           "usage-root-blank",
+			RequestID:    "req-root-blank",
+			ProviderID:   "provider-root-blank",
+			Timestamp:    time.Date(2026, 4, 7, 10, 0, 0, 0, time.UTC),
+			Model:        "gpt-5",
+			Provider:     "openai",
+			Endpoint:     "/v1/chat/completions",
+			UserPath:     "",
+			InputTokens:  10,
+			OutputTokens: 20,
+			TotalTokens:  30,
+		},
+		{
+			ID:           "usage-root-explicit",
+			RequestID:    "req-root-explicit",
+			ProviderID:   "provider-root-explicit",
+			Timestamp:    time.Date(2026, 4, 7, 10, 1, 0, 0, time.UTC),
+			Model:        "gpt-5",
+			Provider:     "openai",
+			Endpoint:     "/v1/chat/completions",
+			UserPath:     "/",
+			InputTokens:  5,
+			OutputTokens: 15,
+			TotalTokens:  20,
+		},
+		{
+			ID:           "usage-alpha",
+			RequestID:    "req-alpha",
+			ProviderID:   "provider-alpha",
+			Timestamp:    time.Date(2026, 4, 7, 10, 2, 0, 0, time.UTC),
+			Model:        "gpt-5",
+			Provider:     "openai",
+			Endpoint:     "/v1/chat/completions",
+			UserPath:     "/team/alpha",
+			InputTokens:  30,
+			OutputTokens: 40,
+			TotalTokens:  70,
+		},
+		{
+			ID:           "usage-beta",
+			RequestID:    "req-beta",
+			ProviderID:   "provider-beta",
+			Timestamp:    time.Date(2026, 4, 7, 10, 3, 0, 0, time.UTC),
+			Model:        "gpt-5",
+			Provider:     "openai",
+			Endpoint:     "/v1/chat/completions",
+			UserPath:     "/team/beta",
+			InputTokens:  50,
+			OutputTokens: 60,
+			TotalTokens:  110,
+		},
+	})
+	if err != nil {
+		t.Fatalf("failed to seed usage entries: %v", err)
+	}
+
+	reader, err := NewSQLiteReader(db)
+	if err != nil {
+		t.Fatalf("failed to create sqlite reader: %v", err)
+	}
+
+	got, err := reader.GetUsageByUserPath(ctx, UsageQueryParams{})
+	if err != nil {
+		t.Fatalf("GetUsageByUserPath returned error: %v", err)
+	}
+
+	byPath := make(map[string]UserPathUsage, len(got))
+	for _, row := range got {
+		byPath[row.UserPath] = row
+	}
+	if len(byPath) != 3 {
+		t.Fatalf("expected 3 grouped usage rows, got %d: %#v", len(byPath), got)
+	}
+	if byPath["/"].InputTokens != 15 {
+		t.Fatalf("expected root input tokens 15, got %d", byPath["/"].InputTokens)
+	}
+	if byPath["/"].TotalTokens != 50 {
+		t.Fatalf("expected root total tokens 50, got %d", byPath["/"].TotalTokens)
+	}
+	if byPath["/team/alpha"].TotalTokens != 70 {
+		t.Fatalf("expected alpha total tokens 70, got %d", byPath["/team/alpha"].TotalTokens)
+	}
+	if byPath["/team/beta"].OutputTokens != 60 {
+		t.Fatalf("expected beta output tokens 60, got %d", byPath["/team/beta"].OutputTokens)
+	}
+
+	filtered, err := reader.GetUsageByUserPath(ctx, UsageQueryParams{UserPath: "/team"})
+	if err != nil {
+		t.Fatalf("filtered GetUsageByUserPath returned error: %v", err)
+	}
+	filteredByPath := make(map[string]UserPathUsage, len(filtered))
+	for _, row := range filtered {
+		filteredByPath[row.UserPath] = row
+	}
+	if len(filteredByPath) != 2 {
+		t.Fatalf("expected 2 filtered grouped usage rows, got %d: %#v", len(filteredByPath), filtered)
+	}
+	if _, ok := filteredByPath["/"]; ok {
+		t.Fatalf("expected root path to be excluded by /team subtree filter")
+	}
+}
+
 func TestSQLiteStoreCleanup_KeepsNewerLegacyOffsetRows(t *testing.T) {
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {

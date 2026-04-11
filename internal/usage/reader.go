@@ -39,6 +39,17 @@ type ModelUsage struct {
 	TotalCost    *float64 `json:"total_cost"`
 }
 
+// UserPathUsage holds per-user-path token usage aggregates.
+type UserPathUsage struct {
+	UserPath     string   `json:"user_path"`
+	InputTokens  int64    `json:"input_tokens"`
+	OutputTokens int64    `json:"output_tokens"`
+	TotalTokens  int64    `json:"total_tokens"`
+	InputCost    *float64 `json:"input_cost"`
+	OutputCost   *float64 `json:"output_cost"`
+	TotalCost    *float64 `json:"total_cost"`
+}
+
 // DailyUsage holds usage statistics for a single period.
 // Date holds the period label: YYYY-MM-DD for daily, YYYY-Www for weekly,
 // YYYY-MM for monthly, or YYYY for yearly intervals.
@@ -134,6 +145,9 @@ type UsageReader interface {
 
 	// GetUsageByModel returns per-model token usage aggregates for the given date range.
 	GetUsageByModel(ctx context.Context, params UsageQueryParams) ([]ModelUsage, error)
+
+	// GetUsageByUserPath returns per-user-path token usage aggregates for the given date range.
+	GetUsageByUserPath(ctx context.Context, params UsageQueryParams) ([]UserPathUsage, error)
 
 	// GetUsageLog returns a paginated list of individual usage entries with optional filtering.
 	GetUsageLog(ctx context.Context, params UsageLogParams) (*UsageLogResult, error)

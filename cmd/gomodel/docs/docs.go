@@ -96,13 +96,13 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by model name",
-                        "name": "model",
+                        "description": "Filter by requested model selector",
+                        "name": "requested_model",
                         "in": "query"
                     },
                     {
                         "type": "string",
-                        "description": "Filter by provider",
+                        "description": "Filter by provider name or provider type",
                         "name": "provider",
                         "in": "query"
                     },
@@ -116,6 +116,12 @@ const docTemplate = `{
                         "type": "string",
                         "description": "Filter by request path",
                         "name": "path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
                         "in": "query"
                     },
                     {
@@ -138,7 +144,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Search across request_id/model/provider/method/path/error_type",
+                        "description": "Search across request_id/requested_model/provider/method/path/error_type",
                         "name": "search",
                         "in": "query"
                     },
@@ -182,7 +188,7 @@ const docTemplate = `{
                 ]
             }
         },
-        "/admin/api/v1/models": {
+        "/admin/api/v1/cache/overview": {
             "get": {
                 "produces": [
                     "application/json"
@@ -190,19 +196,66 @@ const docTemplate = `{
                 "tags": [
                     "admin"
                 ],
-                "summary": "List all registered models with provider info",
+                "summary": "Get cached-only usage overview",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Grouping interval: daily, weekly, monthly, yearly (default daily)",
+                        "name": "interval",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cache mode filter: uncached, cached, all (cache overview always uses cached mode)",
+                        "name": "cache_mode",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "array",
-                            "items": {
-                                "$ref": "#/definitions/providers.ModelWithProvider"
-                            }
+                            "$ref": "#/definitions/usage.CacheOverview"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
                         }
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/core.GatewayError"
                         }
@@ -281,6 +334,18 @@ const docTemplate = `{
                         "description": "Grouping interval: daily, weekly, monthly, yearly (default daily)",
                         "name": "interval",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cache mode filter: uncached, cached, all (default uncached)",
+                        "name": "cache_mode",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -349,8 +414,20 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter by provider",
+                        "description": "Filter by provider name or provider type",
                         "name": "provider",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cache mode filter: uncached, cached, all (default uncached)",
+                        "name": "cache_mode",
                         "in": "query"
                     },
                     {
@@ -426,6 +503,18 @@ const docTemplate = `{
                         "description": "End date (YYYY-MM-DD)",
                         "name": "end_date",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cache mode filter: uncached, cached, all (default uncached)",
+                        "name": "cache_mode",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -485,6 +574,18 @@ const docTemplate = `{
                         "description": "End date (YYYY-MM-DD)",
                         "name": "end_date",
                         "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cache mode filter: uncached, cached, all (default uncached)",
+                        "name": "cache_mode",
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -492,6 +593,77 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/usage.UsageSummary"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/core.GatewayError"
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ]
+            }
+        },
+        "/admin/api/v1/usage/user-paths": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Get usage breakdown by user path",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of days (default 30)",
+                        "name": "days",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Start date (YYYY-MM-DD)",
+                        "name": "start_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "End date (YYYY-MM-DD)",
+                        "name": "end_date",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by tracked user path subtree",
+                        "name": "user_path",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Cache mode filter: uncached, cached, all (default uncached)",
+                        "name": "cache_mode",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/usage.UserPathUsage"
+                            }
                         }
                     },
                     "400": {
@@ -538,7 +710,7 @@ const docTemplate = `{
         },
         "/p/{provider}/{endpoint}": {
             "get": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -619,7 +791,7 @@ const docTemplate = `{
                 ]
             },
             "put": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -700,7 +872,7 @@ const docTemplate = `{
                 ]
             },
             "post": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -781,7 +953,7 @@ const docTemplate = `{
                 ]
             },
             "delete": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -862,7 +1034,7 @@ const docTemplate = `{
                 ]
             },
             "options": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -943,7 +1115,7 @@ const docTemplate = `{
                 ]
             },
             "head": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -1024,7 +1196,7 @@ const docTemplate = `{
                 ]
             },
             "patch": {
-                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes and restricted to providers listed in server.enabled_passthrough_providers. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
+                "description": "Runtime-configurable passthrough endpoint under /p/{provider}/{endpoint}; enabled by default via server.enable_passthrough_routes. The endpoint path is opaque and may proxy JSON, binary, or SSE responses with upstream status codes preserved. For multi-segment provider endpoints, clients that rely on OpenAPI-generated path handling should URL-encode embedded slashes in the endpoint parameter. A leading v1/ segment is normalized away by default so /p/{provider}/v1/... and /p/{provider}/... map to the same upstream path relative to the provider base URL.",
                 "consumes": [
                     "application/json",
                     "multipart/form-data"
@@ -1912,7 +2084,8 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "produces": [
-                    "application/json"
+                    "application/json",
+                    "text/event-stream"
                 ],
                 "tags": [
                     "responses"
@@ -1931,9 +2104,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK",
+                        "description": "SSE stream (text/event-stream) when stream=true",
                         "schema": {
-                            "$ref": "#/definitions/core.ResponsesResponse"
+                            "type": "string"
                         }
                     },
                     "400": {
@@ -1984,6 +2157,26 @@ const docTemplate = `{
                 }
             }
         },
+        "auditlog.ExecutionFeaturesSnapshot": {
+            "type": "object",
+            "properties": {
+                "audit": {
+                    "type": "boolean"
+                },
+                "cache": {
+                    "type": "boolean"
+                },
+                "fallback": {
+                    "type": "boolean"
+                },
+                "guardrails": {
+                    "type": "boolean"
+                },
+                "usage": {
+                    "type": "boolean"
+                }
+            }
+        },
         "auditlog.LogData": {
             "type": "object",
             "properties": {
@@ -1993,6 +2186,14 @@ const docTemplate = `{
                 "error_message": {
                     "description": "Error details (message can be long, so kept in JSON)",
                     "type": "string"
+                },
+                "execution_features": {
+                    "description": "ExecutionFeatures captures the request-time effective workflow features\nafter runtime caps were applied. This keeps audit views historically accurate\neven if the active process config changes later.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/auditlog.ExecutionFeaturesSnapshot"
+                        }
+                    ]
                 },
                 "max_tokens": {
                     "type": "integer"
@@ -2034,6 +2235,18 @@ const docTemplate = `{
         "auditlog.LogEntry": {
             "type": "object",
             "properties": {
+                "alias_used": {
+                    "type": "boolean"
+                },
+                "auth_key_id": {
+                    "type": "string"
+                },
+                "auth_method": {
+                    "type": "string"
+                },
+                "cache_type": {
+                    "type": "string"
+                },
                 "client_ip": {
                     "type": "string"
                 },
@@ -2052,6 +2265,9 @@ const docTemplate = `{
                 "error_type": {
                     "type": "string"
                 },
+                "execution_plan_version_id": {
+                    "type": "string"
+                },
                 "id": {
                     "description": "ID is a unique identifier for this log entry (UUID)",
                     "type": "string"
@@ -2059,18 +2275,25 @@ const docTemplate = `{
                 "method": {
                     "type": "string"
                 },
-                "model": {
-                    "description": "Core fields (indexed for queries)",
-                    "type": "string"
-                },
                 "path": {
                     "type": "string"
                 },
                 "provider": {
+                    "description": "canonical provider type used for routing and filters",
+                    "type": "string"
+                },
+                "provider_name": {
                     "type": "string"
                 },
                 "request_id": {
                     "description": "Extracted fields for efficient filtering (indexed in relational DBs)",
+                    "type": "string"
+                },
+                "requested_model": {
+                    "description": "Core fields (indexed for queries)",
+                    "type": "string"
+                },
+                "resolved_model": {
                     "type": "string"
                 },
                 "status_code": {
@@ -2081,6 +2304,9 @@ const docTemplate = `{
                 },
                 "timestamp": {
                     "description": "Timestamp is when the request started",
+                    "type": "string"
+                },
+                "user_path": {
                     "type": "string"
                 }
             }
@@ -2352,6 +2578,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "provider": {
+                    "description": "Gateway routing hint; stripped before upstream execution.",
                     "type": "string"
                 },
                 "reasoning": {
@@ -2402,6 +2629,9 @@ const docTemplate = `{
                 "provider": {
                     "type": "string"
                 },
+                "system_fingerprint": {
+                    "type": "string"
+                },
                 "usage": {
                     "$ref": "#/definitions/core.Usage"
                 }
@@ -2415,6 +2645,12 @@ const docTemplate = `{
                 },
                 "index": {
                     "type": "integer"
+                },
+                "logprobs": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 },
                 "message": {
                     "$ref": "#/definitions/core.ResponseMessage"
@@ -2483,6 +2719,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "provider": {
+                    "description": "Gateway routing hint; stripped before upstream execution.",
                     "type": "string"
                 }
             }
@@ -2616,7 +2853,13 @@ const docTemplate = `{
         "core.GatewayError": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string"
+                },
                 "message": {
+                    "type": "string"
+                },
+                "param": {
                     "type": "string"
                 },
                 "provider": {
@@ -2765,6 +3008,12 @@ const docTemplate = `{
                 "pricing": {
                     "$ref": "#/definitions/core.ModelPricing"
                 },
+                "rankings": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/core.ModelRanking"
+                    }
+                },
                 "tags": {
                     "type": "array",
                     "items": {
@@ -2849,6 +3098,20 @@ const docTemplate = `{
                 }
             }
         },
+        "core.ModelRanking": {
+            "type": "object",
+            "properties": {
+                "as_of": {
+                    "type": "string"
+                },
+                "elo": {
+                    "type": "number"
+                },
+                "rank": {
+                    "type": "integer"
+                }
+            }
+        },
         "core.ModelsResponse": {
             "type": "object",
             "properties": {
@@ -2914,9 +3177,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "annotations": {
+                    "description": "Providers can return structured annotation objects here (for example\ncitations from native tools), so keep the payload shape liberal.",
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        }
                     }
                 },
                 "image_url": {
@@ -3044,6 +3311,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "provider": {
+                    "description": "Gateway routing hint; stripped before upstream execution.",
                     "type": "string"
                 },
                 "reasoning": {
@@ -3192,14 +3460,72 @@ const docTemplate = `{
                 }
             }
         },
-        "providers.ModelWithProvider": {
+        "usage.CacheOverview": {
             "type": "object",
             "properties": {
-                "model": {
-                    "$ref": "#/definitions/core.Model"
+                "daily": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/usage.CacheOverviewDaily"
+                    }
                 },
-                "provider_type": {
+                "summary": {
+                    "$ref": "#/definitions/usage.CacheOverviewSummary"
+                }
+            }
+        },
+        "usage.CacheOverviewDaily": {
+            "type": "object",
+            "properties": {
+                "date": {
                     "type": "string"
+                },
+                "exact_hits": {
+                    "type": "integer"
+                },
+                "hits": {
+                    "type": "integer"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "saved_cost": {
+                    "type": "number"
+                },
+                "semantic_hits": {
+                    "type": "integer"
+                },
+                "total_tokens": {
+                    "type": "integer"
+                }
+            }
+        },
+        "usage.CacheOverviewSummary": {
+            "type": "object",
+            "properties": {
+                "exact_hits": {
+                    "type": "integer"
+                },
+                "semantic_hits": {
+                    "type": "integer"
+                },
+                "total_hits": {
+                    "type": "integer"
+                },
+                "total_input_tokens": {
+                    "type": "integer"
+                },
+                "total_output_tokens": {
+                    "type": "integer"
+                },
+                "total_saved_cost": {
+                    "type": "number"
+                },
+                "total_tokens": {
+                    "type": "integer"
                 }
             }
         },
@@ -3209,14 +3535,23 @@ const docTemplate = `{
                 "date": {
                     "type": "string"
                 },
+                "input_cost": {
+                    "type": "number"
+                },
                 "input_tokens": {
                     "type": "integer"
+                },
+                "output_cost": {
+                    "type": "number"
                 },
                 "output_tokens": {
                     "type": "integer"
                 },
                 "requests": {
                     "type": "integer"
+                },
+                "total_cost": {
+                    "type": "number"
                 },
                 "total_tokens": {
                     "type": "integer"
@@ -3244,6 +3579,9 @@ const docTemplate = `{
                 "provider": {
                     "type": "string"
                 },
+                "provider_name": {
+                    "type": "string"
+                },
                 "total_cost": {
                     "type": "number"
                 }
@@ -3252,6 +3590,9 @@ const docTemplate = `{
         "usage.UsageLogEntry": {
             "type": "object",
             "properties": {
+                "cache_type": {
+                    "type": "string"
+                },
                 "costs_calculation_caveat": {
                     "type": "string"
                 },
@@ -3282,6 +3623,9 @@ const docTemplate = `{
                 "provider_id": {
                     "type": "string"
                 },
+                "provider_name": {
+                    "type": "string"
+                },
                 "raw_data": {
                     "type": "object",
                     "additionalProperties": {}
@@ -3297,6 +3641,9 @@ const docTemplate = `{
                 },
                 "total_tokens": {
                     "type": "integer"
+                },
+                "user_path": {
+                    "type": "string"
                 }
             }
         },
@@ -3345,6 +3692,32 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
+        },
+        "usage.UserPathUsage": {
+            "type": "object",
+            "properties": {
+                "input_cost": {
+                    "type": "number"
+                },
+                "input_tokens": {
+                    "type": "integer"
+                },
+                "output_cost": {
+                    "type": "number"
+                },
+                "output_tokens": {
+                    "type": "integer"
+                },
+                "total_cost": {
+                    "type": "number"
+                },
+                "total_tokens": {
+                    "type": "integer"
+                },
+                "user_path": {
+                    "type": "string"
+                }
+            }
         }
     },
     "securityDefinitions": {
@@ -3363,7 +3736,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{"http"},
 	Title:            "GOModel API",
-	Description:      "High-performance AI gateway routing requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Ollama). Drop-in OpenAI-compatible API.",
+	Description:      "High-performance AI gateway routing requests to multiple LLM providers (OpenAI, Anthropic, Gemini, Groq, xAI, Oracle, Ollama). Drop-in OpenAI-compatible API.",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
