@@ -53,6 +53,7 @@ type App struct {
 	serverMu   sync.Mutex
 	serverStop context.CancelFunc
 	serverDone chan error
+	refreshMu  sync.Mutex
 }
 
 // Config holds the configuration options for creating an App.
@@ -368,6 +369,7 @@ func New(ctx context.Context, cfg Config) (*App, error) {
 			app.modelOverrides.Service,
 			executionPlanResult.Service,
 			app.guardrails.Service,
+			app,
 			dashboardRuntimeConfig(appCfg, usageEnabledForDashboard),
 			adminCfg.UIEnabled,
 		)
@@ -746,6 +748,7 @@ func initAdmin(
 	modelOverrideService *modeloverrides.Service,
 	executionPlanService *executionplans.Service,
 	guardrailService *guardrails.Service,
+	runtimeRefresher admin.RuntimeRefresher,
 	runtimeConfig admin.DashboardConfigResponse,
 	uiEnabled bool,
 ) (*admin.Handler, *dashboard.Handler, error) {
@@ -788,6 +791,7 @@ func initAdmin(
 		admin.WithModelOverrides(modelOverrideService),
 		admin.WithExecutionPlans(executionPlanService),
 		admin.WithGuardrailService(guardrailService),
+		admin.WithRuntimeRefresher(runtimeRefresher),
 		admin.WithDashboardRuntimeConfig(runtimeConfig),
 	)
 

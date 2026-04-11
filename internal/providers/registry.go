@@ -41,6 +41,7 @@ type ModelRegistry struct {
 	cache            modelcache.Cache     // cache backend (local or redis)
 	initialized      bool                 // true when at least one successful network fetch completed
 	initMu           sync.Mutex           // protects initialized flag
+	refreshMu        sync.Mutex           // serializes provider/model-list refresh cycles
 	modelList        *modeldata.ModelList // parsed model list (nil = not loaded)
 	modelListRaw     json.RawMessage      // raw bytes for cache persistence
 
@@ -130,6 +131,12 @@ func (r *ModelRegistry) RegisterProviderWithNameAndType(provider core.Provider, 
 // Initialize fetches models from all registered providers and populates the registry.
 // This should be called on application startup.
 func (r *ModelRegistry) Initialize(ctx context.Context) error {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+	return r.initialize(ctx)
+}
+
+func (r *ModelRegistry) initialize(ctx context.Context) error {
 	// Get a snapshot of providers with a read lock
 	r.mu.RLock()
 	providers := make([]core.Provider, len(r.providers))
@@ -1147,7 +1154,10 @@ func (r *ModelRegistry) EnrichModels() {
 func (r *ModelRegistry) enrichModels() metadataEnrichmentStats {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.enrichModelsLocked()
+}
 
+func (r *ModelRegistry) enrichModelsLocked() metadataEnrichmentStats {
 	if r.modelList == nil || len(r.models) == 0 {
 		return metadataEnrichmentStats{}
 	}
@@ -1164,6 +1174,14 @@ func (r *ModelRegistry) enrichModels() metadataEnrichmentStats {
 	}
 	r.invalidateSortedCaches()
 	return stats
+}
+
+func (r *ModelRegistry) setModelListAndEnrich(list *modeldata.ModelList, raw json.RawMessage) metadataEnrichmentStats {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.modelList = list
+	r.modelListRaw = raw
+	return r.enrichModelsLocked()
 }
 
 // ResolveMetadata resolves metadata for a model directly via the stored model list,
@@ -1306,7 +1324,7 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 				return
 			case <-ticker.C:
 				refreshCtx, refreshCancel := context.WithTimeout(ctx, 30*time.Second)
-				err := r.Refresh(refreshCtx)
+				err := r.Initialize(refreshCtx)
 				refreshCancel()
 				if err != nil {
 					if !isBenignBackgroundRefreshError(ctx, err) {
@@ -1340,31 +1358,58 @@ func (r *ModelRegistry) StartBackgroundRefresh(interval time.Duration, modelList
 	}
 }
 
+// RefreshModelList fetches the external model metadata list and re-enriches all
+// currently registered models. It does not persist the model cache; callers that
+// want durable startup data should call SaveToCache after this succeeds.
+func (r *ModelRegistry) RefreshModelList(ctx context.Context, url string) (int, error) {
+	if strings.TrimSpace(url) == "" {
+		return 0, nil
+	}
+
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+
+	models, _, err := r.refreshModelListLocked(ctx, url)
+	return models, err
+}
+
+func (r *ModelRegistry) refreshModelListLocked(ctx context.Context, url string) (int, metadataEnrichmentStats, error) {
+	list, raw, err := modeldata.Fetch(ctx, url)
+	if err != nil {
+		return 0, metadataEnrichmentStats{}, err
+	}
+	if list == nil {
+		return 0, metadataEnrichmentStats{}, nil
+	}
+
+	metadataStats := r.setModelListAndEnrich(list, raw)
+	return len(list.Models), metadataStats, nil
+}
+
 // refreshModelList fetches the model list and re-enriches all models.
 func (r *ModelRegistry) refreshModelList(ctx context.Context, url string) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 
-	list, raw, err := modeldata.Fetch(fetchCtx, url)
+	r.refreshMu.Lock()
+	models, metadataStats, err := r.refreshModelListLocked(fetchCtx, url)
+	r.refreshMu.Unlock()
 	if err != nil {
 		if !isBenignBackgroundRefreshError(ctx, err) {
 			slog.Warn("failed to refresh model list", "url", url, "error", err)
 		}
 		return
 	}
-	if list == nil {
+	if models == 0 {
 		return
 	}
-
-	r.SetModelList(list, raw)
-	metadataStats := r.enrichModels()
 
 	if err := r.SaveToCache(fetchCtx); err != nil {
 		if !isBenignBackgroundRefreshError(ctx, err) {
 			slog.Warn("failed to save cache after model list refresh", "error", err)
 		}
 	}
-	attrs := []any{"models", len(list.Models)}
+	attrs := []any{"models", models}
 	attrs = append(attrs, metadataStats.slogAttrs()...)
 	slog.Debug("model list refreshed", attrs...)
 }

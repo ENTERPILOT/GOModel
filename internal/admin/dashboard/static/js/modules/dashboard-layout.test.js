@@ -288,10 +288,12 @@ test('audit entry metadata is rendered as a labeled pill row at the bottom of th
 
 test('alias rows use a shared icon-only edit action', () => {
     const indexTemplate = readFixture('../../../templates/index.html');
+    const modelTableTemplate = readFixture('../../../templates/model-table-body.html');
     const editIconTemplate = readFixture('../../../templates/edit-icon.html');
+    const templates = indexTemplate + '\n' + modelTableTemplate;
 
     assert.match(
-        indexTemplate,
+        templates,
         /class="table-action-btn table-icon-btn"[\s\S]*:aria-label="'Edit alias ' \+ row\.alias\.name"[\s\S]*@click="openAliasEdit\(row\.alias\)"[\s\S]*{{template "edit-icon"}}/
     );
     assert.match(indexTemplate, /x-show="modelOverrideFormOpen" x-ref="modelOverrideEditor"/);

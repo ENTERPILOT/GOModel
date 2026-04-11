@@ -457,6 +457,7 @@ func TestAdminExecutionPlanEndpoints_AreRegistered(t *testing.T) {
 	}{
 		{method: http.MethodGet, path: "/admin/api/v1/dashboard/config"},
 		{method: http.MethodGet, path: "/admin/api/v1/providers/status"},
+		{method: http.MethodPost, path: "/admin/api/v1/runtime/refresh"},
 		{method: http.MethodGet, path: "/admin/api/v1/auth-keys"},
 		{method: http.MethodPost, path: "/admin/api/v1/auth-keys"},
 		{method: http.MethodPost, path: "/admin/api/v1/auth-keys/test-key/deactivate"},

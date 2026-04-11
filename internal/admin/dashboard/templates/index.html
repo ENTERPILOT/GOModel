@@ -349,6 +349,31 @@
         <div class="alias-form-actions">
             <button type="button" class="pagination-btn" x-show="timezoneOverride" @click="clearTimezoneOverride()">Use Browser Timezone</button>
         </div>
+
+        <div class="settings-refresh-section">
+            <div>
+                <h3>Runtime Refresh</h3>
+                <p>Pull the latest model metadata, provider inventory, API keys, aliases, model access rules, guardrails, and workflows.</p>
+            </div>
+            <button type="button"
+                    class="pagination-btn pagination-btn-primary"
+                    :disabled="runtimeRefreshLoading"
+                    @click="refreshRuntime()"
+                    x-text="runtimeRefreshLoading ? 'Refreshing...' : 'Refresh Runtime'"></button>
+        </div>
+
+        <div class="alert alert-success settings-refresh-alert"
+             x-show="runtimeRefreshNotice && runtimeRefreshSucceeded()"
+             x-text="runtimeRefreshNotice"></div>
+        <div class="alert alert-warning settings-refresh-alert"
+             x-show="runtimeRefreshError || (runtimeRefreshNotice && runtimeRefreshWarnings())"
+             x-text="runtimeRefreshError || runtimeRefreshNotice"></div>
+        <ul class="runtime-refresh-steps"
+            x-show="runtimeRefreshReport && runtimeRefreshReport.steps && runtimeRefreshReport.steps.length > 0">
+            <template x-for="step in runtimeRefreshReport.steps" :key="step.name">
+                <li :class="'runtime-refresh-step is-' + step.status" x-text="runtimeRefreshStepLabel(step)"></li>
+            </template>
+        </ul>
     </div>
 </div>
 
