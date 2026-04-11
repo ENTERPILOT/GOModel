@@ -64,6 +64,7 @@ function dashboard() {
             providers: []
         },
         models: [],
+        modelsLoading: false,
         categories: [],
         activeCategory: 'all',
         hasCalendarModule: calendarModuleFactory !== null,
@@ -354,6 +355,7 @@ function dashboard() {
                 options.signal = controller.signal;
             }
 
+            this.modelsLoading = true;
             try {
                 let url = '/admin/api/v1/models';
                 if (this.activeCategory && this.activeCategory !== 'all') {
@@ -388,7 +390,11 @@ function dashboard() {
                 this.models = [];
                 if (typeof this.syncDisplayModels === 'function') this.syncDisplayModels();
             } finally {
+                const currentRequest = isCurrentRequest();
                 this._clearAbortableRequest('_modelsFetchController', controller);
+                if (currentRequest) {
+                    this.modelsLoading = false;
+                }
             }
         },
 

@@ -744,6 +744,11 @@
         </div>
     </div>
 
+    <div class="loading-state" x-show="modelsLoading && !authError" role="status" aria-live="polite">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <span x-text="displayModels.length > 0 ? 'Refreshing models...' : 'Loading models...'"></span>
+    </div>
+
     <div class="model-alias-editor" x-show="aliasFormOpen">
         <form class="alias-form" @submit.prevent="submitAliasForm()">
             <div class="aliases-editor-header">

@@ -192,17 +192,20 @@ test('fetchModels aborts stale in-flight requests before applying new data', asy
     const app = loadDashboardApp({ fetch: queue.fetch });
 
     const firstFetch = app.fetchModels();
+    assert.equal(app.modelsLoading, true);
     assert.equal(queue.requests.length, 1);
     const firstSignal = queue.requests[0].options.signal;
 
     const secondFetch = app.fetchModels();
     assert.equal(firstSignal.aborted, true);
+    assert.equal(app.modelsLoading, true);
     assert.equal(queue.requests.length, 2);
 
     queue.requests[1].resolve(jsonResponse([{ provider_type: 'openai', model: { id: 'gpt-5' } }]));
 
     await Promise.all([firstFetch, secondFetch]);
 
+    assert.equal(app.modelsLoading, false);
     assert.equal(
         JSON.stringify(app.models),
         JSON.stringify([{ provider_type: 'openai', model: { id: 'gpt-5' } }])
@@ -216,12 +219,14 @@ test('fetchModels ignores stale unauthorized responses from superseded requests'
     app.models = originalModels.slice();
 
     const firstFetch = app.fetchModels();
+    assert.equal(app.modelsLoading, true);
     assert.equal(queue.requests.length, 1);
     const firstSignal = queue.requests[0].options.signal;
 
     const secondFetch = app.fetchModels();
     assert.equal(queue.requests.length, 2);
     assert.equal(firstSignal.aborted, true);
+    assert.equal(app.modelsLoading, true);
 
     queue.requests[0].resolve({
         ok: false,
@@ -234,12 +239,14 @@ test('fetchModels ignores stale unauthorized responses from superseded requests'
     assert.equal(app.authError, false);
     assert.equal(app.needsAuth, false);
     assert.equal(JSON.stringify(app.models), JSON.stringify(originalModels));
+    assert.equal(app.modelsLoading, true);
 
     queue.requests[1].resolve(jsonResponse([{ provider_type: 'openai', model: { id: 'gpt-5' } }]));
     await secondFetch;
 
     assert.equal(app.authError, false);
     assert.equal(app.needsAuth, false);
+    assert.equal(app.modelsLoading, false);
     assert.equal(
         JSON.stringify(app.models),
         JSON.stringify([{ provider_type: 'openai', model: { id: 'gpt-5' } }])
@@ -253,21 +260,25 @@ test('fetchModels ignores stale errors from superseded requests', async() => {
     app.models = originalModels.slice();
 
     const firstFetch = app.fetchModels();
+    assert.equal(app.modelsLoading, true);
     assert.equal(queue.requests.length, 1);
     const firstSignal = queue.requests[0].options.signal;
 
     const secondFetch = app.fetchModels();
     assert.equal(queue.requests.length, 2);
     assert.equal(firstSignal.aborted, true);
+    assert.equal(app.modelsLoading, true);
 
     queue.requests[0].reject(new Error('stale models failure'));
     await firstFetch;
 
     assert.equal(JSON.stringify(app.models), JSON.stringify(originalModels));
+    assert.equal(app.modelsLoading, true);
 
     queue.requests[1].resolve(jsonResponse([{ provider_type: 'openai', model: { id: 'gpt-5' } }]));
     await secondFetch;
 
+    assert.equal(app.modelsLoading, false);
     assert.equal(
         JSON.stringify(app.models),
         JSON.stringify([{ provider_type: 'openai', model: { id: 'gpt-5' } }])

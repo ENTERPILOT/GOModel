@@ -287,6 +287,7 @@ test('audit entry metadata is rendered as a labeled pill row at the bottom of th
 
 test('model category tables lazy mount only the active table body', () => {
     const indexTemplate = readFixture('../../../templates/index.html');
+    const css = readFixture('../../css/dashboard.css');
     const modelsStart = indexTemplate.indexOf('<!-- Models Page -->');
     const workflowsStart = indexTemplate.indexOf('<!-- Workflows Page -->');
 
@@ -300,6 +301,15 @@ test('model category tables lazy mount only the active table body', () => {
     assert.doesNotMatch(modelsBlock, /<div class="table-wrapper" x-show="\([^"]*activeCategory/);
     assert.match(modelsBlock, /activeCategory === 'embedding'[\s\S]*{{template "model-table-body" \.}}/);
     assert.match(modelsBlock, /activeCategory === 'utility'[\s\S]*{{template "model-table-body" \.}}/);
+    assert.match(modelsBlock, /class="loading-state" x-show="modelsLoading && !authError" role="status" aria-live="polite"/);
+    assert.match(modelsBlock, /x-text="displayModels\.length > 0 \? 'Refreshing models\.\.\.' : 'Loading models\.\.\.'"/);
+
+    const loadingRule = readCSSRule(css, '.loading-state');
+    assert.match(loadingRule, /display:\s*flex/);
+    assert.match(loadingRule, /min-height:\s*64px/);
+
+    const spinnerRule = readCSSRule(css, '.loading-spinner');
+    assert.match(spinnerRule, /animation:\s*loading-spin 0\.8s linear infinite/);
 });
 
 test('alias rows use a shared icon-only edit action', () => {
