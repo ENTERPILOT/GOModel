@@ -546,21 +546,19 @@ function dashboard() {
         },
 
         qualifiedModelDisplay(value) {
-            const model = String(value && value.model || '').trim();
+            return this.qualifiedModelValueDisplay(value, value && value.model);
+        },
+
+        qualifiedModelValueDisplay(value, modelValue) {
+            const model = String(modelValue || '').trim();
             if (!model) return '-';
-            if (model.includes('/')) return model;
             const provider = this.providerDisplayValue(value);
-            if (!provider) return model;
+            if (!provider || model === provider || model.startsWith(provider + '/')) return model;
             return provider + '/' + model;
         },
 
         qualifiedResolvedModelDisplay(value) {
-            const model = String(value && value.resolved_model || '').trim();
-            if (!model) return '-';
-            if (model.includes('/')) return model;
-            const provider = this.providerDisplayValue(value);
-            if (!provider) return model;
-            return provider + '/' + model;
+            return this.qualifiedModelValueDisplay(value, value && value.resolved_model);
         },
 
         formatNumber(n) {
