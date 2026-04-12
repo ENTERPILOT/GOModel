@@ -84,12 +84,12 @@ func (r *PostgreSQLReader) GetUsageByModel(ctx context.Context, params UsageQuer
 
 // GetUsageByUserPath returns token and cost totals grouped by tracked user path.
 func (r *PostgreSQLReader) GetUsageByUserPath(ctx context.Context, params UsageQueryParams) ([]UserPathUsage, error) {
-	conditions, args, _, err := pgUsageConditions(params, 1)
+	userPathExpr := usageGroupedUserPathSQL("user_path")
+	conditions, args, _, err := pgUsageByUserPathConditions(params, userPathExpr, 1)
 	if err != nil {
 		return nil, err
 	}
 	where := buildWhereClause(conditions)
-	userPathExpr := usageGroupedUserPathSQL("user_path")
 
 	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
 	query := `SELECT ` + userPathExpr + ` AS user_path, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
@@ -359,6 +359,23 @@ func pgUsageConditions(params UsageQueryParams, argIdx int) (conditions []string
 	}
 	if userPath != "" {
 		conditions = append(conditions, fmt.Sprintf("(user_path = $%d OR user_path LIKE $%d ESCAPE '\\')", nextIdx, nextIdx+1))
+		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
+		nextIdx += 2
+	}
+	if condition := pgCacheModeCondition(params.CacheMode); condition != "" {
+		conditions = append(conditions, condition)
+	}
+	return conditions, args, nextIdx, nil
+}
+
+func pgUsageByUserPathConditions(params UsageQueryParams, userPathExpr string, argIdx int) (conditions []string, args []any, nextIdx int, err error) {
+	conditions, args, nextIdx = pgDateRangeConditions(params, argIdx)
+	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	if userPath != "" {
+		conditions = append(conditions, fmt.Sprintf("(%s = $%d OR %s LIKE $%d ESCAPE '\\')", userPathExpr, nextIdx, userPathExpr, nextIdx+1))
 		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 		nextIdx += 2
 	}

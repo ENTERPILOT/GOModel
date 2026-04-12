@@ -84,12 +84,12 @@ func (r *SQLiteReader) GetUsageByModel(ctx context.Context, params UsageQueryPar
 
 // GetUsageByUserPath returns token and cost totals grouped by tracked user path.
 func (r *SQLiteReader) GetUsageByUserPath(ctx context.Context, params UsageQueryParams) ([]UserPathUsage, error) {
-	conditions, args, err := sqliteUsageConditions(params)
+	userPathExpr := usageGroupedUserPathSQL("user_path")
+	conditions, args, err := sqliteUsageByUserPathConditions(params, userPathExpr)
 	if err != nil {
 		return nil, err
 	}
 	where := buildWhereClause(conditions)
-	userPathExpr := usageGroupedUserPathSQL("user_path")
 
 	costCols := `, SUM(input_cost), SUM(output_cost), SUM(total_cost)`
 	query := `SELECT ` + userPathExpr + ` AS user_path, COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0), COALESCE(SUM(total_tokens), 0)` + costCols + `
@@ -406,6 +406,22 @@ func sqliteUsageConditions(params UsageQueryParams) ([]string, []any, error) {
 	}
 	if userPath != "" {
 		conditions = append(conditions, "(user_path = ? OR user_path LIKE ? ESCAPE '\\')")
+		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
+	}
+	if condition := sqliteCacheModeCondition(params.CacheMode); condition != "" {
+		conditions = append(conditions, condition)
+	}
+	return conditions, args, nil
+}
+
+func sqliteUsageByUserPathConditions(params UsageQueryParams, userPathExpr string) ([]string, []any, error) {
+	conditions, args := sqliteDateRangeConditions(params)
+	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if userPath != "" {
+		conditions = append(conditions, "("+userPathExpr+" = ? OR "+userPathExpr+" LIKE ? ESCAPE '\\')")
 		args = append(args, userPath, usageUserPathSubtreePattern(userPath))
 	}
 	if condition := sqliteCacheModeCondition(params.CacheMode); condition != "" {

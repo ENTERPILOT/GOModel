@@ -2104,9 +2104,9 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "SSE stream (text/event-stream) when stream=true",
+                        "description": "JSON response or SSE stream when stream=true",
                         "schema": {
-                            "type": "string"
+                            "$ref": "#/definitions/core.ResponsesResponse"
                         }
                     },
                     "400": {
@@ -2647,9 +2647,48 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "logprobs": {
-                    "type": "array",
-                    "items": {
-                        "type": "integer"
+                    "type": "object",
+                    "properties": {
+                        "content": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "bytes": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "integer"
+                                        }
+                                    },
+                                    "logprob": {
+                                        "type": "number"
+                                    },
+                                    "token": {
+                                        "type": "string"
+                                    },
+                                    "top_logprobs": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "bytes": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "integer"
+                                                    }
+                                                },
+                                                "logprob": {
+                                                    "type": "number"
+                                                },
+                                                "token": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 },
                 "message": {
@@ -2854,13 +2893,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "type": "string"
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "message": {
                     "type": "string"
                 },
                 "param": {
-                    "type": "string"
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "provider": {
                     "type": "string"
@@ -3180,10 +3221,7 @@ const docTemplate = `{
                     "description": "Providers can return structured annotation objects here (for example\ncitations from native tools), so keep the payload shape liberal.",
                     "type": "array",
                     "items": {
-                        "type": "array",
-                        "items": {
-                            "type": "integer"
-                        }
+                        "type": "object"
                     }
                 },
                 "image_url": {
@@ -3697,19 +3735,22 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "input_cost": {
-                    "type": "number"
+                    "type": "number",
+                    "x-nullable": true
                 },
                 "input_tokens": {
                     "type": "integer"
                 },
                 "output_cost": {
-                    "type": "number"
+                    "type": "number",
+                    "x-nullable": true
                 },
                 "output_tokens": {
                     "type": "integer"
                 },
                 "total_cost": {
-                    "type": "number"
+                    "type": "number",
+                    "x-nullable": true
                 },
                 "total_tokens": {
                     "type": "integer"

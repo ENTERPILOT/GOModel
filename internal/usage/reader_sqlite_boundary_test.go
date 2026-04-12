@@ -674,6 +674,21 @@ func TestSQLiteReaderGetUsageByUserPath_GroupsByTrackedPath(t *testing.T) {
 	if _, ok := filteredByPath["/"]; ok {
 		t.Fatalf("expected root path to be excluded by /team subtree filter")
 	}
+
+	rootFiltered, err := reader.GetUsageByUserPath(ctx, UsageQueryParams{UserPath: "/"})
+	if err != nil {
+		t.Fatalf("root filtered GetUsageByUserPath returned error: %v", err)
+	}
+	rootFilteredByPath := make(map[string]UserPathUsage, len(rootFiltered))
+	for _, row := range rootFiltered {
+		rootFilteredByPath[row.UserPath] = row
+	}
+	if rootFilteredByPath["/"].TotalTokens != 50 {
+		t.Fatalf("expected root filter to include blank root total tokens 50, got %d", rootFilteredByPath["/"].TotalTokens)
+	}
+	if rootFilteredByPath["/team/alpha"].TotalTokens != 70 {
+		t.Fatalf("expected root filter to include alpha total tokens 70, got %d", rootFilteredByPath["/team/alpha"].TotalTokens)
+	}
 }
 
 func TestSQLiteStoreCleanup_KeepsNewerLegacyOffsetRows(t *testing.T) {
@@ -682,6 +697,7 @@ func TestSQLiteStoreCleanup_KeepsNewerLegacyOffsetRows(t *testing.T) {
 		t.Fatalf("failed to open sqlite database: %v", err)
 	}
 	defer db.Close()
+	db.SetMaxOpenConns(1)
 
 	store, err := NewSQLiteStore(db, 1)
 	if err != nil {

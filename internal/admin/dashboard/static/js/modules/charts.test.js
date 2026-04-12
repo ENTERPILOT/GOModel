@@ -204,9 +204,13 @@ test('toggleUsageChartView switches table and chart modes and rerenders chart vi
     ];
 
     module.renderBarChart();
+    module.renderUserPathChart();
     const modelChart = module.usageBarChart;
+    const userPathChart = module.usageUserPathChart;
+    assert.notEqual(modelChart, null);
+    assert.notEqual(userPathChart, null);
+
     module.toggleUsageChartView('model', 'table');
-    module.renderBarChart();
 
     assert.equal(module.modelUsageView, 'table');
     assert.equal(modelChart.destroyCalls, 1);
@@ -216,7 +220,17 @@ test('toggleUsageChartView switches table and chart modes and rerenders chart vi
 
     assert.equal(module.modelUsageView, 'chart');
     assert.notEqual(module.usageBarChart, null);
+    assert.notStrictEqual(module.usageBarChart, modelChart);
 
     module.toggleUsageChartView('userPath', 'table');
+
     assert.equal(module.userPathUsageView, 'table');
+    assert.equal(userPathChart.destroyCalls, 1);
+    assert.equal(module.usageUserPathChart, null);
+
+    module.toggleUsageChartView('userPath', 'chart');
+
+    assert.equal(module.userPathUsageView, 'chart');
+    assert.notEqual(module.usageUserPathChart, null);
+    assert.notStrictEqual(module.usageUserPathChart, userPathChart);
 });

@@ -160,7 +160,9 @@ func (r *MongoDBReader) GetUsageByModel(ctx context.Context, params UsageQueryPa
 // GetUsageByUserPath returns token and cost totals grouped by tracked user path.
 func (r *MongoDBReader) GetUsageByUserPath(ctx context.Context, params UsageQueryParams) ([]UserPathUsage, error) {
 	pipeline := bson.A{}
-	matchFilters, err := mongoUsageMatchFilters(params)
+	matchParams := params
+	matchParams.UserPath = ""
+	matchFilters, err := mongoUsageMatchFilters(matchParams)
 	if err != nil {
 		return nil, err
 	}
@@ -168,8 +170,23 @@ func (r *MongoDBReader) GetUsageByUserPath(ctx context.Context, params UsageQuer
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: matchFilters}})
 	}
 
+	const canonicalUserPathField = "_gomodel_user_path"
+	pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: bson.D{
+		{Key: canonicalUserPathField, Value: mongoUsageGroupedUserPathExpr()},
+	}}})
+
+	userPath, err := normalizeUsageUserPathFilter(params.UserPath)
+	if err != nil {
+		return nil, err
+	}
+	if userPath != "" {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.D{{Key: canonicalUserPathField, Value: bson.D{
+			{Key: "$regex", Value: usageUserPathSubtreeRegex(userPath)},
+		}}}}})
+	}
+
 	pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.D{
-		{Key: "_id", Value: mongoUsageGroupedUserPathExpr()},
+		{Key: "_id", Value: "$" + canonicalUserPathField},
 		{Key: "input_tokens", Value: bson.D{{Key: "$sum", Value: "$input_tokens"}}},
 		{Key: "output_tokens", Value: bson.D{{Key: "$sum", Value: "$output_tokens"}}},
 		{Key: "total_tokens", Value: bson.D{{Key: "$sum", Value: "$total_tokens"}}},

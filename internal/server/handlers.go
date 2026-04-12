@@ -377,8 +377,7 @@ func (h *Handler) GetFileContent(c *echo.Context) error {
 // @Produce      text/event-stream
 // @Security     BearerAuth
 // @Param        request  body      core.ResponsesRequest  true  "Responses API request"
-// @Success      200      {object}  core.ResponsesResponse
-// @Success      200      {string}  string  "SSE stream (text/event-stream) when stream=true"
+// @Success      200      {object}  core.ResponsesResponse  "JSON response or SSE stream when stream=true"
 // @Failure      400      {object}  core.GatewayError
 // @Failure      401      {object}  core.GatewayError
 // @Failure      429      {object}  core.GatewayError

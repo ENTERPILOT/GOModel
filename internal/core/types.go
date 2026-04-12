@@ -100,7 +100,7 @@ type Choice struct {
 	Message      ResponseMessage `json:"message"`
 	FinishReason string          `json:"finish_reason"`
 	Index        int             `json:"index"`
-	Logprobs     json.RawMessage `json:"logprobs,omitempty"`
+	Logprobs     json.RawMessage `json:"logprobs,omitempty" swaggertype:"object"`
 }
 
 // ResponseMessage represents a single assistant message in a chat response.

@@ -105,7 +105,7 @@ type ResponsesContentItem struct {
 	InputAudio *InputAudioContent `json:"input_audio,omitempty"`
 	// Providers can return structured annotation objects here (for example
 	// citations from native tools), so keep the payload shape liberal.
-	Annotations []json.RawMessage `json:"annotations,omitempty"`
+	Annotations []json.RawMessage `json:"annotations,omitempty" swaggertype:"array,object"`
 }
 
 // ResponsesUsage represents token usage for the Responses API.

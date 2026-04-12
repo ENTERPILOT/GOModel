@@ -305,13 +305,13 @@
             toggleUsageChartView(target, view) {
                 if (target === 'model') {
                     this.modelUsageView = view;
-                    if (view === 'chart') this.renderBarChart();
+                    this.renderBarChart();
                     return;
                 }
 
                 if (target === 'userPath') {
                     this.userPathUsageView = view;
-                    if (view === 'chart') this.renderUserPathChart();
+                    this.renderUserPathChart();
                 }
             },
 

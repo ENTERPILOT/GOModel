@@ -29,8 +29,8 @@ type GatewayError struct {
 	Message    string    `json:"message"`
 	StatusCode int       `json:"status_code"`
 	Provider   string    `json:"provider,omitempty"`
-	Param      *string   `json:"param"`
-	Code       *string   `json:"code"`
+	Param      *string   `json:"param" extensions:"x-nullable"`
+	Code       *string   `json:"code" extensions:"x-nullable"`
 	// Original error for debugging (not exposed to clients)
 	Err error `json:"-"`
 }

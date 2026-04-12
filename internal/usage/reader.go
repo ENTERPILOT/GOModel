@@ -45,9 +45,9 @@ type UserPathUsage struct {
 	InputTokens  int64    `json:"input_tokens"`
 	OutputTokens int64    `json:"output_tokens"`
 	TotalTokens  int64    `json:"total_tokens"`
-	InputCost    *float64 `json:"input_cost"`
-	OutputCost   *float64 `json:"output_cost"`
-	TotalCost    *float64 `json:"total_cost"`
+	InputCost    *float64 `json:"input_cost" extensions:"x-nullable"`
+	OutputCost   *float64 `json:"output_cost" extensions:"x-nullable"`
+	TotalCost    *float64 `json:"total_cost" extensions:"x-nullable"`
 }
 
 // DailyUsage holds usage statistics for a single period.
