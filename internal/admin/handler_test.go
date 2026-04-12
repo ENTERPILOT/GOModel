@@ -1567,6 +1567,7 @@ func TestRefreshRuntime_ReturnsReport(t *testing.T) {
 	}
 	h := NewHandler(nil, nil, WithRuntimeRefresher(refresher))
 	c, rec := newHandlerContext("/admin/api/v1/runtime/refresh")
+	c.Request().Method = http.MethodPost
 
 	if err := h.RefreshRuntime(c); err != nil {
 		t.Fatalf("RefreshRuntime() error = %v", err)
@@ -1596,6 +1597,7 @@ func TestRefreshRuntime_ReturnsReport(t *testing.T) {
 func TestRefreshRuntime_FeatureUnavailableWhenNotConfigured(t *testing.T) {
 	h := NewHandler(nil, nil)
 	c, rec := newHandlerContext("/admin/api/v1/runtime/refresh")
+	c.Request().Method = http.MethodPost
 
 	if err := h.RefreshRuntime(c); err != nil {
 		t.Fatalf("RefreshRuntime() error = %v", err)
@@ -1638,6 +1640,7 @@ func TestRefreshRuntime_PreservesGatewayError(t *testing.T) {
 	}
 	h := NewHandler(nil, nil, WithRuntimeRefresher(refresher))
 	c, rec := newHandlerContext("/admin/api/v1/runtime/refresh")
+	c.Request().Method = http.MethodPost
 
 	if err := h.RefreshRuntime(c); err != nil {
 		t.Fatalf("RefreshRuntime() error = %v", err)
@@ -1654,11 +1657,19 @@ func TestRefreshRuntime_PreservesGatewayError(t *testing.T) {
 	if !ok {
 		t.Fatalf("error object missing or invalid: %#v", body["error"])
 	}
+	for _, key := range []string{"type", "message", "param", "code"} {
+		if _, ok := rawError[key]; !ok {
+			t.Fatalf("error.%s missing from response: %#v", key, rawError)
+		}
+	}
 	if rawError["type"] != string(core.ErrorTypeInvalidRequest) {
 		t.Fatalf("error.type = %#v, want %q", rawError["type"], core.ErrorTypeInvalidRequest)
 	}
 	if rawError["message"] != "runtime refresh canceled before start" {
 		t.Fatalf("error.message = %#v, want preserved message", rawError["message"])
+	}
+	if rawError["param"] != nil {
+		t.Fatalf("error.param = %#v, want null", rawError["param"])
 	}
 	if rawError["code"] != "request_canceled" {
 		t.Fatalf("error.code = %#v, want request_canceled", rawError["code"])

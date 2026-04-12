@@ -47,7 +47,7 @@ func (a *App) RefreshRuntime(ctx context.Context) (admin.RuntimeRefreshReport, e
 	registry := a.modelRegistry()
 	modelListURL := a.modelListURL()
 
-	a.runRuntimeRefreshStep(&report, "model_list", func() runtimeRefreshStepResult {
+	if err := a.runRuntimeRefreshStep(&report, "model_list", func() runtimeRefreshStepResult {
 		if registry == nil {
 			return runtimeRefreshStepResult{err: fmt.Errorf("model registry is unavailable")}
 		}
@@ -68,9 +68,11 @@ func (a *App) RefreshRuntime(ctx context.Context) (admin.RuntimeRefreshReport, e
 		return runtimeRefreshStepResult{
 			message: fmt.Sprintf("downloaded %d model metadata entries", count),
 		}
-	})
+	}); err != nil {
+		return report, err
+	}
 
-	a.runRuntimeRefreshStep(&report, "providers", func() runtimeRefreshStepResult {
+	if err := a.runRuntimeRefreshStep(&report, "providers", func() runtimeRefreshStepResult {
 		if registry == nil {
 			return runtimeRefreshStepResult{err: fmt.Errorf("model registry is unavailable")}
 		}
@@ -99,9 +101,11 @@ func (a *App) RefreshRuntime(ctx context.Context) (admin.RuntimeRefreshReport, e
 				message: fmt.Sprintf("refreshed %d provider model%s", registry.ModelCount(), pluralSuffix(registry.ModelCount())),
 			}
 		}
-	})
+	}); err != nil {
+		return report, err
+	}
 
-	a.runRuntimeRefreshStep(&report, "model_registry_cache", func() runtimeRefreshStepResult {
+	if err := a.runRuntimeRefreshStep(&report, "model_registry_cache", func() runtimeRefreshStepResult {
 		if registry == nil {
 			return runtimeRefreshStepResult{err: fmt.Errorf("model registry is unavailable")}
 		}
@@ -115,13 +119,25 @@ func (a *App) RefreshRuntime(ctx context.Context) (admin.RuntimeRefreshReport, e
 			return runtimeRefreshStepResult{err: err}
 		}
 		return runtimeRefreshStepResult{message: "persisted refreshed model registry"}
-	})
+	}); err != nil {
+		return report, err
+	}
 
-	a.runRefreshableServiceStep(&report, "auth_keys", a.authKeyService(), ctx)
-	a.runRefreshableServiceStep(&report, "aliases", a.aliasService(), ctx)
-	a.runRefreshableServiceStep(&report, "model_overrides", a.modelOverrideService(), ctx)
-	a.runRefreshableServiceStep(&report, "guardrails", a.guardrailService(), ctx)
-	a.runRefreshableServiceStep(&report, "execution_plans", a.executionPlanService(), ctx)
+	if err := a.runRefreshableServiceStep(&report, "auth_keys", a.authKeyService(), ctx); err != nil {
+		return report, err
+	}
+	if err := a.runRefreshableServiceStep(&report, "aliases", a.aliasService(), ctx); err != nil {
+		return report, err
+	}
+	if err := a.runRefreshableServiceStep(&report, "model_overrides", a.modelOverrideService(), ctx); err != nil {
+		return report, err
+	}
+	if err := a.runRefreshableServiceStep(&report, "guardrails", a.guardrailService(), ctx); err != nil {
+		return report, err
+	}
+	if err := a.runRefreshableServiceStep(&report, "execution_plans", a.executionPlanService(), ctx); err != nil {
+		return report, err
+	}
 
 	if registry != nil {
 		report.ModelCount = registry.ModelCount()
@@ -131,8 +147,8 @@ func (a *App) RefreshRuntime(ctx context.Context) (admin.RuntimeRefreshReport, e
 	return report, nil
 }
 
-func (a *App) runRefreshableServiceStep(report *admin.RuntimeRefreshReport, name string, service refreshableService, ctx context.Context) {
-	a.runRuntimeRefreshStep(report, name, func() runtimeRefreshStepResult {
+func (a *App) runRefreshableServiceStep(report *admin.RuntimeRefreshReport, name string, service refreshableService, ctx context.Context) error {
+	return a.runRuntimeRefreshStep(report, name, func() runtimeRefreshStepResult {
 		if service == nil {
 			return runtimeRefreshStepResult{
 				status:  admin.RuntimeRefreshStatusSkipped,
@@ -146,9 +162,13 @@ func (a *App) runRefreshableServiceStep(report *admin.RuntimeRefreshReport, name
 	})
 }
 
-func (a *App) runRuntimeRefreshStep(report *admin.RuntimeRefreshReport, name string, fn func() runtimeRefreshStepResult) {
+func (a *App) runRuntimeRefreshStep(report *admin.RuntimeRefreshReport, name string, fn func() runtimeRefreshStepResult) error {
 	startedAt := time.Now()
 	result := fn()
+	if errors.Is(result.err, context.Canceled) || errors.Is(result.err, context.DeadlineExceeded) {
+		return result.err
+	}
+
 	status := strings.TrimSpace(result.status)
 	if status == "" {
 		if result.err != nil {
@@ -168,6 +188,7 @@ func (a *App) runRuntimeRefreshStep(report *admin.RuntimeRefreshReport, name str
 		step.Error = result.err.Error()
 	}
 	report.Steps = append(report.Steps, step)
+	return nil
 }
 
 func finalizeRuntimeRefreshReport(report *admin.RuntimeRefreshReport) {
@@ -215,7 +236,7 @@ func runtimeRefreshStepStatus(steps []admin.RuntimeRefreshStep, name string) str
 func providerRefreshIssueCount(snapshots []providers.ProviderRuntimeSnapshot) int {
 	var count int
 	for _, snapshot := range snapshots {
-		if strings.TrimSpace(snapshot.LastModelFetchError) != "" {
+		if strings.TrimSpace(snapshot.LastModelFetchError) != "" || strings.TrimSpace(snapshot.LastAvailabilityError) != "" {
 			count++
 		}
 	}

@@ -176,6 +176,33 @@ func TestRefreshRuntime_ReturnsGatewayErrorWhenContextCanceledBeforeAcquire(t *t
 	}
 }
 
+func TestRunRuntimeRefreshStepReturnsContextErrorWithoutAppendingStep(t *testing.T) {
+	app := &App{}
+	report := admin.RuntimeRefreshReport{}
+
+	err := app.runRuntimeRefreshStep(&report, "providers", func() runtimeRefreshStepResult {
+		return runtimeRefreshStepResult{err: context.Canceled}
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runRuntimeRefreshStep() error = %v, want context canceled", err)
+	}
+	if len(report.Steps) != 0 {
+		t.Fatalf("steps = %+v, want none appended for context cancellation", report.Steps)
+	}
+}
+
+func TestProviderRefreshIssueCountIncludesAvailabilityErrors(t *testing.T) {
+	got := providerRefreshIssueCount([]providers.ProviderRuntimeSnapshot{
+		{Name: "healthy"},
+		{Name: "model-fetch", LastModelFetchError: " failed to fetch models "},
+		{Name: "availability", LastAvailabilityError: " provider unavailable "},
+		{Name: "both", LastModelFetchError: "fetch failed", LastAvailabilityError: "unavailable"},
+	})
+	if got != 3 {
+		t.Fatalf("providerRefreshIssueCount() = %d, want 3", got)
+	}
+}
+
 func runtimeRefreshStepByName(steps []admin.RuntimeRefreshStep, name string) *admin.RuntimeRefreshStep {
 	for i := range steps {
 		if steps[i].Name == name {

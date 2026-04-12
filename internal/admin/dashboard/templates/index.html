@@ -376,14 +376,22 @@
             <span class="loading-spinner" aria-hidden="true"></span>
             <span>Generating runtime report...</span>
         </div>
-        <div role="status" aria-live="polite" aria-atomic="true">
+        <div>
             <div class="alert alert-success settings-refresh-alert"
+                 role="status"
+                 aria-live="polite"
+                 aria-atomic="true"
                  x-show="runtimeRefreshNotice && runtimeRefreshSucceeded()"
                  x-text="runtimeRefreshNotice"></div>
             <div class="alert alert-warning settings-refresh-alert"
+                 role="alert"
+                 aria-live="assertive"
+                 aria-atomic="true"
                  x-show="runtimeRefreshError || (runtimeRefreshNotice && runtimeRefreshWarnings())"
                  x-text="runtimeRefreshError || runtimeRefreshNotice"></div>
             <ul class="runtime-refresh-steps"
+                role="status"
+                aria-live="polite"
                 x-show="runtimeRefreshReport && runtimeRefreshReport.steps && runtimeRefreshReport.steps.length > 0">
                 <template x-for="step in runtimeRefreshReport.steps" :key="step.name">
                     <li :class="'runtime-refresh-step is-' + step.status" x-text="runtimeRefreshStepLabel(step)"></li>
