@@ -1,5 +1,6 @@
 {{define "auth-banner"}}
-<div class="alert alert-warning" x-show="authError">
-    Authentication required. Enter your API key in the sidebar to view data.
+<div class="alert alert-warning auth-banner" x-show="authError" role="alert">
+    <span>Authentication required for dashboard data.</span>
+    <button type="button" class="pagination-btn pagination-btn-primary" @click="openAuthDialog()">Enter API key</button>
 </div>
 {{end}}

@@ -248,15 +248,16 @@
 
             async fetchGuardrailTypes() {
                 this.guardrailTypesLoading = true;
+                const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 try {
-                    const res = await fetch('/admin/api/v1/guardrails/types', { headers: this.headers() });
+                    const res = await fetch('/admin/api/v1/guardrails/types', request);
                     if (res.status === 503) {
                         this.guardrailsAvailable = false;
                         this.guardrailTypes = [];
                         return;
                     }
                     this.guardrailsAvailable = true;
-                    if (!this.handleFetchResponse(res, 'guardrail types')) {
+                    if (!this.handleFetchResponse(res, 'guardrail types', request)) {
                         this.guardrailTypes = [];
                         return;
                     }
@@ -280,15 +281,16 @@
             async fetchGuardrails() {
                 this.guardrailsLoading = true;
                 this.guardrailError = '';
+                const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 try {
-                    const res = await fetch('/admin/api/v1/guardrails', { headers: this.headers() });
+                    const res = await fetch('/admin/api/v1/guardrails', request);
                     if (res.status === 503) {
                         this.guardrailsAvailable = false;
                         this.guardrails = [];
                         return;
                     }
                     this.guardrailsAvailable = true;
-                    if (!this.handleFetchResponse(res, 'guardrails')) {
+                    if (!this.handleFetchResponse(res, 'guardrails', request)) {
                         this.guardrails = [];
                         return;
                     }

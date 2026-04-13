@@ -28,6 +28,8 @@ function dashboard() {
         authError: false,
         needsAuth: false,
         apiKey: '',
+        authDialogOpen: false,
+        authRequestGeneration: 0,
         theme: 'system',
         sidebarCollapsed: false,
         settingsSubpage: 'general',
@@ -172,7 +174,7 @@ function dashboard() {
             if (typeof this.initProviderStatusPreferences === 'function') {
                 this.initProviderStatusPreferences();
             }
-            this.apiKey = localStorage.getItem('gomodel_api_key') || '';
+            this.apiKey = this.normalizeApiKey(localStorage.getItem('gomodel_api_key') || '');
             this.theme = localStorage.getItem('gomodel_theme') || 'system';
             this.sidebarCollapsed = localStorage.getItem('gomodel_sidebar_collapsed') === 'true';
             this.applyTheme();
@@ -263,7 +265,14 @@ function dashboard() {
             this.renderUserPathChart();
         },
 
+        normalizeApiKey(value) {
+            const key = String(value || '').trim();
+            const match = key.match(/^Bearer\s+(.+)$/i);
+            return match ? match[1].trim() : key;
+        },
+
         saveApiKey() {
+            this.apiKey = this.normalizeApiKey(this.apiKey);
             if (this.apiKey) {
                 localStorage.setItem('gomodel_api_key', this.apiKey);
             } else {
@@ -271,10 +280,47 @@ function dashboard() {
             }
         },
 
+        requestOptions(options) {
+            const request = { ...(options || {}) };
+            request.headers = this.headers();
+            request.authGeneration = this.authRequestGeneration;
+            return request;
+        },
+
+        isStaleAuthResponse(request) {
+            return request &&
+                typeof request.authGeneration === 'number' &&
+                request.authGeneration < this.authRequestGeneration;
+        },
+
+        openAuthDialog() {
+            this.authDialogOpen = true;
+            setTimeout(() => {
+                const input = document.getElementById('authDialogApiKey');
+                if (input && typeof input.focus === 'function') {
+                    input.focus();
+                }
+            }, 0);
+        },
+
+        closeAuthDialog() {
+            this.authDialogOpen = false;
+        },
+
+        submitApiKey() {
+            this.saveApiKey();
+            this.authRequestGeneration++;
+            this.authError = false;
+            this.needsAuth = false;
+            this.closeAuthDialog();
+            this.fetchAll();
+        },
+
         headers() {
             const h = { 'Content-Type': 'application/json' };
-            if (this.apiKey) {
-                h.Authorization = 'Bearer ' + this.apiKey;
+            const apiKey = this.normalizeApiKey(this.apiKey);
+            if (apiKey) {
+                h.Authorization = 'Bearer ' + apiKey;
             }
             if (typeof this.effectiveTimezone === 'function') {
                 h['X-GoModel-Timezone'] = this.effectiveTimezone();
@@ -354,11 +400,11 @@ function dashboard() {
             this.runtimeRefreshReport = null;
 
             try {
-                const res = await fetch('/admin/api/v1/runtime/refresh', {
+                const request = this.requestOptions({
                     method: 'POST',
-                    headers: this.headers()
                 });
-                if (!this.handleFetchResponse(res, 'runtime refresh')) {
+                const res = await fetch('/admin/api/v1/runtime/refresh', request);
+                if (!this.handleFetchResponse(res, 'runtime refresh', request)) {
                     this.runtimeRefreshNotice = 'Runtime refresh failed.';
                     this.runtimeRefreshError = this.runtimeRefreshNotice;
                     return;
@@ -433,10 +479,14 @@ function dashboard() {
             return name + ': ' + status + ' - ' + detail;
         },
 
-        handleFetchResponse(res, label) {
+        handleFetchResponse(res, label, request) {
             if (res.status === 401) {
+                if (this.isStaleAuthResponse(request)) {
+                    return false;
+                }
                 this.authError = true;
                 this.needsAuth = true;
+                this.openAuthDialog();
                 return false;
             }
             if (!res.ok) {
@@ -457,7 +507,7 @@ function dashboard() {
         async fetchModels() {
             const controller = this._startAbortableRequest('_modelsFetchController');
             const isCurrentRequest = () => this._isCurrentAbortableRequest('_modelsFetchController', controller);
-            const options = { headers: this.headers() };
+            const options = this.requestOptions();
             if (controller) {
                 options.signal = controller.signal;
             }
@@ -472,7 +522,7 @@ function dashboard() {
                 if (!isCurrentRequest()) {
                     return;
                 }
-                if (!this.handleFetchResponse(res, 'models')) {
+                if (!this.handleFetchResponse(res, 'models', options)) {
                     if (!isCurrentRequest()) {
                         return;
                     }
@@ -506,9 +556,10 @@ function dashboard() {
         },
 
         async fetchCategories() {
+            const request = this.requestOptions();
             try {
-                const res = await fetch('/admin/api/v1/models/categories', { headers: this.headers() });
-                if (!this.handleFetchResponse(res, 'categories')) {
+                const res = await fetch('/admin/api/v1/models/categories', request);
+                if (!this.handleFetchResponse(res, 'categories', request)) {
                     this.categories = [];
                     return;
                 }

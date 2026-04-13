@@ -65,14 +65,14 @@
                 const controller = typeof this._startAbortableRequest === 'function'
                     ? this._startAbortableRequest('_providerStatusFetchController')
                     : null;
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
 
                 try {
                     const res = await fetch('/admin/api/v1/providers/status', options);
-                    if (!this.handleFetchResponse(res, 'provider status')) {
+                    if (!this.handleFetchResponse(res, 'provider status', options)) {
                         this.providerStatus = this.emptyProviderStatus();
                         return;
                     }

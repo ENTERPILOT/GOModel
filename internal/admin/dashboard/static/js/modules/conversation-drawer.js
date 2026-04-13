@@ -107,11 +107,12 @@
             async fetchConversation(logID, requestToken) {
                 try {
                     const qs = 'log_id=' + encodeURIComponent(logID) + '&limit=120';
-                    const res = await fetch('/admin/api/v1/audit/conversation?' + qs, { headers: this.headers() });
+                    const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
+                    const res = await fetch('/admin/api/v1/audit/conversation?' + qs, request);
 
                     if (requestToken !== this.conversationRequestToken) return;
 
-                    if (!this.handleFetchResponse(res, 'audit conversation')) {
+                    if (!this.handleFetchResponse(res, 'audit conversation', request)) {
                         this.conversationError = 'Unable to load interactions.';
                         this.conversationEntries = [];
                         this.conversationMessages = [];

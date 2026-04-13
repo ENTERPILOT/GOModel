@@ -19,7 +19,7 @@
                     }
                     return this._calendarFetchController === controller && !controller.signal.aborted;
                 };
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
@@ -30,7 +30,7 @@
                     if (!isCurrentRequest()) {
                         return;
                     }
-                    if (!this.handleFetchResponse(res, 'calendar')) {
+                    if (!this.handleFetchResponse(res, 'calendar', options)) {
                         if (!isCurrentRequest()) {
                             return;
                         }

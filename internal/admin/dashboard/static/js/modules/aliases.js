@@ -149,8 +149,9 @@
             async fetchAliases() {
                 this.aliasLoading = true;
                 this.aliasError = '';
+                const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 try {
-                    const res = await fetch('/admin/api/v1/aliases', { headers: this.headers() });
+                    const res = await fetch('/admin/api/v1/aliases', request);
                     if (res.status === 503) {
                         this.aliasesAvailable = false;
                         this.aliases = [];
@@ -158,7 +159,7 @@
                         return;
                     }
                     this.aliasesAvailable = true;
-                    if (!this.handleFetchResponse(res, 'aliases')) {
+                    if (!this.handleFetchResponse(res, 'aliases', request)) {
                         this.aliases = [];
                         this.syncDisplayModels();
                         return;
@@ -178,8 +179,9 @@
 
             async fetchModelOverrides() {
                 this.modelOverrideError = '';
+                const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 try {
-                    const res = await fetch('/admin/api/v1/model-overrides', { headers: this.headers() });
+                    const res = await fetch('/admin/api/v1/model-overrides', request);
                     if (res.status === 503) {
                         this.modelOverridesAvailable = false;
                         this.modelOverrideViews = [];
@@ -187,7 +189,7 @@
                         return;
                     }
                     this.modelOverridesAvailable = true;
-                    if (!this.handleFetchResponse(res, 'model overrides')) {
+                    if (!this.handleFetchResponse(res, 'model overrides', request)) {
                         this.modelOverrideViews = [];
                         this.syncDisplayModels();
                         return;

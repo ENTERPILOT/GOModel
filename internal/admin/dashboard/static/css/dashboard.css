@@ -92,6 +92,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+[x-cloak] {
+    display: none !important;
+}
+
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg);
@@ -193,29 +197,151 @@ body {
     border-top: 1px solid var(--border);
 }
 
-.api-key-section label {
+.api-key-section {
+    display: grid;
+    gap: 8px;
+}
+
+.api-key-title {
     display: block;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-muted);
-    margin-bottom: 6px;
 }
 
-.api-key-section input {
+.api-key-open-btn {
     width: 100%;
     padding: 8px 10px;
+    background: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: #fff;
+    font-size: 13px;
+    font-family: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+.api-key-open-btn:hover {
+    background: color-mix(in srgb, var(--accent) 90%, #fff 10%);
+    border-color: color-mix(in srgb, var(--accent) 78%, #000 12%);
+}
+
+.api-key-open-btn:focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent) 36%, transparent);
+    outline-offset: 2px;
+}
+
+.auth-dialog-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.48);
+    z-index: 80;
+}
+
+.auth-dialog-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    padding: 20px;
+}
+
+.auth-dialog {
+    width: min(440px, 100%);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+    padding: 22px;
+}
+
+.auth-dialog-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.auth-dialog-kicker {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.auth-dialog h2 {
+    font-size: 22px;
+    line-height: 1.2;
+    margin-top: 2px;
+}
+
+.auth-dialog-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+}
+
+.auth-dialog-close:hover {
+    color: var(--text);
+    background: var(--bg-surface-hover);
+}
+
+.auth-dialog-copy,
+.auth-dialog-hint {
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.auth-dialog-form {
+    display: grid;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.auth-dialog-form label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+}
+
+.auth-dialog-input {
+    width: 100%;
+    padding: 11px 12px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     color: var(--text);
-    font-size: 13px;
+    font-size: 14px;
+    font-family: inherit;
     outline: none;
 }
 
-.api-key-section input:focus {
+.auth-dialog-input:focus {
     border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.auth-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 8px;
 }
 
 /* Theme toggle — compact pill */
@@ -1076,6 +1202,14 @@ body {
 }
 
 .alert-inline-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.auth-banner {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -3185,6 +3319,10 @@ body.conversation-drawer-open {
     .sidebar-footer .theme-toggle-mobile { display: flex; margin: 0 auto; }
     .sidebar-toggle { display: none; }
     .content { width: 100%; margin: 0 auto; padding: 20px; }
+    .auth-dialog-shell { align-items: end; padding: 12px; }
+    .auth-dialog { padding: 18px; }
+    .auth-dialog-actions { flex-direction: column-reverse; }
+    .auth-dialog-actions .pagination-btn { width: 100%; }
     .cards { grid-template-columns: repeat(2, 1fr); }
 
     .provider-status-flag {

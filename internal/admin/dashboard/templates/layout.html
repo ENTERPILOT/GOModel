@@ -84,8 +84,8 @@
                     </template>
                 </button>
                 <div class="api-key-section" x-show="needsAuth">
-                    <label for="apiKey">API Key</label>
-                    <input id="apiKey" type="password" placeholder="Bearer token" x-model="apiKey" @change="saveApiKey(); fetchAll()">
+                    <span class="api-key-title">Dashboard locked</span>
+                    <button type="button" class="api-key-open-btn" @click="openAuthDialog()">Enter API key</button>
                 </div>
             </div>
         </aside>
@@ -96,6 +96,49 @@
         <main class="content">
             {{template "index" .}}
         </main>
+        <div class="auth-dialog-backdrop"
+             x-cloak
+             x-show="authDialogOpen"
+             x-transition.opacity.duration.160ms
+             aria-hidden="true"></div>
+        <div class="auth-dialog-shell"
+             x-cloak
+             x-show="authDialogOpen"
+             x-transition.opacity.duration.160ms
+             @click="closeAuthDialog()"
+             @keydown.escape.window="authDialogOpen && closeAuthDialog()">
+            <section class="auth-dialog"
+                     role="dialog"
+                     aria-modal="true"
+                     aria-labelledby="authDialogTitle"
+                     aria-describedby="authDialogDescription"
+                     @click.stop>
+                <div class="auth-dialog-header">
+                    <div>
+                        <p class="auth-dialog-kicker">Admin access</p>
+                        <h2 id="authDialogTitle">Dashboard locked</h2>
+                    </div>
+                    <button type="button" class="auth-dialog-close" aria-label="Close authentication dialog" @click="closeAuthDialog()">&#x2715;</button>
+                </div>
+                <p id="authDialogDescription" class="auth-dialog-copy">
+                    Enter the API key configured for this GoModel instance.
+                </p>
+                <form class="auth-dialog-form" @submit.prevent="submitApiKey()">
+                    <label for="authDialogApiKey">API key</label>
+                    <input id="authDialogApiKey"
+                           class="auth-dialog-input"
+                           type="password"
+                           placeholder="Master key or bearer token"
+                           autocomplete="current-password"
+                           x-model="apiKey">
+                    <p class="auth-dialog-hint">Stored in this browser. Requests use the Authorization bearer header.</p>
+                    <div class="auth-dialog-actions">
+                        <button type="button" class="pagination-btn" @click="closeAuthDialog()">Not now</button>
+                        <button type="submit" class="pagination-btn pagination-btn-primary">Unlock dashboard</button>
+                    </div>
+                </form>
+            </section>
+        </div>
     </div>
     <script src="/admin/static/js/modules/conversation-helpers.js"></script>
     <script src="/admin/static/js/modules/clipboard.js"></script>

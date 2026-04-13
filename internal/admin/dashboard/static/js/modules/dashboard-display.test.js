@@ -4,16 +4,26 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
+function createLocalStorage(initial = {}) {
+    const values = { ...initial };
+    return {
+        getItem(key) {
+            return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : null;
+        },
+        setItem(key, value) {
+            values[key] = String(value);
+        },
+        removeItem(key) {
+            delete values[key];
+        },
+        values
+    };
+}
+
 function loadDashboardApp(overrides = {}) {
     const dashboardSource = fs.readFileSync(path.join(__dirname, '../dashboard.js'), 'utf8');
     const window = {
-        localStorage: {
-            getItem() {
-                return null;
-            },
-            setItem() {},
-            removeItem() {}
-        },
+        localStorage: createLocalStorage(),
         location: { pathname: '/admin/dashboard/usage' },
         matchMedia() {
             return { addEventListener() {} };
@@ -132,4 +142,70 @@ test('system theme media changes rerender all dashboard charts', () => {
     assert.equal(overviewCalls, 1);
     assert.equal(modelCalls, 1);
     assert.equal(userPathCalls, 1);
+});
+
+test('unauthorized dashboard responses open the auth dialog', () => {
+    const app = loadDashboardApp();
+    const request = app.requestOptions();
+
+    const handled = app.handleFetchResponse({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized'
+    }, 'models', request);
+
+    assert.equal(handled, false);
+    assert.equal(app.authError, true);
+    assert.equal(app.needsAuth, true);
+    assert.equal(app.authDialogOpen, true);
+});
+
+test('stale unauthorized dashboard responses do not reopen the auth dialog', () => {
+    const app = loadDashboardApp();
+    const staleRequest = app.requestOptions();
+
+    app.authRequestGeneration++;
+    app.authError = false;
+    app.needsAuth = false;
+    app.authDialogOpen = false;
+
+    const handled = app.handleFetchResponse({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized'
+    }, 'categories', staleRequest);
+
+    assert.equal(handled, false);
+    assert.equal(app.authError, false);
+    assert.equal(app.needsAuth, false);
+    assert.equal(app.authDialogOpen, false);
+});
+
+test('submitApiKey trims bearer input and stores the key before refreshing dashboard data', () => {
+    const storage = createLocalStorage();
+    const app = loadDashboardApp({
+        window: { localStorage: storage }
+    });
+    let fetches = 0;
+    app.fetchAll = () => {
+        fetches++;
+    };
+
+    app.authDialogOpen = true;
+    app.apiKey = '  Bearer secret-token  ';
+    app.submitApiKey();
+
+    assert.equal(app.apiKey, 'secret-token');
+    assert.equal(app.authRequestGeneration, 1);
+    assert.equal(storage.getItem('gomodel_api_key'), 'secret-token');
+    assert.equal(app.authDialogOpen, false);
+    assert.equal(fetches, 1);
+});
+
+test('headers accept a pasted bearer value without duplicating the prefix', () => {
+    const app = loadDashboardApp();
+
+    app.apiKey = 'Bearer secret-token';
+
+    assert.equal(app.headers().Authorization, 'Bearer secret-token');
 });

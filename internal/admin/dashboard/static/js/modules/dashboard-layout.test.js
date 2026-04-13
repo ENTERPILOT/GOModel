@@ -138,7 +138,7 @@ test('dashboard pages reuse a shared auth banner template', () => {
 
     assert.match(
         authBannerTemplate,
-        /{{define "auth-banner"}}[\s\S]*x-show="authError"[\s\S]*Authentication required\. Enter your API key in the sidebar to view data\.[\s\S]*{{end}}/
+        /{{define "auth-banner"}}[\s\S]*class="alert alert-warning auth-banner"[\s\S]*x-show="authError"[\s\S]*Authentication required for dashboard data\.[\s\S]*@click="openAuthDialog\(\)"[\s\S]*Enter API key[\s\S]*{{end}}/
     );
 
     const authBannerCalls = indexTemplate.match(/{{template "auth-banner" \.}}/g) || [];
@@ -147,8 +147,56 @@ test('dashboard pages reuse a shared auth banner template', () => {
     assert.match(indexTemplate, /<template x-if="page==='guardrails'">\s*<div>[\s\S]*{{template "auth-banner" \.}}/);
     assert.doesNotMatch(
         indexTemplate,
-        /<div class="alert alert-warning" x-show="authError">[\s\S]*Authentication required\. Enter your API key in the sidebar to view data\.[\s\S]*<\/div>/
+        /Enter your API key in the sidebar to view data/
     );
+});
+
+test('dashboard auth uses a root-level dialog instead of a hidden sidebar input', () => {
+    const template = readFixture('../../../templates/layout.html');
+    const css = readFixture('../../css/dashboard.css');
+
+    assert.doesNotMatch(template, /<input id="apiKey"/);
+    assert.match(
+        template,
+        /class="api-key-section" x-show="needsAuth"[\s\S]*class="api-key-open-btn" @click="openAuthDialog\(\)"[\s\S]*Enter API key/
+    );
+    const backdropBlock = template.match(/<div class="auth-dialog-backdrop"[\s\S]*?<\/div>/);
+    assert.ok(backdropBlock, 'Expected auth dialog backdrop block');
+    assert.match(backdropBlock[0], /x-show="authDialogOpen"/);
+    assert.match(backdropBlock[0], /aria-hidden="true"/);
+    assert.doesNotMatch(backdropBlock[0], /@click="closeAuthDialog\(\)"/);
+
+    const shellOpening = template.match(/<div class="auth-dialog-shell"[\s\S]*?<section class="auth-dialog"/);
+    assert.ok(shellOpening, 'Expected auth dialog shell block');
+    assert.match(
+        shellOpening[0],
+        /x-show="authDialogOpen"[\s\S]*@click="closeAuthDialog\(\)"/
+    );
+    assert.match(
+        template,
+        /role="dialog"[\s\S]*aria-modal="true"[\s\S]*@click\.stop[\s\S]*id="authDialogApiKey"/
+    );
+    assert.match(template, /placeholder="Master key or bearer token"/);
+    assert.match(
+        template,
+        /<form class="auth-dialog-form" @submit\.prevent="submitApiKey\(\)"/
+    );
+
+    const cloakRule = readCSSRule(css, '[x-cloak]');
+    assert.match(cloakRule, /display:\s*none !important/);
+
+    const shellRule = readCSSRule(css, '.auth-dialog-shell');
+    assert.match(shellRule, /position:\s*fixed/);
+    assert.match(shellRule, /place-items:\s*center/);
+    assert.match(shellRule, /z-index:\s*90/);
+
+    const dialogRule = readCSSRule(css, '.auth-dialog');
+    assert.match(dialogRule, /width:\s*min\(440px, 100%\)/);
+    assert.match(dialogRule, /border-radius:\s*var\(--radius\)/);
+
+    const bannerRule = readCSSRule(css, '.auth-banner');
+    assert.match(bannerRule, /display:\s*flex/);
+    assert.match(bannerRule, /flex-wrap:\s*wrap/);
 });
 
 test('auth key expirations render as a UTC date with the full UTC timestamp in the hover title', () => {

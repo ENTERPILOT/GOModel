@@ -702,12 +702,12 @@
                     ? setTimeout(() => controller.abort(), 10000)
                     : null;
                 try {
-                    const request = { headers: this.headers() };
+                    const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                     if (controller) {
                         request.signal = controller.signal;
                     }
                     const res = await fetch('/admin/api/v1/dashboard/config', request);
-                    if (!this.handleFetchResponse(res, 'dashboard config')) {
+                    if (!this.handleFetchResponse(res, 'dashboard config', request)) {
                         this.executionPlanRuntimeConfig = {};
                         return;
                     }
@@ -822,7 +822,7 @@
                     ? setTimeout(() => controller.abort(), 10000)
                     : null;
                 try {
-                    const request = { headers: this.headers() };
+                    const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                     if (controller) {
                         request.signal = controller.signal;
                     }
@@ -833,7 +833,7 @@
                         return;
                     }
                     this.executionPlansAvailable = true;
-                    if (!this.handleFetchResponse(res, 'workflows')) {
+                    if (!this.handleFetchResponse(res, 'workflows', request)) {
                         this.executionPlans = [];
                         return;
                     }
@@ -855,9 +855,10 @@
             },
 
             async fetchExecutionPlanGuardrails() {
+                const request = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 try {
-                    const res = await fetch('/admin/api/v1/execution-plans/guardrails', { headers: this.headers() });
-                    if (!this.handleFetchResponse(res, 'workflow guardrails')) {
+                    const res = await fetch('/admin/api/v1/execution-plans/guardrails', request);
+                    if (!this.handleFetchResponse(res, 'workflow guardrails', request)) {
                         this.guardrailRefs = [];
                         return;
                     }
@@ -954,7 +955,7 @@
 	                        ? setTimeout(() => controller.abort(), 10000)
 	                        : null;
 	                    try {
-	                        const options = { headers: this.headers() };
+	                        const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
 	                        if (controller) {
 	                            options.signal = controller.signal;
 	                        }
@@ -965,13 +966,13 @@
                         }
                         if (res.status === 401) {
                             if (typeof this.handleFetchResponse === 'function') {
-                                this.handleFetchResponse(res, 'workflow');
+                                this.handleFetchResponse(res, 'workflow', options);
                             }
                             return null;
                         }
                         if (!res.ok) {
                             if (typeof this.handleFetchResponse === 'function') {
-                                this.handleFetchResponse(res, 'workflow');
+                                this.handleFetchResponse(res, 'workflow', options);
                             }
                             return null;
                         }
@@ -1041,14 +1042,20 @@
 
                 this.executionPlanSubmitting = true;
                 try {
-                    const res = await fetch('/admin/api/v1/execution-plans', {
-                        method: 'POST',
-                        headers: this.headers(),
-                        body: JSON.stringify(payload)
-                    });
+                    const request = typeof this.requestOptions === 'function'
+                        ? this.requestOptions({
+                            method: 'POST',
+                            body: JSON.stringify(payload)
+                        })
+                        : {
+                            method: 'POST',
+                            headers: this.headers(),
+                            body: JSON.stringify(payload)
+                        };
+                    const res = await fetch('/admin/api/v1/execution-plans', request);
 
                     if (res.status === 401) {
-                        this.handleFetchResponse(res, 'create workflow');
+                        this.handleFetchResponse(res, 'create workflow', request);
                         return;
                     }
                     if (!res.ok) {
@@ -1330,13 +1337,18 @@
                 this.executionPlanNotice = '';
                 this.executionPlanDeactivatingID = planID;
                 try {
-                    const res = await fetch('/admin/api/v1/execution-plans/' + encodeURIComponent(planID) + '/deactivate', {
-                        method: 'POST',
-                        headers: this.headers()
-                    });
+                    const request = typeof this.requestOptions === 'function'
+                        ? this.requestOptions({
+                            method: 'POST',
+                        })
+                        : {
+                            method: 'POST',
+                            headers: this.headers()
+                        };
+                    const res = await fetch('/admin/api/v1/execution-plans/' + encodeURIComponent(planID) + '/deactivate', request);
 
                     if (res.status === 401) {
-                        this.handleFetchResponse(res, 'deactivate workflow');
+                        this.handleFetchResponse(res, 'deactivate workflow', request);
                         return;
                     }
                     if (!res.ok) {

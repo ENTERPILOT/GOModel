@@ -40,7 +40,7 @@
                 const controller = typeof this._startAbortableRequest === 'function'
                     ? this._startAbortableRequest('_cacheOverviewFetchController')
                     : null;
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
@@ -56,7 +56,7 @@
                     queryStr += '&interval=' + this.interval;
 
                     const res = await fetch('/admin/api/v1/cache/overview?' + queryStr, options);
-                    if (!this.handleFetchResponse(res, 'cache overview')) {
+                    if (!this.handleFetchResponse(res, 'cache overview', options)) {
                         this.cacheOverview = this.emptyCacheOverview();
                         return;
                     }
@@ -89,7 +89,7 @@
                 const controller = typeof this._startAbortableRequest === 'function'
                     ? this._startAbortableRequest('_usageFetchController')
                     : null;
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
@@ -109,8 +109,8 @@
                         fetch('/admin/api/v1/usage/daily?' + queryStr, options)
                     ]);
 
-                    if (!this.handleFetchResponse(summaryRes, 'usage summary') ||
-                        !this.handleFetchResponse(dailyRes, 'usage daily')) {
+                    if (!this.handleFetchResponse(summaryRes, 'usage summary', options) ||
+                        !this.handleFetchResponse(dailyRes, 'usage daily', options)) {
                         return;
                     }
 
@@ -157,14 +157,14 @@
                 const controller = typeof this._startAbortableRequest === 'function'
                     ? this._startAbortableRequest('_modelUsageFetchController')
                     : null;
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
 
                 try {
                     const res = await fetch('/admin/api/v1/usage/models?' + this._usageQueryStr(), options);
-                    if (!this.handleFetchResponse(res, 'usage models')) {
+                    if (!this.handleFetchResponse(res, 'usage models', options)) {
                         this.modelUsage = [];
                         return;
                     }
@@ -190,14 +190,14 @@
                 const controller = typeof this._startAbortableRequest === 'function'
                     ? this._startAbortableRequest('_userPathUsageFetchController')
                     : null;
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
 
                 try {
                     const res = await fetch('/admin/api/v1/usage/user-paths?' + this._usageQueryStr(), options);
-                    if (!this.handleFetchResponse(res, 'usage user paths')) {
+                    if (!this.handleFetchResponse(res, 'usage user paths', options)) {
                         this.userPathUsage = [];
                         return;
                     }
@@ -223,7 +223,7 @@
                 const controller = typeof this._startAbortableRequest === 'function'
                     ? this._startAbortableRequest('_usageLogFetchController')
                     : null;
-                const options = { headers: this.headers() };
+                const options = typeof this.requestOptions === 'function' ? this.requestOptions() : { headers: this.headers() };
                 if (controller) {
                     options.signal = controller.signal;
                 }
@@ -238,7 +238,7 @@
                     if (this.usageLogUserPath) qs += '&user_path=' + encodeURIComponent(this.usageLogUserPath);
 
                     const res = await fetch('/admin/api/v1/usage/log?' + qs, options);
-                    if (!this.handleFetchResponse(res, 'usage log')) {
+                    if (!this.handleFetchResponse(res, 'usage log', options)) {
                         this.usageLog = { entries: [], total: 0, limit: 50, offset: 0 };
                         return;
                     }
