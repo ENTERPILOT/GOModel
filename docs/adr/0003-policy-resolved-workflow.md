@@ -1,8 +1,8 @@
-# ADR-0003: Policy-Resolved Execution Plan
+# ADR-0003: Policy-Resolved Workflow
 
 ## Context
 
-GOModel already has a request-scoped `ExecutionPlan` runtime object, but today it
+GOModel already has a request-scoped `Workflow` runtime object, but today it
 is derived in middleware and lives only in request context.
 
 That is not enough for the next stage of the gateway.
@@ -20,7 +20,7 @@ ADR-0002 establishes the ingress boundary:
 - immutable raw request capture via `RequestSnapshot`
 - optional best-effort semantic extraction via `WhiteBoxPrompt`
 
-This ADR defines the next layer above that boundary: how execution plans are
+This ADR defines the next layer above that boundary: how workflows are
 stored, matched, loaded into memory, and referenced from requests.
 
 ## Decision
@@ -29,17 +29,17 @@ stored, matched, loaded into memory, and referenced from requests.
 
 GOModel keeps two related but distinct concepts:
 
-1. persisted execution plan versions
-2. request-scoped `core.ExecutionPlan`
+1. persisted workflow versions
+2. request-scoped `core.Workflow`
 
-Persisted execution plan versions are the control-plane source of truth.
+Persisted workflow versions are the control-plane source of truth.
 
-`core.ExecutionPlan` remains the request-scoped runtime projection consumed by
+`core.Workflow` remains the request-scoped runtime projection consumed by
 handlers, middleware, and provider execution code.
 
 The runtime object is derived from:
 
-- the matched persisted execution plan version
+- the matched persisted workflow version
 - process-level feature configuration for the running gateway instance
 - request facts captured from ingress
 - request-scoped resolution results such as endpoint metadata and model
@@ -55,16 +55,16 @@ The first slice supports exactly these scopes:
 
 Examples:
 
-- `(provider=NULL, model=NULL)` means the single global execution plan
+- `(provider=NULL, model=NULL)` means the single global workflow
 - `(provider=openai, model=NULL)` means the provider-scoped plan
 - `(provider=openai, model=gpt-5)` means the provider-plus-model plan
 
 This ADR does not yet define path-scoped, key-scoped, team-scoped, or
-organization-scoped execution plans.
+organization-scoped workflows.
 
 ### 3. Matching Rule
 
-Exactly one execution plan version is selected for a request.
+Exactly one workflow version is selected for a request.
 
 Matching uses most-specific-wins precedence:
 
@@ -79,9 +79,9 @@ that request.
 
 ### 4. Persistence Model
 
-The first slice uses a single append-only execution-plan table.
+The first slice uses a single append-only workflow table.
 
-Each row represents one immutable execution plan version.
+Each row represents one immutable workflow version.
 
 Suggested fields:
 
@@ -91,8 +91,8 @@ Suggested fields:
 - `version`
 - `active`
 - `name`
-- `plan_payload`
-- `plan_hash`
+- `workflow_payload`
+- `workflow_hash`
 - `created_at`
 - optional operator metadata such as `description`
 
@@ -104,14 +104,14 @@ Rules:
 - requests reference the immutable row id of the matched version
 - `scope_provider=NULL, scope_model!=NULL` is invalid in this slice
 
-This means the database row id is the execution plan version identity.
+This means the database row id is the workflow version identity.
 
 ### 5. Hot-Path Runtime Model
 
 The database is the source of truth, but request matching must not depend on
 database reads.
 
-GOModel loads active execution plan rows into memory and serves request matching
+GOModel loads active workflow rows into memory and serves request matching
 from an immutable in-memory snapshot.
 
 The in-memory snapshot should expose:
@@ -126,8 +126,8 @@ Request-time lookup should be:
 2. check `provider + model`
 3. else check `provider`
 4. else use `global`
-5. materialize request-scoped `core.ExecutionPlan`
-6. attach the matched immutable execution plan version id to request context
+5. materialize request-scoped `core.Workflow`
+6. attach the matched immutable workflow version id to request context
 
 Snapshot refresh must be atomic so hot-path reads never observe a partially
 reloaded plan set.
@@ -137,20 +137,20 @@ one persistent source of truth across a cluster.
 
 ### 6. Request Traceability
 
-Each request must be traceable to the exact immutable execution plan version
+Each request must be traceable to the exact immutable workflow version
 that was selected.
 
 The first required persistence surface is `audit_logs`.
 
 `audit_logs` should store:
 
-- `execution_plan_version_id`
+- `workflow_version_id`
 
-This id identifies the immutable execution-plan version selected for the
+This id identifies the immutable workflow version selected for the
 request.
 
 Process-level feature switches may still disable parts of that plan for a given
-deployment. In other words, the matched plan remains traceable, but effective
+deployment. In other words, the matched workflow remains traceable, but effective
 runtime behavior can also depend on deployment configuration.
 
 The first slice does not require storing the same field in `usage`.
@@ -159,19 +159,19 @@ Usage records may continue to link back to audit records through `request_id`.
 
 ### 7. V1 Plan Payload
 
-The first slice keeps execution plans intentionally simple.
+The first slice keeps workflows intentionally simple.
 
 The gateway keeps the overall request-processing order predefined.
 
-Execution plans do not define a general workflow graph in v1.
+Workflows do not define a general workflow graph in v1.
 
-Instead, a matched execution plan configures:
+Instead, a matched workflow configures:
 
 - simple feature flags for gateway-owned behaviors
 - guardrail execution order inside the predefined guardrails phase
 
 Human-facing metadata such as the plan name belongs in the immutable database
-row for the execution-plan version, not in the JSON payload.
+row for the workflow version, not in the JSON payload.
 
 Recommended v1 payload shape:
 
@@ -217,7 +217,7 @@ V1 semantics:
 
 This preserves 12-factor operational control. Operators can disable gateway
 features for one deployment through environment-backed process configuration
-without rewriting persisted execution plans.
+without rewriting persisted workflows.
 
 To preserve immutability, omitted feature flags may be accepted at authoring
 time, but they must be resolved to explicit booleans before an immutable plan
@@ -229,7 +229,7 @@ In other words:
 - persisted plan versions must store effective resolved values, not implicit
   defaults
 
-This prevents the same immutable execution plan version from changing behavior
+This prevents the same immutable workflow version from changing behavior
 later because authoring-time defaults drift.
 
 Process-level hard-disable switches remain allowed to suppress features at
@@ -247,7 +247,7 @@ general-purpose workflow DSL before there is a concrete need for one.
 
 ### Positive
 
-- **Cluster-ready source of truth**: All instances can load execution plans from
+- **Cluster-ready source of truth**: All instances can load workflows from
   the same database
 - **Deterministic matching**: One request maps to one plan version using a
   simple precedence rule
@@ -256,7 +256,7 @@ general-purpose workflow DSL before there is a concrete need for one.
 - **Immutable traceability**: Audit records can point to the exact plan version
   used
 - **Clear control-plane boundary**: Persisted plan versions become the durable
-  policy layer, while `core.ExecutionPlan` remains request-scoped runtime state
+  policy layer, while `core.Workflow` remains request-scoped runtime state
 - **Simple v1 payload**: The first implementation stays focused on flags plus
   ordered guardrails instead of a premature workflow engine
 

@@ -1,0 +1,17 @@
+package workflows
+
+import "gomodel/internal/core"
+
+// View is the admin-facing representation of one active workflow version.
+// It includes both the persisted payload and the effective runtime features after
+// process-level feature caps are applied. Broken rows are still returned with
+// CompileError populated so the admin API can inspect persisted workflows that
+// no longer compile cleanly.
+type View struct {
+	Version
+	ScopeType         string                `json:"scope_type"`
+	ScopeDisplay      string                `json:"scope_display"`
+	EffectiveFeatures core.WorkflowFeatures `json:"effective_features"`
+	GuardrailsHash    string                `json:"guardrails_hash,omitempty"`
+	CompileError      string                `json:"compile_error,omitempty"`
+}

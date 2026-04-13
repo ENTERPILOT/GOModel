@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add canonical `X-GoModel-User-Path` support for audit logs, usage tracking, admin filtering, and execution-plan matching with hierarchical fallback.
+**Goal:** Add canonical `X-GoModel-User-Path` support for audit logs, usage tracking, admin filtering, and workflow matching with hierarchical fallback.
 
-**Architecture:** Capture and normalize the header once at ingress, carry it through the request-scoped model, persist it on audit/usage records, and teach execution-plan matching to resolve path ancestry without layering multiple plans. Keep storage simple by persisting one canonical path string and deriving ancestors only at read/match time.
+**Architecture:** Capture and normalize the header once at ingress, carry it through the request-scoped model, persist it on audit/usage records, and teach workflow matching to resolve path ancestry without layering multiple plans. Keep storage simple by persisting one canonical path string and deriving ancestors only at read/match time.
 
 **Tech Stack:** Go, Echo, SQLite, PostgreSQL, MongoDB, Alpine.js dashboard, Go test
 
@@ -42,30 +42,30 @@ func UserPathAncestors(path string) []string {}
 
 Run: `go test ./internal/core -run 'TestNormalizeUserPath|TestUserPathAncestors'`
 
-## Task 2: Execution Plan Path Scope
+## Task 2: Workflow Path Scope
 
 **Files:**
-- Modify: `internal/core/execution_plan.go`
-- Modify: `internal/executionplans/types.go`
-- Modify: `internal/executionplans/service.go`
-- Modify: `internal/executionplans/view.go`
-- Modify: `internal/executionplans/compiler.go`
+- Modify: `internal/core/workflow.go`
+- Modify: `internal/workflows/types.go`
+- Modify: `internal/workflows/service.go`
+- Modify: `internal/workflows/view.go`
+- Modify: `internal/workflows/compiler.go`
 - Modify: `internal/admin/handler.go`
-- Test: `internal/executionplans/types_test.go`
-- Test: `internal/executionplans/service_test.go`
-- Test: `internal/admin/handler_executionplans_test.go`
+- Test: `internal/workflows/types_test.go`
+- Test: `internal/workflows/service_test.go`
+- Test: `internal/admin/handler_workflows_test.go`
 
 - [ ] **Step 1: Write failing scope validation and matching tests**
-- [ ] **Step 2: Run focused execution-plan tests and verify RED**
+- [ ] **Step 2: Run focused workflow tests and verify RED**
 
-Run: `go test ./internal/executionplans ./internal/admin -run 'ExecutionPlan|NormalizeScope'`
+Run: `go test ./internal/workflows ./internal/admin -run 'Workflow|NormalizeScope'`
 
 - [ ] **Step 3: Add `scope_user_path` to request/admin/storage/runtime types**
 - [ ] **Step 4: Implement hierarchical fallback matching**
 - [ ] **Step 5: Update admin scope validation to canonicalize path input**
 - [ ] **Step 6: Run focused tests and verify GREEN**
 
-Run: `go test ./internal/executionplans ./internal/admin -run 'ExecutionPlan|NormalizeScope'`
+Run: `go test ./internal/workflows ./internal/admin -run 'Workflow|NormalizeScope'`
 
 ## Task 3: Audit Log Persistence And Filtering
 
@@ -126,21 +126,21 @@ Run: `go test ./internal/usage ./internal/admin ./tests/integration -run 'Usage|
 ## Task 5: Dashboard Authoring And Filters
 
 **Files:**
-- Modify: `internal/admin/dashboard/static/js/modules/execution-plans.js`
+- Modify: `internal/admin/dashboard/static/js/modules/workflows.js`
 - Modify: `internal/admin/dashboard/static/js/modules/usage.js`
 - Modify: `internal/admin/dashboard/static/js/modules/audit-list.js`
-- Test: `internal/admin/dashboard/static/js/modules/execution-plans.test.js`
+- Test: `internal/admin/dashboard/static/js/modules/workflows.test.js`
 
 - [ ] **Step 1: Write failing UI/module tests for `scope_user_path`**
 - [ ] **Step 2: Run focused dashboard tests and verify RED**
 
-Run: `node --test internal/admin/dashboard/static/js/modules/execution-plans.test.js`
+Run: `node --test internal/admin/dashboard/static/js/modules/workflows.test.js`
 
 - [ ] **Step 3: Add `scope_user_path` authoring and display support**
 - [ ] **Step 4: Add `user_path` filter plumbing to usage and audit list requests**
 - [ ] **Step 5: Run focused dashboard tests and verify GREEN**
 
-Run: `node --test internal/admin/dashboard/static/js/modules/execution-plans.test.js`
+Run: `node --test internal/admin/dashboard/static/js/modules/workflows.test.js`
 
 ## Task 6: Full Verification
 
@@ -149,7 +149,7 @@ Run: `node --test internal/admin/dashboard/static/js/modules/execution-plans.tes
 
 - [ ] **Step 1: Run focused package suites**
 
-Run: `go test ./internal/core ./internal/executionplans ./internal/auditlog ./internal/usage ./internal/admin/...`
+Run: `go test ./internal/core ./internal/workflows ./internal/auditlog ./internal/usage ./internal/admin/...`
 
 - [ ] **Step 2: Run integration coverage for touched behavior**
 

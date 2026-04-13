@@ -186,8 +186,8 @@
             },
 
             guardrailsRuntimeEnabled() {
-                if (typeof this.executionPlanRuntimeBooleanFlag === 'function') {
-                    return this.executionPlanRuntimeBooleanFlag('GUARDRAILS_ENABLED', true);
+                if (typeof this.workflowRuntimeBooleanFlag === 'function') {
+                    return this.workflowRuntimeBooleanFlag('GUARDRAILS_ENABLED', true);
                 }
                 return true;
             },
@@ -356,8 +356,8 @@
                     }
 
                     await this.fetchGuardrails();
-                    if (typeof this.fetchExecutionPlanGuardrails === 'function') {
-                        this.fetchExecutionPlanGuardrails();
+                    if (typeof this.fetchWorkflowGuardrails === 'function') {
+                        this.fetchWorkflowGuardrails();
                     }
                     this.guardrailNotice = 'Guardrail "' + name + '" saved.';
                     this.closeGuardrailForm();
@@ -404,8 +404,8 @@
                     }
 
                     await this.fetchGuardrails();
-                    if (typeof this.fetchExecutionPlanGuardrails === 'function') {
-                        this.fetchExecutionPlanGuardrails();
+                    if (typeof this.fetchWorkflowGuardrails === 'function') {
+                        this.fetchWorkflowGuardrails();
                     }
                     if (this.guardrailFormOpen && this.guardrailFormOriginalName === name) {
                         this.closeGuardrailForm();

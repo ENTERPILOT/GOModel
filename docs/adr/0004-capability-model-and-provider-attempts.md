@@ -42,7 +42,7 @@ Examples include:
 - usage extraction supported
 - streaming supported
 
-`ExecutionPlan` may only enable behaviors that are valid for the request's capability set.
+`Workflow` may only enable behaviors that are valid for the request's capability set.
 
 ### ProviderAttempt
 
@@ -82,5 +82,5 @@ For async or media-oriented providers, an attempt may also produce:
 This ADR builds on ADR-0002 and ADR-0003:
 
 - ADR-0002 defines how requests enter the gateway
-- ADR-0003 defines how policies are resolved into an execution plan
+- ADR-0003 defines how policies are resolved into an workflow
 - this ADR defines how the plan is constrained and executed against providers

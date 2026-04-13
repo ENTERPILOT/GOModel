@@ -6,7 +6,7 @@
 
 Add first-class support for a canonical request user path sourced from
 `X-GoModel-User-Path`, persist it in audit and usage records, expose filtering by
-that path, and extend execution plans so requests can match path-scoped plans
+that path, and extend workflows so requests can match path-scoped plans
 with hierarchical fallback.
 
 ## Source Of Truth
@@ -36,9 +36,9 @@ Examples:
 - `/` -> `/`
 - empty header -> unset
 
-## Execution Plan Scope
+## Workflow Scope
 
-Execution plans gain an optional `scope_user_path` field.
+Workflows gain an optional `scope_user_path` field.
 
 Supported scope shapes in this slice:
 
@@ -116,7 +116,7 @@ That keeps future API-key derivation behind a single seam.
 ## Testing
 
 - unit tests for normalization and ancestor generation
-- execution-plan matching tests for new scope precedence
+- workflow matching tests for new scope precedence
 - store/reader tests for persistence and subtree filters
 - handler tests for admin query parsing
 - integration tests for audit and usage capture on real requests
