@@ -187,9 +187,7 @@ function dashboard() {
 
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
                 if (this.theme === 'system') {
-                    this.renderChart();
-                    this.renderBarChart();
-                    this.renderUserPathChart();
+                    this.rerenderCharts();
                 }
             });
 
@@ -228,9 +226,7 @@ function dashboard() {
             this.theme = t;
             localStorage.setItem('gomodel_theme', t);
             this.applyTheme();
-            this.renderChart();
-            this.renderBarChart();
-            this.renderUserPathChart();
+            this.rerenderCharts();
         },
 
         toggleTheme() {
@@ -259,6 +255,12 @@ function dashboard() {
                 tooltipBorder: this.cssVar('--chart-tooltip-border'),
                 tooltipText: this.cssVar('--chart-tooltip-text')
             };
+        },
+
+        rerenderCharts() {
+            this.renderChart();
+            this.renderBarChart();
+            this.renderUserPathChart();
         },
 
         saveApiKey() {
