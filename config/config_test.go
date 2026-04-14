@@ -169,8 +169,8 @@ func TestBuildDefaultConfig(t *testing.T) {
 	if !cfg.Models.EnabledByDefault {
 		t.Error("expected Models.EnabledByDefault=true")
 	}
-	if cfg.Models.OverridesEnabled {
-		t.Error("expected Models.OverridesEnabled=false")
+	if !cfg.Models.OverridesEnabled {
+		t.Error("expected Models.OverridesEnabled=true")
 	}
 	if cfg.Models.KeepOnlyAliasesAtModelsEndpoint {
 		t.Error("expected Models.KeepOnlyAliasesAtModelsEndpoint=false")
@@ -227,7 +227,7 @@ server:
   pprof_enabled: true
 models:
   enabled_by_default: false
-  overrides_enabled: true
+  overrides_enabled: false
   keep_only_aliases_at_models_endpoint: true
 cache:
   model:
@@ -259,8 +259,8 @@ logging:
 		if cfg.Models.EnabledByDefault {
 			t.Error("expected Models.EnabledByDefault=false from YAML")
 		}
-		if !cfg.Models.OverridesEnabled {
-			t.Error("expected Models.OverridesEnabled=true from YAML")
+		if cfg.Models.OverridesEnabled {
+			t.Error("expected Models.OverridesEnabled=false from YAML")
 		}
 		if !cfg.Models.KeepOnlyAliasesAtModelsEndpoint {
 			t.Error("expected Models.KeepOnlyAliasesAtModelsEndpoint=true from YAML")
@@ -842,7 +842,7 @@ func TestLoad_EnvOverridesDefaults(t *testing.T) {
 
 	withTempDir(t, func(_ string) {
 		t.Setenv("PORT", "5555")
-		t.Setenv("MODEL_OVERRIDES_ENABLED", "true")
+		t.Setenv("MODEL_OVERRIDES_ENABLED", "false")
 		t.Setenv("MODELS_ENABLED_BY_DEFAULT", "false")
 		t.Setenv("KEEP_ONLY_ALIASES_AT_MODELS_ENDPOINT", "true")
 		t.Setenv("STORAGE_TYPE", "postgresql")
@@ -858,8 +858,8 @@ func TestLoad_EnvOverridesDefaults(t *testing.T) {
 		if cfg.Server.Port != "5555" {
 			t.Errorf("expected port 5555, got %s", cfg.Server.Port)
 		}
-		if !cfg.Models.OverridesEnabled {
-			t.Error("expected model overrides to be enabled from env")
+		if cfg.Models.OverridesEnabled {
+			t.Error("expected model overrides to be disabled from env")
 		}
 		if cfg.Models.EnabledByDefault {
 			t.Error("expected models enabled-by-default to be disabled from env")
