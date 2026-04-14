@@ -178,6 +178,7 @@ func TestNewDefaultHTTPClient(t *testing.T) {
 
 	if client == nil {
 		t.Fatal("Expected client to be non-nil")
+		return
 	}
 
 	if client.Transport == nil {

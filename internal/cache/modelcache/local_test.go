@@ -49,6 +49,7 @@ func TestLocalCache(t *testing.T) {
 		}
 		if result == nil {
 			t.Fatal("expected result, got nil")
+			return
 		}
 		p, ok := result.Providers["openai"]
 		if !ok || len(p.Models) != 1 {

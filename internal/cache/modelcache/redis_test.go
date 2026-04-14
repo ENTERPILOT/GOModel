@@ -45,6 +45,7 @@ func TestRedisModelCache_GetSet(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("expected non-nil ModelCache")
+		return
 	}
 	if len(got.Providers) != 1 {
 		t.Errorf("Providers: got %d entries, want 1", len(got.Providers))
