@@ -1,10 +1,10 @@
 ---
 title: "User Path"
-description: "Use user_path to scope keys, model access, model lists, workflows, usage, and audit views."
+description: "Use user_path to scope keys, model access, model lists, workflows, usage, and audit logs."
 icon: "route"
 ---
 
-## What `user_path` is
+## Overview
 
 `user_path` is a normalized hierarchy for the caller, for example
 `/team/alpha` or `/team/alpha/service`.
@@ -12,7 +12,7 @@ icon: "route"
 GoModel uses it to keep model access, workflows, usage, and audit data scoped to
 the right team, tenant, service, or customer.
 
-## Set it on an API key
+## API keys
 
 You can bind a user path to a managed API key in the admin dashboard:
 
@@ -21,7 +21,7 @@ You can bind a user path to a managed API key in the admin dashboard:
 When a request uses that key, GoModel treats the key's `user_path` as the
 effective user path for the request.
 
-## Set it with a header
+## HTTP header
 
 Clients can also send a user path directly:
 
@@ -33,10 +33,10 @@ If the API key has its own `user_path`, the key wins. GoModel overwrites the
 header value with the key-bound path before workflow matching, audit logging,
 usage tracking, and model access checks run.
 
-## Limit model access
+## Model access
 
-When `MODEL_OVERRIDES_ENABLED=true`, model access overrides can use `user_paths`
-to limit a selector to a subtree.
+Model access overrides are enabled by default. They can use `user_paths` to
+limit a selector to a subtree.
 Selectors can target:
 
 - `/` for all providers and models
@@ -53,15 +53,14 @@ This allows `/team/alpha` and its descendants, such as `/team/alpha/service`.
 
 Use `Models -> Access override` in the dashboard to manage these rules.
 
-## Filter exposed models
+## Exposed models
 
-When model overrides are enabled, `GET /v1/models` uses the effective
-`user_path` too.
+`GET /v1/models` uses the effective `user_path` too.
 
 That means two API keys can see different model lists if their user paths have
 different model access rules.
 
-## Scope workflows
+## Workflows
 
 Workflows can also include `scope_user_path`, so different teams or services can
 use different cache, audit, usage, guardrail, and fallback settings.
