@@ -360,6 +360,7 @@ func TestGetMetrics(t *testing.T) {
 
 	if metrics == nil {
 		t.Fatal("GetMetrics returned nil")
+		return
 	}
 
 	if metrics.RequestsTotal == nil {

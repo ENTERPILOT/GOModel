@@ -3161,6 +3161,7 @@ func TestBuildAnthropicBatchCreateRequest_NormalizesFullURLResponsesEndpoint(t *
 	}
 	if anthropicReq == nil {
 		t.Fatal("anthropicReq = nil")
+		return
 	}
 	if len(anthropicReq.Requests) != 1 {
 		t.Fatalf("len(Requests) = %d, want 1", len(anthropicReq.Requests))
