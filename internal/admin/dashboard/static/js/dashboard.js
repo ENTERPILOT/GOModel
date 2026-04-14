@@ -273,6 +273,10 @@ function dashboard() {
             return match ? match[1].trim() : key;
         },
 
+        hasApiKey() {
+            return this.normalizeApiKey(this.apiKey) !== '';
+        },
+
         saveApiKey() {
             this.apiKey = this.normalizeApiKey(this.apiKey);
             if (this.apiKey) {

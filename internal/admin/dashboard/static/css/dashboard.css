@@ -202,22 +202,17 @@ body {
     gap: 8px;
 }
 
-.api-key-title {
-    display: block;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-}
-
 .api-key-open-btn {
     width: 100%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     padding: 8px 10px;
-    background: var(--accent);
-    border: 1px solid var(--border);
+    background: transparent;
+    border: 1px solid var(--accent);
     border-radius: var(--radius);
-    color: #fff;
+    color: var(--accent);
     font-size: 13px;
     font-family: inherit;
     font-weight: 600;
@@ -225,9 +220,16 @@ body {
     transition: background-color 0.15s, border-color 0.15s;
 }
 
+.api-key-open-icon {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 15px;
+}
+
 .api-key-open-btn:hover {
-    background: color-mix(in srgb, var(--accent) 90%, #fff 10%);
-    border-color: color-mix(in srgb, var(--accent) 78%, #000 12%);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 78%, var(--text));
+    color: color-mix(in srgb, var(--accent) 78%, var(--text));
 }
 
 .api-key-open-btn:focus-visible {
@@ -268,14 +270,6 @@ body {
     margin-bottom: 12px;
 }
 
-.auth-dialog-kicker {
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-}
-
 .auth-dialog h2 {
     font-size: 22px;
     line-height: 1.2;
@@ -302,7 +296,6 @@ body {
     background: var(--bg-surface-hover);
 }
 
-.auth-dialog-copy,
 .auth-dialog-hint {
     color: var(--text-muted);
     font-size: 13px;
@@ -320,15 +313,28 @@ body {
     margin-top: 18px;
 }
 
-.auth-dialog-form label {
-    font-size: 12px;
-    font-weight: 700;
-    color: var(--text);
+.auth-dialog-input-shell {
+    position: relative;
+}
+
+.auth-dialog-input-icon {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    pointer-events: none;
+    transform: translateY(-50%);
+}
+
+.auth-dialog-input-shell:focus-within .auth-dialog-input-icon {
+    color: var(--accent);
 }
 
 .auth-dialog-input {
     width: 100%;
-    padding: 11px 12px;
+    padding: 11px 12px 11px 38px;
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -341,6 +347,12 @@ body {
 .auth-dialog-input:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.auth-dialog-submit-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 16px;
 }
 
 .auth-dialog-actions {
@@ -3328,8 +3340,24 @@ body.conversation-drawer-open {
     .sidebar-header h1, .badge { display: none; }
     .sidebar-nav .nav-item { justify-content: center; padding: 10px; }
     .sidebar-nav .nav-item span { display: none; }
-    .sidebar-footer { padding: 8px; }
-    .sidebar-footer .api-key-section { display: none; }
+    .sidebar-footer { display: grid; gap: 8px; padding: 8px; }
+    .sidebar-footer .api-key-section { display: grid; }
+    .sidebar.sidebar-collapsed .sidebar-footer .api-key-section { display: grid; }
+    .sidebar-footer .api-key-open-btn {
+        width: 36px;
+        height: 36px;
+        min-height: 36px;
+        justify-self: center;
+        padding: 0;
+    }
+    .sidebar-footer .api-key-open-btn span {
+        display: none;
+    }
+    .sidebar-footer .api-key-open-icon {
+        width: 16px;
+        height: 16px;
+        flex-basis: 16px;
+    }
     .sidebar-footer .theme-toggle { display: none; }
     .sidebar-footer .theme-toggle-mobile { display: flex; margin: 0 auto; }
     .sidebar-toggle { display: none; }

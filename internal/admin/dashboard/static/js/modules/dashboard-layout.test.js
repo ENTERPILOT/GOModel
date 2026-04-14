@@ -158,8 +158,11 @@ test('dashboard auth uses a root-level dialog instead of a hidden sidebar input'
     assert.doesNotMatch(template, /<input id="apiKey"/);
     assert.match(
         template,
-        /class="api-key-section" x-show="needsAuth"[\s\S]*class="api-key-open-btn" @click="openAuthDialog\(\)"[\s\S]*Enter API key/
+        /class="api-key-section" x-show="needsAuth \|\| hasApiKey\(\)"[\s\S]*class="api-key-open-btn"[\s\S]*@click="openAuthDialog\(\)"[\s\S]*class="api-key-open-icon"[\s\S]*Change API key/
     );
+    assert.doesNotMatch(template, /class="api-key-title"/);
+    assert.doesNotMatch(template, /API key set/);
+    assert.doesNotMatch(template, /Admin access/);
     const backdropBlock = template.match(/<div class="auth-dialog-backdrop"[\s\S]*?<\/div>/);
     assert.ok(backdropBlock, 'Expected auth dialog backdrop block');
     assert.match(backdropBlock[0], /x-show="authDialogOpen"/);
@@ -176,7 +179,16 @@ test('dashboard auth uses a root-level dialog instead of a hidden sidebar input'
         template,
         /role="dialog"[\s\S]*aria-modal="true"[\s\S]*@click\.stop[\s\S]*id="authDialogApiKey"/
     );
+    assert.match(template, /class="auth-dialog-input-shell"[\s\S]*class="auth-dialog-input-icon"[\s\S]*id="authDialogApiKey"/);
+    assert.match(template, /x-text="needsAuth \? 'Dashboard locked' : 'Change API key'"/);
+    assert.match(template, /class="pagination-btn pagination-btn-primary pagination-btn-with-icon auth-dialog-submit-btn"[\s\S]*class="auth-dialog-submit-icon"[\s\S]*x-text="needsAuth \? 'Unlock dashboard' : 'Save API key'"/);
     assert.match(template, /placeholder="Master key or bearer token"/);
+    assert.match(template, /aria-label="API key"/);
+    assert.doesNotMatch(template, /aria-describedby="authDialogDescription"/);
+    assert.doesNotMatch(template, /Enter a different API key for this browser\./);
+    assert.doesNotMatch(template, /Enter the API key configured for this GoModel instance\./);
+    assert.doesNotMatch(template, /<label for="authDialogApiKey">API key<\/label>/);
+    assert.doesNotMatch(template, />Not now<\/button>/);
     assert.match(
         template,
         /<form class="auth-dialog-form" @submit\.prevent="submitApiKey\(\)"/
@@ -194,9 +206,36 @@ test('dashboard auth uses a root-level dialog instead of a hidden sidebar input'
     assert.match(dialogRule, /width:\s*min\(440px, 100%\)/);
     assert.match(dialogRule, /border-radius:\s*var\(--radius\)/);
 
+    const apiKeyButtonRule = readCSSRule(css, '.api-key-open-btn');
+    assert.match(apiKeyButtonRule, /display:\s*inline-flex/);
+    assert.match(apiKeyButtonRule, /background:\s*transparent/);
+    assert.match(apiKeyButtonRule, /border:\s*1px solid var\(--accent\)/);
+    assert.match(apiKeyButtonRule, /color:\s*var\(--accent\)/);
+
+    const submitIconRule = readCSSRule(css, '.auth-dialog-submit-icon');
+    assert.match(submitIconRule, /width:\s*16px/);
+    assert.match(submitIconRule, /height:\s*16px/);
+
     const bannerRule = readCSSRule(css, '.auth-banner');
     assert.match(bannerRule, /display:\s*flex/);
     assert.match(bannerRule, /flex-wrap:\s*wrap/);
+
+    assert.match(
+        css,
+        /@media \(max-width: 768px\)[\s\S]*\.sidebar\.sidebar-collapsed \.sidebar-footer \.api-key-section\s*\{ display:\s*grid; \}/
+    );
+    assert.match(
+        css,
+        /@media \(max-width: 768px\)[\s\S]*\.sidebar-footer \.api-key-open-btn span\s*\{\s*display:\s*none;/
+    );
+    assert.match(
+        css,
+        /@media \(max-width: 768px\)[\s\S]*\.sidebar-footer \.api-key-open-btn\s*\{[\s\S]*width:\s*36px;[\s\S]*height:\s*36px;/
+    );
+    assert.match(
+        css,
+        /@media \(max-width: 768px\)[\s\S]*\.sidebar-footer \.api-key-open-icon\s*\{[\s\S]*width:\s*16px/
+    );
 });
 
 test('auth key expirations render as a UTC date with the full UTC timestamp in the hover title', () => {

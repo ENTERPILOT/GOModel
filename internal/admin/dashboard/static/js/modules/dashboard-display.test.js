@@ -226,6 +226,16 @@ test('submitApiKey trims bearer input and stores the key before refreshing dashb
     assert.equal(fetches, 1);
 });
 
+test('hasApiKey reflects trimmed bearer input for the sidebar change action', () => {
+    const app = loadDashboardApp();
+
+    app.apiKey = '';
+    assert.equal(app.hasApiKey(), false);
+
+    app.apiKey = '  Bearer secret-token  ';
+    assert.equal(app.hasApiKey(), true);
+});
+
 test('submitApiKey rejects blank input without unlocking dashboard', () => {
     const storage = createLocalStorage({ gomodel_api_key: 'existing-token' });
     const app = loadDashboardApp({
