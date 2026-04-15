@@ -1,25 +1,29 @@
 ---
 title: "Cache"
-description: "How GoModel response caching works, how to enable it, and what is included in the exact-cache key."
+description: "How GoModel response caching works, how to enable exact and semantic cache layers, and what is included in the exact-cache key."
 icon: "database"
 ---
 
 ## Overview
 
-GoModel ships with an exact-match response cache for non-streaming requests on:
+GoModel ships with two response-cache layers for non-streaming requests on:
 
 - `/v1/chat/completions`
 - `/v1/responses`
 - `/v1/embeddings`
 
-When a response is served from the exact cache, GoModel returns:
+Exact-match cache returns byte-identical responses with:
 
 ```http
 X-Cache: HIT (exact)
 ```
 
-Semantic caching is planned separately. The exact layer is the cache behavior
-available today.
+Semantic cache uses embeddings plus vector search so meaning-equivalent prompts
+can reuse a stored response:
+
+```http
+X-Cache: HIT (semantic)
+```
 
 ## Enable the exact cache
 
@@ -40,6 +44,38 @@ You can also configure it with environment variables:
 - `REDIS_KEY_RESPONSES`
 - `REDIS_TTL_RESPONSES`
 
+## Enable semantic caching
+
+Add a `semantic` block with an embedder provider and a vector store:
+
+```yaml
+cache:
+  response:
+    semantic:
+      enabled: true
+      embedder:
+        provider: openai
+      vector_store:
+        type: qdrant
+        qdrant:
+          url: http://localhost:6333
+          collection: gomodel_semantic
+```
+
+Supported vector stores:
+
+- `qdrant`
+- `pgvector`
+- `pinecone`
+- `weaviate`
+
+Both cache layers run after workflow and guardrail patching, so they operate on
+the final request sent upstream. Use `Cache-Control: no-cache` or
+`Cache-Control: no-store` to bypass caching per request.
+
+For the full semantic-cache design and storage options, see
+[ADR-0006](/adr/0006-semantic-response-cache).
+
 ## What the exact cache keys on
 
 The exact cache hashes:
@@ -52,21 +88,9 @@ The exact cache hashes:
 This means guardrails and workflows affect cache keys when they change the
 resolved workflow or the final body sent through execution.
 
-You can bypass caching per request with:
-
-```http
-Cache-Control: no-cache
-```
-
-or:
-
-```http
-Cache-Control: no-store
-```
-
 ## `user_path` behavior
 
-`user_path` is not added to the exact-cache key by itself.
+For the exact cache, `user_path` is not added to the cache key by itself.
 
 That is intentional. If two requests end up with the same path, resolved
 workflow, and final request body, they can share the same exact-cache

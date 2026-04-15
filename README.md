@@ -231,35 +231,25 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 # Roadmap
 
-## Shipped
+## 0.2.0
 
-| Area                          | Status | Notes                                                                                                                                                                        |
-| ----------------------------- | :----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenAI-compatible API surface |   ✅   | `/v1/chat/completions`, `/v1/responses`, `/v1/embeddings`, `/v1/files*`, `/v1/batches*`, and `/v1/models` are implemented.                                                   |
-| Provider passthrough          |   ✅   | Provider-native passthrough routes are available under `/p/{provider}/...`.                                                                                                  |
-| Observability                 |   ✅   | Prometheus metrics, audit logging, usage tracking, request IDs, and trace-header capture are implemented.                                                                    |
-| Administrative endpoints      |   ✅   | Admin API and dashboard ship with usage, audit, and model views.                                                                                                             |
-| Guardrails                    |   ✅   | The guardrails pipeline is implemented and can be enabled from config.                                                                                                       |
-| Guardrail types               |   ✅   | `system_prompt` and `llm_based_altering` guardrails are supported.                                                                                                           |
-| Semantic response cache       |   ✅   | Exact-match Redis plus optional semantic layer (API embeddings, `qdrant` / `pgvector` / `pinecone` / `weaviate`) — see [ADR-0006](docs/adr/0006-semantic-response-cache.md). |
+Most user-facing work is listed first.
 
-## In Progress
+### Must Have
 
-| Area                       | Status | Notes                                                                                       |
-| -------------------------- | :----: | ------------------------------------------------------------------------------------------- |
-| Billing management         |   🚧   | Usage and pricing primitives exist, but billing workflows are not complete.                 |
-| Budget management          |   🚧   | Gateway-level budget enforcement and policy controls are not implemented yet.               |
-| Guardrails depth           |   🚧   | Text guardrails ship today; non-text guardrail types are still to come.                     |
-| Observability integrations |   🚧   | Native Prometheus support exists; OpenTelemetry and DataDog integrations are still pending. |
+- [ ] Intelligent routing
+- [ ] Broader provider support: Oracle model configuration via environment variables, plus [Cohere, Command A, Operational, and DeepSeek V3](https://linear.app/gomodel/issue/GOM-121/add-providers-cohere-command-operational-deepseek-v3-operational)
+- [ ] Budget management with limits per `user_path` and/or API key
+- [ ] Editable model pricing for accurate cost tracking and budgeting
+- [ ] Full support for the OpenAI `/responses` and `/conversations` lifecycle
+- [ ] Prompt cache visibility showing how much of each prompt was cached by the provider
+- [ ] Guardrails hardening: better UI, simpler architecture, easier custom guardrails, and response-side guardrails before output reaches the client
+- [ ] Passthrough for all providers, beyond the current OpenAI and Anthropic beta
+- [ ] Fix failover charts in the dashboard
 
-## Planned
+### Should Have
 
-| Area              | Status | Notes                                                                   |
-| ----------------- | :----: | ----------------------------------------------------------------------- |
-| Many keys support |   🚧   | The gateway still uses one configured credential/base URL per provider. |
-| SSO / OIDC        |   🚧   | No SSO implementation is present yet.                                   |
-
-✅ Shipped 🚧 Planned or in progress
+- [ ] Cluster mode
 
 ## Community
 
