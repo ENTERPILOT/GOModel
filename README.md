@@ -229,11 +229,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for testing, linting, and pre-commit setup.
 
 ---
 
-# Roadmap
-
-## 0.2.0
-
-Most user-facing work is listed first.
+# Roadmap to 0.2.0
 
 ### Must Have
 
