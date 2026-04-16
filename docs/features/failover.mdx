@@ -1,0 +1,68 @@
+---
+title: "Failover"
+description: "Configure GoModel failover with manual rules, understand experimental auto mode, and know when fallback attempts run."
+icon: "shuffle"
+keywords: ["failover", "fallback"]
+---
+
+## Overview
+
+GoModel exposes failover through the `fallback` config block.
+
+When a request fails, GoModel can retry it against alternate models. For
+predictable behavior, use manual mode.
+
+## Manual Mode
+
+Manual mode is the recommended mode today.
+
+```yaml
+fallback:
+  default_mode: "manual"
+  manual_rules_path: "config/fallback.json"
+```
+
+`config/fallback.json` is an ordered JSON map:
+
+```json
+{
+  "gpt-4o": [
+    "azure/gpt-4o",
+    "gemini/gemini-2.5-pro"
+  ]
+}
+```
+
+GoModel tries the listed candidates in order and stops on the first success.
+Use bare model names like `gpt-4o` or provider-qualified selectors like
+`azure/gpt-4o`.
+
+If needed, you can override the mode per model with `fallback.overrides`.
+
+## Auto Mode
+
+<Note>
+  `auto` mode is experimental right now.
+</Note>
+
+```yaml
+fallback:
+  default_mode: "auto"
+  manual_rules_path: "config/fallback.json"
+```
+
+Auto mode keeps any manual candidates first, then appends up to five extra
+candidates from the current model registry. It prefers models with the same
+request category, similar rankings, overlapping capabilities, and the same
+family when possible.
+
+## When It Runs
+
+Failover is attempted only after the primary request returns:
+
+- `5xx`
+- `429`
+- model unavailable, unsupported, or not found style errors
+
+It currently applies to translated `/v1/chat/completions` and `/v1/responses`
+requests, not `/v1/embeddings`.

@@ -38,7 +38,8 @@
                         "pages": [
                             "features/aliases",
                             "features/user-path",
-                            "features/cache"
+                            "features/cache",
+                            "features/failover"
                         ]
                     },
                     {
