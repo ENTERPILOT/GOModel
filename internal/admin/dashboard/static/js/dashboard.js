@@ -2,6 +2,7 @@
 
 function dashboard() {
   const STALE_AUTH_RESPONSE = "STALE_AUTH";
+  const API_KEY_STORAGE_KEY = "gomodel_api_key";
 
   function resolveModuleFactory(factory, windowName) {
     if (typeof factory === "function") {
@@ -221,8 +222,9 @@ function dashboard() {
       if (typeof this.initProviderStatusPreferences === "function") {
         this.initProviderStatusPreferences();
       }
-      // Older dashboard versions persisted this secret. Keep it memory-only.
-      localStorage.removeItem("gomodel_api_key");
+      this.apiKey = this.normalizeApiKey(
+        localStorage.getItem(API_KEY_STORAGE_KEY) || "",
+      );
       this.theme = localStorage.getItem("gomodel_theme") || "system";
       this.sidebarCollapsed =
         localStorage.getItem("gomodel_sidebar_collapsed") === "true";
@@ -336,8 +338,7 @@ function dashboard() {
 
     saveApiKey() {
       this.apiKey = this.normalizeApiKey(this.apiKey);
-      // Do not persist auth secrets in browser storage.
-      localStorage.removeItem("gomodel_api_key");
+      localStorage.setItem(API_KEY_STORAGE_KEY, this.apiKey);
     },
 
     requestOptions(options) {
