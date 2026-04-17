@@ -262,6 +262,9 @@ func (s *nativeResponseService) utilityRequest(c *echo.Context) (*core.Responses
 	if err != nil {
 		return nil, "", core.NewInvalidRequestError("invalid request body: "+err.Error(), err)
 	}
+	if req == nil {
+		return nil, "", core.NewInvalidRequestError("responses request body is required", errors.New("responses request body is null"))
+	}
 
 	workflow, err := ensureTranslatedRequestWorkflowWithAuthorizer(c, s.provider, s.modelResolver, s.modelAuthorizer, s.workflowPolicyResolver, &req.Model, &req.Provider)
 	if err != nil {
@@ -371,7 +374,7 @@ func nativeResponseByProvider[T any](
 	var firstErr error
 	for _, candidate := range providers {
 		if err := ctx.Err(); err != nil {
-			return zero, "", err
+			return zero, "", responseLifecycleContextError(err)
 		}
 		result, err := call(router, candidate)
 		if err == nil {
@@ -388,6 +391,13 @@ func nativeResponseByProvider[T any](
 		return zero, "", firstErr
 	}
 	return zero, "", core.NewNotFoundError("response not found")
+}
+
+func responseLifecycleContextError(err error) *core.GatewayError {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return core.NewProviderError("response_lifecycle", http.StatusGatewayTimeout, "response lifecycle request timed out", err)
+	}
+	return core.NewInvalidRequestErrorWithStatus(http.StatusRequestTimeout, "response lifecycle request canceled", err)
 }
 
 func nativeResponseProviderTypes(provider core.RoutableProvider) ([]string, error) {

@@ -13,6 +13,7 @@ import (
 
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
+	"gomodel/internal/observability"
 	"gomodel/internal/responsecache"
 	"gomodel/internal/responsestore"
 	"gomodel/internal/streaming"
@@ -233,7 +234,7 @@ func (s *translatedInferenceService) dispatchResponses(c *echo.Context, req *cor
 	})
 
 	if err := s.storeResponseSnapshot(ctx, workflow, req, resp, providerType, providerName, requestID); err != nil {
-		return handleError(c, err)
+		s.recordResponseSnapshotStoreFailure(workflow, resp, providerType, providerName, requestID, err)
 	}
 
 	return c.JSON(http.StatusOK, resp)
@@ -261,6 +262,30 @@ func (s *translatedInferenceService) storeResponseSnapshot(ctx context.Context, 
 		return core.NewProviderError("response_store", http.StatusInternalServerError, "failed to persist response", err)
 	}
 	return nil
+}
+
+func (s *translatedInferenceService) recordResponseSnapshotStoreFailure(workflow *core.Workflow, resp *core.ResponsesResponse, providerType, providerName, requestID string, err error) {
+	observability.ResponseSnapshotStoreFailures.WithLabelValues(
+		strings.TrimSpace(providerType),
+		strings.TrimSpace(providerName),
+		"store",
+	).Inc()
+
+	slog.Warn("response snapshot store failed",
+		"request_id", requestID,
+		"provider_type", providerType,
+		"provider_name", providerName,
+		"workflow_version_id", workflowVersionID(workflow),
+		"response_id", responseIDForLog(resp),
+		"err", err,
+	)
+}
+
+func responseIDForLog(resp *core.ResponsesResponse) string {
+	if resp == nil {
+		return ""
+	}
+	return strings.TrimSpace(resp.ID)
 }
 
 func (s *translatedInferenceService) tryFastPathStreamingChatPassthrough(c *echo.Context, workflow *core.Workflow, req *core.ChatRequest) (bool, error) {

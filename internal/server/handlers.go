@@ -112,6 +112,9 @@ func (h *Handler) SetResponseStore(store responsestore.Store) {
 		return
 	}
 	h.responseStore = store
+	if h.translatedSvc != nil {
+		h.translatedSvc.responseStore = store
+	}
 }
 
 func (h *Handler) translatedInference() *translatedInferenceService {
@@ -440,7 +443,7 @@ func (h *Handler) GetResponse(c *echo.Context) error {
 // @Param        provider  query     string  false  "Provider override for native lookups"
 // @Param        after     query     string  false  "Pagination cursor"
 // @Param        limit     query     int     false  "Maximum items to return (1-100, default 20)"
-// @Param        order     query     string  false  "Sort order: asc or desc"
+// @Param        order     query     string  false  "Sort order: asc or desc"  Enums(asc, desc)
 // @Success      200       {object}  core.ResponseInputItemListResponse
 // @Failure      400       {object}  core.GatewayError
 // @Failure      401       {object}  core.GatewayError

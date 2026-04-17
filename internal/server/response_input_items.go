@@ -42,7 +42,11 @@ func normalizedResponseInputItems(responseID string, req *core.ResponsesRequest)
 		}
 		return items
 	default:
-		return []json.RawMessage{normalizedResponseInputAny(responseID, 0, input)}
+		normalized := normalizedResponseInputAny(responseID, 0, input)
+		if len(normalized) == 0 {
+			return nil
+		}
+		return []json.RawMessage{normalized}
 	}
 }
 
@@ -77,6 +81,9 @@ func normalizedResponseInputRaw(responseID string, index int, raw json.RawMessag
 				{"type": "input_text", "text": text},
 			},
 		})
+	}
+	if item == nil {
+		return nil
 	}
 
 	itemType := strings.TrimSpace(stringFromMap(item, "type"))

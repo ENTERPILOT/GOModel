@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v5"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -26,6 +27,7 @@ import (
 	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
+	"gomodel/internal/observability"
 	provideradapter "gomodel/internal/providers"
 	"gomodel/internal/responsestore"
 	"gomodel/internal/usage"
@@ -86,6 +88,37 @@ func (s *aliasesTestStore) Delete(_ context.Context, name string) error {
 }
 
 func (s *aliasesTestStore) Close() error {
+	return nil
+}
+
+type failingResponseStore struct {
+	err error
+}
+
+func (s *failingResponseStore) storeErr() error {
+	if s.err != nil {
+		return s.err
+	}
+	return errors.New("response store failed")
+}
+
+func (s *failingResponseStore) Create(context.Context, *responsestore.StoredResponse) error {
+	return s.storeErr()
+}
+
+func (s *failingResponseStore) Get(context.Context, string) (*responsestore.StoredResponse, error) {
+	return nil, responsestore.ErrNotFound
+}
+
+func (s *failingResponseStore) Update(context.Context, *responsestore.StoredResponse) error {
+	return s.storeErr()
+}
+
+func (s *failingResponseStore) Delete(context.Context, string) error {
+	return responsestore.ErrNotFound
+}
+
+func (s *failingResponseStore) Close() error {
 	return nil
 }
 
@@ -4638,6 +4671,61 @@ func TestResponsesLifecycle_StoresConcreteProviderName(t *testing.T) {
 	}
 	if stored.ProviderName != "openai_primary" {
 		t.Fatalf("stored provider name = %q, want openai_primary", stored.ProviderName)
+	}
+}
+
+func TestResponsesLifecycle_ReturnsSuccessWhenSnapshotStoreFails(t *testing.T) {
+	observability.ResetMetrics()
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-5-mini"},
+		providerTypes: map[string]string{
+			"gpt-5-mini": "mock",
+		},
+		responsesResponse: &core.ResponsesResponse{
+			ID:     "resp_store_failure_1",
+			Object: "response",
+			Model:  "gpt-5-mini",
+			Status: "completed",
+		},
+	}
+	srv := New(provider, &Config{ResponseStore: &failingResponseStore{err: errors.New("write failed")}})
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (%s)", rec.Code, rec.Body.String())
+	}
+	var resp core.ResponsesResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ID != "resp_store_failure_1" {
+		t.Fatalf("response id = %q, want resp_store_failure_1", resp.ID)
+	}
+
+	counter := observability.ResponseSnapshotStoreFailures.WithLabelValues("mock", "", "store")
+	if got := testutil.ToFloat64(counter); got != 1 {
+		t.Fatalf("snapshot store failures = %v, want 1", got)
+	}
+}
+
+func TestHandlerSetResponseStoreUpdatesCachedTranslatedInferenceService(t *testing.T) {
+	handler := NewHandler(&mockProvider{}, nil, nil, nil)
+	first := responsestore.NewMemoryStore()
+	second := responsestore.NewMemoryStore()
+
+	handler.SetResponseStore(first)
+	service := handler.translatedInference()
+	if service.responseStore != first {
+		t.Fatal("translatedInferenceService did not capture first response store")
+	}
+
+	handler.SetResponseStore(second)
+	if service.responseStore != second {
+		t.Fatal("SetResponseStore did not update cached translatedInferenceService response store")
 	}
 }
 

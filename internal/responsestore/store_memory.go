@@ -4,20 +4,51 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // MemoryStore keeps response snapshots in process memory.
 // Data survives across requests but not process restarts.
 type MemoryStore struct {
-	mu    sync.RWMutex
-	items map[string]*StoredResponse
+	mu         sync.RWMutex
+	items      map[string]*StoredResponse
+	ttl        time.Duration
+	maxEntries int
+}
+
+// MemoryStoreOption configures bounded in-memory response retention.
+type MemoryStoreOption func(*MemoryStore)
+
+// WithTTL expires stored responses after ttl. Non-positive values disable TTL.
+func WithTTL(ttl time.Duration) MemoryStoreOption {
+	return func(s *MemoryStore) {
+		if ttl > 0 {
+			s.ttl = ttl
+		}
+	}
+}
+
+// WithMaxEntries caps stored responses with FIFO eviction. Non-positive values disable the cap.
+func WithMaxEntries(maxEntries int) MemoryStoreOption {
+	return func(s *MemoryStore) {
+		if maxEntries > 0 {
+			s.maxEntries = maxEntries
+		}
+	}
 }
 
 // NewMemoryStore creates an empty in-memory response store.
-func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{
+// By default retention is unbounded; pass WithTTL or WithMaxEntries to opt in.
+func NewMemoryStore(options ...MemoryStoreOption) *MemoryStore {
+	store := &MemoryStore{
 		items: make(map[string]*StoredResponse),
 	}
+	for _, option := range options {
+		if option != nil {
+			option(store)
+		}
+	}
+	return store
 }
 
 // Create stores a new response snapshot.
@@ -31,23 +62,39 @@ func (s *MemoryStore) Create(_ context.Context, response *StoredResponse) error 
 		return err
 	}
 
+	now := time.Now().UTC()
+	prepareStoredResponseForMemory(c, now, s.ttl)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(now)
+	if responseExpired(c, now) {
+		return nil
+	}
 	if _, exists := s.items[c.Response.ID]; exists {
 		return fmt.Errorf("response already exists: %s", c.Response.ID)
 	}
 	s.items[c.Response.ID] = c
+	s.enforceMaxEntriesLocked()
 	return nil
 }
 
 // Get retrieves one response snapshot by id.
 func (s *MemoryStore) Get(_ context.Context, id string) (*StoredResponse, error) {
-	s.mu.RLock()
+	now := time.Now().UTC()
+	s.mu.Lock()
+	s.cleanupExpiredLocked(now)
 	response, ok := s.items[id]
-	s.mu.RUnlock()
 	if !ok {
+		s.mu.Unlock()
 		return nil, ErrNotFound
 	}
+	if responseExpired(response, now) {
+		delete(s.items, id)
+		s.mu.Unlock()
+		return nil, ErrNotFound
+	}
+	s.mu.Unlock()
 	return cloneResponse(response)
 }
 
@@ -61,12 +108,27 @@ func (s *MemoryStore) Update(_ context.Context, response *StoredResponse) error 
 		return err
 	}
 
+	now := time.Now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.items[c.Response.ID]; !exists {
+	s.cleanupExpiredLocked(now)
+	existing, exists := s.items[c.Response.ID]
+	if !exists {
+		return ErrNotFound
+	}
+	if c.StoredAt.IsZero() {
+		c.StoredAt = existing.StoredAt
+	}
+	if c.ExpiresAt.IsZero() {
+		c.ExpiresAt = existing.ExpiresAt
+	}
+	prepareStoredResponseForMemory(c, now, s.ttl)
+	if responseExpired(c, now) {
+		delete(s.items, c.Response.ID)
 		return ErrNotFound
 	}
 	s.items[c.Response.ID] = c
+	s.enforceMaxEntriesLocked()
 	return nil
 }
 
@@ -74,6 +136,7 @@ func (s *MemoryStore) Update(_ context.Context, response *StoredResponse) error 
 func (s *MemoryStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.cleanupExpiredLocked(time.Now().UTC())
 	if _, exists := s.items[id]; !exists {
 		return ErrNotFound
 	}
@@ -84,4 +147,56 @@ func (s *MemoryStore) Delete(_ context.Context, id string) error {
 // Close releases resources (no-op for memory store).
 func (s *MemoryStore) Close() error {
 	return nil
+}
+
+func prepareStoredResponseForMemory(response *StoredResponse, now time.Time, ttl time.Duration) {
+	if response.StoredAt.IsZero() {
+		response.StoredAt = now
+	}
+	if ttl > 0 && response.ExpiresAt.IsZero() {
+		response.ExpiresAt = response.StoredAt.Add(ttl)
+	}
+}
+
+func (s *MemoryStore) cleanupExpiredLocked(now time.Time) {
+	if s.ttl <= 0 {
+		return
+	}
+	for id, response := range s.items {
+		if responseExpired(response, now) {
+			delete(s.items, id)
+		}
+	}
+}
+
+func (s *MemoryStore) enforceMaxEntriesLocked() {
+	if s.maxEntries <= 0 {
+		return
+	}
+	for len(s.items) > s.maxEntries {
+		oldestID := ""
+		var oldest time.Time
+		for id, response := range s.items {
+			storedAt := responseStoredAt(response)
+			if oldestID == "" || storedAt.Before(oldest) {
+				oldestID = id
+				oldest = storedAt
+			}
+		}
+		if oldestID == "" {
+			return
+		}
+		delete(s.items, oldestID)
+	}
+}
+
+func responseExpired(response *StoredResponse, now time.Time) bool {
+	return response != nil && !response.ExpiresAt.IsZero() && !response.ExpiresAt.After(now)
+}
+
+func responseStoredAt(response *StoredResponse) time.Time {
+	if response == nil || response.StoredAt.IsZero() {
+		return time.Time{}
+	}
+	return response.StoredAt
 }
