@@ -129,19 +129,20 @@ These control timeouts for upstream API requests to LLM providers.
 
 Set these to automatically register providers. No YAML configuration required.
 
-| Variable            | Provider                   |
-| ------------------- | -------------------------- |
-| `OPENAI_API_KEY`    | OpenAI                     |
-| `ANTHROPIC_API_KEY` | Anthropic                  |
-| `GEMINI_API_KEY`    | Google Gemini              |
-| `OPENROUTER_API_KEY` | OpenRouter                |
-| `XAI_API_KEY`       | xAI (Grok)                 |
-| `GROQ_API_KEY`      | Groq                       |
-| `AZURE_API_KEY`     | Azure OpenAI (`AZURE_BASE_URL` also required) |
-| `ORACLE_API_KEY`    | Oracle (`ORACLE_BASE_URL` also required) |
-| `OLLAMA_BASE_URL`   | Ollama (no API key needed) |
+| Variable             | Provider                                           |
+| -------------------- | -------------------------------------------------- |
+| `OPENAI_API_KEY`     | OpenAI                                             |
+| `ANTHROPIC_API_KEY`  | Anthropic                                          |
+| `GEMINI_API_KEY`     | Google Gemini                                      |
+| `OPENROUTER_API_KEY` | OpenRouter                                         |
+| `ZAI_API_KEY`        | Z.ai                                               |
+| `XAI_API_KEY`        | xAI (Grok)                                         |
+| `GROQ_API_KEY`       | Groq                                               |
+| `AZURE_API_KEY`      | Azure OpenAI (`AZURE_BASE_URL` also required)     |
+| `ORACLE_API_KEY`     | Oracle (`ORACLE_BASE_URL` also required)          |
+| `OLLAMA_BASE_URL`    | Ollama (no API key needed)                        |
 
-Most providers can use a custom base URL via `<PROVIDER>_BASE_URL` (for example `OPENAI_BASE_URL`). OpenRouter defaults to `https://openrouter.ai/api/v1` and can be overridden with `OPENROUTER_BASE_URL`. Azure uses `AZURE_BASE_URL` for its deployment base URL and accepts an optional `AZURE_API_VERSION` override; otherwise it defaults to `2024-10-21`. Oracle requires `ORACLE_BASE_URL` because its OpenAI-compatible endpoint is region-specific.
+Most providers can use a custom base URL via `<PROVIDER>_BASE_URL` (for example `OPENAI_BASE_URL`). OpenRouter defaults to `https://openrouter.ai/api/v1` and can be overridden with `OPENROUTER_BASE_URL`. Z.ai defaults to `https://api.z.ai/api/paas/v4`; set `ZAI_BASE_URL=https://api.z.ai/api/coding/paas/v4` for the GLM Coding Plan endpoint. Azure uses `AZURE_BASE_URL` for its deployment base URL and accepts an optional `AZURE_API_VERSION` override; otherwise it defaults to `2024-10-21`. Oracle requires `ORACLE_BASE_URL` because its OpenAI-compatible endpoint is region-specific.
 When using Oracle, `models:` also acts as a fallback inventory if the upstream endpoint does not expose a usable `/models` response.
 
 For OpenRouter, GoModel also sends default attribution headers unless the request already sets them. Override those defaults with `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME`.
@@ -243,6 +244,8 @@ export GEMINI_API_KEY="..."          # Registers "gemini" provider
 export XAI_API_KEY="..."             # Registers "xai" provider
 export GROQ_API_KEY="gsk_..."        # Registers "groq" provider
 export OPENROUTER_API_KEY="sk-or-..." # Registers "openrouter" provider
+export ZAI_API_KEY="..."             # Registers "zai" provider
+# Optional: export ZAI_BASE_URL="https://api.z.ai/api/coding/paas/v4"
 export AZURE_API_KEY="..."           # Registers "azure" provider when paired with AZURE_BASE_URL
 export AZURE_BASE_URL="https://your-resource.openai.azure.com/openai/deployments/your-deployment"
 export ORACLE_API_KEY="..."          # Registers "oracle" provider when paired with ORACLE_BASE_URL

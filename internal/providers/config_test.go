@@ -36,6 +36,9 @@ var testDiscoveryConfigs = map[string]DiscoveryConfig{
 	"openrouter": {
 		DefaultBaseURL: "https://openrouter.ai/api/v1",
 	},
+	"zai": {
+		DefaultBaseURL: "https://api.z.ai/api/paas/v4",
+	},
 	"azure": {
 		RequireBaseURL:     true,
 		SupportsAPIVersion: true,
@@ -354,6 +357,48 @@ func TestApplyProviderEnvVars_DiscoversOpenRouterFromAPIKey(t *testing.T) {
 	}
 	if p.BaseURL != testDiscoveryConfigs["openrouter"].DefaultBaseURL {
 		t.Errorf("BaseURL = %q, want %q", p.BaseURL, testDiscoveryConfigs["openrouter"].DefaultBaseURL)
+	}
+}
+
+func TestApplyProviderEnvVars_DiscoversZAIFromAPIKey(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "zai-key")
+
+	got := applyProviderEnvVars(map[string]config.RawProviderConfig{}, testDiscoveryConfigs)
+
+	p, exists := got["zai"]
+	if !exists {
+		t.Fatal("expected zai to be discovered from env var")
+	}
+	if p.APIKey != "zai-key" {
+		t.Errorf("APIKey = %q, want zai-key", p.APIKey)
+	}
+	if p.Type != "zai" {
+		t.Errorf("Type = %q, want zai", p.Type)
+	}
+	if p.BaseURL != testDiscoveryConfigs["zai"].DefaultBaseURL {
+		t.Errorf("BaseURL = %q, want %q", p.BaseURL, testDiscoveryConfigs["zai"].DefaultBaseURL)
+	}
+}
+
+func TestApplyProviderEnvVars_DiscoversZAIWithExplicitBaseURL(t *testing.T) {
+	const explicitBaseURL = "https://api.z.ai/api/coding/paas/v4"
+	t.Setenv("ZAI_API_KEY", "zai-key")
+	t.Setenv("ZAI_BASE_URL", explicitBaseURL)
+
+	got := applyProviderEnvVars(map[string]config.RawProviderConfig{}, testDiscoveryConfigs)
+
+	p, exists := got["zai"]
+	if !exists {
+		t.Fatal("expected zai to be discovered from env var")
+	}
+	if p.APIKey != "zai-key" {
+		t.Errorf("APIKey = %q, want zai-key", p.APIKey)
+	}
+	if p.Type != "zai" {
+		t.Errorf("Type = %q, want zai", p.Type)
+	}
+	if p.BaseURL != explicitBaseURL {
+		t.Errorf("BaseURL = %q, want %q", p.BaseURL, explicitBaseURL)
 	}
 }
 
