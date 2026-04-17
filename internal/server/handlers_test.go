@@ -27,6 +27,7 @@ import (
 	"gomodel/internal/core"
 	"gomodel/internal/guardrails"
 	provideradapter "gomodel/internal/providers"
+	"gomodel/internal/responsestore"
 	"gomodel/internal/usage"
 )
 
@@ -348,6 +349,25 @@ type mockProvider struct {
 	passthroughErr          error
 	lastPassthroughProvider string
 	lastPassthroughReq      *core.PassthroughRequest
+
+	responseGetResponse         *core.ResponsesResponse
+	responseInputItemsResponse  *core.ResponseInputItemListResponse
+	responseCancelResponse      *core.ResponsesResponse
+	responseDeleteResponse      *core.ResponseDeleteResponse
+	responseInputTokensResponse *core.ResponseInputTokensResponse
+	responseCompactResponse     *core.ResponseCompactResponse
+	responseLifecycleErr        error
+	responseUtilityErr          error
+	responseGetCalls            []responseCall
+	responseInputItemsCalls     []responseCall
+	responseCancelCalls         []responseCall
+	responseDeleteCalls         []responseCall
+	capturedResponseUtilityReqs []*core.ResponsesRequest
+}
+
+type responseCall struct {
+	provider string
+	id       string
 }
 
 type fileListCall struct {
@@ -529,6 +549,10 @@ func (m *mockProvider) NativeFileProviderTypes() []string {
 	return result
 }
 
+func (m *mockProvider) NativeResponseProviderTypes() []string {
+	return m.NativeFileProviderTypes()
+}
+
 type providerWithoutFileInventory struct {
 	inner *mockProvider
 }
@@ -585,6 +609,42 @@ func (p *providerWithoutFileInventory) GetFileContent(ctx context.Context, provi
 	return p.inner.GetFileContent(ctx, providerType, id)
 }
 
+type providerWithoutResponseLifecycle struct {
+	inner *mockProvider
+}
+
+func (p *providerWithoutResponseLifecycle) ChatCompletion(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+	return p.inner.ChatCompletion(ctx, req)
+}
+
+func (p *providerWithoutResponseLifecycle) StreamChatCompletion(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	return p.inner.StreamChatCompletion(ctx, req)
+}
+
+func (p *providerWithoutResponseLifecycle) ListModels(ctx context.Context) (*core.ModelsResponse, error) {
+	return p.inner.ListModels(ctx)
+}
+
+func (p *providerWithoutResponseLifecycle) Responses(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	return p.inner.Responses(ctx, req)
+}
+
+func (p *providerWithoutResponseLifecycle) StreamResponses(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	return p.inner.StreamResponses(ctx, req)
+}
+
+func (p *providerWithoutResponseLifecycle) Embeddings(ctx context.Context, req *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return p.inner.Embeddings(ctx, req)
+}
+
+func (p *providerWithoutResponseLifecycle) Supports(model string) bool {
+	return p.inner.Supports(model)
+}
+
+func (p *providerWithoutResponseLifecycle) GetProviderType(model string) string {
+	return p.inner.GetProviderType(model)
+}
+
 func (m *mockProvider) ChatCompletion(_ context.Context, _ *core.ChatRequest) (*core.ChatResponse, error) {
 	if m.err != nil {
 		return nil, m.err
@@ -637,6 +697,72 @@ func (m *mockProvider) Passthrough(_ context.Context, providerType string, req *
 		return nil, m.passthroughErr
 	}
 	return m.passthroughResponse, nil
+}
+
+func (m *mockProvider) GetResponse(_ context.Context, providerType, id string, _ core.ResponseRetrieveParams) (*core.ResponsesResponse, error) {
+	m.responseGetCalls = append(m.responseGetCalls, responseCall{provider: providerType, id: id})
+	if m.responseLifecycleErr != nil {
+		return nil, m.responseLifecycleErr
+	}
+	if m.responseGetResponse != nil {
+		return m.responseGetResponse, nil
+	}
+	return &core.ResponsesResponse{ID: id, Object: "response", Model: "gpt-5-mini", Provider: providerType, Status: "completed"}, nil
+}
+
+func (m *mockProvider) ListResponseInputItems(_ context.Context, providerType, id string, _ core.ResponseInputItemsParams) (*core.ResponseInputItemListResponse, error) {
+	m.responseInputItemsCalls = append(m.responseInputItemsCalls, responseCall{provider: providerType, id: id})
+	if m.responseLifecycleErr != nil {
+		return nil, m.responseLifecycleErr
+	}
+	if m.responseInputItemsResponse != nil {
+		return m.responseInputItemsResponse, nil
+	}
+	return &core.ResponseInputItemListResponse{Object: "list"}, nil
+}
+
+func (m *mockProvider) CancelResponse(_ context.Context, providerType, id string) (*core.ResponsesResponse, error) {
+	m.responseCancelCalls = append(m.responseCancelCalls, responseCall{provider: providerType, id: id})
+	if m.responseLifecycleErr != nil {
+		return nil, m.responseLifecycleErr
+	}
+	if m.responseCancelResponse != nil {
+		return m.responseCancelResponse, nil
+	}
+	return &core.ResponsesResponse{ID: id, Object: "response", Model: "gpt-5-mini", Provider: providerType, Status: "cancelled"}, nil
+}
+
+func (m *mockProvider) DeleteResponse(_ context.Context, providerType, id string) (*core.ResponseDeleteResponse, error) {
+	m.responseDeleteCalls = append(m.responseDeleteCalls, responseCall{provider: providerType, id: id})
+	if m.responseLifecycleErr != nil {
+		return nil, m.responseLifecycleErr
+	}
+	if m.responseDeleteResponse != nil {
+		return m.responseDeleteResponse, nil
+	}
+	return &core.ResponseDeleteResponse{ID: id, Object: "response", Deleted: true}, nil
+}
+
+func (m *mockProvider) CountResponseInputTokens(_ context.Context, _ string, req *core.ResponsesRequest) (*core.ResponseInputTokensResponse, error) {
+	m.capturedResponseUtilityReqs = append(m.capturedResponseUtilityReqs, req)
+	if m.responseUtilityErr != nil {
+		return nil, m.responseUtilityErr
+	}
+	if m.responseInputTokensResponse != nil {
+		return m.responseInputTokensResponse, nil
+	}
+	return &core.ResponseInputTokensResponse{Object: "response.input_tokens", InputTokens: 7}, nil
+}
+
+func (m *mockProvider) CompactResponse(_ context.Context, providerType string, req *core.ResponsesRequest) (*core.ResponseCompactResponse, error) {
+	m.capturedResponseUtilityReqs = append(m.capturedResponseUtilityReqs, req)
+	if m.responseUtilityErr != nil {
+		return nil, m.responseUtilityErr
+	}
+	if m.responseCompactResponse != nil {
+		return m.responseCompactResponse, nil
+	}
+	return &core.ResponseCompactResponse{ID: "cmp_1", Object: "response.compaction", Provider: providerType}, nil
 }
 
 func (m *mockProvider) CreateBatch(_ context.Context, _ string, req *core.BatchRequest) (*core.BatchResponse, error) {
@@ -4394,6 +4520,258 @@ func TestGetBatch_NotFound(t *testing.T) {
 	}
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestResponsesLifecycle_RetrievesStoredResponseAndInputItems(t *testing.T) {
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-5-mini"},
+		providerTypes: map[string]string{
+			"gpt-5-mini": "mock",
+		},
+		responsesResponse: &core.ResponsesResponse{
+			ID:        "resp_store_1",
+			Object:    "response",
+			CreatedAt: 1000,
+			Model:     "gpt-5-mini",
+			Status:    "completed",
+			Output: []core.ResponsesOutputItem{
+				{
+					ID:     "msg_1",
+					Type:   "message",
+					Role:   "assistant",
+					Status: "completed",
+					Content: []core.ResponsesContentItem{
+						{Type: "output_text", Text: "hello"},
+					},
+				},
+			},
+		},
+	}
+	srv := New(provider, nil)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200 (%s)", createRec.Code, createRec.Body.String())
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/responses/resp_store_1", nil)
+	getRec := httptest.NewRecorder()
+	srv.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get status = %d, want 200 (%s)", getRec.Code, getRec.Body.String())
+	}
+	var got core.ResponsesResponse
+	if err := json.Unmarshal(getRec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode get response: %v", err)
+	}
+	if got.ID != "resp_store_1" || got.Provider != "mock" {
+		t.Fatalf("stored response = %+v, want id resp_store_1 provider mock", got)
+	}
+
+	itemsReq := httptest.NewRequest(http.MethodGet, "/v1/responses/resp_store_1/input_items?order=asc", nil)
+	itemsRec := httptest.NewRecorder()
+	srv.ServeHTTP(itemsRec, itemsReq)
+	if itemsRec.Code != http.StatusOK {
+		t.Fatalf("input items status = %d, want 200 (%s)", itemsRec.Code, itemsRec.Body.String())
+	}
+	var items core.ResponseInputItemListResponse
+	if err := json.Unmarshal(itemsRec.Body.Bytes(), &items); err != nil {
+		t.Fatalf("decode input items response: %v", err)
+	}
+	if items.Object != "list" || len(items.Data) != 1 || items.HasMore {
+		t.Fatalf("input items = %+v, want one-item list", items)
+	}
+	var first map[string]any
+	if err := json.Unmarshal(items.Data[0], &first); err != nil {
+		t.Fatalf("decode first input item: %v", err)
+	}
+	if first["type"] != "message" || first["role"] != "user" {
+		t.Fatalf("input item = %+v, want user message", first)
+	}
+	content, ok := first["content"].([]any)
+	if !ok || len(content) != 1 {
+		t.Fatalf("input content = %+v, want one content item", first["content"])
+	}
+	text, ok := content[0].(map[string]any)
+	if !ok || text["type"] != "input_text" || text["text"] != "hello" {
+		t.Fatalf("input content item = %+v, want input_text hello", content[0])
+	}
+}
+
+func TestResponsesLifecycle_StoresConcreteProviderName(t *testing.T) {
+	store := responsestore.NewMemoryStore()
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-5-mini"},
+		providerTypes: map[string]string{
+			"gpt-5-mini": "openai",
+		},
+		providerNames: map[string]string{
+			"gpt-5-mini": "openai_primary",
+		},
+		responsesResponse: &core.ResponsesResponse{
+			ID:     "resp_provider_name_1",
+			Object: "response",
+			Model:  "gpt-5-mini",
+			Status: "completed",
+		},
+	}
+	srv := New(provider, &Config{ResponseStore: store})
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200 (%s)", createRec.Code, createRec.Body.String())
+	}
+
+	stored, err := store.Get(context.Background(), "resp_provider_name_1")
+	if err != nil {
+		t.Fatalf("store.Get() error = %v", err)
+	}
+	if stored.Provider != "openai" {
+		t.Fatalf("stored provider = %q, want openai", stored.Provider)
+	}
+	if stored.ProviderName != "openai_primary" {
+		t.Fatalf("stored provider name = %q, want openai_primary", stored.ProviderName)
+	}
+}
+
+func TestResponsesLifecycle_CancelUnsupportedProviderReturnsCompatibilityError(t *testing.T) {
+	base := &mockProvider{
+		supportedModels: []string{"gpt-5-mini"},
+		providerTypes: map[string]string{
+			"gpt-5-mini": "mock",
+		},
+		responsesResponse: &core.ResponsesResponse{
+			ID:     "resp_cancel_1",
+			Object: "response",
+			Model:  "gpt-5-mini",
+			Status: "in_progress",
+		},
+	}
+	srv := New(&providerWithoutResponseLifecycle{inner: base}, nil)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200 (%s)", createRec.Code, createRec.Body.String())
+	}
+
+	cancelReq := httptest.NewRequest(http.MethodPost, "/v1/responses/resp_cancel_1/cancel", nil)
+	cancelRec := httptest.NewRecorder()
+	srv.ServeHTTP(cancelRec, cancelReq)
+	if cancelRec.Code != http.StatusNotImplemented {
+		t.Fatalf("cancel status = %d, want 501 (%s)", cancelRec.Code, cancelRec.Body.String())
+	}
+	var body map[string]map[string]any
+	if err := json.Unmarshal(cancelRec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode cancel error: %v", err)
+	}
+	if body["error"]["code"] != "unsupported_response_operation" {
+		t.Fatalf("error code = %v, want unsupported_response_operation", body["error"]["code"])
+	}
+}
+
+func TestResponsesLifecycle_DeleteStoredResponseWithoutNativeSupport(t *testing.T) {
+	base := &mockProvider{
+		supportedModels: []string{"gpt-5-mini"},
+		providerTypes: map[string]string{
+			"gpt-5-mini": "mock",
+		},
+		responsesResponse: &core.ResponsesResponse{
+			ID:     "resp_delete_1",
+			Object: "response",
+			Model:  "gpt-5-mini",
+			Status: "completed",
+		},
+	}
+	srv := New(&providerWithoutResponseLifecycle{inner: base}, nil)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	srv.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusOK {
+		t.Fatalf("create status = %d, want 200 (%s)", createRec.Code, createRec.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/v1/responses/resp_delete_1", nil)
+	deleteRec := httptest.NewRecorder()
+	srv.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusOK {
+		t.Fatalf("delete status = %d, want 200 (%s)", deleteRec.Code, deleteRec.Body.String())
+	}
+	var deleted core.ResponseDeleteResponse
+	if err := json.Unmarshal(deleteRec.Body.Bytes(), &deleted); err != nil {
+		t.Fatalf("decode delete response: %v", err)
+	}
+	if deleted.ID != "resp_delete_1" || !deleted.Deleted {
+		t.Fatalf("delete response = %+v, want deleted resp_delete_1", deleted)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/responses/resp_delete_1", nil)
+	getRec := httptest.NewRecorder()
+	srv.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusNotImplemented {
+		t.Fatalf("get after delete status = %d, want 501 (%s)", getRec.Code, getRec.Body.String())
+	}
+}
+
+func TestResponsesUtilityRoutes(t *testing.T) {
+	provider := &mockProvider{
+		supportedModels: []string{"gpt-5-mini"},
+		providerTypes: map[string]string{
+			"gpt-5-mini": "mock",
+		},
+		responseInputTokensResponse: &core.ResponseInputTokensResponse{
+			Object:      "response.input_tokens",
+			InputTokens: 42,
+		},
+		responseCompactResponse: &core.ResponseCompactResponse{
+			ID:     "cmp_42",
+			Object: "response.compaction",
+		},
+	}
+	srv := New(provider, nil)
+
+	tokensReq := httptest.NewRequest(http.MethodPost, "/v1/responses/input_tokens", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	tokensReq.Header.Set("Content-Type", "application/json")
+	tokensRec := httptest.NewRecorder()
+	srv.ServeHTTP(tokensRec, tokensReq)
+	if tokensRec.Code != http.StatusOK {
+		t.Fatalf("input_tokens status = %d, want 200 (%s)", tokensRec.Code, tokensRec.Body.String())
+	}
+	var tokens core.ResponseInputTokensResponse
+	if err := json.Unmarshal(tokensRec.Body.Bytes(), &tokens); err != nil {
+		t.Fatalf("decode input_tokens response: %v", err)
+	}
+	if tokens.InputTokens != 42 {
+		t.Fatalf("input tokens = %d, want 42", tokens.InputTokens)
+	}
+
+	compactReq := httptest.NewRequest(http.MethodPost, "/v1/responses/compact", strings.NewReader(`{"model":"gpt-5-mini","input":"hello"}`))
+	compactReq.Header.Set("Content-Type", "application/json")
+	compactRec := httptest.NewRecorder()
+	srv.ServeHTTP(compactRec, compactReq)
+	if compactRec.Code != http.StatusOK {
+		t.Fatalf("compact status = %d, want 200 (%s)", compactRec.Code, compactRec.Body.String())
+	}
+	var compact core.ResponseCompactResponse
+	if err := json.Unmarshal(compactRec.Body.Bytes(), &compact); err != nil {
+		t.Fatalf("decode compact response: %v", err)
+	}
+	if compact.ID != "cmp_42" || compact.Provider != "mock" {
+		t.Fatalf("compact response = %+v, want id cmp_42 provider mock", compact)
+	}
+	if len(provider.capturedResponseUtilityReqs) != 2 {
+		t.Fatalf("utility calls = %d, want 2", len(provider.capturedResponseUtilityReqs))
 	}
 }
 

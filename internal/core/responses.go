@@ -123,3 +123,56 @@ type ResponsesError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 }
+
+// ResponseRetrieveParams contains query parameters accepted by
+// GET /v1/responses/{id}.
+type ResponseRetrieveParams struct {
+	Include            []string
+	IncludeObfuscation *bool
+	StartingAfter      *int
+	Stream             bool
+}
+
+// ResponseInputItemsParams contains query parameters accepted by
+// GET /v1/responses/{id}/input_items.
+type ResponseInputItemsParams struct {
+	After   string
+	Include []string
+	Limit   int
+	Order   string
+}
+
+// ResponseInputItemListResponse is returned by
+// GET /v1/responses/{id}/input_items.
+type ResponseInputItemListResponse struct {
+	Object  string            `json:"object"`
+	Data    []json.RawMessage `json:"data" swaggertype:"array,object"`
+	FirstID string            `json:"first_id,omitempty"`
+	LastID  string            `json:"last_id,omitempty"`
+	HasMore bool              `json:"has_more"`
+}
+
+// ResponseInputTokensResponse is returned by POST /v1/responses/input_tokens.
+type ResponseInputTokensResponse struct {
+	Object      string `json:"object"`
+	InputTokens int    `json:"input_tokens"`
+}
+
+// ResponseCompactResponse is returned by POST /v1/responses/compact.
+type ResponseCompactResponse struct {
+	ID        string            `json:"id"`
+	Object    string            `json:"object"`
+	CreatedAt int64             `json:"created_at"`
+	Output    []json.RawMessage `json:"output" swaggertype:"array,object"`
+	Usage     *ResponsesUsage   `json:"usage,omitempty"`
+	Error     *ResponsesError   `json:"error,omitempty"`
+	Metadata  map[string]string `json:"metadata,omitempty"`
+	Provider  string            `json:"provider,omitempty"`
+}
+
+// ResponseDeleteResponse is returned by DELETE /v1/responses/{id}.
+type ResponseDeleteResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Deleted bool   `json:"deleted"`
+}

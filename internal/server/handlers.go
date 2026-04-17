@@ -11,6 +11,7 @@ import (
 	batchstore "gomodel/internal/batch"
 	"gomodel/internal/core"
 	"gomodel/internal/responsecache"
+	"gomodel/internal/responsestore"
 	"gomodel/internal/usage"
 )
 
@@ -29,6 +30,7 @@ type Handler struct {
 	usageLogger                     usage.LoggerInterface
 	pricingResolver                 usage.PricingResolver
 	batchStore                      batchstore.Store
+	responseStore                   responsestore.Store
 	normalizePassthroughV1Prefix    bool
 	enabledPassthroughProviders     map[string]struct{}
 	responseCache                   *responsecache.ResponseCacheMiddleware
@@ -88,6 +90,7 @@ func newHandlerWithAuthorizer(
 		usageLogger:                  usageLogger,
 		pricingResolver:              pricingResolver,
 		batchStore:                   batchstore.NewMemoryStore(),
+		responseStore:                responsestore.NewMemoryStore(),
 		normalizePassthroughV1Prefix: true,
 		enabledPassthroughProviders:  normalizeEnabledPassthroughProviders(defaultEnabledPassthroughProviders),
 	}
@@ -100,6 +103,15 @@ func (h *Handler) SetBatchStore(store batchstore.Store) {
 		return
 	}
 	h.batchStore = store
+}
+
+// SetResponseStore replaces the response snapshot store used by lifecycle endpoints.
+// nil is ignored to keep an always-available fallback memory store.
+func (h *Handler) SetResponseStore(store responsestore.Store) {
+	if store == nil {
+		return
+	}
+	h.responseStore = store
 }
 
 func (h *Handler) translatedInference() *translatedInferenceService {
@@ -116,6 +128,7 @@ func (h *Handler) translatedInference() *translatedInferenceService {
 			pricingResolver:          h.pricingResolver,
 			responseCache:            h.responseCache,
 			guardrailsHash:           h.guardrailsHash,
+			responseStore:            h.responseStore,
 		}
 		s.initHandlers()
 		h.translatedSvc = s
@@ -140,6 +153,17 @@ func (h *Handler) nativeBatch() *nativeBatchService {
 
 func (h *Handler) nativeFiles() *nativeFileService {
 	return &nativeFileService{provider: h.provider}
+}
+
+func (h *Handler) nativeResponses() *nativeResponseService {
+	return &nativeResponseService{
+		provider:                 h.provider,
+		modelResolver:            h.modelResolver,
+		modelAuthorizer:          h.modelAuthorizer,
+		workflowPolicyResolver:   h.workflowPolicyResolver,
+		translatedRequestPatcher: h.translatedRequestPatcher,
+		responseStore:            h.responseStore,
+	}
 }
 
 func (h *Handler) passthrough() *passthroughService {
@@ -385,6 +409,121 @@ func (h *Handler) GetFileContent(c *echo.Context) error {
 // @Router       /v1/responses [post]
 func (h *Handler) Responses(c *echo.Context) error {
 	return h.translatedInference().Responses(c)
+}
+
+// GetResponse handles GET /v1/responses/{id}.
+//
+// @Summary      Get a response
+// @Tags         responses
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path      string  true   "Response ID"
+// @Param        provider  query     string  false  "Provider override for native lookups"
+// @Success      200       {object}  core.ResponsesResponse
+// @Failure      400       {object}  core.GatewayError
+// @Failure      401       {object}  core.GatewayError
+// @Failure      404       {object}  core.GatewayError
+// @Failure      501       {object}  core.GatewayError
+// @Failure      502       {object}  core.GatewayError
+// @Router       /v1/responses/{id} [get]
+func (h *Handler) GetResponse(c *echo.Context) error {
+	return h.nativeResponses().GetResponse(c)
+}
+
+// ListResponseInputItems handles GET /v1/responses/{id}/input_items.
+//
+// @Summary      List response input items
+// @Tags         responses
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path      string  true   "Response ID"
+// @Param        provider  query     string  false  "Provider override for native lookups"
+// @Param        after     query     string  false  "Pagination cursor"
+// @Param        limit     query     int     false  "Maximum items to return (1-100, default 20)"
+// @Param        order     query     string  false  "Sort order: asc or desc"
+// @Success      200       {object}  core.ResponseInputItemListResponse
+// @Failure      400       {object}  core.GatewayError
+// @Failure      401       {object}  core.GatewayError
+// @Failure      404       {object}  core.GatewayError
+// @Failure      501       {object}  core.GatewayError
+// @Failure      502       {object}  core.GatewayError
+// @Router       /v1/responses/{id}/input_items [get]
+func (h *Handler) ListResponseInputItems(c *echo.Context) error {
+	return h.nativeResponses().ListResponseInputItems(c)
+}
+
+// CancelResponse handles POST /v1/responses/{id}/cancel.
+//
+// @Summary      Cancel a response
+// @Tags         responses
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path      string  true   "Response ID"
+// @Param        provider  query     string  false  "Provider override for native cancellation"
+// @Success      200       {object}  core.ResponsesResponse
+// @Failure      400       {object}  core.GatewayError
+// @Failure      401       {object}  core.GatewayError
+// @Failure      404       {object}  core.GatewayError
+// @Failure      501       {object}  core.GatewayError
+// @Failure      502       {object}  core.GatewayError
+// @Router       /v1/responses/{id}/cancel [post]
+func (h *Handler) CancelResponse(c *echo.Context) error {
+	return h.nativeResponses().CancelResponse(c)
+}
+
+// DeleteResponse handles DELETE /v1/responses/{id}.
+//
+// @Summary      Delete a response
+// @Tags         responses
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id        path      string  true   "Response ID"
+// @Param        provider  query     string  false  "Provider override for native deletion"
+// @Success      200       {object}  core.ResponseDeleteResponse
+// @Failure      400       {object}  core.GatewayError
+// @Failure      401       {object}  core.GatewayError
+// @Failure      404       {object}  core.GatewayError
+// @Failure      501       {object}  core.GatewayError
+// @Failure      502       {object}  core.GatewayError
+// @Router       /v1/responses/{id} [delete]
+func (h *Handler) DeleteResponse(c *echo.Context) error {
+	return h.nativeResponses().DeleteResponse(c)
+}
+
+// ResponseInputTokens handles POST /v1/responses/input_tokens.
+//
+// @Summary      Count response input tokens
+// @Tags         responses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      core.ResponsesRequest  true  "Responses API request"
+// @Success      200      {object}  core.ResponseInputTokensResponse
+// @Failure      400      {object}  core.GatewayError
+// @Failure      401      {object}  core.GatewayError
+// @Failure      501      {object}  core.GatewayError
+// @Failure      502      {object}  core.GatewayError
+// @Router       /v1/responses/input_tokens [post]
+func (h *Handler) ResponseInputTokens(c *echo.Context) error {
+	return h.nativeResponses().CountResponseInputTokens(c)
+}
+
+// CompactResponse handles POST /v1/responses/compact.
+//
+// @Summary      Compact response input
+// @Tags         responses
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      core.ResponsesRequest  true  "Responses API request"
+// @Success      200      {object}  core.ResponseCompactResponse
+// @Failure      400      {object}  core.GatewayError
+// @Failure      401      {object}  core.GatewayError
+// @Failure      501      {object}  core.GatewayError
+// @Failure      502      {object}  core.GatewayError
+// @Router       /v1/responses/compact [post]
+func (h *Handler) CompactResponse(c *echo.Context) error {
+	return h.nativeResponses().CompactResponse(c)
 }
 
 // Embeddings handles POST /v1/embeddings

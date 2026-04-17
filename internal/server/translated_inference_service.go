@@ -14,6 +14,7 @@ import (
 	"gomodel/internal/auditlog"
 	"gomodel/internal/core"
 	"gomodel/internal/responsecache"
+	"gomodel/internal/responsestore"
 	"gomodel/internal/streaming"
 	"gomodel/internal/usage"
 )
@@ -32,6 +33,7 @@ type translatedInferenceService struct {
 	pricingResolver          usage.PricingResolver
 	responseCache            *responsecache.ResponseCacheMiddleware
 	guardrailsHash           string
+	responseStore            responsestore.Store
 
 	// Pre-built handlers initialized via initHandlers.
 	chatCompletionHandler echo.HandlerFunc
@@ -230,7 +232,35 @@ func (s *translatedInferenceService) dispatchResponses(c *echo.Context, req *cor
 		return usage.ExtractFromResponsesResponse(resp, requestID, providerType, "/v1/responses", pricing)
 	})
 
+	if err := s.storeResponseSnapshot(ctx, workflow, req, resp, providerType, providerName, requestID); err != nil {
+		return handleError(c, err)
+	}
+
 	return c.JSON(http.StatusOK, resp)
+}
+
+func (s *translatedInferenceService) storeResponseSnapshot(ctx context.Context, workflow *core.Workflow, req *core.ResponsesRequest, resp *core.ResponsesResponse, providerType, providerName, requestID string) error {
+	if s.responseStore == nil || resp == nil || resp.ID == "" {
+		return nil
+	}
+
+	stored := &responsestore.StoredResponse{
+		Response:           resp,
+		InputItems:         normalizedResponseInputItems(resp.ID, req),
+		Provider:           strings.TrimSpace(providerType),
+		ProviderName:       strings.TrimSpace(providerName),
+		ProviderResponseID: resp.ID,
+		RequestID:          requestID,
+		UserPath:           core.UserPathFromContext(ctx),
+		WorkflowVersionID:  workflowVersionID(workflow),
+	}
+	if err := s.responseStore.Create(ctx, stored); err != nil {
+		if updateErr := s.responseStore.Update(ctx, stored); updateErr == nil {
+			return nil
+		}
+		return core.NewProviderError("response_store", http.StatusInternalServerError, "failed to persist response", err)
+	}
+	return nil
 }
 
 func (s *translatedInferenceService) tryFastPathStreamingChatPassthrough(c *echo.Context, workflow *core.Workflow, req *core.ChatRequest) (bool, error) {
