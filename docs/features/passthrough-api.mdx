@@ -68,18 +68,6 @@ Because passthrough is provider-native, the response is also provider-native.
 For Anthropic messages, the response uses Anthropic's message schema, not an
 OpenAI chat completion schema.
 
-## Configuration
-
-Passthrough routes are enabled by default:
-
-```env
-ENABLE_PASSTHROUGH_ROUTES=true
-ALLOW_PASSTHROUGH_V1_ALIAS=true
-ENABLED_PASSTHROUGH_PROVIDERS=openai,anthropic
-```
-
-Set `ENABLED_PASSTHROUGH_PROVIDERS` to the provider types you want to expose.
-
 ## Anthropic SDK example
 
 Set the Anthropic SDK base URL to GoModel's Anthropic passthrough route. Use the
@@ -148,3 +136,15 @@ Passthrough is intentionally narrow while the API is in beta.
   into OpenAI-compatible responses.
 - Features that depend on OpenAI-compatible request or response shapes may not
   apply to passthrough traffic in the same way as `/v1` traffic.
+
+## Related environment variables
+
+Passthrough routes are enabled by default:
+
+```env
+ENABLE_PASSTHROUGH_ROUTES=true
+ALLOW_PASSTHROUGH_V1_ALIAS=true
+ENABLED_PASSTHROUGH_PROVIDERS=openai,anthropic
+```
+
+Set `ENABLED_PASSTHROUGH_PROVIDERS` to the provider types you want to expose.
