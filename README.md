@@ -6,7 +6,7 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/enterpilot/gomodel)](https://hub.docker.com/r/enterpilot/gomodel)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/ENTERPILOT/GoModel)](https://github.com/ENTERPILOT/GoModel/blob/main/go.mod)
 
-A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for OpenAI, Anthropic, Gemini, xAI, Groq, OpenRouter, Azure OpenAI, Oracle, Ollama, and more.
+A high-performance AI gateway written in Go, providing a unified OpenAI-compatible API for OpenAI, Anthropic, Gemini, xAI, Groq, OpenRouter, Z.ai, Azure OpenAI, Oracle, Ollama, and more.
 
 <a href="docs/dashboard.gif">
   <img src="docs/dashboard.gif" alt="Animated GoModel AI gateway dashboard showing usage analytics, token tracking, and estimated cost monitoring" width="100%">
@@ -35,6 +35,7 @@ docker run --rm -p 8080:8080 \
   -e GEMINI_API_KEY="your-gemini-key" \
   -e GROQ_API_KEY="your-groq-key" \
   -e OPENROUTER_API_KEY="your-openrouter-key" \
+  -e ZAI_API_KEY="your-zai-key" \
   -e XAI_API_KEY="your-xai-key" \
   -e AZURE_API_KEY="your-azure-key" \
   -e AZURE_BASE_URL="https://your-resource.openai.azure.com/openai/deployments/your-deployment" \
@@ -71,12 +72,15 @@ Example model identifiers are illustrative and subject to change; consult provid
 | Google Gemini | `GEMINI_API_KEY`                                                  | `gemini-2.5-flash`         |  ✅  |      ✅      |  ✅   |  ✅   |   ✅    |    ❌    |
 | Groq          | `GROQ_API_KEY`                                                    | `llama-3.3-70b-versatile`  |  ✅  |      ✅      |  ✅   |  ✅   |   ✅    |    ❌    |
 | OpenRouter    | `OPENROUTER_API_KEY`                                              | `google/gemini-2.5-flash`  |  ✅  |      ✅      |  ✅   |  ✅   |   ✅    |    ✅    |
+| Z.ai          | `ZAI_API_KEY` (`ZAI_BASE_URL` optional)                           | `glm-5.1`                  |  ✅  |      ✅      |  ✅   |  ❌   |   ❌    |    ✅    |
 | xAI (Grok)    | `XAI_API_KEY`                                                     | `grok-2`                   |  ✅  |      ✅      |  ✅   |  ✅   |   ✅    |    ❌    |
 | Azure OpenAI  | `AZURE_API_KEY` + `AZURE_BASE_URL` (`AZURE_API_VERSION` optional) | `gpt-4o`                   |  ✅  |      ✅      |  ✅   |  ✅   |   ✅    |    ✅    |
 | Oracle        | `ORACLE_API_KEY` + `ORACLE_BASE_URL`                              | `openai.gpt-oss-120b`      |  ✅  |      ✅      |  ❌   |  ❌   |   ❌    |    ❌    |
 | Ollama        | `OLLAMA_BASE_URL`                                                 | `llama3.2`                 |  ✅  |      ✅      |  ✅   |  ❌   |   ❌    |    ❌    |
 
 ✅ Supported ❌ Unsupported
+
+For Z.ai's GLM Coding Plan, set `ZAI_BASE_URL=https://api.z.ai/api/coding/paas/v4`.
 
 ---
 
@@ -179,7 +183,7 @@ Key settings:
 | `GOMODEL_MASTER_KEY`            | (none)             | API key for authentication                                                       |
 | `ENABLE_PASSTHROUGH_ROUTES`     | `true`             | Enable provider-native passthrough routes under `/p/{provider}/...`              |
 | `ALLOW_PASSTHROUGH_V1_ALIAS`    | `true`             | Allow `/p/{provider}/v1/...` aliases while keeping `/p/{provider}/...` canonical |
-| `ENABLED_PASSTHROUGH_PROVIDERS` | `openai,anthropic` | Comma-separated list of enabled passthrough providers                            |
+| `ENABLED_PASSTHROUGH_PROVIDERS` | `openai,anthropic,openrouter,zai` | Comma-separated list of enabled passthrough providers                            |
 | `STORAGE_TYPE`                  | `sqlite`           | Storage backend (`sqlite`, `postgresql`, `mongodb`)                              |
 | `METRICS_ENABLED`               | `false`            | Enable Prometheus metrics                                                        |
 | `LOGGING_ENABLED`               | `false`            | Enable audit logging                                                             |

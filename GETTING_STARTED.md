@@ -188,6 +188,8 @@ Provider credentials:
 | `OPENROUTER_BASE_URL` | OpenRouter (custom endpoint override)                                          |
 | `OPENROUTER_SITE_URL` | OpenRouter attribution URL override (default: `https://gomodel.enterpilot.io`) |
 | `OPENROUTER_APP_NAME` | OpenRouter attribution title override (default: `GoModel`)                     |
+| `ZAI_API_KEY`         | Z.ai (default base URL: `https://api.z.ai/api/paas/v4`)                        |
+| `ZAI_BASE_URL`        | Z.ai (custom endpoint, including GLM Coding Plan)                              |
 | `XAI_API_KEY`         | xAI / Grok                                                                     |
 | `XAI_BASE_URL`        | xAI (custom endpoint)                                                          |
 | `GROQ_API_KEY`        | Groq                                                                           |
@@ -229,6 +231,9 @@ If you do not set `AZURE_API_VERSION`, the gateway sends `api-version=2024-10-21
 
 **OpenRouter gets GoModel attribution headers by default.**
 When the `openrouter` provider is used, the gateway adds `HTTP-Referer` and `X-OpenRouter-Title` unless the request already provides them. Override the defaults with `OPENROUTER_SITE_URL` and `OPENROUTER_APP_NAME`.
+
+**Z.ai Coding Plan uses a different endpoint.**
+`ZAI_API_KEY` uses `https://api.z.ai/api/paas/v4` by default. For GLM Coding Plan, set `ZAI_BASE_URL=https://api.z.ai/api/coding/paas/v4`.
 
 **Partial YAML fields leave the rest at defaults.**
 YAML is unmarshalled onto the struct that was already populated by built-in defaults. Only fields that appear in the file are written. Omitting `max_backoff` from `resilience.retry` leaves it at `30s`; you do not need to repeat defaults you are happy with.
@@ -501,7 +506,7 @@ curl http://localhost:8080/v1/embeddings \
   }'
 ```
 
-Supported by: OpenAI, Gemini, Groq, xAI, Ollama. Anthropic does not support embeddings natively.
+Supported by: OpenAI, Gemini, Groq, Z.ai, xAI, Ollama. Anthropic does not support embeddings natively.
 
 ### List Available Models
 
@@ -667,4 +672,4 @@ console.log(embedding.data[0].embedding.slice(0, 5)); // first 5 dimensions
 4. **System messages**: Anthropic's system message format is handled automatically. Gemini uses Google's OpenAI-compatible endpoint, which also handles system messages natively.
 5. **Max tokens**: Anthropic requires `max_tokens` to be set. If not provided, the gateway defaults to 4096. OpenAI and Gemini treat it as optional.
 6. **Responses API**: The `/v1/responses` endpoint provides a unified interface across all providers. Providers that do not natively support the Responses API convert requests internally.
-7. **Embeddings**: The `/v1/embeddings` endpoint is supported by OpenAI, Gemini, Groq, xAI, and Ollama. Anthropic does not offer embeddings natively.
+7. **Embeddings**: The `/v1/embeddings` endpoint is supported by OpenAI, Gemini, Groq, Z.ai, xAI, and Ollama. Anthropic does not offer embeddings natively.
