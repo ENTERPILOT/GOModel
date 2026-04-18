@@ -10,10 +10,6 @@ import (
 	"gomodel/internal/core"
 )
 
-type modelCountProvider interface {
-	ModelCount() int
-}
-
 // WorkflowResolution resolves the request-scoped workflow for model-facing
 // routes. The workflow centralizes endpoint capabilities, execution mode, resolved
 // provider type, and any early model routing decision that downstream handlers
@@ -154,6 +150,11 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 		if env.JSONBodyParsed || env.RouteHints.Model != "" || env.RouteHints.Provider != "" {
 			return env.RouteHints.Model, env.RouteHints.Provider, true, nil
 		}
+		return "", "", false, nil
+	}
+
+	if hints := peekRequestBodySelectorHints(c.Request(), requestSelectorPeekLimit); hints.parsed {
+		return hints.model, hints.provider, true, nil
 	}
 
 	bodyBytes, err := requestBodyBytes(c)

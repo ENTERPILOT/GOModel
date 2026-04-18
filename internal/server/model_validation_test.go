@@ -766,7 +766,7 @@ func TestModelValidation_EnrichesAuditEntryWithRequestedModelOnResolutionError(t
 	assert.Equal(t, "invalid_request_error", entry.ErrorType)
 }
 
-func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T) {
+func TestModelValidation_DefersOversizedLiveBodyResolutionToHandler(t *testing.T) {
 	provider := &mockProvider{
 		supportedModels: []string{"gpt-4o-mini"},
 		providerTypes: map[string]string{
@@ -804,11 +804,8 @@ func TestModelValidation_ResolvesProviderTypeFromOversizedLiveBody(t *testing.T)
 	err := handler(c)
 	require.NoError(t, err)
 	require.NotNil(t, capturedEnv)
-	assert.Equal(t, "openai", capturedProviderType)
-	canonicalReq := capturedEnv.CachedChatRequest()
-	require.NotNil(t, canonicalReq)
-	assert.Equal(t, "gpt-4o-mini", canonicalReq.Model)
-	assert.Equal(t, "openai", canonicalReq.Provider)
+	assert.Equal(t, "", capturedProviderType)
+	assert.Nil(t, capturedEnv.CachedChatRequest())
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
 

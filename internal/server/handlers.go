@@ -131,10 +131,10 @@ func (h *Handler) nativeBatch() *nativeBatchService {
 		workflowPolicyResolver:               h.workflowPolicyResolver,
 		batchRequestPreparer:                 h.batchRequestPreparer,
 		batchStore:                           h.batchStore,
-		loadBatch:                            h.loadBatch,
 		cleanupPreparedBatchInputFile:        h.cleanupPreparedBatchInputFile,
 		cleanupStoredBatchRewrittenInputFile: h.cleanupStoredBatchRewrittenInputFile,
-		logBatchUsageFromBatchResults:        h.logBatchUsageFromBatchResults,
+		usageLogger:                          h.usageLogger,
+		pricingResolver:                      h.pricingResolver,
 	}
 }
 
