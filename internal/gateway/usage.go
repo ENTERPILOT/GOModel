@@ -40,5 +40,9 @@ func (o *InferenceOrchestrator) logUsage(
 
 // ShouldEnforceReturningUsageData reports whether streams should request usage chunks.
 func (o *InferenceOrchestrator) ShouldEnforceReturningUsageData() bool {
-	return o.usageLogger != nil && o.usageLogger.Config().EnforceReturningUsageData
+	if o.usageLogger == nil {
+		return false
+	}
+	cfg := o.usageLogger.Config()
+	return cfg.Enabled && cfg.EnforceReturningUsageData
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -39,15 +40,17 @@ type translatedInferenceService struct {
 }
 
 func (s *translatedInferenceService) initHandlers() {
+	s.orchestrator = s.newInferenceOrchestrator()
 	s.chatCompletionHandler = s.handleChatCompletion
 	s.responsesHandler = s.handleResponses
 }
 
 func (s *translatedInferenceService) inference() *gateway.InferenceOrchestrator {
-	if s.orchestrator != nil {
-		return s.orchestrator
-	}
-	s.orchestrator = gateway.NewInferenceOrchestrator(gateway.InferenceConfig{
+	return s.orchestrator
+}
+
+func (s *translatedInferenceService) newInferenceOrchestrator() *gateway.InferenceOrchestrator {
+	return gateway.NewInferenceOrchestrator(gateway.InferenceConfig{
 		Provider:                 s.provider,
 		ModelResolver:            s.modelResolver,
 		ModelAuthorizer:          s.modelAuthorizer,
@@ -58,7 +61,6 @@ func (s *translatedInferenceService) inference() *gateway.InferenceOrchestrator 
 		PricingResolver:          s.pricingResolver,
 		GuardrailsHash:           s.guardrailsHash,
 	})
-	return s.orchestrator
 }
 
 func (s *translatedInferenceService) ChatCompletion(c *echo.Context) error {
@@ -450,5 +452,5 @@ func resolvedModelFromWorkflow(workflow *core.Workflow, fallback string) string 
 }
 
 func marshalRequestBody(req any) ([]byte, error) {
-	return gateway.MarshalRequestBody(req)
+	return json.Marshal(req)
 }

@@ -222,5 +222,13 @@ func storeRequestBodySnapshot(c *echo.Context, bodyBytes []byte) {
 	}
 
 	updated := snapshot.WithOwnedCapturedBody(capturedBody, bodyNotCaptured)
-	c.SetRequest(req.WithContext(core.WithRequestSnapshot(req.Context(), updated)))
+	ctx := core.WithRequestSnapshot(req.Context(), updated)
+	semanticSnapshot := updated
+	if bodyNotCaptured {
+		semanticSnapshot = snapshot.WithOwnedCapturedBody(bodyBytes, false)
+	}
+	if semantics := core.DeriveWhiteBoxPrompt(semanticSnapshot); semantics != nil {
+		ctx = core.WithWhiteBoxPrompt(ctx, semantics)
+	}
+	c.SetRequest(req.WithContext(ctx))
 }

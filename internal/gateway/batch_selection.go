@@ -31,6 +31,9 @@ func DetermineBatchExecutionSelectionWithAuthorizer(
 	authorizer ModelAuthorizer,
 	req *core.BatchRequest,
 ) (BatchExecutionSelection, error) {
+	if req == nil {
+		return BatchExecutionSelection{}, core.NewInvalidRequestError("batch request is required", nil)
+	}
 	if provider == nil {
 		return BatchExecutionSelection{}, core.NewInvalidRequestError("provider is not configured", nil)
 	}

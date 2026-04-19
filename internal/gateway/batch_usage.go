@@ -65,7 +65,7 @@ func LogBatchUsageFromBatchResults(
 			continue
 		}
 
-		inputTokens, outputTokens, usageTotal, hasUsage := extractTokenTotals(usagePayload)
+		inputTokens, outputTokens, usageTotal, hasUsage, hasTotal := extractTokenTotals(usagePayload)
 		if !hasUsage {
 			continue
 		}
@@ -106,7 +106,9 @@ func LogBatchUsageFromBatchResults(
 		loggedEntries++
 		inputTotal += inputTokens
 		outputTotal += outputTokens
-		totalTokens += usageTotal
+		if hasTotal {
+			totalTokens += usageTotal
+		}
 		if entry.InputCost != nil {
 			inputCostTotal += *entry.InputCost
 			hasAnyCost = true
@@ -192,16 +194,17 @@ func buildBatchUsageRawData(usagePayload map[string]any, stored *core.BatchRespo
 	return raw
 }
 
-func extractTokenTotals(usagePayload map[string]any) (int, int, int, bool) {
-	inputTokens, hasInput := readFirstInt(usagePayload, "input_tokens", "prompt_tokens")
-	outputTokens, hasOutput := readFirstInt(usagePayload, "output_tokens", "completion_tokens")
-	totalTokens, hasTotal := readFirstInt(usagePayload, "total_tokens")
-	if !hasTotal && (hasInput || hasOutput) {
+func extractTokenTotals(usagePayload map[string]any) (inputTokens, outputTokens, totalTokens int, hasUsage, hasTotal bool) {
+	var hasInput, hasOutput bool
+	inputTokens, hasInput = readFirstInt(usagePayload, "input_tokens", "prompt_tokens")
+	outputTokens, hasOutput = readFirstInt(usagePayload, "output_tokens", "completion_tokens")
+	totalTokens, hasTotal = readFirstInt(usagePayload, "total_tokens")
+	if !hasTotal && hasInput && hasOutput {
 		totalTokens = inputTokens + outputTokens
 		hasTotal = true
 	}
 
-	return inputTokens, outputTokens, totalTokens, hasInput || hasOutput || hasTotal
+	return inputTokens, outputTokens, totalTokens, hasInput || hasOutput || hasTotal, hasTotal
 }
 
 func readFirstInt(values map[string]any, keys ...string) (int, bool) {
@@ -287,9 +290,17 @@ func intFromFloat64(v float64) (int, bool) {
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, false
 	}
-	maxInt := float64(^uint(0) >> 1)
-	minInt := -maxInt - 1
+	const (
+		intBits   = strconv.IntSize
+		maxIntVal = 1<<(intBits-1) - 1
+		minIntVal = -1 << (intBits - 1)
+	)
+	maxInt := float64(maxIntVal)
+	minInt := float64(minIntVal)
 	if v < minInt || v > maxInt {
+		return 0, false
+	}
+	if intBits == 64 && v == maxInt && v > 0 {
 		return 0, false
 	}
 	return int(v), true

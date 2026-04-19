@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"encoding/json"
 	"strings"
 
 	"gomodel/internal/core"
@@ -28,10 +27,27 @@ func CloneChatRequestForSelector(req *core.ChatRequest, selector core.ModelSelec
 	cloned := *req
 	cloned.Model = selector.Model
 	cloned.Provider = selector.Provider
+	if req.Messages != nil {
+		cloned.Messages = make([]core.Message, len(req.Messages))
+		copy(cloned.Messages, req.Messages)
+		for i := range cloned.Messages {
+			if req.Messages[i].ToolCalls != nil {
+				cloned.Messages[i].ToolCalls = make([]core.ToolCall, len(req.Messages[i].ToolCalls))
+				copy(cloned.Messages[i].ToolCalls, req.Messages[i].ToolCalls)
+			}
+			cloned.Messages[i].ExtraFields = core.CloneUnknownJSONFields(req.Messages[i].ExtraFields)
+		}
+	}
+	cloned.Tools = cloneToolMaps(req.Tools)
 	if req.StreamOptions != nil {
 		streamOptions := *req.StreamOptions
 		cloned.StreamOptions = &streamOptions
 	}
+	if req.Reasoning != nil {
+		reasoning := *req.Reasoning
+		cloned.Reasoning = &reasoning
+	}
+	cloned.ExtraFields = core.CloneUnknownJSONFields(req.ExtraFields)
 	return &cloned
 }
 
@@ -43,11 +59,41 @@ func CloneResponsesRequestForSelector(req *core.ResponsesRequest, selector core.
 	cloned := *req
 	cloned.Model = selector.Model
 	cloned.Provider = selector.Provider
+	cloned.Tools = cloneToolMaps(req.Tools)
+	if req.Metadata != nil {
+		cloned.Metadata = make(map[string]string, len(req.Metadata))
+		for key, value := range req.Metadata {
+			cloned.Metadata[key] = value
+		}
+	}
 	if req.StreamOptions != nil {
 		streamOptions := *req.StreamOptions
 		cloned.StreamOptions = &streamOptions
 	}
+	if req.Reasoning != nil {
+		reasoning := *req.Reasoning
+		cloned.Reasoning = &reasoning
+	}
+	cloned.ExtraFields = core.CloneUnknownJSONFields(req.ExtraFields)
 	return &cloned
+}
+
+func cloneToolMaps(tools []map[string]any) []map[string]any {
+	if tools == nil {
+		return nil
+	}
+
+	cloned := make([]map[string]any, len(tools))
+	for i, tool := range tools {
+		if tool == nil {
+			continue
+		}
+		cloned[i] = make(map[string]any, len(tool))
+		for key, value := range tool {
+			cloned[i][key] = value
+		}
+	}
+	return cloned
 }
 
 // ProviderNameFromWorkflow returns the resolved configured provider name.
@@ -59,14 +105,16 @@ func ProviderNameFromWorkflow(workflow *core.Workflow) string {
 }
 
 func resolvedModelPrefix(workflow *core.Workflow, providerName string) string {
-	if providerName = strings.TrimSpace(providerName); providerName != "" {
-		return providerName
+	name := strings.TrimSpace(providerName)
+	if name != "" {
+		return name
 	}
 	if workflow == nil || workflow.Resolution == nil {
 		return ""
 	}
-	if providerName = strings.TrimSpace(workflow.Resolution.ProviderName); providerName != "" {
-		return providerName
+	resolvedProviderName := strings.TrimSpace(workflow.Resolution.ProviderName)
+	if resolvedProviderName != "" {
+		return resolvedProviderName
 	}
 	return strings.TrimSpace(workflow.Resolution.ResolvedSelector.Provider)
 }
@@ -99,11 +147,6 @@ func ResolvedModelFromWorkflow(workflow *core.Workflow, fallback string) string 
 		return resolvedModel
 	}
 	return fallback
-}
-
-// MarshalRequestBody serializes a patched request struct to JSON bytes for cache key computation.
-func MarshalRequestBody(req any) ([]byte, error) {
-	return json.Marshal(req)
 }
 
 // ProviderTypeFromWorkflow returns the workflow provider type.

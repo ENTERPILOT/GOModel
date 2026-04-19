@@ -127,10 +127,50 @@ func TestRequestSnapshotCapture_PeeksSelectorsWithoutReadingWholeBody(t *testing
 	assert.Nil(t, capturedFrame.CapturedBody())
 	assert.False(t, capturedFrame.BodyNotCaptured)
 	require.NotNil(t, capturedEnv)
-	assert.Equal(t, "gpt-5-mini", capturedEnv.RouteHints.Model)
-	assert.True(t, capturedEnv.JSONBodyParsed)
+	assert.Equal(t, "", capturedEnv.RouteHints.Model)
+	assert.False(t, capturedEnv.JSONBodyParsed)
 	assert.Less(t, readBeforeHandler, int64(len(reqBody)))
 	assert.JSONEq(t, reqBody, downstreamBody)
+}
+
+func TestSemanticJSONBodyRefreshesPromptFromFullBody(t *testing.T) {
+	e := echo.New()
+
+	largeContent := strings.Repeat("x", int(auditlog.MaxBodyCapture)+1)
+	reqBody := `{"messages":[{"role":"user","content":"` + largeContent + `"}],"model":"gpt-5-mini","provider":"openai"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	snapshot := core.NewRequestSnapshot(
+		http.MethodPost,
+		"/v1/chat/completions",
+		nil,
+		nil,
+		nil,
+		"application/json",
+		nil,
+		true,
+		"",
+		nil,
+	)
+	ctx := core.WithRequestSnapshot(req.Context(), snapshot)
+	ctx = core.WithWhiteBoxPrompt(ctx, core.DeriveWhiteBoxPrompt(snapshot))
+	c.SetRequest(req.WithContext(ctx))
+
+	bodyBytes, env, err := semanticJSONBody(c)
+	require.NoError(t, err)
+	assert.Len(t, bodyBytes, len(reqBody))
+	require.NotNil(t, env)
+	assert.True(t, env.JSONBodyParsed)
+	assert.Equal(t, "gpt-5-mini", env.RouteHints.Model)
+	assert.Equal(t, "openai", env.RouteHints.Provider)
+
+	updated := core.GetRequestSnapshot(c.Request().Context())
+	require.NotNil(t, updated)
+	assert.True(t, updated.BodyNotCaptured)
+	assert.Nil(t, updated.CapturedBodyView())
 }
 
 func TestRequestSnapshotCapture_NormalizesUserPathHeader(t *testing.T) {

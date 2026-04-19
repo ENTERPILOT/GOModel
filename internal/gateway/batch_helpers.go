@@ -3,7 +3,6 @@ package gateway
 import (
 	"context"
 	"errors"
-	"maps"
 	"net/http"
 	"strings"
 
@@ -86,19 +85,17 @@ func MergeStoredBatchFromUpstream(stored *batchstore.StoredBatch, upstream *core
 		if stored.Batch.Metadata == nil {
 			stored.Batch.Metadata = map[string]string{}
 		}
-		preservedGatewayMetadata := map[string]string{}
-		for _, key := range []string{"provider", "provider_batch_id"} {
-			if value, exists := stored.Batch.Metadata[key]; exists {
-				preservedGatewayMetadata[key] = value
-			}
+
+		gatewayMetadataKeys := map[string]struct{}{
+			"provider":          {},
+			"provider_batch_id": {},
 		}
 		for key, value := range upstream.Metadata {
-			if _, preserve := preservedGatewayMetadata[key]; preserve {
+			if _, owned := gatewayMetadataKeys[key]; owned {
 				continue
 			}
 			stored.Batch.Metadata[key] = value
 		}
-		maps.Copy(stored.Batch.Metadata, preservedGatewayMetadata)
 		stored.Batch.Metadata = SanitizePublicBatchMetadata(stored.Batch.Metadata)
 	}
 }

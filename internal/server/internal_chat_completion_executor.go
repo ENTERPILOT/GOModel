@@ -132,7 +132,7 @@ func (e *InternalChatCompletionExecutor) executeChatCompletion(
 		return resp, providerType, providerName, failoverModel, usedFallback, "", err
 	}
 
-	body, err := gateway.MarshalRequestBody(req)
+	body, err := json.Marshal(req)
 	if err != nil {
 		resp, providerType, providerName, failoverModel, usedFallback, execErr := e.orchestrator.DispatchChatCompletion(ctx, workflow, req)
 		if execErr != nil {

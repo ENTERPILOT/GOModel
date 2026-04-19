@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"io"
+	"net/http"
 	"strings"
 
 	"gomodel/internal/core"
@@ -11,6 +12,9 @@ import (
 
 // ExecuteChatCompletion executes a non-streaming chat request and records usage on success.
 func (o *InferenceOrchestrator) ExecuteChatCompletion(ctx context.Context, workflow *core.Workflow, req *core.ChatRequest, requestID, endpoint string) (*ChatCompletionResult, error) {
+	if err := o.validateProviderAndRequest(req != nil, "chat request is required"); err != nil {
+		return nil, err
+	}
 	return executeTranslatedResult(o, ctx, workflow, req, requestID, endpoint, chatExecutionSpec)
 }
 
@@ -20,11 +24,17 @@ func (o *InferenceOrchestrator) DispatchChatCompletion(
 	workflow *core.Workflow,
 	req *core.ChatRequest,
 ) (*core.ChatResponse, string, string, string, bool, error) {
+	if err := o.validateProviderAndRequest(req != nil, "chat request is required"); err != nil {
+		return nil, "", "", "", false, err
+	}
 	return o.executeChatCompletion(ctx, workflow, req)
 }
 
 // StreamChatCompletion opens a chat SSE stream. Stream usage is recorded by the caller's stream observer.
 func (o *InferenceOrchestrator) StreamChatCompletion(ctx context.Context, workflow *core.Workflow, req *core.ChatRequest) (*StreamResult, error) {
+	if err := o.validateProviderAndRequest(req != nil, "chat request is required"); err != nil {
+		return nil, err
+	}
 	streamReq, providerType, providerName, usageModel := o.ResolveChatRoute(workflow, req)
 	stream, resolvedProviderType, resolvedProviderName, resolvedUsageModel, failoverModel, usedFallback, err := o.streamChatCompletion(ctx, workflow, streamReq, providerType, providerName, usageModel)
 	if err != nil {
@@ -44,6 +54,9 @@ func (o *InferenceOrchestrator) StreamChatCompletion(ctx context.Context, workfl
 
 // ExecuteResponses executes a non-streaming Responses API request and records usage on success.
 func (o *InferenceOrchestrator) ExecuteResponses(ctx context.Context, workflow *core.Workflow, req *core.ResponsesRequest, requestID, endpoint string) (*ResponsesResult, error) {
+	if err := o.validateProviderAndRequest(req != nil, "responses request is required"); err != nil {
+		return nil, err
+	}
 	return executeTranslatedResult(o, ctx, workflow, req, requestID, endpoint, responsesExecutionSpec)
 }
 
@@ -53,11 +66,17 @@ func (o *InferenceOrchestrator) DispatchResponses(
 	workflow *core.Workflow,
 	req *core.ResponsesRequest,
 ) (*core.ResponsesResponse, string, string, string, bool, error) {
+	if err := o.validateProviderAndRequest(req != nil, "responses request is required"); err != nil {
+		return nil, "", "", "", false, err
+	}
 	return o.executeResponses(ctx, workflow, req)
 }
 
 // StreamResponses opens a Responses API SSE stream. Stream usage is recorded by the caller's stream observer.
 func (o *InferenceOrchestrator) StreamResponses(ctx context.Context, workflow *core.Workflow, req *core.ResponsesRequest) (*StreamResult, error) {
+	if err := o.validateProviderAndRequest(req != nil, "responses request is required"); err != nil {
+		return nil, err
+	}
 	providerType, providerName, usageModel := o.routeMetadata(workflow, req.Model)
 	if (workflow == nil || workflow.UsageEnabled()) && o.ShouldEnforceReturningUsageData() {
 		ctx = core.WithEnforceReturningUsageData(ctx, true)
@@ -80,6 +99,9 @@ func (o *InferenceOrchestrator) StreamResponses(ctx context.Context, workflow *c
 
 // ExecuteEmbeddings executes an embeddings request and records usage on success.
 func (o *InferenceOrchestrator) ExecuteEmbeddings(ctx context.Context, workflow *core.Workflow, req *core.EmbeddingRequest, requestID, endpoint string) (*EmbeddingResult, error) {
+	if err := o.validateProviderAndRequest(req != nil, "embeddings request is required"); err != nil {
+		return nil, err
+	}
 	resp, providerType, providerName, err := o.executeEmbeddings(ctx, workflow, req)
 	if err != nil {
 		return nil, err
@@ -103,6 +125,9 @@ func (o *InferenceOrchestrator) DispatchEmbeddings(
 	workflow *core.Workflow,
 	req *core.EmbeddingRequest,
 ) (*core.EmbeddingResponse, string, string, error) {
+	if err := o.validateProviderAndRequest(req != nil, "embeddings request is required"); err != nil {
+		return nil, "", "", err
+	}
 	return o.executeEmbeddings(ctx, workflow, req)
 }
 
@@ -191,7 +216,10 @@ func (o *InferenceOrchestrator) executeChatCompletion(
 	workflow *core.Workflow,
 	req *core.ChatRequest,
 ) (*core.ChatResponse, string, string, string, bool, error) {
-	return executeTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, CloneChatRequestForSelector, o.provider.ChatCompletion, chatResponseProvider)
+	if err := o.validateProviderAndRequest(req != nil, "chat request is required"); err != nil {
+		return nil, "", "", "", false, err
+	}
+	return executeTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, CloneChatRequestForSelector, o.chatCompletionProviderCall, chatResponseProvider)
 }
 
 func (o *InferenceOrchestrator) streamChatCompletion(
@@ -200,7 +228,10 @@ func (o *InferenceOrchestrator) streamChatCompletion(
 	req *core.ChatRequest,
 	providerType, providerName, usageModel string,
 ) (io.ReadCloser, string, string, string, string, bool, error) {
-	return streamTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, providerType, providerName, usageModel, CloneChatRequestForSelector, o.provider.StreamChatCompletion)
+	if err := o.validateProviderAndRequest(req != nil, "chat request is required"); err != nil {
+		return nil, "", "", "", "", false, err
+	}
+	return streamTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, providerType, providerName, usageModel, CloneChatRequestForSelector, o.streamChatCompletionProviderCall)
 }
 
 func (o *InferenceOrchestrator) executeResponses(
@@ -208,7 +239,10 @@ func (o *InferenceOrchestrator) executeResponses(
 	workflow *core.Workflow,
 	req *core.ResponsesRequest,
 ) (*core.ResponsesResponse, string, string, string, bool, error) {
-	return executeTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, CloneResponsesRequestForSelector, o.provider.Responses, responsesResponseProvider)
+	if err := o.validateProviderAndRequest(req != nil, "responses request is required"); err != nil {
+		return nil, "", "", "", false, err
+	}
+	return executeTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, CloneResponsesRequestForSelector, o.responsesProviderCall, responsesResponseProvider)
 }
 
 func (o *InferenceOrchestrator) streamResponses(
@@ -217,7 +251,10 @@ func (o *InferenceOrchestrator) streamResponses(
 	req *core.ResponsesRequest,
 	providerType, providerName, usageModel string,
 ) (io.ReadCloser, string, string, string, string, bool, error) {
-	return streamTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, providerType, providerName, usageModel, CloneResponsesRequestForSelector, o.provider.StreamResponses)
+	if err := o.validateProviderAndRequest(req != nil, "responses request is required"); err != nil {
+		return nil, "", "", "", "", false, err
+	}
+	return streamTranslatedProviderRequest(o, ctx, workflow, req, req.Model, req.Provider, providerType, providerName, usageModel, CloneResponsesRequestForSelector, o.streamResponsesProviderCall)
 }
 
 type translatedExecutionSpec[Req any, Resp any, Result any] struct {
@@ -333,6 +370,9 @@ func streamTranslatedProviderRequest[Req any](
 ) (io.ReadCloser, string, string, string, string, bool, error) {
 	stream, err := call(ctx, req)
 	if err == nil {
+		if stream == nil {
+			return nil, "", "", "", "", false, emptyProviderStreamError(providerType)
+		}
 		return stream, providerType, providerName, usageModel, "", false, nil
 	}
 
@@ -342,6 +382,9 @@ func streamTranslatedProviderRequest[Req any](
 			if err != nil {
 				return nil, "", "", err
 			}
+			if stream == nil {
+				return nil, "", "", emptyProviderStreamError(providerType)
+			}
 			return stream, providerType, selector.Model, nil
 		},
 	)
@@ -349,6 +392,54 @@ func streamTranslatedProviderRequest[Req any](
 		return nil, "", "", "", "", false, err
 	}
 	return stream, resolvedProviderType, resolvedProviderName, resolvedUsageModel, failoverModel, true, nil
+}
+
+func (o *InferenceOrchestrator) validateProviderAndRequest(requestPresent bool, requiredMessage string) *core.GatewayError {
+	if o == nil || o.provider == nil {
+		return core.NewInvalidRequestError("provider is not configured", nil)
+	}
+	if !requestPresent {
+		return core.NewInvalidRequestError(requiredMessage, nil)
+	}
+	return nil
+}
+
+func (o *InferenceOrchestrator) chatCompletionProviderCall(ctx context.Context, req *core.ChatRequest) (*core.ChatResponse, error) {
+	resp, err := o.provider.ChatCompletion(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, emptyProviderResponseError("")
+	}
+	return resp, nil
+}
+
+func (o *InferenceOrchestrator) responsesProviderCall(ctx context.Context, req *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	resp, err := o.provider.Responses(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, emptyProviderResponseError("")
+	}
+	return resp, nil
+}
+
+func (o *InferenceOrchestrator) streamChatCompletionProviderCall(ctx context.Context, req *core.ChatRequest) (io.ReadCloser, error) {
+	return o.provider.StreamChatCompletion(ctx, req)
+}
+
+func (o *InferenceOrchestrator) streamResponsesProviderCall(ctx context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	return o.provider.StreamResponses(ctx, req)
+}
+
+func emptyProviderResponseError(providerType string) *core.GatewayError {
+	return core.NewProviderError(providerType, http.StatusBadGateway, "provider returned empty response", nil)
+}
+
+func emptyProviderStreamError(providerType string) *core.GatewayError {
+	return core.NewProviderError(providerType, http.StatusBadGateway, "provider returned empty stream", nil)
 }
 
 func executeChatCompletionRequest(
@@ -402,10 +493,16 @@ func (o *InferenceOrchestrator) executeEmbeddings(
 	workflow *core.Workflow,
 	req *core.EmbeddingRequest,
 ) (*core.EmbeddingResponse, string, string, error) {
+	if err := o.validateProviderAndRequest(req != nil, "embeddings request is required"); err != nil {
+		return nil, "", "", err
+	}
 	providerType := ProviderTypeFromWorkflow(workflow)
 	providerName := ProviderNameFromWorkflow(workflow)
 	resp, err := o.provider.Embeddings(ctx, req)
 	if err == nil {
+		if resp == nil {
+			return nil, "", "", emptyProviderResponseError(providerType)
+		}
 		return resp, ResponseProviderType(providerType, resp.Provider), providerName, nil
 	}
 

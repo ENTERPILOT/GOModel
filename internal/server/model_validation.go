@@ -147,13 +147,12 @@ func selectorHintsForValidation(c *echo.Context) (model, provider string, parsed
 		if model, provider, ok := cachedCanonicalSelectorHints(env); ok {
 			return model, provider, true, nil
 		}
-		if env.JSONBodyParsed || env.RouteHints.Model != "" || env.RouteHints.Provider != "" {
+		if env.JSONBodyParsed || env.RouteHints.Provider != "" {
 			return env.RouteHints.Model, env.RouteHints.Provider, true, nil
 		}
-		return "", "", false, nil
 	}
 
-	if hints := peekRequestBodySelectorHints(c.Request(), requestSelectorPeekLimit); hints.parsed {
+	if hints := peekRequestBodySelectorHints(c.Request(), requestSelectorPeekLimit); hints.parsed && (hints.complete || hints.provider != "") {
 		return hints.model, hints.provider, true, nil
 	}
 

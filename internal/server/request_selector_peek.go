@@ -17,6 +17,7 @@ type requestBodySelectorHints struct {
 	provider string
 	stream   bool
 	parsed   bool
+	complete bool
 }
 
 func seedRequestBodySelectorHints(req *http.Request, bodyMode core.BodyMode, env *core.WhiteBoxPrompt) {
@@ -25,7 +26,7 @@ func seedRequestBodySelectorHints(req *http.Request, bodyMode core.BodyMode, env
 	}
 
 	hints := peekRequestBodySelectorHints(req, requestSelectorPeekLimit)
-	if !hints.parsed {
+	if !hints.parsed || !hints.complete {
 		return
 	}
 	core.ApplyBodySelectorHints(env, hints.model, hints.provider, hints.stream)
@@ -96,10 +97,11 @@ func decodeRequestBodySelectorHints(r io.Reader) requestBodySelectorHints {
 				return requestBodySelectorHints{}
 			}
 			hints.model = model
-			hints.parsed = true
+			if model != "" && hints.provider != "" {
+				hints.parsed = true
+				return hints
+			}
 			if model != "" {
-				// Model is the only required routing selector. Stop before walking
-				// large prompt fields that may follow it.
 				return hints
 			}
 		case "provider":
@@ -108,6 +110,10 @@ func decodeRequestBodySelectorHints(r io.Reader) requestBodySelectorHints {
 				return requestBodySelectorHints{}
 			}
 			hints.provider = provider
+			if hints.provider != "" && hints.model != "" {
+				hints.parsed = true
+				return hints
+			}
 		case "stream":
 			stream, ok, err := readOptionalJSONBool(dec)
 			if err != nil || !ok {
@@ -122,6 +128,7 @@ func decodeRequestBodySelectorHints(r io.Reader) requestBodySelectorHints {
 	}
 
 	hints.parsed = true
+	hints.complete = true
 	return hints
 }
 
