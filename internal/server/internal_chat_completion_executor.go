@@ -164,7 +164,13 @@ func (e *InternalChatCompletionExecutor) executeChatCompletion(
 		if err := json.Unmarshal(result.Body, &cached); err != nil {
 			return nil, "", "", "", false, "", err
 		}
-		return &cached, workflow.ProviderType, gateway.ProviderNameFromWorkflow(workflow), "", false, result.CacheType, nil
+		cachedProviderType := ""
+		cachedProviderName := ""
+		if workflow != nil {
+			cachedProviderType = workflow.ProviderType
+			cachedProviderName = gateway.ProviderNameFromWorkflow(workflow)
+		}
+		return &cached, cachedProviderType, cachedProviderName, "", false, result.CacheType, nil
 	}
 	return resp, providerType, providerName, failoverModel, usedFallback, "", nil
 }

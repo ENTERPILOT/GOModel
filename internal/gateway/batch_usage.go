@@ -49,7 +49,9 @@ func LogBatchUsageFromBatchResults(
 	var inputCostTotal float64
 	var outputCostTotal float64
 	var totalCostTotal float64
-	hasAnyCost := false
+	hasInputCost := false
+	hasOutputCost := false
+	hasTotalCost := false
 
 	for _, item := range result.Data {
 		if item.StatusCode < http.StatusOK || item.StatusCode >= http.StatusMultipleChoices {
@@ -111,15 +113,15 @@ func LogBatchUsageFromBatchResults(
 		}
 		if entry.InputCost != nil {
 			inputCostTotal += *entry.InputCost
-			hasAnyCost = true
+			hasInputCost = true
 		}
 		if entry.OutputCost != nil {
 			outputCostTotal += *entry.OutputCost
-			hasAnyCost = true
+			hasOutputCost = true
 		}
 		if entry.TotalCost != nil {
 			totalCostTotal += *entry.TotalCost
-			hasAnyCost = true
+			hasTotalCost = true
 		}
 	}
 
@@ -134,9 +136,13 @@ func LogBatchUsageFromBatchResults(
 	stored.Batch.Usage.InputTokens = inputTotal
 	stored.Batch.Usage.OutputTokens = outputTotal
 	stored.Batch.Usage.TotalTokens = totalTokens
-	if hasAnyCost {
+	if hasInputCost {
 		stored.Batch.Usage.InputCost = &inputCostTotal
+	}
+	if hasOutputCost {
 		stored.Batch.Usage.OutputCost = &outputCostTotal
+	}
+	if hasTotalCost {
 		stored.Batch.Usage.TotalCost = &totalCostTotal
 	}
 
