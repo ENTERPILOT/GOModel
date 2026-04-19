@@ -29,6 +29,10 @@ func NewStreamBuffer(initialCapacity int) StreamBuffer {
 
 	pooled := streamBufferPool.Get().(*[]byte)
 	data := (*pooled)[:0]
+	if cap(data) == 0 || cap(data) > maxPooledStreamBufferSize {
+		data = make([]byte, 0, defaultStreamBufferCapacity)
+		*pooled = data
+	}
 	if cap(data) < initialCapacity {
 		data = make([]byte, 0, initialCapacity)
 	}
@@ -92,15 +96,17 @@ func (b *StreamBuffer) Consume(n int) {
 }
 
 func (b *StreamBuffer) Release() {
-	if b == nil || b.data == nil {
+	if b == nil {
 		return
 	}
 
-	if b.pooled != nil && cap(b.data) <= maxPooledStreamBufferSize {
-		*b.pooled = b.data[:0]
+	if b.pooled != nil {
+		pooledData := (*b.pooled)[:0]
+		if cap(pooledData) == 0 || cap(pooledData) > maxPooledStreamBufferSize {
+			pooledData = make([]byte, 0, defaultStreamBufferCapacity)
+		}
+		*b.pooled = pooledData
 		streamBufferPool.Put(b.pooled)
-	} else if b.pooled != nil {
-		*b.pooled = nil
 	}
 	b.data = nil
 	b.pooled = nil

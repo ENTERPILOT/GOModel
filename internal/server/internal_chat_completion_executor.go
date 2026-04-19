@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -128,17 +129,13 @@ func (e *InternalChatCompletionExecutor) executeChatCompletion(
 	req *core.ChatRequest,
 ) (*core.ChatResponse, string, string, string, bool, string, error) {
 	if e.responseCache == nil || (workflow != nil && !workflow.CacheEnabled()) {
-		resp, providerType, providerName, failoverModel, usedFallback, err := e.orchestrator.DispatchChatCompletion(ctx, workflow, req)
-		return resp, providerType, providerName, failoverModel, usedFallback, "", err
+		return e.dispatchChatCompletionNoCache(ctx, workflow, req)
 	}
 
 	body, err := json.Marshal(req)
 	if err != nil {
-		resp, providerType, providerName, failoverModel, usedFallback, execErr := e.orchestrator.DispatchChatCompletion(ctx, workflow, req)
-		if execErr != nil {
-			return nil, "", "", "", false, "", execErr
-		}
-		return resp, providerType, providerName, failoverModel, usedFallback, "", nil
+		slog.Debug("marshalRequestBody failed", "err", err)
+		return e.dispatchChatCompletionNoCache(ctx, workflow, req)
 	}
 
 	var (
@@ -170,6 +167,15 @@ func (e *InternalChatCompletionExecutor) executeChatCompletion(
 		return &cached, workflow.ProviderType, gateway.ProviderNameFromWorkflow(workflow), "", false, result.CacheType, nil
 	}
 	return resp, providerType, providerName, failoverModel, usedFallback, "", nil
+}
+
+func (e *InternalChatCompletionExecutor) dispatchChatCompletionNoCache(
+	ctx context.Context,
+	workflow *core.Workflow,
+	req *core.ChatRequest,
+) (*core.ChatResponse, string, string, string, bool, string, error) {
+	resp, providerType, providerName, failoverModel, usedFallback, err := e.orchestrator.DispatchChatCompletion(ctx, workflow, req)
+	return resp, providerType, providerName, failoverModel, usedFallback, "", err
 }
 
 func (e *InternalChatCompletionExecutor) newAuditEntry(

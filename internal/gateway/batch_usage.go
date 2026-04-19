@@ -303,6 +303,9 @@ func intFromFloat64(v float64) (int, bool) {
 	if intBits == 64 && v == maxInt && v > 0 {
 		return 0, false
 	}
+	if math.Trunc(v) != v {
+		return 0, false
+	}
 	return int(v), true
 }
 

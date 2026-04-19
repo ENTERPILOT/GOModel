@@ -369,11 +369,11 @@ func streamTranslatedProviderRequest[Req any](
 	call func(context.Context, Req) (io.ReadCloser, error),
 ) (io.ReadCloser, string, string, string, string, bool, error) {
 	stream, err := call(ctx, req)
-	if err == nil {
-		if stream == nil {
-			return nil, "", "", "", "", false, emptyProviderStreamError(providerType)
-		}
+	if err == nil && stream != nil {
 		return stream, providerType, providerName, usageModel, "", false, nil
+	}
+	if err == nil {
+		err = emptyProviderStreamError(providerType)
 	}
 
 	stream, resolvedProviderType, resolvedProviderName, resolvedUsageModel, failoverModel, err := tryFallbackStream(ctx, o, workflow, model, provider, err,

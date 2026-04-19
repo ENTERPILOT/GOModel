@@ -3,8 +3,10 @@ package gateway
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	batchstore "gomodel/internal/batch"
@@ -79,6 +81,9 @@ func TestIntFromFloat64RejectsBoundaryOverflow(t *testing.T) {
 	outOfRange := float64(uint64(1) << (strconv.IntSize - 1))
 	if _, ok := intFromFloat64(outOfRange); ok {
 		t.Fatalf("intFromFloat64(%g) ok = true, want false", outOfRange)
+	}
+	if _, ok := intFromFloat64(1.9); ok {
+		t.Fatal("intFromFloat64(1.9) ok = true, want false")
 	}
 }
 
@@ -206,4 +211,97 @@ func TestStreamResponsesRejectsEmptyProviderStream(t *testing.T) {
 	if gatewayErr.Type != core.ErrorTypeProvider || gatewayErr.HTTPStatusCode() != http.StatusBadGateway {
 		t.Fatalf("gateway error = (%s, %d), want provider 502", gatewayErr.Type, gatewayErr.HTTPStatusCode())
 	}
+}
+
+func TestStreamResponsesFallsBackAfterEmptyPrimaryStream(t *testing.T) {
+	provider := &streamFallbackProvider{
+		streamsByModel: map[string]io.ReadCloser{
+			"fallback": io.NopCloser(strings.NewReader("data: {}\n\n")),
+		},
+	}
+	orchestrator := NewInferenceOrchestrator(InferenceConfig{
+		Provider: provider,
+		FallbackResolver: fallbackResolverFunc(func(*core.RequestModelResolution, core.Operation) []core.ModelSelector {
+			return []core.ModelSelector{{Provider: "openai", Model: "fallback"}}
+		}),
+	})
+	workflow := &core.Workflow{
+		Endpoint: core.DescribeEndpoint(http.MethodPost, "/v1/responses"),
+		Resolution: &core.RequestModelResolution{
+			ResolvedSelector: core.ModelSelector{Provider: "openai", Model: "primary"},
+			ProviderType:     "openai",
+		},
+		Policy: &core.ResolvedWorkflowPolicy{
+			VersionID: "workflow-fallback",
+			Features: core.WorkflowFeatures{
+				Cache:      true,
+				Audit:      true,
+				Usage:      true,
+				Guardrails: true,
+				Fallback:   true,
+			},
+		},
+	}
+
+	result, err := orchestrator.StreamResponses(context.Background(), workflow, &core.ResponsesRequest{Model: "primary"})
+	if err != nil {
+		t.Fatalf("StreamResponses() error = %v", err)
+	}
+	defer result.Stream.Close()
+
+	if !result.Meta.UsedFallback {
+		t.Fatal("UsedFallback = false, want true")
+	}
+	if result.Meta.FailoverModel != "openai/fallback" {
+		t.Fatalf("FailoverModel = %q, want openai/fallback", result.Meta.FailoverModel)
+	}
+	if got := strings.Join(provider.responseStreamCalls, ","); got != "primary,fallback" {
+		t.Fatalf("response stream calls = %q, want primary,fallback", got)
+	}
+}
+
+type fallbackResolverFunc func(*core.RequestModelResolution, core.Operation) []core.ModelSelector
+
+func (f fallbackResolverFunc) ResolveFallbacks(resolution *core.RequestModelResolution, op core.Operation) []core.ModelSelector {
+	return f(resolution, op)
+}
+
+type streamFallbackProvider struct {
+	streamsByModel      map[string]io.ReadCloser
+	responseStreamCalls []string
+}
+
+func (p *streamFallbackProvider) ChatCompletion(context.Context, *core.ChatRequest) (*core.ChatResponse, error) {
+	return nil, nil
+}
+
+func (p *streamFallbackProvider) StreamChatCompletion(context.Context, *core.ChatRequest) (io.ReadCloser, error) {
+	return nil, nil
+}
+
+func (p *streamFallbackProvider) ListModels(context.Context) (*core.ModelsResponse, error) {
+	return nil, nil
+}
+
+func (p *streamFallbackProvider) Responses(context.Context, *core.ResponsesRequest) (*core.ResponsesResponse, error) {
+	return nil, nil
+}
+
+func (p *streamFallbackProvider) StreamResponses(_ context.Context, req *core.ResponsesRequest) (io.ReadCloser, error) {
+	p.responseStreamCalls = append(p.responseStreamCalls, req.Model)
+	return p.streamsByModel[req.Model], nil
+}
+
+func (p *streamFallbackProvider) Embeddings(context.Context, *core.EmbeddingRequest) (*core.EmbeddingResponse, error) {
+	return nil, nil
+}
+
+func (p *streamFallbackProvider) Supports(string) bool { return true }
+
+func (p *streamFallbackProvider) GetProviderType(model string) string {
+	selector, err := core.ParseModelSelector(model, "")
+	if err == nil && selector.Provider != "" {
+		return selector.Provider
+	}
+	return ""
 }
